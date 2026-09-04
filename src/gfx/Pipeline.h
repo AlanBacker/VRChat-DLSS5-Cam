@@ -106,7 +106,7 @@ private:
     void ReleaseFeatures(Device& device);
     Config ComputeConfig(const SpoutReceiver& spout, const Settings& s) const;
 
-    void RunConvert(Device& device, ID3D12GraphicsCommandList* cmd, SpoutReceiver& spout, bool writeNvof);
+    void RunConvert(Device& device, ID3D12GraphicsCommandList* cmd, SpoutReceiver& spout, const Settings& s, bool writeNvof);
     void RunGuidance(Device& device, ID3D12GraphicsCommandList* cmd, const Settings& s, int motionMode, bool haveHistory);
     bool RunOpticalFlow(Device& device, ID3D12GraphicsCommandList*& cmd);
     void RunDensify(Device& device, ID3D12GraphicsCommandList* cmd, const Settings& s, int mode);

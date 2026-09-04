@@ -285,7 +285,7 @@ void Pipeline::RequestCapture(const std::wstring& folder, bool keepAlpha, bool s
 
 // --- passes -------------------------------------------------------------------------------
 
-void Pipeline::RunConvert(Device& device, ID3D12GraphicsCommandList* cmd, SpoutReceiver& spout, bool writeNvof) {
+void Pipeline::RunConvert(Device& device, ID3D12GraphicsCommandList* cmd, SpoutReceiver& spout, const Settings& s, bool writeNvof) {
     device.TimerBegin(cmd, GpuTimer::Convert);
     Tex& luma0 = m_luma[m_cur][0];
     Transition(cmd, m_color8, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
@@ -302,6 +302,13 @@ void Pipeline::RunConvert(Device& device, ID3D12GraphicsCommandList* cmd, SpoutR
         if (m_inW < m_srcW || m_inH < m_srcH) flags |= 16;
     }
     if (writeNvof) flags |= 4;
+    const DXGI_FORMAT vf = spout.ViewFormat();
+    if (vf == DXGI_FORMAT_R16G16B16A16_FLOAT || vf == DXGI_FORMAT_R32G32B32A32_FLOAT || vf == DXGI_FORMAT_R11G11B10_FLOAT) {
+        // Scene-linear HDR feed: bring it to paper white and roll off highlights before the SDR neural pass.
+        flags |= 32;
+        d.constants.paramA = 1.0f / std::max(s.hdrPaperWhite, 0.01f);
+        d.constants.paramB = std::clamp(s.hdrHighlightCompression, 0.0f, 1.0f);
+    }
     d.constants.flags = flags;
     d.srv[0] = spout.Srv();
     d.uav[0] = m_color8.uav;
@@ -667,7 +674,7 @@ void Pipeline::Render(Device& device, SpoutReceiver& spout, const Settings& s, I
         if (motionMode == MotionNvOpticalFlow && !m_nvofReady) motionMode = MotionCompute;
         const bool nvofBgra = (motionMode == MotionNvOpticalFlow) && m_nvofFmt == DXGI_FORMAT_B8G8R8A8_UNORM;
 
-        RunConvert(device, cmd, spout, nvofBgra);
+        RunConvert(device, cmd, spout, s, nvofBgra);
 
         device.TimerBegin(cmd, GpuTimer::Guidance);
         int densifyMode = MotionZero;

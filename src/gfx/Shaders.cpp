@@ -23,7 +23,8 @@ SamplerState PointClamp  : register(s1);
 
 // ---------------------------------------------------------------------------
 // Convert: sender texture -> RGBA8 colour (optionally resampled), luma and NVOF input.
-// Flags: 1 = input is linear (encode to sRGB), 2 = resample, 4 = write NVOF input, 16 = box downsample.
+// Flags: 1 = input is linear (encode to sRGB), 2 = resample, 4 = write NVOF input, 16 = box downsample,
+//        32 = floating-point HDR input: ParamA = 1 / paper white, ParamB = highlight compression (0..1).
 
 const char* kConvert = R"HLSL(
 Texture2D<float4>   Src      : register(t0);
@@ -36,6 +37,18 @@ float3 LinearToSrgb(float3 c) {
     float3 lo = c * 12.92;
     float3 hi = 1.055 * pow(max(c, 1e-6), 1.0 / 2.4) - 0.055;
     return (c < 0.0031308) ? lo : hi;
+}
+
+// Hue-preserving soft roll-off for HDR values above the knee: the brightest channel is
+// compressed towards 1.0 and the other channels are scaled with it, so highlights keep
+// their colour instead of clipping to white. strength 0 = leave for the hard clip.
+float3 CompressHighlights(float3 c, float strength) {
+    const float knee = 0.8;
+    float m = max(c.r, max(c.g, c.b));
+    if (m <= knee || strength <= 0.0) return c;
+    float over = (m - knee) / (1.0 - knee);
+    float soft = knee + (1.0 - knee) * (1.0 - exp(-over));
+    return c * lerp(1.0, soft / m, strength);
 }
 
 float4 SampleCatmullRom(float2 uv) {
@@ -85,6 +98,10 @@ void main(uint3 id : SV_DispatchThreadID) {
         }
     } else {
         c = Src.Load(int3(id.xy, 0));
+    }
+    if (Flags & 32) {
+        c.rgb = max(c.rgb, 0.0) * ParamA;
+        c.rgb = CompressHighlights(c.rgb, ParamB);
     }
     if (Flags & 1) c.rgb = LinearToSrgb(c.rgb);
     c = saturate(c);

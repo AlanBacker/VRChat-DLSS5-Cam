@@ -63,9 +63,9 @@ bool Fonts::Build(Lang lang) {
     io.FontDefault = nullptr;
     m_ui = AddFamily(L"segoeui.ttf", lang, false);
     m_bold = AddFamily(L"segoeuib.ttf", lang, true);
-    ImFontConfig mono;
-    m_mono = nullptr;
-    TryAdd(io.Fonts, JoinPath(GetWindowsFontsDir(), L"consola.ttf"), mono, &m_mono);
+    // The monospace font carries translated text too (overlay, status bar, log), so it needs the
+    // same CJK and symbol fallbacks; a mono font without them renders every CJK glyph as '?'.
+    m_mono = AddFamily(L"consola.ttf", lang, false);
     if (!m_ui) { Log::Error("No UI font could be loaded"); return false; }
     io.FontDefault = m_ui;
     m_lang = lang;

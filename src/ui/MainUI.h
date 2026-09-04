@@ -21,6 +21,7 @@ struct UiFrameInfo {
     double                senderFps = 0.0;
     std::string           sourceFormat;
     bool                  sourceConnected = false;
+    bool                  sourceIsHdr = false;      // floating-point (linear HDR) Spout texture
     std::wstring          nrRuntimePath;      // effective path
     bool                  nrRuntimeExists = false;
     std::wstring          captureFolder;      // effective folder

@@ -224,6 +224,20 @@ void MainUI::SectionSource(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
     ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(ImGuiCol_TextDisabled));
     ImGui::TextWrapped("%s", TR(VrchatResHint));
     ImGui::PopStyleColor();
+    // HDR source controls: only meaningful for floating-point (scene-linear) Spout textures.
+    if (info.sourceIsHdr) {
+        ImGui::Spacing();
+        ImGui::TextUnformatted(TR(HdrSource));
+        ImGui::Indent(6.0f);
+        bool ch = false;
+        ch |= SliderReset(TR(PaperWhite), &s.hdrPaperWhite, 0.1f, 8.0f, 1.0f, "%.2f", TR(TipPaperWhite));
+        ch |= SliderReset(TR(HighlightCompression), &s.hdrHighlightCompression, 0.0f, 1.0f, 1.0f, "%.2f", TR(TipHighlightCompression));
+        if (ch) ev.settingsChanged = true;
+        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(ImGuiCol_TextDisabled));
+        ImGui::TextWrapped("%s", TR(HdrSourceHint));
+        ImGui::PopStyleColor();
+        ImGui::Unindent(6.0f);
+    }
     ImGui::Spacing();
 }
 
@@ -269,7 +283,7 @@ void MainUI::SectionNeural(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         m_runtimeEditing = ImGui::IsItemActive();
         if (ImGui::IsItemDeactivatedAfterEdit()) { s.nrDllPath = m_runtimeBuf; ev.reloadRuntime = true; ev.settingsChanged = true; }
         ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
-        if (ImGui::Button("...", ImVec2(btnW, 0))) ev.browseRuntime = true;
+        if (ImGui::Button("...##runtime", ImVec2(btnW, 0))) ev.browseRuntime = true;
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip)) ImGui::SetTooltip("%s", TR(Browse));
         ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
         ImGui::TextUnformatted(TR(RuntimePath));
@@ -419,7 +433,7 @@ void MainUI::SectionCapture(Settings& s, const UiFrameInfo& info, UiEvents& ev) 
         m_folderEditing = ImGui::IsItemActive();
         if (ImGui::IsItemDeactivatedAfterEdit()) { s.captureFolder = m_folderBuf; ev.settingsChanged = true; }
         ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
-        if (ImGui::Button("...", ImVec2(btnW, 0))) ev.browseFolder = true;
+        if (ImGui::Button("...##folder", ImVec2(btnW, 0))) ev.browseFolder = true;
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip)) ImGui::SetTooltip("%s", TR(Browse));
         ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
         if (ImGui::Button("\xE2\x86\x97", ImVec2(btnW, 0))) ev.openCaptureFolder = true;

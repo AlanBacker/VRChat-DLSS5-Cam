@@ -210,6 +210,13 @@ bool App::InitImGui() {
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
     io.IniFilename = nullptr;
     io.LogFilename = nullptr;
+#ifdef NDEBUG
+    // Keep ImGui's error recovery, but never surface "programmer error" tooltips or
+    // ID-conflict highlights to end users; they go to the debug log instead.
+    io.ConfigErrorRecoveryEnableAssert = false;
+    io.ConfigErrorRecoveryEnableTooltip = false;
+    io.ConfigDebugHighlightIdConflicts = false;
+#endif
     ApplyDpi(m_dpiScale);
 
     if (!ImGui_ImplWin32_Init(m_hwnd)) { Log::Error("ImGui_ImplWin32_Init failed"); return false; }
@@ -345,6 +352,11 @@ void App::Frame() {
     case DXGI_FORMAT_B8G8R8A8_UNORM: case DXGI_FORMAT_B8G8R8A8_UNORM_SRGB: info.sourceFormat = "BGRA8"; break;
     case DXGI_FORMAT_R8G8B8A8_UNORM: case DXGI_FORMAT_R8G8B8A8_UNORM_SRGB: info.sourceFormat = "RGBA8"; break;
     default: info.sourceFormat = StrPrintf("DXGI %u", (unsigned)m_spout.Format()); break;
+    }
+    {
+        const DXGI_FORMAT vf = m_spout.ViewFormat();
+        info.sourceIsHdr = info.sourceConnected &&
+            (vf == DXGI_FORMAT_R16G16B16A16_FLOAT || vf == DXGI_FORMAT_R32G32B32A32_FLOAT || vf == DXGI_FORMAT_R11G11B10_FLOAT);
     }
     info.nrRuntimePath = EffectiveRuntimePath();
     info.nrRuntimeExists = FileExists(info.nrRuntimePath);

@@ -58,6 +58,7 @@ Tips
 
 | Section | Setting | Meaning |
 |---|---|---|
+| Source | Paper white / Highlight compression | Shown only for floating-point (linear HDR) Spout textures: exposure reference and soft highlight roll-off applied before the SDR neural pass. |
 | DLSS 5 | Preset | Hint render preset passed to DLSSNR (0–3). |
 | DLSS 5 | Style | `DLSSNR.Style`: default / natural / cinematic. |
 | DLSS 5 | Intensity | Overall strength of the neural pass. |

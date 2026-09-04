@@ -74,6 +74,8 @@ bool Settings::Load(const std::wstring& path) {
     r.Get("nrLocalStructure", nrLocalStructure);
     r.Get("nrSkinStructure", nrSkinStructure);
     r.Get("nrAutoMask", nrAutoMask);
+    r.Get("hdrPaperWhite", hdrPaperWhite);
+    r.Get("hdrHighlightCompression", hdrHighlightCompression);
     r.Get("nrUiCorrection", nrUiCorrection);
     r.Get("nrUpscale", nrUpscale);
     r.Get("motionMode", motionMode);
@@ -131,6 +133,8 @@ bool Settings::Save(const std::wstring& path) const {
     w.Put("nrLocalStructure", nrLocalStructure);
     w.Put("nrSkinStructure", nrSkinStructure);
     w.Put("nrAutoMask", nrAutoMask);
+    w.Put("hdrPaperWhite", hdrPaperWhite);
+    w.Put("hdrHighlightCompression", hdrHighlightCompression);
     w.Put("nrUiCorrection", nrUiCorrection);
     w.Put("nrUpscale", nrUpscale);
     w.Put("motionMode", motionMode);
@@ -184,6 +188,8 @@ void Settings::Clamp() {
     nrLocalTone = std::clamp(nrLocalTone, 0.0f, 2.0f);
     nrLocalStructure = std::clamp(nrLocalStructure, 0.0f, 2.0f);
     nrSkinStructure = std::clamp(nrSkinStructure, -1.0f, 2.0f);
+    hdrPaperWhite = std::clamp(hdrPaperWhite, 0.1f, 8.0f);
+    hdrHighlightCompression = std::clamp(hdrHighlightCompression, 0.0f, 1.0f);
     motionMode = std::clamp(motionMode, 0, 2);
     depthMode = std::clamp(depthMode, 0, 2);
     searchRadius = std::clamp(searchRadius, 2, 12);

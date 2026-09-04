@@ -51,6 +51,12 @@ enum class Lang { English = 0, Chinese = 1, Japanese = 2, Korean = 3, Count = 4 
     X(SettingsReset,      "Settings restored to defaults", "设置已恢复默认", "設定を既定値に戻しました", "설정이 기본값으로 복원되었습니다") \
     X(Ok,                 "OK", "确定", "OK", "확인") \
     X(Cancel,             "Cancel", "取消", "キャンセル", "취소") \
+    X(HdrSource,          "HDR source (floating-point input)", "HDR 源（浮点输入）", "HDR ソース（浮動小数点入力）", "HDR 소스(부동소수점 입력)") \
+    X(PaperWhite,         "Paper white", "纸白（曝光基准）", "ペーパーホワイト", "페이퍼 화이트") \
+    X(TipPaperWhite,      "Scene value that maps to display white before the neural pass. Raise it to darken an over-bright HDR feed, lower it to brighten a dark one.", "神经渲染前映射到显示白的场景亮度值。调高可压暗过亮的 HDR 画面，调低可提亮偏暗的画面。", "ニューラルパスの前に表示白へ対応付けるシーン輝度値。明るすぎる HDR 映像は上げて暗く、暗い映像は下げて明るくします。", "뉴럴 패스 전에 디스플레이 화이트로 매핑되는 장면 밝기 값입니다. 너무 밝은 HDR 영상은 올려서 어둡게, 어두운 영상은 내려서 밝게 합니다.") \
+    X(HighlightCompression, "Highlight compression", "高光压缩", "ハイライト圧縮", "하이라이트 압축") \
+    X(TipHighlightCompression, "Soft roll-off for values above white instead of clipping them (0 = hard clip, 1 = full roll-off).", "对超过白点的亮度做柔和过渡而不是直接裁剪（0 = 硬裁剪，1 = 完全柔化）。", "白を超える値をクリップせず滑らかに丸めます（0 = ハードクリップ、1 = 完全なロールオフ）。", "화이트를 넘는 값을 잘라내지 않고 부드럽게 눌러 줍니다(0 = 하드 클립, 1 = 완전한 롤오프).") \
+    X(HdrSourceHint,      "The neural network works on SDR sRGB frames, so this floating-point source is tone-compressed to SDR here. 8-bit sources are used as-is.", "神经网络只处理 SDR sRGB 画面，因此当前浮点源会在此压缩为 SDR。8 位源按原样使用。", "ニューラルネットワークは SDR sRGB フレームを処理するため、この浮動小数点ソースはここで SDR にトーン圧縮されます。8 ビットソースはそのまま使われます。", "뉴럴 네트워크는 SDR sRGB 프레임을 처리하므로 이 부동소수점 소스는 여기서 SDR로 톤 압축됩니다. 8비트 소스는 그대로 사용됩니다.") \
     X(NoDisplay,          "No frame yet", "尚无画面", "まだフレームがありません", "아직 프레임이 없습니다") \
     X(Language,           "Language", "语言", "言語", "언어") \
     X(LangAuto,           "Auto (system)", "自动（跟随系统）", "自動（システム）", "자동(시스템)") \

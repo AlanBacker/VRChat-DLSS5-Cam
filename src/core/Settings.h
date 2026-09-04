@@ -22,6 +22,10 @@ struct Settings {
     int  customHeight = 1080;
     bool keepAspect   = true;
 
+    // HDR source (only used when the Spout texture is a floating-point / linear HDR format)
+    float hdrPaperWhite = 1.0f;           // scene value mapped to display white, 0.1..8
+    float hdrHighlightCompression = 1.0f; // 0 = hard clip above white, 1 = full soft roll-off
+
     // DLSS 5 neural rendering (DLSSNR)
     bool        nrEnabled = true;
     int         nrRoute = RouteSignedSnippet;
