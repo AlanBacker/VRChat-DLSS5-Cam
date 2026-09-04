@@ -72,6 +72,7 @@ VRChat DLSS5 Cam 会捕获 VRChat 内置相机（Stream 相机并开启 *Spout S
 - **“等待 Spout 发送端”** —— 请在 VRChat 的 Stream 相机中开启 *Spout Stream*，且相机必须处于打开状态。其他 Spout 发送端会列在 *发送端* 下拉框中。
 - **“未找到 nvngx_dlssnr.dll”** —— 把运行库复制到程序目录或选择其路径。
 - **NGX 未初始化 / DLAA 不支持** —— NGX 运行库需要 NVIDIA 显卡和较新的驱动。DLSSNR 仍可通过 *签名片段* 路径工作。
+- **程序打不开 / 一闪就退出** —— 打开 `%LOCALAPPDATA%\VRChatDLSS5Cam\`，查看 `log.txt`（最后一行就是失败的步骤）和 `crash.txt`（进程崩溃时写入）。提交 Issue 时请附上这两个文件。
 - **神经渲染失败** —— 某些运行库版本需要更新的驱动；请查看 `log.txt` 中的 NGX 结果码。可尝试 *预设* 0 和 *NGX 核心* 路径。
 - **帧率低** —— 关闭 DLAA、降低搜索半径，或改用 NVIDIA Optical Flow 生成运动矢量。
 

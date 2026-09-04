@@ -26,7 +26,7 @@ void WriteV(LogLevel level, const char* fmt, va_list args) {
 
     std::lock_guard<std::mutex> lock(g_mutex);
     if (g_file) {
-        fprintf(g_file, "[%s] %s %s\n", time.c_str(), tag, text.c_str());
+        fprintf(g_file, "[%s] %s %s\r\n", time.c_str(), tag, text.c_str());
         fflush(g_file);
     }
     const std::string dbg = "[VRChatDLSS5Cam] " + std::string(tag) + " " + text + "\n";
@@ -42,7 +42,15 @@ void Init(const std::wstring& filePath) {
     std::lock_guard<std::mutex> lock(g_mutex);
     g_path = filePath;
     if (g_file) fclose(g_file);
-    g_file = _wfsopen(filePath.c_str(), L"w, ccs=UTF-8", _SH_DENYNO);
+    // Binary mode on purpose: opening with "ccs=UTF-8" switches the stream to
+    // the CRT's Unicode text mode, where narrow fprintf() is an invalid
+    // parameter and the release runtime terminates the process silently.
+    g_file = _wfsopen(filePath.c_str(), L"wb", _SH_DENYNO);
+    if (g_file) {
+        static const unsigned char kBom[3] = { 0xEF, 0xBB, 0xBF };
+        fwrite(kBom, 1, sizeof(kBom), g_file);
+        fflush(g_file);
+    }
 }
 
 void Shutdown() {

@@ -86,16 +86,21 @@ bool App::Init(HINSTANCE hInstance, int nCmdShow) {
     Log::Info("VRChat DLSS5 Cam %s starting", APP_VERSION_STRING);
     Log::Info("Executable folder: %s", WideToUtf8(m_exeDir).c_str());
 
+    Log::Info("Settings file: %s", WideToUtf8(m_settingsPath).c_str());
     m_settings.Load(m_settingsPath);
     m_settings.Clamp();
     I18n::SetLanguage(I18n::FromSetting(m_settings.language));
+    Log::Info("Language: %s", I18n::LanguageName(I18n::Current()));
 
     const HRESULT hrCo = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
     if (FAILED(hrCo)) Log::Hr(LogLevel::Warn, "CoInitializeEx", hrCo);
 
+    Log::Info("Creating main window");
     if (!CreateMainWindow(hInstance, nCmdShow)) return false;
+    Log::Info("Main window created (DPI scale %.2f)", m_dpiScale);
 
     std::wstring err;
+    Log::Info("Initialising Direct3D 12");
     if (!m_device.Init(m_hwnd, m_settings.debugLayer, err)) {
         Log::Error("Device init failed: %s", WideToUtf8(err).c_str());
         MessageBoxW(m_hwnd, (Utf8ToWide(TR(InitFailed)) + L"\n\n" + err).c_str(), L"VRChat DLSS5 Cam", MB_ICONERROR | MB_OK);
@@ -107,11 +112,13 @@ bool App::Init(HINSTANCE hInstance, int nCmdShow) {
               (unsigned long long)(ai.dedicatedVideoMemory >> 20),
               WideToUtf8(ai.nvidiaDriverVersion.empty() ? ai.driverVersion : ai.nvidiaDriverVersion).c_str());
 
+    Log::Info("Initialising render pipeline");
     if (!m_pipeline.Init(m_device, m_exeDir, m_appDataDir, err)) {
         Log::Error("Pipeline init failed: %s", WideToUtf8(err).c_str());
         MessageBoxW(m_hwnd, (Utf8ToWide(TR(InitFailed)) + L"\n\n" + err).c_str(), L"VRChat DLSS5 Cam", MB_ICONERROR | MB_OK);
         return false;
     }
+    Log::Info("Initialising Spout receiver");
     if (!m_spout.Init(m_device)) {
         Log::Error("Spout receiver init failed");
         MessageBoxW(m_hwnd, (Utf8ToWide(TR(InitFailed)) + L"\n\nSpout").c_str(), L"VRChat DLSS5 Cam", MB_ICONERROR | MB_OK);
@@ -120,13 +127,34 @@ bool App::Init(HINSTANCE hInstance, int nCmdShow) {
     m_spout.SetRequestedSender(m_settings.senderName);
     if (!m_capture.Init()) Log::Warn("Capture worker failed to start; photo capture is unavailable");
 
+    Log::Info("Initialising UI");
     if (!InitImGui()) return false;
     RegisterHotkey();
     LoadRuntime(false);
+    Log::Info("Startup complete");
 
     m_lastFrameTime = NowSeconds();
     m_lastTimelapse = m_lastFrameTime;
     return true;
+}
+
+// GetDpiForSystem only exists on Windows 10 1607+, so resolve it at run time
+// instead of importing it statically (a missing import kills the process in the
+// loader before any of our code runs).
+static float SystemDpiScale() {
+    typedef UINT(WINAPI * PFN_GetDpiForSystem)(void);
+    if (HMODULE user32 = GetModuleHandleW(L"user32.dll")) {
+        if (auto fn = (PFN_GetDpiForSystem)GetProcAddress(user32, "GetDpiForSystem")) {
+            const UINT dpi = fn();
+            if (dpi > 0) return (float)dpi / 96.0f;
+        }
+    }
+    float scale = 1.0f;
+    if (HDC dc = GetDC(nullptr)) {
+        scale = (float)GetDeviceCaps(dc, LOGPIXELSX) / 96.0f;
+        ReleaseDC(nullptr, dc);
+    }
+    return scale > 0.0f ? scale : 1.0f;
 }
 
 bool App::CreateMainWindow(HINSTANCE hInstance, int nCmdShow) {
@@ -155,7 +183,7 @@ bool App::CreateMainWindow(HINSTANCE hInstance, int nCmdShow) {
     if (!restored) {
         RECT work{};
         SystemParametersInfoW(SPI_GETWORKAREA, 0, &work, 0);
-        const float scale = (float)GetDpiForSystem() / 96.0f;
+        const float scale = SystemDpiScale();
         w = std::min((int)(w * scale), (int)(work.right - work.left));
         h = std::min((int)(h * scale), (int)(work.bottom - work.top));
         x = work.left + ((work.right - work.left) - w) / 2;

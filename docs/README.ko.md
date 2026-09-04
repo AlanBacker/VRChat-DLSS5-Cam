@@ -76,6 +76,7 @@ VRChat DLSS5 Cam은 VRChat 내장 카메라(*Spout Stream*을 켠 Stream 카메�
 - **"Spout 송신자 대기 중"** – VRChat의 Stream 카메라에서 *Spout Stream*을 켜고 카메라를 연 상태로 두세요. 다른 Spout 송신자는 *송신자* 콤보에 표시됩니다.
 - **"nvngx_dlssnr.dll을 찾을 수 없습니다"** – 런타임을 실행 파일 옆에 복사하거나 경로를 선택하세요.
 - **NGX 초기화 안 됨 / DLAA 지원 안 됨** – NGX 런타임에는 NVIDIA GPU와 최신 드라이버가 필요합니다. DLSSNR은 *서명된 스니펫* 경로로 계속 동작합니다.
+- **앱이 시작되지 않음 / 바로 종료됨** – `%LOCALAPPDATA%\VRChatDLSS5Cam\`를 열어 `log.txt`(마지막 줄이 실패한 단계)와 `crash.txt`(크래시 시 기록됨)를 확인하세요. 이슈에는 두 파일을 모두 첨부해 주세요.
 - **뉴럴 렌더링 실패** – 일부 런타임 빌드는 더 새로운 드라이버가 필요합니다. `log.txt`의 NGX 결과 코드를 확인하고 *프리셋* 0과 *NGX 코어* 경로를 시도해 보세요.
 - **낮은 프레임률** – DLAA를 끄거나 검색 반경을 줄이거나 모션 벡터에 NVIDIA Optical Flow를 선택하세요.
 

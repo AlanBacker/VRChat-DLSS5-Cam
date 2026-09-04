@@ -79,6 +79,7 @@ Settings are stored in `%LOCALAPPDATA%\VRChatDLSS5Cam\settings.ini`; the log is 
 - **"Waiting for Spout sender"** – enable *Spout Stream* on VRChat's Stream camera; the camera must be open. Other Spout senders are listed in the *Sender* combo.
 - **"nvngx_dlssnr.dll not found"** – copy the runtime next to the executable or select its path.
 - **NGX not initialized / DLAA unsupported** – the NGX runtime needs an NVIDIA GPU and a current driver. DLSSNR still works through the *Signed snippet* route.
+- **The app does not start / closes immediately** – open `%LOCALAPPDATA%\VRChatDLSS5Cam\` and check `log.txt` (its last line is the step that failed) and `crash.txt` (written whenever the process crashes). Attach both files to an issue.
 - **Neural rendering failed** – some runtime builds need a newer driver; check `log.txt` for the NGX result code. Try *Preset* 0 and the *NGX core* route.
 - **Low frame rate** – disable DLAA, lower the search radius, or choose NVIDIA Optical Flow for motion vectors.
 
