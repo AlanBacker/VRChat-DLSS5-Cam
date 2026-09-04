@@ -77,6 +77,7 @@ VRChat DLSS5 Cam 会捕获 VRChat 内置相机（Stream 相机并开启 *Spout S
 - **程序打不开 / 一闪就退出** —— 打开 `%LOCALAPPDATA%\VRChatDLSS5Cam\`，查看 `log.txt`（最后一行就是失败的步骤）和 `crash.txt`（进程崩溃时写入）。提交 Issue 时请附上这两个文件。
 - **神经渲染失败** —— 某些运行库版本需要更新的驱动；请查看 `log.txt` 中的 NGX 结果码。可尝试 *预设* 0 和 *NGX 核心* 路径。
 - **深度估计器不可用** —— `onnxruntime.dll`、`onnxruntime_providers_shared.dll`、`DirectML.dll` 和 `models\depth_anything_v2_small_fp16.onnx` 必须放在程序目录下（发布包里都有）。估计器就绪之前程序会回退到零深度，状态显示在 *帧引导* 一栏。
+- **光流不可用** —— NVIDIA Optical Flow 在程序自建的原生 D3D11 设备上运行（驱动会拒绝 D3D11On12 层，这正是 0.2.0 里 “UNSUPPORTED_DEVICE” 错误的原因）。若 `log.txt` 出现 "NVOF unavailable, falling back to block matching"，请更新 GeForce 驱动；在此之前程序会自动改用块匹配。*帧引导* 一栏的状态点会显示当前使用的来源。
 - **帧率低** —— 关闭 DLAA、增大深度更新间隔或降低深度网络分辨率、降低搜索半径，或改用 NVIDIA Optical Flow 生成运动矢量。
 
 ## 从源码构建
@@ -109,6 +110,7 @@ VRChat Stream 相机 ──Spout──▶ D3D11on12 接收 ──▶ 转换（sR
 引导方案针对视频输入设计：同分辨率 SDR 输入；硬件光流，并在正反向矢量不一致处降低置信度；
 用 Depth Anything V2 估计单目深度，按 2%/98% 分位数归一化为反向相对深度，推理间隔期间用运动矢量搬运；不做逐帧历史重置。
 全部为独立的 MIT 实现（`src/gfx/Pipeline.cpp`、`src/gfx/DepthEstimator.cpp`、`src/gfx/Shaders.cpp`）。
+光流引擎运行在程序自建的原生 D3D11 设备上，帧与矢量通过 NT 句柄共享纹理在 D3D11/D3D12 之间传递，并由共享 fence 保证顺序（`src/gfx/NvOpticalFlow.cpp`）。
 
 ## 许可证
 

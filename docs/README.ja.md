@@ -81,6 +81,7 @@ VRChat DLSS5 Cam は、VRChat 内蔵カメラ（*Spout Stream* を有効にし�
 - **起動しない / すぐに終了する** – `%LOCALAPPDATA%\VRChatDLSS5Cam\` を開き、`log.txt`（最後の行が失敗したステップ）と `crash.txt`（クラッシュ時に書き込まれます）を確認してください。Issue には両方を添付してください。
 - **ニューラルレンダリングに失敗** – 一部のランタイムビルドは新しいドライバーを必要とします。`log.txt` の NGX 結果コードを確認し、*プリセット* 0 や *NGX コア* ルートを試してください。
 - **深度推定が利用不可** – `onnxruntime.dll`、`onnxruntime_providers_shared.dll`、`DirectML.dll`、`models\depth_anything_v2_small_fp16.onnx` を実行ファイルの隣に置いてください（いずれもリリースパッケージに含まれます）。推定器の準備が整うまではゼロ深度にフォールバックし、状態は *フレームガイダンス* に表示されます。
+- **オプティカルフローが使えない** – NVIDIA Optical Flow はアプリ専用のネイティブ D3D11 デバイス上で動作します（ドライバーは D3D11On12 レイヤーを拒否し、これが 0.2.0 の「UNSUPPORTED_DEVICE」エラーの原因でした）。`log.txt` に "NVOF unavailable, falling back to block matching" と出る場合は GeForce ドライバーを更新してください。それまではブロックマッチングが自動的に使われます。*フレームガイダンス* の状態ドットに現在のソースが表示されます。
 - **フレームレートが低い** – DLAA を無効にする、深度更新間隔を大きくするか深度ネットワーク解像度を下げる、探索半径を下げる、モーションベクトルに NVIDIA Optical Flow を選ぶ。
 
 ## ソースからのビルド
@@ -116,6 +117,7 @@ DLL を直接読み込み、モジュール名チェックを満たし、`DLSSNR
 信頼度を下げるハードウェアオプティカルフロー、Depth Anything V2 による単眼深度を 2/98 パーセンタイルで反転相対深度に正規化し
 推論の合間はモーションベクトルで移動、フレームごとの履歴リセットなし。
 すべて独立した MIT 実装です（`src/gfx/Pipeline.cpp`、`src/gfx/DepthEstimator.cpp`、`src/gfx/Shaders.cpp`）。
+オプティカルフローエンジンはアプリ専用のネイティブ D3D11 デバイス上で動作し、フレームとベクトルは NT ハンドル共有テクスチャで D3D12 と受け渡しされ、共有フェンスで順序付けられます（`src/gfx/NvOpticalFlow.cpp`）。
 
 ## ライセンス
 

@@ -72,6 +72,21 @@ void Pipeline::ReleaseTex(Device& device, Tex& t) {
     t.w = t.h = 0; t.fmt = DXGI_FORMAT_UNKNOWN; t.state = D3D12_RESOURCE_STATE_COMMON;
 }
 
+bool Pipeline::WrapShared(Device& device, Tex& t, ID3D12Resource* res, UINT w, UINT h, DXGI_FORMAT fmt, const wchar_t* name) {
+    ReleaseTex(device, t);
+    if (!res) return false;
+    t.res = res;
+    t.res->SetName(name);
+    t.w = w; t.h = h; t.fmt = fmt; t.state = D3D12_RESOURCE_STATE_COMMON;
+    t.srv = device.AllocStaging();
+    D3D12_SHADER_RESOURCE_VIEW_DESC sd{};
+    sd.Format = fmt; sd.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+    sd.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    sd.Texture2D.MipLevels = 1;
+    device.D3D12()->CreateShaderResourceView(t.res.Get(), &sd, t.srv);
+    return true;
+}
+
 void Pipeline::Transition(ID3D12GraphicsCommandList* cmd, Tex& t, D3D12_RESOURCE_STATES state) {
     if (!t.res) return;
     if (t.state == state) {
@@ -93,10 +108,10 @@ void Pipeline::ReleaseFeatures(Device& device) {
 void Pipeline::ReleaseResources(Device& device) {
     device.WaitIdle();
     ReleaseFeatures(device);
+    ReleaseTex(device, m_nvofShared);
+    ReleaseTex(device, m_flow); ReleaseTex(device, m_cost);
+    ReleaseTex(device, m_flowBack); ReleaseTex(device, m_costBack);
     m_nvof.Shutdown();
-    for (auto& t : m_nvofSrc11) t.Reset();
-    m_flow11.Reset(); m_cost11.Reset();
-    m_flowBack11.Reset(); m_costBack11.Reset();
     m_nvofReady = false;
     ReleaseDepthResources(device);
     ReleaseTex(device, m_color8);
@@ -104,8 +119,6 @@ void Pipeline::ReleaseResources(Device& device) {
     ReleaseTex(device, m_nvofIn);
     for (int i = 0; i < 3; ++i) { ReleaseTex(device, m_bm[i]); ReleaseTex(device, m_bc[i]); }
     for (auto& t : m_bmMed) ReleaseTex(device, t);
-    ReleaseTex(device, m_flow); ReleaseTex(device, m_cost);
-    ReleaseTex(device, m_flowBack); ReleaseTex(device, m_costBack);
     ReleaseTex(device, m_mv); ReleaseTex(device, m_conf); ReleaseTex(device, m_depth);
     ReleaseTex(device, m_dlaaOut); ReleaseTex(device, m_nrOut);
     ReleaseTex(device, m_final); ReleaseTex(device, m_display);
@@ -267,19 +280,20 @@ bool Pipeline::Rebuild(Device& device, const Config& cfg) {
         }
     }
 
-    // Optical flow session (prefers 8-bit luma input, falls back to BGRA8).
+    // Optical flow session on its own native D3D11 device. BGRA8 input written by the convert pass is preferred (the
+    // engine's native colour format); the 8-bit luma pyramid level is the fallback. Results arrive through shared textures.
     m_nvofReady = false;
     m_nvofError.clear();
     m_nvofFmt = DXGI_FORMAT_UNKNOWN;
     if (cfg.nvof) {
         std::string err;
-        if (m_nvof.Init(device, m_inW, m_inH, DXGI_FORMAT_R8_UNORM, cfg.nvofGrid, cfg.nvofPerf, cfg.nvofBidir, err)) {
-            m_nvofFmt = DXGI_FORMAT_R8_UNORM;
+        const bool bgraOk = device.TypedUavStoreSupported(DXGI_FORMAT_B8G8R8A8_UNORM);
+        if (bgraOk && m_nvof.Init(device, m_inW, m_inH, DXGI_FORMAT_B8G8R8A8_UNORM, cfg.nvofGrid, cfg.nvofPerf, cfg.nvofBidir, err)) {
+            m_nvofFmt = DXGI_FORMAT_B8G8R8A8_UNORM;
         } else {
-            Log::Warn("NVOF: R8 input rejected (%s), trying BGRA8", err.c_str());
-            if (device.TypedUavStoreSupported(DXGI_FORMAT_B8G8R8A8_UNORM) &&
-                m_nvof.Init(device, m_inW, m_inH, DXGI_FORMAT_B8G8R8A8_UNORM, cfg.nvofGrid, cfg.nvofPerf, cfg.nvofBidir, err)) {
-                m_nvofFmt = DXGI_FORMAT_B8G8R8A8_UNORM;
+            if (bgraOk) Log::Warn("NVOF: BGRA8 input rejected (%s), trying R8 luma", err.c_str());
+            if (m_nvof.Init(device, m_inW, m_inH, DXGI_FORMAT_R8_UNORM, cfg.nvofGrid, cfg.nvofPerf, cfg.nvofBidir, err)) {
+                m_nvofFmt = DXGI_FORMAT_R8_UNORM;
             } else {
                 m_nvofError = err;
             }
@@ -288,45 +302,27 @@ bool Pipeline::Rebuild(Device& device, const Config& cfg) {
             bool nvofOk = true;
             if (m_nvofFmt == DXGI_FORMAT_B8G8R8A8_UNORM)
                 nvofOk &= CreateTex(device, m_nvofIn, m_inW, m_inH, DXGI_FORMAT_B8G8R8A8_UNORM, true, L"nvofIn");
-            nvofOk &= CreateTex(device, m_flow, m_nvof.FlowWidth(), m_nvof.FlowHeight(), DXGI_FORMAT_R16G16_SINT, false, L"nvofFlow");
-            if (m_nvof.HasCost()) nvofOk &= CreateTex(device, m_cost, m_nvof.FlowWidth(), m_nvof.FlowHeight(), DXGI_FORMAT_R8_UINT, false, L"nvofCost");
-            D3D11_RESOURCE_FLAGS f11{};
-            f11.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-            const D3D12_RESOURCE_STATES st = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
-            auto wrap = [&](Tex& t, ComPtr<ID3D11Texture2D>& out) {
-                if (!t.res) return false;
-                const HRESULT hr = device.On12()->CreateWrappedResource(t.res.Get(), &f11, st, st, IID_PPV_ARGS(&out));
-                if (FAILED(hr)) { Log::Hr(LogLevel::Error, "CreateWrappedResource(nvof)", hr); return false; }
-                return true;
-            };
-            if (m_nvofFmt == DXGI_FORMAT_R8_UNORM) {
-                nvofOk &= wrap(m_luma[0][0], m_nvofSrc11[0]);
-                nvofOk &= wrap(m_luma[1][0], m_nvofSrc11[1]);
-            } else {
-                nvofOk &= wrap(m_nvofIn, m_nvofSrc11[0]);
-                m_nvofSrc11[1] = m_nvofSrc11[0];
-            }
-            nvofOk &= wrap(m_flow, m_flow11);
-            if (m_nvof.HasCost()) nvofOk &= wrap(m_cost, m_cost11);
+            const UINT fw = m_nvof.FlowWidth(), fh = m_nvof.FlowHeight();
+            nvofOk &= WrapShared(device, m_nvofShared, m_nvof.Input12(), m_inW, m_inH, m_nvofFmt, L"nvofSharedInput");
+            nvofOk &= WrapShared(device, m_flow, m_nvof.Flow12(), fw, fh, DXGI_FORMAT_R16G16_SINT, L"nvofFlow");
+            if (m_nvof.HasCost()) nvofOk &= WrapShared(device, m_cost, m_nvof.Cost12(), fw, fh, DXGI_FORMAT_R8_UINT, L"nvofCost");
             if (m_nvof.Bidirectional()) {
-                nvofOk &= CreateTex(device, m_flowBack, m_nvof.FlowWidth(), m_nvof.FlowHeight(), DXGI_FORMAT_R16G16_SINT, false, L"nvofFlowBack");
-                nvofOk &= wrap(m_flowBack, m_flowBack11);
-                if (m_nvof.HasCost()) {
-                    nvofOk &= CreateTex(device, m_costBack, m_nvof.FlowWidth(), m_nvof.FlowHeight(), DXGI_FORMAT_R8_UINT, false, L"nvofCostBack");
-                    nvofOk &= wrap(m_costBack, m_costBack11);
-                }
+                nvofOk &= WrapShared(device, m_flowBack, m_nvof.FlowBack12(), fw, fh, DXGI_FORMAT_R16G16_SINT, L"nvofFlowBack");
+                if (m_nvof.HasCost()) nvofOk &= WrapShared(device, m_costBack, m_nvof.CostBack12(), fw, fh, DXGI_FORMAT_R8_UINT, L"nvofCostBack");
             }
             if (nvofOk) {
                 m_nvofReady = true;
             } else {
-                m_nvofError = "failed to create optical flow interop resources";
+                m_nvofError = "failed to create optical flow interop views";
+                ReleaseTex(device, m_nvofShared);
+                ReleaseTex(device, m_flow); ReleaseTex(device, m_cost);
+                ReleaseTex(device, m_flowBack); ReleaseTex(device, m_costBack);
                 m_nvof.Shutdown();
-                for (auto& t : m_nvofSrc11) t.Reset();
-                m_flow11.Reset(); m_cost11.Reset();
-                m_flowBack11.Reset(); m_costBack11.Reset();
             }
         }
         if (!m_nvofReady) Log::Warn("NVOF unavailable, falling back to block matching: %s", m_nvofError.c_str());
+    } else {
+        m_nvof.Shutdown();
     }
 
     // Estimated depth (Depth Anything V2 through ONNX Runtime). Failure is non-fatal: zero depth is used instead.
@@ -488,41 +484,29 @@ void Pipeline::RunGuidance(Device& device, ID3D12GraphicsCommandList* cmd, const
     }
 }
 
-bool Pipeline::RunOpticalFlow(Device& device, ID3D12GraphicsCommandList*& cmd) {
+bool Pipeline::RunOpticalFlow(Device& device, ID3D12GraphicsCommandList*& cmd, bool resetHints) {
     if (!m_nvofReady) return false;
-    const int cur = m_cur;
-    Tex& src = (m_nvofFmt == DXGI_FORMAT_R8_UNORM) ? m_luma[cur][0] : m_nvofIn;
-    Transition(cmd, src, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
-    Transition(cmd, m_flow, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
-    if (m_cost.Valid()) Transition(cmd, m_cost, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
-    if (m_flowBack.Valid()) Transition(cmd, m_flowBack, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
-    if (m_costBack.Valid()) Transition(cmd, m_costBack, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    // Hand the current frame to the optical flow device. The shared textures rest in COMMON whenever the D3D11 side owns them,
+    // so every D3D12 access is bracketed by explicit transitions inside one command list.
+    Tex& src = (m_nvofFmt == DXGI_FORMAT_R8_UNORM) ? m_luma[m_cur][0] : m_nvofIn;
+    Transition(cmd, src, D3D12_RESOURCE_STATE_COPY_SOURCE);
+    Transition(cmd, m_nvofShared, D3D12_RESOURCE_STATE_COPY_DEST);
+    cmd->CopyResource(m_nvofShared.res.Get(), src.res.Get());
+    Transition(cmd, m_nvofShared, D3D12_RESOURCE_STATE_COMMON);
+    Transition(cmd, m_flow, D3D12_RESOURCE_STATE_COMMON);
+    Transition(cmd, m_cost, D3D12_RESOURCE_STATE_COMMON);
+    Transition(cmd, m_flowBack, D3D12_RESOURCE_STATE_COMMON);
+    Transition(cmd, m_costBack, D3D12_RESOURCE_STATE_COMMON);
     device.TimerBegin(cmd, GpuTimer::OpticalFlow);
     cmd = device.SubmitAndContinue();
 
-    ID3D11On12Device* on12 = device.On12();
-    ID3D11DeviceContext* ctx = device.Context11();
-    ID3D11Texture2D* src11 = (m_nvofFmt == DXGI_FORMAT_R8_UNORM) ? m_nvofSrc11[cur].Get() : m_nvofSrc11[0].Get();
-    ID3D11Resource* acquired[5] = { src11, m_flow11.Get() };
-    UINT count = 2;
-    if (m_cost11) acquired[count++] = m_cost11.Get();
-    if (m_flowBack11) acquired[count++] = m_flowBack11.Get();
-    if (m_costBack11) acquired[count++] = m_costBack11.Get();
-    on12->AcquireWrappedResources(acquired, count);
-    ctx->CopyResource(m_nvof.Input(cur), src11);
+    // Runs on the private D3D11 device, ordered behind the submission above and ahead of the next one by the shared fence.
     std::string err;
-    const bool ok = m_nvof.Execute(cur, err);
-    if (ok) {
-        ctx->CopyResource(m_flow11.Get(), m_nvof.FlowTexture());
-        if (m_cost11) ctx->CopyResource(m_cost11.Get(), m_nvof.CostTexture());
-        if (m_flowBack11) ctx->CopyResource(m_flowBack11.Get(), m_nvof.BackFlowTexture());
-        if (m_costBack11) ctx->CopyResource(m_costBack11.Get(), m_nvof.BackCostTexture());
-    } else {
+    const bool ok = m_nvof.Execute(device, resetHints, err);
+    if (!ok && !err.empty()) {
         m_nvofError = err;
         Log::Warn("NVOF execute failed: %s", err.c_str());
     }
-    on12->ReleaseWrappedResources(acquired, count);
-    ctx->Flush();
     device.TimerEnd(cmd, GpuTimer::OpticalFlow);
     return ok;
 }
@@ -545,6 +529,9 @@ void Pipeline::RunDensify(Device& device, ID3D12GraphicsCommandList* cmd, const 
         d.srv[0] = m_bmMed[m_cur].srv;
         d.srv[1] = m_bc[0].srv;
     } else if (mode == MotionNvOpticalFlow) {
+        Transition(cmd, m_flow, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+        Transition(cmd, m_cost, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+        Transition(cmd, m_flowBack, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
         d.constants.flags = 4;
         d.constants.intA = m_nvof.Grid();
         d.constants.srcWidth = m_nvof.FlowWidth(); d.constants.srcHeight = m_nvof.FlowHeight();
@@ -557,6 +544,12 @@ void Pipeline::RunDensify(Device& device, ID3D12GraphicsCommandList* cmd, const 
     d.uav[0] = m_mv.uav; d.uav[1] = m_conf.uav; d.uav[2] = m_depth.uav;
     d.groupsX = Shaders::Groups(m_inW, 8); d.groupsY = Shaders::Groups(m_inH, 8);
     m_shaders.Dispatch(cmd, device, d);
+    if (mode == MotionNvOpticalFlow) {
+        // Back to COMMON: the optical flow device writes these textures before the next submission.
+        Transition(cmd, m_flow, D3D12_RESOURCE_STATE_COMMON);
+        Transition(cmd, m_cost, D3D12_RESOURCE_STATE_COMMON);
+        Transition(cmd, m_flowBack, D3D12_RESOURCE_STATE_COMMON);
+    }
 }
 
 void Pipeline::RunStats(Device& device, ID3D12GraphicsCommandList* cmd) {
@@ -924,11 +917,11 @@ void Pipeline::Render(Device& device, SpoutReceiver& spout, const Settings& s, I
         }
         device.TimerEnd(cmd, GpuTimer::Guidance);
         if (m_haveHistory && !reset) {
-            if (motionMode == MotionNvOpticalFlow) densifyMode = RunOpticalFlow(device, cmd) ? MotionNvOpticalFlow : MotionZero;
+            if (motionMode == MotionNvOpticalFlow) densifyMode = RunOpticalFlow(device, cmd, false) ? MotionNvOpticalFlow : MotionZero;
             else if (motionMode == MotionCompute) densifyMode = MotionCompute;
         } else if (motionMode == MotionNvOpticalFlow) {
             // Prime the optical flow reference frame without using its result.
-            RunOpticalFlow(device, cmd);
+            RunOpticalFlow(device, cmd, true);
         }
         device.TimerBegin(cmd, GpuTimer::Guidance);
         RunDensify(device, cmd, s, densifyMode);

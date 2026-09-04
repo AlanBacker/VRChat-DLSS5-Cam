@@ -81,6 +81,7 @@ VRChat DLSS5 Cam은 VRChat 내장 카메라(*Spout Stream*을 켠 Stream 카메�
 - **앱이 시작되지 않음 / 바로 종료됨** – `%LOCALAPPDATA%\VRChatDLSS5Cam\`를 열어 `log.txt`(마지막 줄이 실패한 단계)와 `crash.txt`(크래시 시 기록됨)를 확인하세요. 이슈에는 두 파일을 모두 첨부해 주세요.
 - **뉴럴 렌더링 실패** – 일부 런타임 빌드는 더 새로운 드라이버가 필요합니다. `log.txt`의 NGX 결과 코드를 확인하고 *프리셋* 0과 *NGX 코어* 경로를 시도해 보세요.
 - **깊이 추정기 사용 불가** – `onnxruntime.dll`, `onnxruntime_providers_shared.dll`, `DirectML.dll`, `models\depth_anything_v2_small_fp16.onnx`가 실행 파일 옆에 있어야 합니다(모두 릴리스 패키지에 포함). 추정기가 준비될 때까지 앱은 0 깊이로 대체하며, 상태는 *프레임 가이던스*에 표시됩니다.
+- **옵티컬 플로우 사용 불가** – NVIDIA Optical Flow는 앱 전용 네이티브 D3D11 장치에서 실행됩니다(드라이버가 D3D11On12 레이어를 거부하며, 이것이 0.2.0의 "UNSUPPORTED_DEVICE" 오류의 원인이었습니다). `log.txt`에 "NVOF unavailable, falling back to block matching"이 보이면 GeForce 드라이버를 업데이트하세요. 그때까지는 블록 매칭이 자동으로 사용됩니다. *프레임 가이던스*의 상태 점이 현재 사용 중인 소스를 보여 줍니다.
 - **낮은 프레임률** – DLAA를 끄거나, 깊이 갱신 간격을 늘리거나 깊이 네트워크 해상도를 낮추거나, 검색 반경을 줄이거나, 모션 벡터에 NVIDIA Optical Flow를 선택하세요.
 
 ## 소스에서 빌드
@@ -116,6 +117,7 @@ VRChat Stream 카메라 ──Spout──▶ D3D11on12 수신 ──▶ 변환(s
 낮추는 하드웨어 옵티컬 플로우, Depth Anything V2의 단안 깊이를 2/98 백분위수로 반전 상대 깊이로 정규화하고 추론 사이에는
 모션 벡터로 이동, 프레임마다 이력을 초기화하지 않음. 모두 독립적인
 MIT 구현입니다(`src/gfx/Pipeline.cpp`, `src/gfx/DepthEstimator.cpp`, `src/gfx/Shaders.cpp`).
+옵티컬 플로우 엔진은 앱 전용 네이티브 D3D11 장치에서 실행되며, 프레임과 벡터는 NT 핸들 공유 텍스처로 D3D12와 주고받고 공유 펜스로 순서가 보장됩니다(`src/gfx/NvOpticalFlow.cpp`).
 
 ## 라이선스
 

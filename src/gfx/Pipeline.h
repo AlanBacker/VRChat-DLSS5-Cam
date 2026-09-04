@@ -116,6 +116,7 @@ private:
 
     bool CreateTex(Device& device, Tex& t, UINT w, UINT h, DXGI_FORMAT fmt, bool uav, const wchar_t* name);
     void ReleaseTex(Device& device, Tex& t);
+    bool WrapShared(Device& device, Tex& t, ID3D12Resource* res, UINT w, UINT h, DXGI_FORMAT fmt, const wchar_t* name);
     void Transition(ID3D12GraphicsCommandList* cmd, Tex& t, D3D12_RESOURCE_STATES state);
     bool Rebuild(Device& device, const Config& cfg);
     void ReleaseResources(Device& device);
@@ -127,7 +128,7 @@ private:
 
     void RunConvert(Device& device, ID3D12GraphicsCommandList* cmd, SpoutReceiver& spout, const Settings& s, bool writeNvof);
     void RunGuidance(Device& device, ID3D12GraphicsCommandList* cmd, const Settings& s, int motionMode, bool haveHistory);
-    bool RunOpticalFlow(Device& device, ID3D12GraphicsCommandList*& cmd);
+    bool RunOpticalFlow(Device& device, ID3D12GraphicsCommandList*& cmd, bool resetHints);
     void RunDensify(Device& device, ID3D12GraphicsCommandList* cmd, const Settings& s, int mode);
     void RunStats(Device& device, ID3D12GraphicsCommandList* cmd);
     void ReadStats(Device& device);
@@ -154,10 +155,10 @@ private:
 
     Tex m_color8;               // RGBA8 input colour (sRGB encoded)
     Tex m_luma[2][3];           // R8 luma pyramid, ping-pong by frame parity
-    Tex m_nvofIn;               // BGRA8 optical-flow input (only when R8 input is rejected)
+    Tex m_nvofIn;               // BGRA8 optical-flow input written by the convert pass (R8 luma is the fallback)
     Tex m_bm[3], m_bc[3];       // block motion / cost per level
     Tex m_bmMed[2];             // median-filtered level-0 motion, ping-pong
-    Tex m_flow, m_cost;         // NVOF results (D3D12 side)
+    Tex m_flow, m_cost;         // NVOF results (D3D12 views of the shared textures)
     Tex m_flowBack, m_costBack; // NVOF backward pass (previous -> current)
     Tex m_mv, m_conf, m_depth;  // dense guidance
     Tex m_depthHist[2];         // temporally filtered depth, ping-pong by frame parity
@@ -170,8 +171,7 @@ private:
     bool                        m_statsPending[Device::kFramesInFlight] = {};
     DescriptorPair              m_displayStatic;
 
-    ComPtr<ID3D11Texture2D> m_nvofSrc11[2];
-    ComPtr<ID3D11Texture2D> m_flow11, m_cost11, m_flowBack11, m_costBack11;
+    Tex                     m_nvofShared;       // shared input texture owned by the optical flow device (D3D12 view)
     DXGI_FORMAT             m_nvofFmt = DXGI_FORMAT_UNKNOWN;
     bool                    m_nvofReady = false;
     std::string             m_nvofError;
