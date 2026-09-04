@@ -65,15 +65,16 @@ set(APP_SOURCES
   src/ui/Fonts.cpp
   src/ui/MainUI.cpp)
 
-add_executable(VRChatDLSS5Cam WIN32 ${APP_SOURCES} resources/app.rc)
+# The .manifest source is merged by CMake into the linker-generated manifest (per-monitor DPI, UTF-8 code page).
+add_executable(VRChatDLSS5Cam WIN32 ${APP_SOURCES} resources/app.rc resources/app.manifest)
 target_include_directories(VRChatDLSS5Cam PRIVATE src ${NGX_INCLUDE_DIR})
 target_compile_definitions(VRChatDLSS5Cam PRIVATE
-  UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX
+  UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX _CRT_SECURE_NO_WARNINGS
   APP_VERSION_STRING="${PROJECT_VERSION}"
   APP_VERSION_MAJOR=${PROJECT_VERSION_MAJOR}
   APP_VERSION_MINOR=${PROJECT_VERSION_MINOR}
   APP_VERSION_PATCH=${PROJECT_VERSION_PATCH})
-target_compile_options(VRChatDLSS5Cam PRIVATE /W4 /MP /utf-8 /permissive- /EHsc /wd4100 /wd4201)
+target_compile_options(VRChatDLSS5Cam PRIVATE /W4 /MP /utf-8 /permissive- /EHsc /wd4100 /wd4201 /wd4324)
 target_link_libraries(VRChatDLSS5Cam PRIVATE
   imgui spout ${NGX_STATIC_LIB}
   d3d12 d3d11 dxgi d3dcompiler dxguid windowscodecs

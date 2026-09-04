@@ -6,6 +6,7 @@
 #include "imgui_internal.h"
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 
 namespace vdc::ui {
@@ -32,10 +33,7 @@ std::string FormatMs(double ms) { return StrPrintf("%.2f ms", ms); }
 
 void SyncBuffer(char* buf, size_t size, const std::string& value, bool editing) {
     if (editing) return;
-    if (std::strncmp(buf, value.c_str(), size) != 0) {
-        std::strncpy(buf, value.c_str(), size - 1);
-        buf[size - 1] = '\0';
-    }
+    if (std::strncmp(buf, value.c_str(), size) != 0) std::snprintf(buf, size, "%s", value.c_str());
 }
 
 bool ComboIds(const char* label, int* value, const char* const* items, int count, const char* tooltip = nullptr) {
