@@ -15,15 +15,16 @@ VRChat DLSS5 Cam은 VRChat 내장 카메라(*Spout Stream*을 켠 Stream 카메�
 
 ## 기능
 
-- DLSS 5 처리 후의 VRChat 카메라 화면을 **실시간 미리보기**. 와이프 비교, 원본, 모션 벡터 보기 지원.
+- DLSS 5 처리 후의 VRChat 카메라 화면을 **실시간 미리보기**. 와이프 비교, 원본, 모션 벡터, 깊이 보기 지원.
 - `nvngx_dlssnr.dll`을 직접 호스팅하는 **DLSS 5 뉴럴 렌더링**. RenoDX의 DLSS 5 ReShade 애드온과 같은 파라미터
   (프리셋, 스타일, 강도, 전역 톤, 지역 톤, 지역 구조, 피부 구조, 자동 마스크, UI 보정)를 제공합니다.
   변경 사항은 즉시 적용되며 정지된 프레임에서도 조정할 수 있습니다.
-- **프레임 가이던스.** DLSSNR은 시간적 모델이므로 모션 벡터와 깊이가 필요합니다. 앱은 GPU에서(계층적 블록 매칭)
-  이를 계산하거나, 사용 가능하면 **NVIDIA Optical Flow** 하드웨어 엔진을 사용하고, 뉴럴 렌더링 전에
+- **프레임 가이던스.** DLSSNR은 시간적 모델이므로 모션 벡터와 깊이가 필요합니다.
+  정방향/역방향 일관성 검사가 있는 **NVIDIA Optical Flow** 모션 벡터와 **Depth Anything V2**가 GPU에서 추정한
+  깊이 맵(ONNX Runtime + DirectML)을 전달합니다. GPU 블록 매칭과 대체 깊이는 폴백으로 남아 있으며, 뉴럴 렌더링 전에
   **DLAA**(네이티브 해상도 DLSS 안티앨리어싱) 패스를 추가할 수 있습니다.
 - **적응형 해상도.** 송신자 해상도를 자동 감지합니다. 사용자 지정 출력 해상도를 설정할 수 있으며 DLSS 5가 직접 업스케일하도록 할 수 있습니다.
-  장면 전환을 감지하여 시간 이력을 재설정합니다.
+  선택적으로 장면 전환을 감지하여 시간 이력을 재설정할 수 있습니다.
 - **무손실 촬영.** 처리된 프레임(선택적으로 원본도)을 PNG로 저장. VRChat이 전면에 있어도 동작하는 전역 단축키
   (기본 `Ctrl+Alt+P`)와 타임랩스 모드 지원.
 - **4개 언어**(English, 简体中文, 日本語, 한국어), Windows UI 언어에 따라 자동 선택.
@@ -63,9 +64,9 @@ VRChat DLSS5 Cam은 VRChat 내장 카메라(*Spout Stream*을 켠 Stream 카메�
 | DLSS 5 | 지역 구조 / 피부 구조 | 디테일 강조. 피부 구조는 런타임 기본값으로 둘 수 있습니다. |
 | DLSS 5 | 자동 마스크 / UI 보정 | 자동 피사체 마스크, UI 안전 처리. |
 | DLSS 5 | 경로 | *서명된 스니펫*: `nvngx_dlssnr.dll`을 직접 호스팅. *NGX 코어*: NGX 런타임을 통해 기능 생성. |
-| 프레임 가이던스 | 모션 벡터 | 없음(0), GPU 블록 매칭, NVIDIA Optical Flow(드라이버의 `nvofapi64.dll`). |
-| 프레임 가이던스 | 깊이 | DLSSNR에 전달하는 깊이 버퍼: 평면 / 그라데이션 / 0. |
-| 프레임 가이던스 | 자동 재설정 | 블록 매칭 비용으로 장면 전환을 감지하고 시간 이력을 지웁니다. |
+| 프레임 가이던스 | 모션 벡터 | NVIDIA Optical Flow(드라이버의 `nvofapi64.dll`, 양방향 일관성 검사 포함), GPU 블록 매칭, 없음(0). |
+| 프레임 가이던스 | 깊이 | AI 추정(DirectML의 Depth Anything V2 Small, 갱신 간격과 네트워크 해상도 조정 가능), 평면, 그라데이션, 0. |
+| 프레임 가이던스 | 자동 재설정 | 매칭 비용이 급격히 뛸 때(장면 전환) 시간 이력을 지웁니다. 기본값은 꺼짐. |
 | DLAA | 사용 / 프리셋 | 뉴럴 렌더링 전 네이티브 해상도에서의 선택적 DLSS 안티앨리어싱. |
 | 촬영 | 알파 유지 / 원본도 저장 / 단축키 / 타임랩스 | 촬영 옵션. |
 | 표시 | 비교 / 맞춤 / VSync / 오버레이 | 미리보기 옵션. |
@@ -79,7 +80,8 @@ VRChat DLSS5 Cam은 VRChat 내장 카메라(*Spout Stream*을 켠 Stream 카메�
 - **NGX 초기화 안 됨 / DLAA 지원 안 됨** – NGX 런타임에는 NVIDIA GPU와 최신 드라이버가 필요합니다. DLSSNR은 *서명된 스니펫* 경로로 계속 동작합니다.
 - **앱이 시작되지 않음 / 바로 종료됨** – `%LOCALAPPDATA%\VRChatDLSS5Cam\`를 열어 `log.txt`(마지막 줄이 실패한 단계)와 `crash.txt`(크래시 시 기록됨)를 확인하세요. 이슈에는 두 파일을 모두 첨부해 주세요.
 - **뉴럴 렌더링 실패** – 일부 런타임 빌드는 더 새로운 드라이버가 필요합니다. `log.txt`의 NGX 결과 코드를 확인하고 *프리셋* 0과 *NGX 코어* 경로를 시도해 보세요.
-- **낮은 프레임률** – DLAA를 끄거나 검색 반경을 줄이거나 모션 벡터에 NVIDIA Optical Flow를 선택하세요.
+- **깊이 추정기 사용 불가** – `onnxruntime.dll`, `onnxruntime_providers_shared.dll`, `DirectML.dll`, `models\depth_anything_v2_small_fp16.onnx`가 실행 파일 옆에 있어야 합니다(모두 릴리스 패키지에 포함). 추정기가 준비될 때까지 앱은 0 깊이로 대체하며, 상태는 *프레임 가이던스*에 표시됩니다.
+- **낮은 프레임률** – DLAA를 끄거나, 깊이 갱신 간격을 늘리거나 깊이 네트워크 해상도를 낮추거나, 검색 반경을 줄이거나, 모션 벡터에 NVIDIA Optical Flow를 선택하세요.
 
 ## 소스에서 빌드
 
@@ -92,20 +94,28 @@ cmake -S . -B build -A x64
 cmake --build build --config Release --parallel
 ```
 
-구성 단계에서 NVIDIA의 공개 GitHub 저장소로부터 NVIDIA DLSS SDK(헤더, `nvsdk_ngx_s.lib`, `nvngx_dlss.dll`)를 내려받습니다.
+구성 단계에서 NVIDIA의 공개 GitHub 저장소로부터 NVIDIA DLSS SDK(헤더, `nvsdk_ngx_s.lib`, `nvngx_dlss.dll`)를, NuGet에서
+ONNX Runtime(DirectML 빌드)과 DirectML을, Hugging Face에서 Depth Anything V2 Small FP16 모델을 내려받습니다
+(`-DVDC_FETCH_DEPTH_MODEL=OFF`로 모델을 건너뛸 수 있음). 모든 다운로드는 해시를 검증합니다.
 셰이더는 실행 시 컴파일되므로 별도의 셰이더 도구 체인이 필요 없습니다.
 
 ## 동작 원리
 
 ```
 VRChat Stream 카메라 ──Spout──▶ D3D11on12 수신 ──▶ 변환(sRGB / 크기 조정)
-      ▶ 휘도 피라미드 ──▶ 블록 매칭 / NVIDIA Optical Flow ──▶ 모션 벡터 + 깊이
+      ▶ NVIDIA Optical Flow(정방향 + 역방향) / 블록 매칭 ──▶ 모션 벡터 + 신뢰도
+      ▶ Depth Anything V2(ONNX Runtime DirectML, N 프레임마다) ──▶ 정규화된 깊이, 그 사이에는 모션 벡터로 재투영
       ▶ [DLAA] ──▶ DLSSNR(nvngx_dlssnr.dll) ──▶ 합성 / 비교 ──▶ 미리보기 + PNG 촬영
 ```
 
 이 앱은 NGX 런타임 바깥에서 DLSS 5 뉴럴 렌더링 스니펫을 호스팅합니다. DLL을 직접 로드하고
 모듈 이름 검사를 통과시키며 `DLSSNR.*` NGX 파라미터 규약으로 D3D12 컴퓨트 큐에서 기능을 생성하고 평가합니다.
 자세한 내용은 `src/ngx/DlssnrFeature.cpp`를 참고하세요.
+
+가이던스 방식은 동영상 입력에 맞춰 설계되었습니다. 동일 해상도 SDR 입력, 정방향과 역방향 벡터가 일치하지 않는 곳의 신뢰도를
+낮추는 하드웨어 옵티컬 플로우, Depth Anything V2의 단안 깊이를 2/98 백분위수로 반전 상대 깊이로 정규화하고 추론 사이에는
+모션 벡터로 이동, 프레임마다 이력을 초기화하지 않음. 모두 독립적인
+MIT 구현입니다(`src/gfx/Pipeline.cpp`, `src/gfx/DepthEstimator.cpp`, `src/gfx/Shaders.cpp`).
 
 ## 라이선스
 

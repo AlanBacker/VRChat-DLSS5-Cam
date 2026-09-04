@@ -15,12 +15,13 @@ VRChat DLSS5 Cam 会捕获 VRChat 内置相机（Stream 相机并开启 *Spout S
 
 ## 功能
 
-- **实时预览** DLSS 5 处理后的 VRChat 相机画面，支持擦除对比、原图和运动矢量视图。
+- **实时预览** DLSS 5 处理后的 VRChat 相机画面，支持擦除对比、原图、运动矢量和深度视图。
 - **DLSS 5 神经渲染** 直接从 `nvngx_dlssnr.dll` 加载，提供与 RenoDX 的 DLSS 5 ReShade 插件相同的参数：
   预设、风格、强度、全局色调、局部色调、局部结构、皮肤结构、自动遮罩和 UI 修正。参数即时生效，也可以在定格画面上调节。
-- **帧引导。** DLSSNR 是时域模型，需要运动矢量和深度。本程序在 GPU 上为视频流计算它们（分层块匹配），
-  可用时也可以使用 **NVIDIA Optical Flow** 硬件引擎，还可以在神经渲染之前增加一次 **DLAA**（原生分辨率的 DLSS 抗锯齿）。
-- **自适应分辨率。** 自动检测发送端分辨率；可设置自定义输出分辨率，并可让 DLSS 5 直接放大到该分辨率。自动检测镜头切换并重置时域历史。
+- **帧引导。** DLSSNR 是时域模型，需要运动矢量和深度。本程序提供带正反向一致性检查的
+  **NVIDIA Optical Flow** 运动矢量，以及由 **Depth Anything V2** 在 GPU 上估计的深度图（ONNX Runtime + DirectML）。
+  GPU 块匹配和占位深度仍可作为回退方案，另外还可以在神经渲染之前增加一次 **DLAA**（原生分辨率的 DLSS 抗锯齿）。
+- **自适应分辨率。** 自动检测发送端分辨率；可设置自定义输出分辨率，并可让 DLSS 5 直接放大到该分辨率。可选的镜头切换检测会重置时域历史。
 - **无损拍照。** 将处理后的画面（可选同时保存原图）保存为 PNG，全局快捷键（默认 `Ctrl+Alt+P`）在 VRChat 处于前台时同样有效，并支持定时连拍。
 - **四种语言**（English、简体中文、日本語、한국어），根据 Windows 界面语言自动选择。
 - 支持逐显示器 DPI、深色主题、GPU 计时和内置日志。
@@ -59,9 +60,9 @@ VRChat DLSS5 Cam 会捕获 VRChat 内置相机（Stream 相机并开启 *Spout S
 | DLSS 5 | 局部结构 / 皮肤结构 | 细节增强；皮肤结构可保持运行库默认值。 |
 | DLSS 5 | 自动遮罩 / UI 修正 | 自动主体遮罩、UI 安全处理。 |
 | DLSS 5 | 路径 | *签名片段*：直接加载 `nvngx_dlssnr.dll`。*NGX 核心*：通过 NGX 运行库创建功能。 |
-| 帧引导 | 运动矢量 | 无（零）、GPU 块匹配，或 NVIDIA Optical Flow（驱动自带 `nvofapi64.dll`）。 |
-| 帧引导 | 深度 | 提供给 DLSSNR 的深度：平面、渐变或零。 |
-| 帧引导 | 自动重置 | 根据块匹配代价检测镜头切换并清空时域历史。 |
+| 帧引导 | 运动矢量 | NVIDIA Optical Flow（驱动自带 `nvofapi64.dll`，带双向一致性检查）、GPU 块匹配，或无（零）。 |
+| 帧引导 | 深度 | AI 估计（DirectML 上的 Depth Anything V2 Small，可调更新间隔和网络分辨率）、平面、渐变或零。 |
+| 帧引导 | 自动重置 | 匹配代价突然跳变（镜头切换）时清空时域历史。默认关闭。 |
 | DLAA | 启用 / 预设 | 在神经渲染前于原生分辨率执行的可选 DLSS 抗锯齿。 |
 | 拍照 | 保留透明通道 / 同时保存原图 / 快捷键 / 定时连拍 | 拍照选项。 |
 | 显示 | 对比 / 适应 / 垂直同步 / 叠加信息 | 预览选项。 |
@@ -75,7 +76,8 @@ VRChat DLSS5 Cam 会捕获 VRChat 内置相机（Stream 相机并开启 *Spout S
 - **NGX 未初始化 / DLAA 不支持** —— NGX 运行库需要 NVIDIA 显卡和较新的驱动。DLSSNR 仍可通过 *签名片段* 路径工作。
 - **程序打不开 / 一闪就退出** —— 打开 `%LOCALAPPDATA%\VRChatDLSS5Cam\`，查看 `log.txt`（最后一行就是失败的步骤）和 `crash.txt`（进程崩溃时写入）。提交 Issue 时请附上这两个文件。
 - **神经渲染失败** —— 某些运行库版本需要更新的驱动；请查看 `log.txt` 中的 NGX 结果码。可尝试 *预设* 0 和 *NGX 核心* 路径。
-- **帧率低** —— 关闭 DLAA、降低搜索半径，或改用 NVIDIA Optical Flow 生成运动矢量。
+- **深度估计器不可用** —— `onnxruntime.dll`、`onnxruntime_providers_shared.dll`、`DirectML.dll` 和 `models\depth_anything_v2_small_fp16.onnx` 必须放在程序目录下（发布包里都有）。估计器就绪之前程序会回退到零深度，状态显示在 *帧引导* 一栏。
+- **帧率低** —— 关闭 DLAA、增大深度更新间隔或降低深度网络分辨率、降低搜索半径，或改用 NVIDIA Optical Flow 生成运动矢量。
 
 ## 从源码构建
 
@@ -88,19 +90,25 @@ cmake -S . -B build -A x64
 cmake --build build --config Release --parallel
 ```
 
-配置阶段会从 NVIDIA 的公开 GitHub 仓库下载 NVIDIA DLSS SDK（头文件、`nvsdk_ngx_s.lib`、`nvngx_dlss.dll`）。
-着色器在运行时编译，无需额外的着色器工具链。
+配置阶段会从 NVIDIA 的公开 GitHub 仓库下载 NVIDIA DLSS SDK（头文件、`nvsdk_ngx_s.lib`、`nvngx_dlss.dll`），从 NuGet 下载
+ONNX Runtime（DirectML 版）和 DirectML，并从 Hugging Face 下载 Depth Anything V2 Small FP16 模型（`-DVDC_FETCH_DEPTH_MODEL=OFF`
+可跳过模型）。所有下载都会校验哈希。着色器在运行时编译，无需额外的着色器工具链。
 
 ## 工作原理
 
 ```
 VRChat Stream 相机 ──Spout──▶ D3D11on12 接收 ──▶ 转换（sRGB / 缩放）
-      ▶ 亮度金字塔 ──▶ 块匹配 / NVIDIA Optical Flow ──▶ 运动矢量 + 深度
+      ▶ NVIDIA Optical Flow（正向 + 反向）/ 块匹配 ──▶ 运动矢量 + 置信度
+      ▶ Depth Anything V2（ONNX Runtime DirectML，每 N 帧一次）──▶ 归一化深度，其间用运动矢量重投影
       ▶ [DLAA] ──▶ DLSSNR（nvngx_dlssnr.dll）──▶ 合成 / 对比 ──▶ 预览 + PNG 拍照
 ```
 
 程序在 NGX 运行库之外托管 DLSS 5 神经渲染片段：直接加载 DLL、满足其模块名检查，
 并使用 `DLSSNR.*` NGX 参数约定在 D3D12 计算队列上创建和执行功能。详见 `src/ngx/DlssnrFeature.cpp`。
+
+引导方案针对视频输入设计：同分辨率 SDR 输入；硬件光流，并在正反向矢量不一致处降低置信度；
+用 Depth Anything V2 估计单目深度，按 2%/98% 分位数归一化为反向相对深度，推理间隔期间用运动矢量搬运；不做逐帧历史重置。
+全部为独立的 MIT 实现（`src/gfx/Pipeline.cpp`、`src/gfx/DepthEstimator.cpp`、`src/gfx/Shaders.cpp`）。
 
 ## 许可证
 

@@ -222,16 +222,46 @@ bool NvOpticalFlow::CreateSessionAndRegister(Device& device, bool withCost, std:
         st = SafeRegister(m_session, m_cost.Get(), &m_costHandle, &seh);
         if (seh || st != kNvOfSuccess) { error = StrPrintf("NVOF RegisterResource(cost) failed (%s)", StatusName(st)); return false; }
     }
+    if (m_wantBidirectional) {
+        // Second output pair for the backward pass (previous -> current). Optional: the session keeps working without it.
+        std::string berr;
+        bool ok = SUCCEEDED(hr = dev->CreateTexture2D(&fd, nullptr, m_flowBack.ReleaseAndGetAddressOf()));
+        if (!ok) berr = "flow texture: " + FormatHr(hr);
+        if (ok) {
+            st = SafeRegister(m_session, m_flowBack.Get(), &m_flowBackHandle, &seh);
+            ok = !seh && st == kNvOfSuccess;
+            if (!ok) berr = StrPrintf("RegisterResource(flow) %s", StatusName(st));
+        }
+        if (ok && withCost) {
+            D3D11_TEXTURE2D_DESC cd = fd;
+            cd.Format = DXGI_FORMAT_R8_UINT;
+            ok = SUCCEEDED(hr = dev->CreateTexture2D(&cd, nullptr, m_costBack.ReleaseAndGetAddressOf()));
+            if (!ok) berr = "cost texture: " + FormatHr(hr);
+            if (ok) {
+                st = SafeRegister(m_session, m_costBack.Get(), &m_costBackHandle, &seh);
+                ok = !seh && st == kNvOfSuccess;
+                if (!ok) berr = StrPrintf("RegisterResource(cost) %s", StatusName(st));
+            }
+        }
+        if (!ok) {
+            Log::Warn("NVOF: backward pass unavailable (%s); using forward flow only", berr.c_str());
+            if (m_flowBackHandle) { SafeUnregister(m_flowBackHandle, &seh); m_flowBackHandle = nullptr; }
+            if (m_costBackHandle) { SafeUnregister(m_costBackHandle, &seh); m_costBackHandle = nullptr; }
+            m_flowBack.Reset();
+            m_costBack.Reset();
+        }
+    }
     return true;
 }
 
-bool NvOpticalFlow::Init(Device& device, UINT width, UINT height, DXGI_FORMAT inputFormat, UINT grid, UINT perfLevel, std::string& error) {
+bool NvOpticalFlow::Init(Device& device, UINT width, UINT height, DXGI_FORMAT inputFormat, UINT grid, UINT perfLevel, bool bidirectional, std::string& error) {
     Shutdown();
     if (!LoadApi()) { error = "nvofapi64.dll unavailable"; return false; }
     if (!width || !height) { error = "invalid size"; return false; }
     if (grid != 1 && grid != 2 && grid != 4) grid = 2;
     if (perfLevel != 5 && perfLevel != 10 && perfLevel != 20) perfLevel = 10;
     m_inputFormat = inputFormat;
+    m_wantBidirectional = bidirectional;
     m_width = width; m_height = height; m_grid = grid; m_perf = perfLevel;
     m_flowW = (width + grid - 1) / grid;
     m_flowH = (height + grid - 1) / grid;
@@ -239,7 +269,8 @@ bool NvOpticalFlow::Init(Device& device, UINT width, UINT height, DXGI_FORMAT in
 
     std::string err1;
     if (CreateSessionAndRegister(device, true, err1)) {
-        Log::Info("NVOF session ready: %ux%u fmt %d grid %u perf %u (cost enabled)", width, height, (int)inputFormat, grid, perfLevel);
+        Log::Info("NVOF session ready: %ux%u fmt %d grid %u perf %u (cost enabled%s)", width, height, (int)inputFormat, grid, perfLevel,
+                  Bidirectional() ? ", bidirectional" : "");
         return true;
     }
     Log::Warn("NVOF: init with cost output failed (%s), retrying without cost", err1.c_str());
@@ -263,8 +294,12 @@ void NvOpticalFlow::Shutdown() {
     }
     if (m_flowHandle) { SafeUnregister(m_flowHandle, &seh); m_flowHandle = nullptr; }
     if (m_costHandle) { SafeUnregister(m_costHandle, &seh); m_costHandle = nullptr; }
+    if (m_flowBackHandle) { SafeUnregister(m_flowBackHandle, &seh); m_flowBackHandle = nullptr; }
+    if (m_costBackHandle) { SafeUnregister(m_costBackHandle, &seh); m_costBackHandle = nullptr; }
     m_flow.Reset();
     m_cost.Reset();
+    m_flowBack.Reset();
+    m_costBack.Reset();
     if (m_session) {
         const NvOfStatus st = SafeDestroy(m_session, &seh);
         if (seh || st != kNvOfSuccess) Log::Warn("NVOF Destroy failed (%s, seh 0x%08lx)", StatusName(st), seh);
@@ -285,11 +320,25 @@ bool NvOpticalFlow::Execute(int currentIndex, std::string& error) {
     out.outputBuffer = m_flowHandle;
     out.outputCostBuffer = m_costHandle;
     unsigned long seh = 0;
-    const NvOfStatus st = SafeExecute(m_session, &in, &out, &seh);
+    NvOfStatus st = SafeExecute(m_session, &in, &out, &seh);
     ++m_executeCount;
     if (seh || st != kNvOfSuccess) {
         error = StrPrintf("NVOF Execute failed (%s, seh 0x%08lx) %s", StatusName(st), seh, LastError().c_str());
         return false;
+    }
+    if (m_flowBackHandle) {
+        // Backward pass: previous -> current, used for the forward/backward consistency check.
+        NvOfExecuteInputParams bin = in;
+        bin.inputFrame = m_inputHandles[1 - cur];
+        bin.referenceFrame = m_inputHandles[cur];
+        NvOfExecuteOutputParams bout{};
+        bout.outputBuffer = m_flowBackHandle;
+        bout.outputCostBuffer = m_costBackHandle;
+        st = SafeExecute(m_session, &bin, &bout, &seh);
+        if (seh || st != kNvOfSuccess) {
+            error = StrPrintf("NVOF Execute (backward) failed (%s, seh 0x%08lx) %s", StatusName(st), seh, LastError().c_str());
+            return false;
+        }
     }
     return true;
 }

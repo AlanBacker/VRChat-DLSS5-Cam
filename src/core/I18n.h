@@ -23,7 +23,7 @@ enum class Lang { English = 0, Chinese = 1, Japanese = 2, Korean = 3, Count = 4 
     X(TipUpscale,         "Let DLSS 5 upscale from the sender resolution to the custom resolution instead of resampling first (experimental).", "让 DLSS 5 直接从发送端分辨率放大到自定义分辨率，而不是先重采样（实验性）。", "先にリサンプリングせず、送信側の解像度からカスタム解像度へ DLSS 5 でアップスケールします（実験的）。", "먼저 리샘플링하지 않고 DLSS 5가 송신 해상도에서 사용자 지정 해상도로 업스케일하도록 합니다(실험적).") \
     X(TipRoute,           "Signed snippet: talk to nvngx_dlssnr.dll directly (recommended). NGX core: ask the NVIDIA NGX runtime to create the feature.", "签名片段：直接调用 nvngx_dlssnr.dll（推荐）。NGX 核心：通过 NVIDIA NGX 运行时创建功能。", "Signed snippet：nvngx_dlssnr.dll を直接呼び出します（推奨）。NGX core：NVIDIA NGX ランタイムに機能の作成を依頼します。", "Signed snippet: nvngx_dlssnr.dll을 직접 호출합니다(권장). NGX core: NVIDIA NGX 런타임에 기능 생성을 요청합니다.") \
     X(TipNvof,            "Hardware optical flow (Turing or newer, nvofapi64.dll from the NVIDIA driver). Falls back to block matching when unavailable.", "硬件光流（Turing 及更新架构，使用 NVIDIA 驱动中的 nvofapi64.dll）。不可用时回退到块匹配。", "ハードウェアオプティカルフロー（Turing 以降、NVIDIA ドライバーの nvofapi64.dll）。利用できない場合はブロックマッチングにフォールバックします。", "하드웨어 옵티컬 플로우(Turing 이상, NVIDIA 드라이버의 nvofapi64.dll). 사용할 수 없으면 블록 매칭으로 대체합니다.") \
-    X(TipAutoReset,       "Reset the temporal history automatically when a scene cut is detected (average matching cost above the threshold).", "检测到场景切换（平均匹配代价超过阈值）时自动重置时间历史。", "シーンカットを検出したとき（平均マッチングコストがしきい値を超えたとき）に時間的履歴を自動リセットします。", "장면 전환이 감지되면(평균 매칭 비용이 임계값 초과) 시간적 히스토리를 자동으로 초기화합니다.") \
+    X(TipAutoReset,       "Clear the temporal history when the matching cost jumps sharply (scene cut). Off by default: DLSS 5 recovers on its own, and every reset causes a visible pop.", "匹配代价突然跳变（镜头切换）时清空时间历史。默认关闭：DLSS 5 会自行恢复，而每次重置都会造成明显的画面跳动。", "マッチングコストが急激に跳ね上がったとき（シーンカット）に時間履歴をクリアします。既定ではオフ：DLSS 5 は自力で回復し、リセットのたびに目に見えるポップが生じます。", "매칭 비용이 급격히 뛸 때(장면 전환) 시간 히스토리를 지웁니다. 기본값은 꺼짐: DLSS 5는 스스로 복구되며, 초기화할 때마다 눈에 띄는 튐이 생깁니다.") \
     X(TipKeepAlpha,       "Store the camera's alpha channel (transparent background when VRChat streams with transparency).", "保存相机的 Alpha 通道（VRChat 以透明背景串流时保留透明）。", "カメラのアルファチャンネルを保存します（VRChat が透過付きで配信している場合は背景が透明になります）。", "카메라의 알파 채널을 저장합니다(VRChat이 투명 배경으로 스트리밍할 때 투명 유지).") \
     X(TipTimelapse,       "Automatically save a photo at this interval while a source is connected.", "连接到源时按此间隔自动拍照。", "ソース接続中、この間隔で自動的に写真を保存します。", "소스가 연결된 동안 이 간격으로 자동 촬영합니다.") \
     X(TipHotkey,          "Works while VRChat is in the foreground.", "VRChat 在前台时也可使用。", "VRChat が前面にあるときでも動作します。", "VRChat이 앞에 있을 때도 동작합니다.") \
@@ -119,11 +119,26 @@ enum class Lang { English = 0, Chinese = 1, Japanese = 2, Korean = 3, Count = 4 
     X(MotionSource,       "Motion vectors", "运动矢量", "モーションベクトル", "모션 벡터") \
     X(MotionZero,         "None (zero)", "无（零）", "なし（ゼロ）", "없음(0)") \
     X(MotionCompute,      "GPU block matching (built-in)", "GPU 块匹配（内置）", "GPU ブロックマッチング（内蔵）", "GPU 블록 매칭(내장)") \
-    X(MotionNvof,         "NVIDIA Optical Flow (hardware, experimental)", "NVIDIA 光流（硬件，实验性）", "NVIDIA Optical Flow（ハードウェア・実験的）", "NVIDIA Optical Flow(하드웨어, 실험적)") \
+    X(MotionNvof,         "NVIDIA Optical Flow (hardware, recommended)", "NVIDIA 光流（硬件，推荐）", "NVIDIA Optical Flow（ハードウェア・推奨）", "NVIDIA Optical Flow(하드웨어, 권장)") \
     X(DepthSource,        "Depth", "深度", "深度", "깊이") \
     X(DepthFlat,          "Flat", "平面", "フラット", "평면") \
-    X(DepthGradient,      "Estimated gradient", "估计梯度", "推定グラデーション", "추정 그라데이션") \
+    X(DepthGradient,      "Gradient (placeholder)", "渐变（占位）", "グラデーション（代替）", "그라데이션(대체)") \
     X(DepthZero,          "Zero", "零", "ゼロ", "0") \
+    X(DepthEstimated,     "AI estimated (Depth Anything V2)", "AI 估计（Depth Anything V2）", "AI 推定（Depth Anything V2）", "AI 추정(Depth Anything V2)") \
+    X(DepthInterval,      "Depth update interval", "深度更新间隔", "深度更新間隔", "깊이 갱신 간격") \
+    X(DepthResolution,    "Depth network resolution", "深度网络分辨率", "深度ネットワーク解像度", "깊이 네트워크 해상도") \
+    X(DepthModel,         "Depth model", "深度模型", "深度モデル", "깊이 모델") \
+    X(DepthStatus,        "Depth estimator", "深度估计器", "深度推定", "깊이 추정기") \
+    X(DepthInitializing,  "initializing…", "正在初始化…", "初期化中…", "초기화 중…") \
+    X(DepthReady,         "ready", "就绪", "準備完了", "준비됨") \
+    X(DepthUnavailable,   "unavailable, zero depth is used", "不可用，改用零深度", "利用不可、ゼロ深度を使用", "사용 불가, 0 깊이 사용") \
+    X(DepthModelMissing,  "Depth model not found. Re-extract the release package (models\\depth_anything_v2_small_fp16.onnx) or select a model file.", "未找到深度模型。请重新解压发布包（models\\depth_anything_v2_small_fp16.onnx）或选择模型文件。", "深度モデルが見つかりません。リリースパッケージを再展開する（models\\depth_anything_v2_small_fp16.onnx）か、モデルファイルを選択してください。", "깊이 모델을 찾을 수 없습니다. 릴리스 패키지를 다시 압축 해제하거나(models\\depth_anything_v2_small_fp16.onnx) 모델 파일을 선택하세요.") \
+    X(NvofBidirectional,  "Bidirectional consistency check", "双向一致性检查", "双方向一貫性チェック", "양방향 일관성 검사") \
+    X(TipNvofBidirectional, "Also computes the backward flow and lowers the confidence where forward and backward vectors disagree (occlusions, noise). Recommended.", "同时计算反向光流，在正向与反向矢量不一致处（遮挡、噪声）降低置信度。推荐开启。", "逆方向のフローも計算し、順方向と逆方向のベクトルが一致しない箇所（オクルージョン、ノイズ）の信頼度を下げます。推奨。", "역방향 플로우도 계산하여 정방향과 역방향 벡터가 일치하지 않는 곳(가림, 노이즈)의 신뢰도를 낮춥니다. 권장.") \
+    X(CompareDepth,       "Depth", "深度", "深度", "깊이") \
+    X(TipDepthInterval,   "Run the depth network every N processed frames; in between, the previous depth is carried along with the motion vectors.", "每 N 个处理帧运行一次深度网络；其间用运动矢量搬运上一次的深度。", "N 処理フレームごとに深度ネットワークを実行し、その間は前回の深度をモーションベクトルで移動させます。", "처리된 N 프레임마다 깊이 네트워크를 실행하고, 그 사이에는 이전 깊이를 모션 벡터로 이동시킵니다.") \
+    X(TipDepthResolution, "Long side of the picture given to the depth network. Larger = finer depth edges, slower.", "送入深度网络的画面长边。越大深度边缘越精细，但更慢。", "深度ネットワークに渡す画像の長辺。大きいほど深度の輪郭が細かくなりますが遅くなります。", "깊이 네트워크에 전달되는 화면의 긴 변. 클수록 깊이 경계가 세밀해지지만 느려집니다.") \
+    X(Inference,          "Inference", "推理", "推論", "추론") \
     X(SearchRadius,       "Search radius", "搜索半径", "探索半径", "탐색 반경") \
     X(MotionConfidence,   "Confidence threshold", "置信度阈值", "信頼度しきい値", "신뢰도 임계값") \
     X(NvofGrid,           "Flow grid", "光流网格", "フローグリッド", "플로우 그리드") \
@@ -191,7 +206,7 @@ enum class Lang { English = 0, Chinese = 1, Japanese = 2, Korean = 3, Count = 4 
     X(TipAutoMask,        "Let the runtime mask regions it should not change.", "让运行库自动遮罩不应改变的区域。", "変更すべきでない領域をランタイムに自動でマスクさせます。", "런타임이 변경하지 말아야 할 영역을 자동으로 마스크합니다.") \
     X(TipUiCorrection,    "Protect flat UI-like regions from being altered.", "保护平面 UI 类区域不被改动。", "UI のような平坦な領域を保護します。", "UI 같은 평면 영역을 보호합니다.") \
     X(TipMotion,          "Motion vectors tell DLSS 5 how the image moved since the previous frame (better temporal stability).", "运动矢量告诉 DLSS 5 画面相对上一帧的移动（提升时序稳定性）。", "モーションベクトルは前フレームからの動きを DLSS 5 に伝えます（時間的安定性が向上）。", "모션 벡터는 이전 프레임 대비 움직임을 DLSS 5에 전달합니다(시간적 안정성 향상).") \
-    X(TipDepth,           "VRChat's stream has no depth buffer; an estimate or a flat plane is provided instead.", "VRChat 串流不含深度缓冲，这里提供估计值或平面深度代替。", "VRChat のストリームには深度バッファがないため、推定値または平面を代わりに与えます。", "VRChat 스트림에는 깊이 버퍼가 없어 추정값 또는 평면을 대신 제공합니다.") \
+    X(TipDepth,           "DLSS 5 uses depth to separate subject and background. VRChat's stream has none, so Depth Anything V2 estimates it from the picture on the GPU (DirectML). Flat / gradient / zero are simple placeholders.", "DLSS 5 用深度区分主体与背景。VRChat 串流没有深度，因此用 Depth Anything V2 在 GPU（DirectML）上从画面估计深度。平面 / 渐变 / 零只是简单的占位值。", "DLSS 5 は深度で被写体と背景を区別します。VRChat のストリームには深度がないため、同様に Depth Anything V2 が GPU（DirectML）上で画像から深度を推定します。フラット / グラデーション / ゼロは単純な代替値です。", "DLSS 5는 깊이로 피사체와 배경을 구분합니다. VRChat 스트림에는 깊이가 없으므로 Depth Anything V2가 GPU(DirectML)에서 화면으로부터 깊이를 추정합니다. 평면 / 그라데이션 / 0은 단순한 대체값입니다.") \
     X(ScaleAuto,          "Adaptive", "自适应", "自動", "자동") \
     X(NoSenders,          "(none)", "（无）", "（なし）", "(없음)") \
     X(NotLoaded,          "Not loaded", "未加载", "未読み込み", "로드되지 않음") \

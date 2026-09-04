@@ -1,5 +1,6 @@
 #include "gfx/Pipeline.h"
 #include "core/Log.h"
+#include "core/Util.h"
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -12,6 +13,24 @@ constexpr float kMotionViewScale = 1.0f / 16.0f;
 constexpr size_t kMaxReadbacks = 6;
 
 UINT Even(UINT v) { return std::max(16u, v & ~1u); }
+UINT AlignPatch(double v) { return std::max(14u, (UINT)std::lround(v / 14.0) * 14u); }   // Depth Anything patch size
+
+constexpr float kDepthHistoryWeight = 0.6f;   // temporal blend towards the reprojected previous depth
+constexpr float kDepthRangeSmoothing = 0.3f;  // EMA of the P02/P98 normalisation range
+constexpr float kSceneCutRatio = 2.5f;        // cost must exceed this multiple of its running average
+
+bool CreateBuffer(ID3D12Device* dev, D3D12_HEAP_TYPE heap, UINT64 bytes, D3D12_RESOURCE_FLAGS flags, D3D12_RESOURCE_STATES state,
+                  const wchar_t* name, ComPtr<ID3D12Resource>& out) {
+    D3D12_HEAP_PROPERTIES hp{}; hp.Type = heap;
+    D3D12_RESOURCE_DESC bd{};
+    bd.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER; bd.Width = std::max<UINT64>(bytes, 256); bd.Height = 1; bd.DepthOrArraySize = 1; bd.MipLevels = 1;
+    bd.Format = DXGI_FORMAT_UNKNOWN; bd.SampleDesc.Count = 1; bd.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+    bd.Flags = flags;
+    const HRESULT hr = dev->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &bd, state, nullptr, IID_PPV_ARGS(out.ReleaseAndGetAddressOf()));
+    if (FAILED(hr)) { Log::Hr(LogLevel::Error, WideToUtf8(name).c_str(), hr); return false; }
+    out->SetName(name);
+    return true;
+}
 }
 
 // --- resources ----------------------------------------------------------------------------
@@ -77,13 +96,16 @@ void Pipeline::ReleaseResources(Device& device) {
     m_nvof.Shutdown();
     for (auto& t : m_nvofSrc11) t.Reset();
     m_flow11.Reset(); m_cost11.Reset();
+    m_flowBack11.Reset(); m_costBack11.Reset();
     m_nvofReady = false;
+    ReleaseDepthResources(device);
     ReleaseTex(device, m_color8);
     for (auto& set : m_luma) for (auto& t : set) ReleaseTex(device, t);
     ReleaseTex(device, m_nvofIn);
     for (int i = 0; i < 3; ++i) { ReleaseTex(device, m_bm[i]); ReleaseTex(device, m_bc[i]); }
     for (auto& t : m_bmMed) ReleaseTex(device, t);
     ReleaseTex(device, m_flow); ReleaseTex(device, m_cost);
+    ReleaseTex(device, m_flowBack); ReleaseTex(device, m_costBack);
     ReleaseTex(device, m_mv); ReleaseTex(device, m_conf); ReleaseTex(device, m_depth);
     ReleaseTex(device, m_dlaaOut); ReleaseTex(device, m_nrOut);
     ReleaseTex(device, m_final); ReleaseTex(device, m_display);
@@ -115,7 +137,75 @@ Pipeline::Config Pipeline::ComputeConfig(const SpoutReceiver& spout, const Setti
     c.nvof = s.motionMode == MotionNvOpticalFlow;
     c.nvofGrid = (UINT)s.nvofGrid;
     c.nvofPerf = (UINT)s.nvofPerf;
+    c.nvofBidir = s.nvofBidirectional;
+    c.depthEst = s.depthMode == DepthEstimated;
+    c.depthLongSide = (UINT)s.depthLongSide;
+    c.depthModel = DepthModelPath(s);
     return c;
+}
+
+std::wstring Pipeline::DepthModelPath(const Settings& s) const {
+    return s.depthModelPath.empty() ? DepthEstimator::DefaultModelPath(m_exeDir) : Utf8ToWide(s.depthModelPath);
+}
+
+void Pipeline::ReleaseDepthResources(Device& device) {
+    for (auto& t : m_depthHist) ReleaseTex(device, t);
+    if (m_depthInUav.ptr) { device.FreeStaging(m_depthInUav); m_depthInUav = {}; }
+    if (m_depthRawSrv.ptr) { device.FreeStaging(m_depthRawSrv); m_depthRawSrv = {}; }
+    if (m_depthInBuf) { device.DeferRelease(m_depthInBuf); m_depthInBuf.Reset(); }
+    if (m_depthInReadback) { device.DeferRelease(m_depthInReadback); m_depthInReadback.Reset(); }
+    if (m_depthRawBuf) { device.DeferRelease(m_depthRawBuf); m_depthRawBuf.Reset(); }
+    for (auto& u : m_depthUpload) { if (u) { device.DeferRelease(u); u.Reset(); } }
+    m_depthInPending = false; m_depthInFence = 0;
+    m_depthInState = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+    m_depthRawState = D3D12_RESOURCE_STATE_COPY_DEST;
+    m_depthHaveRaw = false; m_depthHistValid = false;
+    m_depthRawW = m_depthRawH = 0;
+    m_depthFramesSinceCapture = 1000;
+}
+
+bool Pipeline::CreateDepthResources(Device& device, const Config& cfg) {
+    ID3D12Device* dev = device.D3D12();
+    const double scale = (double)cfg.depthLongSide / (double)std::max(m_inW, m_inH);
+    m_depthInferW = AlignPatch(m_inW * scale);
+    m_depthInferH = AlignPatch(m_inH * scale);
+    const UINT64 pixels = (UINT64)m_depthInferW * m_depthInferH;
+    bool ok = true;
+    for (int i = 0; i < 2; ++i) ok &= CreateTex(device, m_depthHist[i], m_inW, m_inH, DXGI_FORMAT_R32_FLOAT, true, L"depthHistory");
+    ok &= CreateBuffer(dev, D3D12_HEAP_TYPE_DEFAULT, pixels * 3 * sizeof(float), D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS,
+                       D3D12_RESOURCE_STATE_UNORDERED_ACCESS, L"depthNetInput", m_depthInBuf);
+    ok &= CreateBuffer(dev, D3D12_HEAP_TYPE_READBACK, pixels * 3 * sizeof(float), D3D12_RESOURCE_FLAG_NONE,
+                       D3D12_RESOURCE_STATE_COPY_DEST, L"depthNetInputReadback", m_depthInReadback);
+    ok &= CreateBuffer(dev, D3D12_HEAP_TYPE_DEFAULT, pixels * sizeof(float), D3D12_RESOURCE_FLAG_NONE,
+                       D3D12_RESOURCE_STATE_COPY_DEST, L"depthNetOutput", m_depthRawBuf);
+    for (UINT i = 0; i < Device::kFramesInFlight; ++i)
+        ok &= CreateBuffer(dev, D3D12_HEAP_TYPE_UPLOAD, pixels * sizeof(float), D3D12_RESOURCE_FLAG_NONE,
+                           D3D12_RESOURCE_STATE_GENERIC_READ, L"depthNetOutputUpload", m_depthUpload[i]);
+    if (!ok) { ReleaseDepthResources(device); return false; }
+    m_depthInUav = device.AllocStaging();
+    {
+        D3D12_UNORDERED_ACCESS_VIEW_DESC ud{};
+        ud.Format = DXGI_FORMAT_UNKNOWN; ud.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
+        ud.Buffer.NumElements = (UINT)(pixels * 3); ud.Buffer.StructureByteStride = 4;
+        dev->CreateUnorderedAccessView(m_depthInBuf.Get(), nullptr, &ud, m_depthInUav);
+    }
+    m_depthRawSrv = device.AllocStaging();
+    {
+        D3D12_SHADER_RESOURCE_VIEW_DESC sd{};
+        sd.Format = DXGI_FORMAT_UNKNOWN; sd.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+        sd.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        sd.Buffer.NumElements = (UINT)pixels; sd.Buffer.StructureByteStride = 4;
+        dev->CreateShaderResourceView(m_depthRawBuf.Get(), &sd, m_depthRawSrv);
+    }
+    m_depthInState = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+    m_depthRawState = D3D12_RESOURCE_STATE_COPY_DEST;
+    m_depthModelExists = FileExists(cfg.depthModel);
+    // The worker survives resource rebuilds as long as the model and the network resolution stay the same.
+    if (m_depthRestart || !m_depthEst.Matches(cfg.depthModel, m_depthInferW, m_depthInferH)) {
+        m_depthRestart = false;
+        m_depthEst.Start(device, m_exeDir, cfg.depthModel, m_depthInferW, m_depthInferH);
+    }
+    return true;
 }
 
 bool Pipeline::Rebuild(Device& device, const Config& cfg) {
@@ -183,12 +273,12 @@ bool Pipeline::Rebuild(Device& device, const Config& cfg) {
     m_nvofFmt = DXGI_FORMAT_UNKNOWN;
     if (cfg.nvof) {
         std::string err;
-        if (m_nvof.Init(device, m_inW, m_inH, DXGI_FORMAT_R8_UNORM, cfg.nvofGrid, cfg.nvofPerf, err)) {
+        if (m_nvof.Init(device, m_inW, m_inH, DXGI_FORMAT_R8_UNORM, cfg.nvofGrid, cfg.nvofPerf, cfg.nvofBidir, err)) {
             m_nvofFmt = DXGI_FORMAT_R8_UNORM;
         } else {
             Log::Warn("NVOF: R8 input rejected (%s), trying BGRA8", err.c_str());
             if (device.TypedUavStoreSupported(DXGI_FORMAT_B8G8R8A8_UNORM) &&
-                m_nvof.Init(device, m_inW, m_inH, DXGI_FORMAT_B8G8R8A8_UNORM, cfg.nvofGrid, cfg.nvofPerf, err)) {
+                m_nvof.Init(device, m_inW, m_inH, DXGI_FORMAT_B8G8R8A8_UNORM, cfg.nvofGrid, cfg.nvofPerf, cfg.nvofBidir, err)) {
                 m_nvofFmt = DXGI_FORMAT_B8G8R8A8_UNORM;
             } else {
                 m_nvofError = err;
@@ -218,6 +308,14 @@ bool Pipeline::Rebuild(Device& device, const Config& cfg) {
             }
             nvofOk &= wrap(m_flow, m_flow11);
             if (m_nvof.HasCost()) nvofOk &= wrap(m_cost, m_cost11);
+            if (m_nvof.Bidirectional()) {
+                nvofOk &= CreateTex(device, m_flowBack, m_nvof.FlowWidth(), m_nvof.FlowHeight(), DXGI_FORMAT_R16G16_SINT, false, L"nvofFlowBack");
+                nvofOk &= wrap(m_flowBack, m_flowBack11);
+                if (m_nvof.HasCost()) {
+                    nvofOk &= CreateTex(device, m_costBack, m_nvof.FlowWidth(), m_nvof.FlowHeight(), DXGI_FORMAT_R8_UINT, false, L"nvofCostBack");
+                    nvofOk &= wrap(m_costBack, m_costBack11);
+                }
+            }
             if (nvofOk) {
                 m_nvofReady = true;
             } else {
@@ -225,17 +323,27 @@ bool Pipeline::Rebuild(Device& device, const Config& cfg) {
                 m_nvof.Shutdown();
                 for (auto& t : m_nvofSrc11) t.Reset();
                 m_flow11.Reset(); m_cost11.Reset();
+                m_flowBack11.Reset(); m_costBack11.Reset();
             }
         }
         if (!m_nvofReady) Log::Warn("NVOF unavailable, falling back to block matching: %s", m_nvofError.c_str());
     }
 
+    // Estimated depth (Depth Anything V2 through ONNX Runtime). Failure is non-fatal: zero depth is used instead.
+    if (cfg.depthEst) {
+        if (!CreateDepthResources(device, cfg)) Log::Warn("Depth estimation resources could not be created; using zero depth");
+    } else {
+        m_depthEst.Stop();
+    }
+
     m_built = true;
     m_haveHistory = false;
     m_resetRequested = true;
+    m_costEma = 0.0f;
     m_cur = 0;
-    Log::Info("Pipeline resources: source %ux%u, input %ux%u, output %ux%u%s", m_srcW, m_srcH, m_inW, m_inH, m_outW, m_outH,
-              m_nvofReady ? " (NVOF)" : "");
+    Log::Info("Pipeline resources: source %ux%u, input %ux%u, output %ux%u%s%s%s", m_srcW, m_srcH, m_inW, m_inH, m_outW, m_outH,
+              m_nvofReady ? " (NVOF" : "", m_nvofReady ? (m_nvof.Bidirectional() ? ", bidirectional)" : ")") : "",
+              m_depthInBuf ? StrPrintf(" (depth network %ux%u)", m_depthInferW, m_depthInferH).c_str() : "");
     return true;
 }
 
@@ -252,6 +360,7 @@ bool Pipeline::Init(Device& device, const std::wstring& exeDir, const std::wstri
 
 void Pipeline::Shutdown(Device& device) {
     ReleaseResources(device);
+    m_depthEst.Stop();
     UnloadNrRuntime(device);
     if (m_displayStatic.Valid()) { device.FreeStatic(m_displayStatic); m_displayStatic = {}; }
     m_ngx.Shutdown();
@@ -386,14 +495,19 @@ bool Pipeline::RunOpticalFlow(Device& device, ID3D12GraphicsCommandList*& cmd) {
     Transition(cmd, src, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
     Transition(cmd, m_flow, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
     if (m_cost.Valid()) Transition(cmd, m_cost, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    if (m_flowBack.Valid()) Transition(cmd, m_flowBack, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    if (m_costBack.Valid()) Transition(cmd, m_costBack, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
     device.TimerBegin(cmd, GpuTimer::OpticalFlow);
     cmd = device.SubmitAndContinue();
 
     ID3D11On12Device* on12 = device.On12();
     ID3D11DeviceContext* ctx = device.Context11();
     ID3D11Texture2D* src11 = (m_nvofFmt == DXGI_FORMAT_R8_UNORM) ? m_nvofSrc11[cur].Get() : m_nvofSrc11[0].Get();
-    ID3D11Resource* acquired[3] = { src11, m_flow11.Get(), m_cost11.Get() };
-    const UINT count = m_cost11 ? 3u : 2u;
+    ID3D11Resource* acquired[5] = { src11, m_flow11.Get() };
+    UINT count = 2;
+    if (m_cost11) acquired[count++] = m_cost11.Get();
+    if (m_flowBack11) acquired[count++] = m_flowBack11.Get();
+    if (m_costBack11) acquired[count++] = m_costBack11.Get();
     on12->AcquireWrappedResources(acquired, count);
     ctx->CopyResource(m_nvof.Input(cur), src11);
     std::string err;
@@ -401,6 +515,8 @@ bool Pipeline::RunOpticalFlow(Device& device, ID3D12GraphicsCommandList*& cmd) {
     if (ok) {
         ctx->CopyResource(m_flow11.Get(), m_nvof.FlowTexture());
         if (m_cost11) ctx->CopyResource(m_cost11.Get(), m_nvof.CostTexture());
+        if (m_flowBack11) ctx->CopyResource(m_flowBack11.Get(), m_nvof.BackFlowTexture());
+        if (m_costBack11) ctx->CopyResource(m_costBack11.Get(), m_nvof.BackCostTexture());
     } else {
         m_nvofError = err;
         Log::Warn("NVOF execute failed: %s", err.c_str());
@@ -434,6 +550,7 @@ void Pipeline::RunDensify(Device& device, ID3D12GraphicsCommandList* cmd, const 
         d.constants.srcWidth = m_nvof.FlowWidth(); d.constants.srcHeight = m_nvof.FlowHeight();
         d.srv[2] = m_flow.srv;
         d.srv[3] = m_cost.Valid() ? m_cost.srv : D3D12_CPU_DESCRIPTOR_HANDLE{};
+        if (m_flowBack.Valid()) { d.constants.flags |= 8; d.srv[4] = m_flowBack.srv; }
     } else {
         d.constants.flags = 1;
     }
@@ -480,6 +597,93 @@ void Pipeline::ReadStats(Device& device) {
     }
     for (UINT i = 0; i < Device::kFramesInFlight; ++i)
         if (m_statsPending[i] && m_statsFence[i] && m_statsFence[i] <= bestFence) m_statsPending[i] = false;
+}
+
+void Pipeline::RunDepthCapture(Device& device, ID3D12GraphicsCommandList*& cmd) {
+    // Downsample + normalise the current colour into the network input buffer and copy it to a readback buffer.
+    // Submitted right away (with its own fence) so the CPU can hand it to the worker as early as possible.
+    Transition(cmd, m_color8, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    if (m_depthInState != D3D12_RESOURCE_STATE_UNORDERED_ACCESS) {
+        Device::Barrier(cmd, m_depthInBuf.Get(), m_depthInState, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+        m_depthInState = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+    }
+    DispatchDesc d;
+    d.id = ShaderId::DepthPre;
+    d.constants.srcWidth = m_inW; d.constants.srcHeight = m_inH;
+    d.constants.dstWidth = m_depthInferW; d.constants.dstHeight = m_depthInferH;
+    d.srv[0] = m_color8.srv;
+    d.uav[0] = m_depthInUav;
+    d.groupsX = Shaders::Groups(m_depthInferW, 8); d.groupsY = Shaders::Groups(m_depthInferH, 8);
+    m_shaders.Dispatch(cmd, device, d);
+    Device::Barrier(cmd, m_depthInBuf.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_SOURCE);
+    m_depthInState = D3D12_RESOURCE_STATE_COPY_SOURCE;
+    const UINT64 bytes = (UINT64)m_depthInferW * m_depthInferH * 3 * sizeof(float);
+    cmd->CopyBufferRegion(m_depthInReadback.Get(), 0, m_depthInBuf.Get(), 0, bytes);
+    cmd = device.SubmitAndContinue();
+    m_depthInFence = device.Signal();
+    m_depthInPending = true;
+    m_depthFramesSinceCapture = 0;
+}
+
+bool Pipeline::RunDepthApply(Device& device, ID3D12GraphicsCommandList* cmd, bool reset) {
+    if (!m_depthRawBuf || !m_depthEst.Ready()) { m_depthHistValid = false; return false; }
+    bool newRaw = false;
+    DepthResult r;
+    if (m_depthEst.TryTakeResult(r)) {
+        const UINT64 capacity = (UINT64)m_depthInferW * m_depthInferH;
+        if (r.width && r.height && (UINT64)r.width * r.height <= capacity && r.depth.size() >= (size_t)r.width * r.height) {
+            const UINT slot = device.FrameIndex();
+            const size_t bytes = (size_t)r.width * r.height * sizeof(float);
+            void* p = nullptr;
+            D3D12_RANGE none{ 0, 0 };
+            if (SUCCEEDED(m_depthUpload[slot]->Map(0, &none, &p)) && p) {
+                std::memcpy(p, r.depth.data(), bytes);
+                m_depthUpload[slot]->Unmap(0, nullptr);
+                if (m_depthRawState != D3D12_RESOURCE_STATE_COPY_DEST) {
+                    Device::Barrier(cmd, m_depthRawBuf.Get(), m_depthRawState, D3D12_RESOURCE_STATE_COPY_DEST);
+                    m_depthRawState = D3D12_RESOURCE_STATE_COPY_DEST;
+                }
+                cmd->CopyBufferRegion(m_depthRawBuf.Get(), 0, m_depthUpload[slot].Get(), 0, bytes);
+                m_depthRawW = r.width; m_depthRawH = r.height;
+                const float inv = 1.0f / std::max(r.p98 - r.p02, 1e-4f);
+                if (!m_depthHaveRaw || reset) { m_depthP02 = r.p02; m_depthInvRange = inv; }
+                else { m_depthP02 += (r.p02 - m_depthP02) * kDepthRangeSmoothing; m_depthInvRange += (inv - m_depthInvRange) * kDepthRangeSmoothing; }
+                m_depthHaveRaw = true;
+                newRaw = true;
+                m_depthInferMs = r.inferenceMs;
+                m_depthLastResultTime = NowSeconds();
+            }
+        } else {
+            Log::Warn("Depth estimator returned an unexpected %ux%u result", r.width, r.height);
+        }
+    }
+    if (!m_depthHaveRaw) { m_depthHistValid = false; return false; }   // first result still pending: zero depth this frame
+    if (m_depthRawState != D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE) {
+        Device::Barrier(cmd, m_depthRawBuf.Get(), m_depthRawState, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+        m_depthRawState = D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
+    }
+    Tex& histPrev = m_depthHist[1 - m_cur];
+    Tex& histCur = m_depthHist[m_cur];
+    Transition(cmd, m_mv, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    Transition(cmd, m_conf, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    Transition(cmd, histPrev, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    Transition(cmd, histCur, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+    Transition(cmd, m_depth, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+    const bool useHistory = m_depthHistValid && !reset;
+    DispatchDesc d;
+    d.id = ShaderId::DepthPost;
+    d.constants.dstWidth = m_inW; d.constants.dstHeight = m_inH;
+    d.constants.intA = m_depthRawW; d.constants.intB = m_depthRawH;
+    d.constants.flags = ((newRaw || !useHistory) ? 1u : 0u) | (useHistory ? 2u : 0u);
+    d.constants.paramA = m_depthP02;
+    d.constants.paramB = m_depthInvRange;
+    d.constants.paramC = kDepthHistoryWeight;
+    d.srv[0] = m_depthRawSrv; d.srv[1] = histPrev.srv; d.srv[2] = m_mv.srv; d.srv[3] = m_conf.srv;
+    d.uav[0] = m_depth.uav; d.uav[1] = histCur.uav;
+    d.groupsX = Shaders::Groups(m_inW, 8); d.groupsY = Shaders::Groups(m_inH, 8);
+    m_shaders.Dispatch(cmd, device, d);
+    m_depthHistValid = true;
+    return true;
 }
 
 bool Pipeline::RunDlaa(Device& device, ID3D12GraphicsCommandList* cmd, const Settings& s, bool reset) {
@@ -558,6 +762,7 @@ void Pipeline::RunComposite(Device& device, ID3D12GraphicsCommandList* cmd, cons
     Transition(cmd, processed, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
     Transition(cmd, m_mv, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
     Transition(cmd, m_conf, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    Transition(cmd, m_depth, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
     Transition(cmd, m_final, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
     Transition(cmd, m_display, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
     DispatchDesc d;
@@ -572,7 +777,7 @@ void Pipeline::RunComposite(Device& device, ID3D12GraphicsCommandList* cmd, cons
     d.constants.intA = (UINT)s.compareMode;
     d.constants.paramA = s.wipePosition;
     d.constants.paramB = kMotionViewScale;
-    d.srv[0] = m_color8.srv; d.srv[1] = processed.srv; d.srv[2] = m_mv.srv; d.srv[3] = m_conf.srv;
+    d.srv[0] = m_color8.srv; d.srv[1] = processed.srv; d.srv[2] = m_mv.srv; d.srv[3] = m_conf.srv; d.srv[4] = m_depth.srv;
     d.uav[0] = m_final.uav; d.uav[1] = m_display.uav;
     d.groupsX = Shaders::Groups(m_outW, 8); d.groupsY = Shaders::Groups(m_outH, 8);
     m_shaders.Dispatch(cmd, device, d);
@@ -649,7 +854,24 @@ void Pipeline::Render(Device& device, SpoutReceiver& spout, const Settings& s, I
     m_status.outWidth = m_outW; m_status.outHeight = m_outH;
     m_status.nrUpscaling = (m_inW != m_outW || m_inH != m_outH);
     m_status.nvofReady = m_nvofReady;
+    m_status.nvofBidirectional = m_nvofReady && m_nvof.Bidirectional();
     m_status.nvofError = m_nvofError;
+    m_status.depthState = (int)m_depthEst.State();
+    m_status.depthMessage = m_depthEst.Message();
+    m_status.depthBackend = m_depthEst.Backend();
+    m_status.depthInferW = m_depthInferW; m_status.depthInferH = m_depthInferH;
+    m_status.depthInferMs = m_depthInferMs;
+    m_status.depthWarmupMs = m_depthEst.WarmupMs();
+    m_status.depthInferences = m_depthEst.Inferences();
+    m_status.depthAgeMs = m_depthLastResultTime > 0.0 ? (NowSeconds() - m_depthLastResultTime) * 1000.0 : 0.0;
+    m_status.depthModelPath = m_cfg.depthModel;
+    m_status.depthModelExists = m_depthModelExists;
+    if (m_depthRestart && m_depthInBuf) {
+        m_depthRestart = false;
+        m_depthEst.Start(device, m_exeDir, m_cfg.depthModel, m_depthInferW, m_depthInferH);
+        m_depthModelExists = FileExists(m_cfg.depthModel);
+        m_depthHaveRaw = false; m_depthHistValid = false;
+    }
     if (!spout.HasFrame()) { m_hasDisplay = false; return; }
 
     Tex* processed = &m_color8;
@@ -665,7 +887,15 @@ void Pipeline::Render(Device& device, SpoutReceiver& spout, const Settings& s, I
         ReadStats(device);
         bool reset = m_resetRequested || !m_haveHistory;
         bool sceneCut = false;
-        if (s.autoReset && m_haveHistory && m_lastWasBlockMode && m_statAvgCost > s.cutThreshold) { sceneCut = true; reset = true; }
+        if (m_haveHistory && m_lastWasBlockMode) {
+            // A cut is a sudden jump of the matching cost, not merely a high value: fast camera motion also raises the
+            // cost and must not clear the temporal history (DLSS 5 recovers on its own, a reset always pops).
+            const float ref = std::max(m_costEma, 0.02f);
+            if (s.autoReset && m_statAvgCost > s.cutThreshold && m_statAvgCost > ref * kSceneCutRatio) { sceneCut = true; reset = true; }
+            m_costEma = sceneCut ? m_statAvgCost : (m_costEma <= 0.0f ? m_statAvgCost : m_costEma * 0.9f + m_statAvgCost * 0.1f);
+        } else {
+            m_costEma = 0.0f;
+        }
         m_resetRequested = false;
         if (reset) ++m_status.resets;
         m_status.sceneCut = sceneCut;
@@ -675,6 +905,13 @@ void Pipeline::Render(Device& device, SpoutReceiver& spout, const Settings& s, I
         const bool nvofBgra = (motionMode == MotionNvOpticalFlow) && m_nvofFmt == DXGI_FORMAT_B8G8R8A8_UNORM;
 
         RunConvert(device, cmd, spout, s, nvofBgra);
+
+        // Depth network input: every depthInterval processed frames, as soon as the worker is free.
+        const bool depthWanted = s.depthMode == DepthEstimated && m_depthInBuf;
+        if (depthWanted) {
+            ++m_depthFramesSinceCapture;
+            if (!m_depthInPending && m_depthEst.Idle() && m_depthFramesSinceCapture >= s.depthInterval) RunDepthCapture(device, cmd);
+        }
 
         device.TimerBegin(cmd, GpuTimer::Guidance);
         int densifyMode = MotionZero;
@@ -695,8 +932,10 @@ void Pipeline::Render(Device& device, SpoutReceiver& spout, const Settings& s, I
         }
         device.TimerBegin(cmd, GpuTimer::Guidance);
         RunDensify(device, cmd, s, densifyMode);
+        const bool depthApplied = depthWanted && RunDepthApply(device, cmd, reset);
         device.TimerEnd(cmd, GpuTimer::Guidance);
         m_status.motionModeActive = densifyMode;
+        m_status.depthModeActive = depthApplied ? DepthEstimated : (s.depthMode == DepthEstimated ? DepthZero : s.depthMode);
 
         if (dlaaWanted) {
             dlaaOk = RunDlaa(device, cmd, s, reset);
@@ -753,6 +992,17 @@ void Pipeline::AfterPresent(Device& device) {
 }
 
 void Pipeline::Update(Device& device, Capture& capture) {
+    if (m_depthInPending && m_depthInFence && device.IsFenceComplete(m_depthInFence)) {
+        m_depthInPending = false;
+        const size_t count = (size_t)m_depthInferW * m_depthInferH * 3;
+        D3D12_RANGE range{ 0, count * sizeof(float) };
+        void* p = nullptr;
+        if (m_depthInReadback && SUCCEEDED(m_depthInReadback->Map(0, &range, &p)) && p) {
+            if (!m_depthEst.Submit(static_cast<const float*>(p), count)) m_depthFramesSinceCapture = 1000;   // worker busy/not ready: retry next frame
+            D3D12_RANGE none{ 0, 0 };
+            m_depthInReadback->Unmap(0, &none);
+        }
+    }
     for (auto& r : m_readbacks) {
         if (!r.inUse || r.fence == 0 || !device.IsFenceComplete(r.fence)) continue;
         CaptureJob job;

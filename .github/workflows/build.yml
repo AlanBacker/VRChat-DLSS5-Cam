@@ -29,6 +29,9 @@ jobs:
           New-Item -ItemType Directory -Force -Path $out | Out-Null
           Copy-Item build/Release/VRChatDLSS5Cam.exe $out
           Copy-Item build/Release/nvngx_dlss.dll $out
+          Copy-Item build/Release/onnxruntime.dll, build/Release/onnxruntime_providers_shared.dll, build/Release/DirectML.dll $out
+          Copy-Item -Recurse build/Release/models "$out/models"
+          Copy-Item -Recurse build/Release/licenses "$out/licenses"
           Copy-Item README.md, LICENSE, THIRD_PARTY_NOTICES.md $out
           Copy-Item build/ngx_sdk/NVIDIA_LICENSE.txt $out
           Copy-Item -Recurse docs "$out/docs"

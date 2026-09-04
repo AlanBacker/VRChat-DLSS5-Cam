@@ -406,12 +406,15 @@ void App::Frame() {
 
     // Modal dialogs run their own message pump; open them only once the frame is fully submitted.
     if (m_pendingBrowseRuntime) { m_pendingBrowseRuntime = false; BrowseRuntime(); }
+    if (m_pendingBrowseDepthModel) { m_pendingBrowseDepthModel = false; BrowseDepthModel(); }
     if (m_pendingBrowseFolder) { m_pendingBrowseFolder = false; BrowseFolder(); }
 }
 
 void App::HandleEvents(ui::UiEvents& ev) {
     if (ev.captureNow) CaptureNow();
     if (ev.browseRuntime) m_pendingBrowseRuntime = true;
+    if (ev.browseDepthModel) m_pendingBrowseDepthModel = true;
+    if (ev.reloadDepth) m_pipeline.RestartDepthEstimator();
     if (ev.browseFolder) m_pendingBrowseFolder = true;
     if (ev.openCaptureFolder) {
         const std::wstring folder = EffectiveCaptureFolder();
@@ -543,6 +546,26 @@ void App::BrowseRuntime() {
         CoTaskMemFree(psz);
         if (m_settingsDirtyTime < 0.0) m_settingsDirtyTime = NowSeconds();
         LoadRuntime(true);
+    }
+}
+
+void App::BrowseDepthModel() {
+    ComPtr<IFileOpenDialog> dlg;
+    if (FAILED(CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&dlg)))) return;
+    DWORD opts = 0;
+    dlg->GetOptions(&opts);
+    dlg->SetOptions(opts | FOS_FORCEFILESYSTEM | FOS_FILEMUSTEXIST);
+    const COMDLG_FILTERSPEC filters[] = { { L"ONNX model (*.onnx)", L"*.onnx" }, { L"All files", L"*.*" } };
+    dlg->SetFileTypes(2, filters);
+    dlg->SetTitle(L"Depth model (Depth Anything V2, ONNX)");
+    if (FAILED(dlg->Show(m_hwnd))) return;
+    ComPtr<IShellItem> item;
+    if (FAILED(dlg->GetResult(&item))) return;
+    PWSTR psz = nullptr;
+    if (SUCCEEDED(item->GetDisplayName(SIGDN_FILESYSPATH, &psz)) && psz) {
+        m_settings.depthModelPath = WideToUtf8(psz);
+        CoTaskMemFree(psz);
+        if (m_settingsDirtyTime < 0.0) m_settingsDirtyTime = NowSeconds();
     }
 }
 

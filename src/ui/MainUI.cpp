@@ -358,8 +358,10 @@ void MainUI::SectionGuidance(Settings& s, const UiFrameInfo& info, UiEvents& ev)
         int perf = (s.nvofPerf == 5) ? 0 : (s.nvofPerf == 20) ? 2 : 1;
         const char* perfs[] = { TR(PerfSlow), TR(PerfMedium), TR(PerfFast) };
         if (ComboIds(TR(NvofPerf), &perf, perfs, 3)) { s.nvofPerf = (perf == 0) ? 5 : (perf == 2) ? 20 : 10; ev.settingsChanged = true; }
+        if (Toggle(TR(NvofBidirectional), &s.nvofBidirectional)) ev.settingsChanged = true;
+        Help(TR(TipNvofBidirectional));
         if (st) {
-            if (st->nvofReady) StatusDot(p.good, StrPrintf("%s: %s", TR(Nvof), TR(Available)).c_str());
+            if (st->nvofReady) StatusDot(p.good, StrPrintf("%s: %s%s", TR(Nvof), TR(Available), st->nvofBidirectional ? "  \xE2\x87\x84" : "").c_str());
             else if (!st->nvofAvailable) StatusDot(p.warn, StrPrintf("%s: %s", TR(Nvof), TR(NotAvailable)).c_str());
             else StatusDot(p.warn, StrPrintf("%s: %s", TR(Nvof), st->nvofError.empty() ? TR(NotAvailable) : st->nvofError.c_str()).c_str());
         }
@@ -369,8 +371,54 @@ void MainUI::SectionGuidance(Settings& s, const UiFrameInfo& info, UiEvents& ev)
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip)) ImGui::SetTooltip("%s", TR(TipConfidence));
     }
     {
-        const char* items[] = { TR(DepthFlat), TR(DepthGradient), TR(DepthZero) };
-        if (ComboIds(TR(DepthSource), &s.depthMode, items, 3, TR(TipDepth))) ev.settingsChanged = true;
+        // Display order puts the estimated depth first; the enum keeps the 0.1.x numbering.
+        const char* items[] = { TR(DepthEstimated), TR(DepthFlat), TR(DepthGradient), TR(DepthZero) };
+        int sel = (s.depthMode == DepthEstimated) ? 0 : std::clamp(s.depthMode, 0, 2) + 1;
+        if (ComboIds(TR(DepthSource), &sel, items, 4, TR(TipDepth))) { s.depthMode = (sel == 0) ? DepthEstimated : sel - 1; ev.settingsChanged = true; }
+    }
+    if (s.depthMode == DepthEstimated) {
+        if (st) {
+            switch (st->depthState) {
+            case (int)DepthEstimatorState::Ready:
+                StatusDot(p.good, StrPrintf("%s: %s  %s %ux%u  %s %.1f ms", TR(DepthStatus), TR(DepthReady), st->depthBackend.c_str(),
+                                            st->depthInferW, st->depthInferH, TR(Inference), st->depthInferMs).c_str());
+                break;
+            case (int)DepthEstimatorState::Initializing:
+                StatusDot(p.warn, StrPrintf("%s: %s", TR(DepthStatus), TR(DepthInitializing)).c_str());
+                break;
+            default:
+                StatusDot(p.warn, StrPrintf("%s: %s", TR(DepthStatus), TR(DepthUnavailable)).c_str());
+                ImGui::PushStyleColor(ImGuiCol_Text, p.warn);
+                if (!st->depthModelExists) ImGui::TextWrapped("%s", TR(DepthModelMissing));
+                else if (!st->depthMessage.empty()) ImGui::TextWrapped("%s", st->depthMessage.c_str());
+                ImGui::PopStyleColor();
+                break;
+            }
+        }
+        if (ImGui::SliderInt(TR(DepthInterval), &s.depthInterval, 1, 10, "%d", ImGuiSliderFlags_AlwaysClamp)) ev.settingsChanged = true;
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip)) ImGui::SetTooltip("%s", TR(TipDepthInterval));
+        {
+            static const int kSides[] = { 252, 336, 420, 518 };
+            const char* sides[] = { "252 px", "336 px", "420 px", "518 px" };
+            int res = 1;
+            for (int i = 0; i < 4; ++i) if (s.depthLongSide == kSides[i]) res = i;
+            if (ComboIds(TR(DepthResolution), &res, sides, 4, TR(TipDepthResolution))) { s.depthLongSide = kSides[res]; ev.settingsChanged = true; }
+        }
+        {
+            SyncBuffer(m_depthModelBuf, sizeof(m_depthModelBuf), s.depthModelPath, m_depthModelEditing);
+            const float btnW = ImGui::GetFrameHeight() * 1.6f;
+            ImGui::SetNextItemWidth(ImGui::CalcItemWidth() - btnW - ImGui::GetStyle().ItemInnerSpacing.x);
+            const std::string hint = st ? WideToUtf8(st->depthModelPath) : std::string();
+            ImGui::InputTextWithHint("##depthmodel", hint.c_str(), m_depthModelBuf, sizeof(m_depthModelBuf));
+            m_depthModelEditing = ImGui::IsItemActive();
+            if (ImGui::IsItemDeactivatedAfterEdit()) { s.depthModelPath = m_depthModelBuf; ev.settingsChanged = true; }
+            ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
+            if (ImGui::Button("...##depthmodel", ImVec2(btnW, 0))) ev.browseDepthModel = true;
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip)) ImGui::SetTooltip("%s", TR(Browse));
+            ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
+            ImGui::TextUnformatted(TR(DepthModel));
+            if (ImGui::SmallButton(StrPrintf("%s##depthreload", TR(Reload)).c_str())) ev.reloadDepth = true;
+        }
     }
     if (Toggle(TR(AutoReset), &s.autoReset)) ev.settingsChanged = true;
     Help(TR(TipAutoReset));
@@ -490,8 +538,8 @@ void MainUI::SectionCapture(Settings& s, const UiFrameInfo& info, UiEvents& ev) 
 
 void MainUI::SectionDisplay(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
     {
-        const char* items[] = { TR(CompareOutput), TR(CompareOriginal), TR(CompareWipe), TR(CompareMotion) };
-        if (ComboIds(TR(Compare), &s.compareMode, items, 4)) ev.settingsChanged = true;
+        const char* items[] = { TR(CompareOutput), TR(CompareOriginal), TR(CompareWipe), TR(CompareMotion), TR(CompareDepth) };
+        if (ComboIds(TR(Compare), &s.compareMode, items, 5)) ev.settingsChanged = true;
     }
     if (s.compareMode == CompareWipe) {
         if (ImGui::SliderFloat("##wipe", &s.wipePosition, 0.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) ev.settingsChanged = true;
@@ -659,8 +707,11 @@ void MainUI::DrawPreview(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
         lines[0] = StrPrintf("%s %ux%u  \xE2\x86\x92  %s %ux%u", TR(Source), st.srcWidth, st.srcHeight, TR(Output), st.outWidth, st.outHeight);
         lines[1] = StrPrintf("DLSS 5: %s", st.nrActive ? StrPrintf("%s  (P%d, %s %d, %.2f)", TR(Active), s.nrPreset, TR(Style), s.nrStyle, s.nrIntensity).c_str()
                                                         : (st.nrFailed ? TR(Failed) : TR(Bypass)));
-        const char* motion = st.motionModeActive == MotionNvOpticalFlow ? TR(MotionNvof) : st.motionModeActive == MotionCompute ? TR(MotionCompute) : TR(MotionZero);
-        lines[2] = StrPrintf("%s: %s%s%s", TR(MotionSource), motion, st.dlaaActive ? "  +DLAA" : "", st.sceneCut ? StrPrintf("  [%s]", TR(SceneCut)).c_str() : "");
+        const char* motion = st.motionModeActive == MotionNvOpticalFlow ? "NVOF" : st.motionModeActive == MotionCompute ? TR(MotionCompute) : TR(MotionZero);
+        const char* depth = st.depthModeActive == DepthEstimated ? "Depth Anything V2" : st.depthModeActive == DepthGradient ? TR(DepthGradient)
+                          : st.depthModeActive == DepthZero ? TR(DepthZero) : TR(DepthFlat);
+        lines[2] = StrPrintf("%s: %s   %s: %s%s%s", TR(MotionSource), motion, TR(DepthSource), depth, st.dlaaActive ? "  +DLAA" : "",
+                             st.sceneCut ? StrPrintf("  [%s]", TR(SceneCut)).c_str() : "");
         lines[3] = info.device ? StrPrintf("GPU %s   %.0f %s   %s %.0f %s", FormatMs(info.device->TimerMs(GpuTimer::Frame)).c_str(), info.fps, TR(Fps),
                                            TR(SenderFps), info.senderFps, TR(Fps))
                                : std::string();

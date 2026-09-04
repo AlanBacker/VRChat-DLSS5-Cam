@@ -13,17 +13,22 @@ public:
     static bool LibraryAvailable();
 
     // Inputs are R8_UNORM (luma) or B8G8R8A8_UNORM textures (width x height). grid = 1/2/4 output grid size, perfLevel 5 (slow) / 10 / 20 (fast).
-    bool Init(Device& device, UINT width, UINT height, DXGI_FORMAT inputFormat, UINT grid, UINT perfLevel, std::string& error);
+    // bidirectional = also compute the backward flow (previous -> current) so that a forward/backward consistency check can be applied.
+    bool Init(Device& device, UINT width, UINT height, DXGI_FORMAT inputFormat, UINT grid, UINT perfLevel, bool bidirectional, std::string& error);
     void Shutdown();
     bool Ready() const { return m_session != nullptr; }
 
-    // Computes flow from Input(currentIndex) to Input(1 - currentIndex) (i.e. current -> previous).
+    // Computes flow from Input(currentIndex) to Input(1 - currentIndex) (i.e. current -> previous) into FlowTexture/CostTexture and,
+    // when bidirectional, the reverse flow (previous -> current) into BackFlowTexture/BackCostTexture.
     bool Execute(int currentIndex, std::string& error);
 
     ID3D11Texture2D* Input(int index) const { return m_inputs[index & 1].Get(); }
     ID3D11Texture2D* FlowTexture() const { return m_flow.Get(); }
     ID3D11Texture2D* CostTexture() const { return m_cost.Get(); }
+    ID3D11Texture2D* BackFlowTexture() const { return m_flowBack.Get(); }
+    ID3D11Texture2D* BackCostTexture() const { return m_costBack.Get(); }
     bool HasCost() const { return m_cost != nullptr; }
+    bool Bidirectional() const { return m_flowBack != nullptr; }
     UINT Width() const { return m_width; }
     UINT Height() const { return m_height; }
     UINT Grid() const { return m_grid; }
@@ -37,12 +42,15 @@ private:
     std::string LastError() const;
 
     ComPtr<ID3D11Texture2D> m_inputs[2];
-    ComPtr<ID3D11Texture2D> m_flow;
-    ComPtr<ID3D11Texture2D> m_cost;
+    ComPtr<ID3D11Texture2D> m_flow, m_flowBack;
+    ComPtr<ID3D11Texture2D> m_cost, m_costBack;
     void*  m_session = nullptr;
     void*  m_inputHandles[2] = { nullptr, nullptr };
     void*  m_flowHandle = nullptr;
     void*  m_costHandle = nullptr;
+    void*  m_flowBackHandle = nullptr;
+    void*  m_costBackHandle = nullptr;
+    bool   m_wantBidirectional = false;
     UINT   m_width = 0, m_height = 0, m_grid = 2, m_flowW = 0, m_flowH = 0, m_perf = 10;
     DXGI_FORMAT m_inputFormat = DXGI_FORMAT_R8_UNORM;
     UINT64 m_executeCount = 0;

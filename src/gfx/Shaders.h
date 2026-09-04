@@ -4,7 +4,7 @@
 
 namespace vdc {
 
-enum class ShaderId : UINT { Convert = 0, Downsample, BlockMatch, MedianMv, Densify, Stats, Composite, Count };
+enum class ShaderId : UINT { Convert = 0, Downsample, BlockMatch, MedianMv, Densify, Stats, Composite, DepthPre, DepthPost, Count };
 
 // Mirrors cbuffer Constants in the HLSL (32 DWORDs of root constants).
 struct alignas(16) ShaderConstants {

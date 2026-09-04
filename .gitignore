@@ -13,5 +13,10 @@ nvngx_dlssd.dll
 nvngx_dlssg.dll
 _nvngx.dll
 *.lib
+# Runtime dependencies fetched at configure time (see cmake/FetchOnnxRuntime.cmake)
+onnxruntime*.dll
+DirectML*.dll
+*.onnx
+*.nupkg
 # Local scratch
 *.log

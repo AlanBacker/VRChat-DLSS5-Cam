@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(VRChatDLSS5Cam VERSION 0.1.2 LANGUAGES CXX)
+project(VRChatDLSS5Cam VERSION 0.2.0 LANGUAGES CXX)
 
 if(NOT WIN32)
   message(FATAL_ERROR "VRChat DLSS5 Cam targets Windows only.")
@@ -20,6 +20,11 @@ endif()
 # Downloaded at configure time from NVIDIA's public GitHub repository. The
 # leaked DLSS 5 runtime (nvngx_dlssnr.dll) is NEVER downloaded or shipped.
 include(cmake/FetchNGX.cmake)
+
+# --- ONNX Runtime (DirectML) + Depth Anything V2 Small ------------------------
+# Monocular depth estimation for the frame-guidance stage (the neural renderer
+# wants a depth buffer, a Spout stream has none). Downloaded from NuGet / Hugging Face.
+include(cmake/FetchOnnxRuntime.cmake)
 
 # --- Third party (vendored) ----------------------------------------------------
 add_library(imgui STATIC
@@ -58,6 +63,7 @@ set(APP_SOURCES
   src/gfx/Shaders.cpp
   src/gfx/Pipeline.cpp
   src/gfx/NvOpticalFlow.cpp
+  src/gfx/DepthEstimator.cpp
   src/ngx/NgxCore.cpp
   src/ngx/DlssnrFeature.cpp
   src/ngx/DlaaFeature.cpp
@@ -67,7 +73,7 @@ set(APP_SOURCES
 
 # The .manifest source is merged by CMake into the linker-generated manifest (per-monitor DPI, UTF-8 code page).
 add_executable(VRChatDLSS5Cam WIN32 ${APP_SOURCES} resources/app.rc resources/app.manifest)
-target_include_directories(VRChatDLSS5Cam PRIVATE src ${NGX_INCLUDE_DIR})
+target_include_directories(VRChatDLSS5Cam PRIVATE src ${NGX_INCLUDE_DIR} ${ORT_INCLUDE_DIR} ${DML_INCLUDE_DIR})
 target_compile_definitions(VRChatDLSS5Cam PRIVATE
   UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX _CRT_SECURE_NO_WARNINGS
   APP_VERSION_STRING="${PROJECT_VERSION}"
@@ -87,8 +93,27 @@ add_custom_command(TARGET VRChatDLSS5Cam POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_if_different "${NGX_DLSS_DLL}" "$<TARGET_FILE_DIR:VRChatDLSS5Cam>/nvngx_dlss.dll"
   COMMENT "Copying nvngx_dlss.dll next to the executable")
 
+# ONNX Runtime + DirectML are loaded dynamically at run time from the executable
+# folder; the depth model lives in models\ and the licenses in licenses\.
+add_custom_command(TARGET VRChatDLSS5Cam POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different "${ORT_DLL}" "$<TARGET_FILE_DIR:VRChatDLSS5Cam>/onnxruntime.dll"
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different "${ORT_PROVIDERS_SHARED_DLL}" "$<TARGET_FILE_DIR:VRChatDLSS5Cam>/onnxruntime_providers_shared.dll"
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different "${DML_DLL}" "$<TARGET_FILE_DIR:VRChatDLSS5Cam>/DirectML.dll"
+  COMMAND ${CMAKE_COMMAND} -E copy_directory "${ORT_LICENSE_DIR}" "$<TARGET_FILE_DIR:VRChatDLSS5Cam>/licenses"
+  COMMENT "Copying ONNX Runtime, DirectML and license files next to the executable")
+if(VDC_FETCH_DEPTH_MODEL)
+  add_custom_command(TARGET VRChatDLSS5Cam POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:VRChatDLSS5Cam>/models"
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different "${DEPTH_MODEL_FILE}" "$<TARGET_FILE_DIR:VRChatDLSS5Cam>/models/depth_anything_v2_small_fp16.onnx"
+    COMMENT "Copying the Depth Anything V2 Small model")
+endif()
+
 # --- Packaging -----------------------------------------------------------------
 install(TARGETS VRChatDLSS5Cam RUNTIME DESTINATION .)
-install(FILES "${NGX_DLSS_DLL}" DESTINATION .)
+install(FILES "${NGX_DLSS_DLL}" "${ORT_DLL}" "${ORT_PROVIDERS_SHARED_DLL}" "${DML_DLL}" DESTINATION .)
+install(DIRECTORY "${ORT_LICENSE_DIR}/" DESTINATION licenses)
+if(VDC_FETCH_DEPTH_MODEL)
+  install(FILES "${DEPTH_MODEL_FILE}" DESTINATION models)
+endif()
 install(FILES README.md LICENSE THIRD_PARTY_NOTICES.md DESTINATION .)
 install(DIRECTORY docs/ DESTINATION docs)

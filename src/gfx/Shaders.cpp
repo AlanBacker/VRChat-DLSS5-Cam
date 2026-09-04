@@ -321,12 +321,26 @@ Texture2D<float2>   BlockMv   : register(t0);
 Texture2D<float>    BlockCost : register(t1);
 Texture2D<int2>     Flow      : register(t2);
 Texture2D<uint>     FlowCost  : register(t3);
+Texture2D<int2>     FlowBack  : register(t4);
 RWTexture2D<float2> OutMv     : register(u0);
 RWTexture2D<float>  OutConf   : register(u1);
 RWTexture2D<float>  OutDepth  : register(u2);
 
 float Attenuate(float conf) {
     return saturate((conf - ParamA) / max(0.05, 1.0 - ParamA));
+}
+
+// Bilinear read of a S10.5 flow grid at grid-space position p (pixels).
+float2 SampleFlowBack(float2 p, int2 gdim) {
+    int2 i0 = int2(floor(p));
+    float2 f = p - float2(i0);
+    int2 a = clamp(i0, int2(0, 0), gdim - 1);
+    int2 b = clamp(i0 + int2(1, 0), int2(0, 0), gdim - 1);
+    int2 c = clamp(i0 + int2(0, 1), int2(0, 0), gdim - 1);
+    int2 d = clamp(i0 + int2(1, 1), int2(0, 0), gdim - 1);
+    float4 w = float4((1 - f.x) * (1 - f.y), f.x * (1 - f.y), (1 - f.x) * f.y, f.x * f.y);
+    return (float2(FlowBack.Load(int3(a, 0))) * w.x + float2(FlowBack.Load(int3(b, 0))) * w.y +
+            float2(FlowBack.Load(int3(c, 0))) * w.z + float2(FlowBack.Load(int3(d, 0))) * w.w) * (1.0 / 32.0);
 }
 
 [numthreads(8, 8, 1)]
@@ -358,16 +372,119 @@ void main(uint3 id : SV_DispatchThreadID) {
             float cost = (float(FlowCost.Load(int3(a, 0))) * w.x + float(FlowCost.Load(int3(b, 0))) * w.y +
                           float(FlowCost.Load(int3(c, 0))) * w.z + float(FlowCost.Load(int3(d, 0))) * w.w);
             conf = saturate(1.0 - cost / 255.0);
+            if (Flags & 8) {
+                // Forward/backward consistency: follow the vector into the previous frame and read the backward flow there.
+                // Where the two disagree (occlusions, noise, repeated patterns) the vector is unreliable.
+                float2 q = (float2(id.xy) + 0.5 + mv) / cell - 0.5;
+                float2 back = SampleFlowBack(q, gdim);
+                float err = length(mv + back);
+                float tol = 2.0 + 0.1 * length(mv);
+                conf *= saturate(1.0 - max(err - 0.5, 0.0) / tol);
+            }
         }
         mv *= Attenuate(conf);
         mv *= float2(ScaleX, ScaleY);
     }
     OutMv[id.xy] = mv;
     OutConf[id.xy] = conf;
+    // Depth placeholder: 0 flat, 1 gradient, 2+ zero (estimated depth is written by the DepthPost pass afterwards).
     float depth = 0.5;
     if (IntB == 1) depth = lerp(0.3, 0.85, (float(id.y) + 0.5) / float(DstHeight));
-    else if (IntB == 2) depth = 0.0;
+    else if (IntB >= 2) depth = 0.0;
     OutDepth[id.xy] = depth;
+}
+)HLSL";
+
+// ---------------------------------------------------------------------------
+// DepthPre: colour -> ImageNet-normalised planar float input (NCHW 1x3xHxW) for the depth network.
+// SrcWidth/SrcHeight = colour size, DstWidth/DstHeight = network resolution.
+
+const char* kDepthPre = R"HLSL(
+Texture2D<float4>         Color : register(t0);
+RWStructuredBuffer<float> Out   : register(u0);
+
+[numthreads(8, 8, 1)]
+void main(uint3 id : SV_DispatchThreadID) {
+    if (id.x >= DstWidth || id.y >= DstHeight) return;
+    float2 srcSize = float2(SrcWidth, SrcHeight);
+    float2 scale = srcSize / float2(DstWidth, DstHeight);
+    float2 c = (float2(id.xy) + 0.5) * scale;
+    // 2x2 supersampled bilinear taps: a cheap anti-aliased downsample (the ratio is usually 3-6x).
+    float3 rgb = 0;
+    [unroll] for (int j = 0; j < 2; ++j) {
+        [unroll] for (int i = 0; i < 2; ++i) {
+            float2 off = (float2(i, j) - 0.5) * 0.5 * scale;
+            rgb += Color.SampleLevel(LinearClamp, (c + off) / srcSize, 0).rgb;
+        }
+    }
+    rgb *= 0.25;
+    float3 n = (rgb - float3(0.485, 0.456, 0.406)) / float3(0.229, 0.224, 0.225);
+    uint plane = DstWidth * DstHeight;
+    uint idx = id.y * DstWidth + id.x;
+    Out[idx] = n.r;
+    Out[plane + idx] = n.g;
+    Out[2 * plane + idx] = n.b;
+}
+)HLSL";
+
+// ---------------------------------------------------------------------------
+// DepthPost: raw network output (IntA x IntB relative inverse depth) -> normalised depth at DstWidth x DstHeight
+// (1 = near, 0 = far), temporally filtered with the motion vectors.
+// Flags: 1 = a new inference is available this frame, 2 = history valid.
+// ParamA = P02, ParamB = 1 / (P98 - P02), ParamC = history weight.
+
+const char* kDepthPost = R"HLSL(
+StructuredBuffer<float> Raw      : register(t0);
+Texture2D<float>        History  : register(t1);
+Texture2D<float2>       Mv       : register(t2);
+Texture2D<float>        Conf     : register(t3);
+RWTexture2D<float>      OutDepth : register(u0);
+RWTexture2D<float>      OutHist  : register(u1);
+
+float SampleRaw(float2 uv) {
+    int2 dim = int2(IntA, IntB);
+    float2 p = uv * float2(dim) - 0.5;
+    int2 i0 = int2(floor(p));
+    float2 f = p - float2(i0);
+    int2 a = clamp(i0, int2(0, 0), dim - 1);
+    int2 b = clamp(i0 + int2(1, 0), int2(0, 0), dim - 1);
+    int2 c = clamp(i0 + int2(0, 1), int2(0, 0), dim - 1);
+    int2 d = clamp(i0 + int2(1, 1), int2(0, 0), dim - 1);
+    return lerp(lerp(Raw[a.y * IntA + a.x], Raw[b.y * IntA + b.x], f.x),
+                lerp(Raw[c.y * IntA + c.x], Raw[d.y * IntA + d.x], f.x), f.y);
+}
+
+[numthreads(8, 8, 1)]
+void main(uint3 id : SV_DispatchThreadID) {
+    if (id.x >= DstWidth || id.y >= DstHeight) return;
+    float2 size = float2(DstWidth, DstHeight);
+    float2 uv = (float2(id.xy) + 0.5) / size;
+    float d = 0.0;
+    bool haveHist = (Flags & 2) != 0;
+    float reproj = 0.0;
+    if (haveHist) {
+        // Previous position of this pixel (motion vectors point from the current to the previous frame).
+        float2 mv = Mv.Load(int3(id.xy, 0));
+        float conf = Conf.Load(int3(id.xy, 0));
+        float2 prev = float2(id.xy) + 0.5 + mv;
+        bool inside = all(prev >= 0.0) && all(prev < size);
+        float moved = History.SampleLevel(LinearClamp, prev / size, 0);
+        float held = History.Load(int3(id.xy, 0));
+        reproj = (inside && conf > 0.05) ? moved : held;
+    }
+    if (Flags & 1) {
+        float cur = saturate((SampleRaw(uv) - ParamA) * ParamB);
+        float w = 0.0;
+        if (haveHist) {
+            float diff = abs(cur - reproj);
+            w = ParamC * saturate(1.0 - diff * 6.0);
+        }
+        d = lerp(cur, reproj, w);
+    } else {
+        d = reproj;
+    }
+    OutDepth[id.xy] = d;
+    OutHist[id.xy] = d;
 }
 )HLSL";
 
@@ -412,13 +529,14 @@ void main(uint tid : SV_GroupIndex) {
 // ---------------------------------------------------------------------------
 // Composite: final image (for capture) and display image (compare modes, checkerboard, motion view).
 // Flags: 1 = keep alpha, 2 = checkerboard, 4 = bypass, 32 = original/motion are at a different resolution.
-// IntA = compare mode (0 output, 1 original, 2 wipe, 3 motion). ParamA = wipe position, ParamB = motion scale.
+// IntA = compare mode (0 output, 1 original, 2 wipe, 3 motion, 4 depth). ParamA = wipe position, ParamB = motion scale.
 
 const char* kComposite = R"HLSL(
 Texture2D<float4>   Original   : register(t0);
 Texture2D<float4>   Processed  : register(t1);
 Texture2D<float2>   Mv         : register(t2);
 Texture2D<float>    Conf       : register(t3);
+Texture2D<float>    Depth      : register(t4);
 RWTexture2D<float4> OutFinal   : register(u0);
 RWTexture2D<float4> OutDisplay : register(u1);
 
@@ -453,8 +571,12 @@ void main(uint3 id : SV_DispatchThreadID) {
         float hue = atan2(mv.y, mv.x) / 6.2831853 + 0.5;
         rgb = Hsv(hue, saturate(len), 1.0) * lerp(0.35, 1.0, c);
         a = 1.0;
+    } else if (mode == 4) {
+        float dz = scaled ? Depth.SampleLevel(LinearClamp, uv, 0) : Depth.Load(int3(id.xy, 0));
+        rgb = dz.xxx;
+        a = 1.0;
     }
-    if ((Flags & 2) && mode != 3) {
+    if ((Flags & 2) && mode < 3) {
         float ch = (((id.x >> 4) + (id.y >> 4)) & 1) ? 0.30 : 0.22;
         rgb = lerp(ch.xxx, rgb, a);
     }
@@ -471,6 +593,8 @@ const ShaderSource kSources[] = {
     { ShaderId::Densify,    "Densify",    kDensify },
     { ShaderId::Stats,      "Stats",      kStats },
     { ShaderId::Composite,  "Composite",  kComposite },
+    { ShaderId::DepthPre,   "DepthPre",   kDepthPre },
+    { ShaderId::DepthPost,  "DepthPost",  kDepthPost },
 };
 
 } // namespace

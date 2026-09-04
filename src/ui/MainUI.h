@@ -38,6 +38,8 @@ struct UiFrameInfo {
 struct UiEvents {
     bool captureNow = false;
     bool browseRuntime = false;
+    bool browseDepthModel = false;
+    bool reloadDepth = false;
     bool browseFolder = false;
     bool openCaptureFolder = false;
     bool openLogFile = false;
@@ -81,9 +83,11 @@ private:
 
     std::vector<ToastItem> m_toasts;
     char   m_runtimeBuf[1024] = {};
+    char   m_depthModelBuf[1024] = {};
     char   m_folderBuf[1024] = {};
     char   m_senderBuf[256] = {};
     bool   m_runtimeEditing = false;
+    bool   m_depthModelEditing = false;
     bool   m_folderEditing = false;
     float  m_zoom = 1.0f;
     ImVec2 m_pan = ImVec2(0, 0);

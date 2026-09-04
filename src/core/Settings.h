@@ -6,8 +6,8 @@ namespace vdc {
 
 // Enumerations shared by settings, pipeline and UI.
 enum MotionMode  { MotionZero = 0, MotionCompute = 1, MotionNvOpticalFlow = 2 };
-enum DepthMode   { DepthFlat = 0, DepthGradient = 1, DepthZero = 2 };
-enum CompareMode { CompareOutput = 0, CompareOriginal = 1, CompareWipe = 2, CompareMotion = 3 };
+enum DepthMode   { DepthFlat = 0, DepthGradient = 1, DepthZero = 2, DepthEstimated = 3 };
+enum CompareMode { CompareOutput = 0, CompareOriginal = 1, CompareWipe = 2, CompareMotion = 3, CompareDepth = 4 };
 enum FitMode     { FitWindow = 0, FitOneToOne = 1 };
 enum NrRoute     { RouteSignedSnippet = 0, RouteNgxCore = 1 };
 
@@ -42,14 +42,19 @@ struct Settings {
     bool        nrUpscale = false;     // experimental: let DLSSNR upscale to the custom resolution
 
     // Frame guidance (motion vectors / depth)
-    int   motionMode = MotionCompute;
-    int   depthMode = DepthFlat;
+    int   motionMode = MotionNvOpticalFlow;   // falls back to block matching when the hardware engine is unavailable
+    int   depthMode = DepthEstimated;         // falls back to zero depth when the estimator is unavailable
     int   searchRadius = 7;            // block-matching radius at quarter resolution
     float motionConfidence = 0.35f;    // confidence below which vectors are damped
     int   nvofGrid = 2;                // 1, 2, 4
     int   nvofPerf = 10;               // 5 slow, 10 medium, 20 fast
-    bool  autoReset = true;
+    bool  nvofBidirectional = true;    // forward/backward consistency check
+    int   depthInterval = 4;           // run the depth network every N processed frames (1..10)
+    int   depthLongSide = 336;         // network resolution (long side): 252, 336, 420, 518
+    std::string depthModelPath;        // UTF-8, empty = <exe folder>\models\depth_anything_v2_small_fp16.onnx
+    bool  autoReset = false;           // reset the temporal history on detected scene cuts (DLSS 5 recovers by itself)
     float cutThreshold = 0.10f;
+    int   settingsVersion = 2;         // bumped when defaults change; older files are migrated in Load()
 
     // DLAA pre-pass (DLSS super resolution at native resolution)
     bool dlaaEnabled = false;

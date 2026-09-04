@@ -18,15 +18,17 @@ lossless PNG photos. It is a stand-alone Windows application: nothing is injecte
 
 ## Features
 
-- **Live preview** of the VRChat camera after DLSS 5 processing, with side-by-side wipe, original, and motion-vector views.
+- **Live preview** of the VRChat camera after DLSS 5 processing, with side-by-side wipe, original, motion-vector and depth views.
 - **DLSS 5 Neural Rendering** hosted directly from `nvngx_dlssnr.dll`, with the same parameters exposed by RenoDX's
   DLSS 5 ReShade add-on: preset, style, intensity, global tone, local tone, local structure, skin structure,
   auto mask and UI correction. Parameters are applied instantly and can be tuned on a frozen frame.
-- **Frame guidance.** DLSSNR is a temporal model that expects motion vectors and depth. The app computes them for
-  the video stream on the GPU (hierarchical block matching), or uses the **NVIDIA Optical Flow** hardware engine when
-  available, and can add a **DLAA** pass (DLSS super resolution at native size) before neural rendering.
+- **Frame guidance.** DLSSNR is a temporal model that expects motion vectors and depth.
+  The app feeds it **NVIDIA Optical Flow** motion vectors with a forward/backward consistency check and a depth map
+  estimated on the GPU by **Depth Anything V2** (ONNX Runtime + DirectML). GPU block matching and placeholder depth
+  remain available as fallbacks, and a **DLAA** pass (DLSS super resolution at native size) can be added before
+  neural rendering.
 - **Adaptive resolution.** The sender resolution is detected automatically; a custom output resolution can be set,
-  optionally letting DLSS 5 upscale to it. Scene cuts are detected and the temporal history is reset.
+  optionally letting DLSS 5 upscale to it. Optional scene-cut detection resets the temporal history.
 - **Lossless capture.** PNG photos of the processed frame (and optionally of the original), with a global hotkey
   (`Ctrl+Alt+P` by default) that works while VRChat is in the foreground, and an optional time-lapse mode.
 - **Four languages** (English, 简体中文, 日本語, 한국어), automatic selection from the Windows UI language.
@@ -66,9 +68,9 @@ Tips
 | DLSS 5 | Local structure / Skin structure | Detail enhancement; skin structure may be left at the runtime default. |
 | DLSS 5 | Auto mask / UI correction | Automatic subject mask, UI-safe processing. |
 | DLSS 5 | Route | *Signed snippet*: host `nvngx_dlssnr.dll` directly. *NGX core*: create the feature through the NGX runtime. |
-| Frame guidance | Motion vectors | None (zero), GPU block matching, or NVIDIA Optical Flow (driver `nvofapi64.dll`). |
-| Frame guidance | Depth | Flat, gradient, or zero depth buffer fed to DLSSNR. |
-| Frame guidance | Auto reset | Detects scene cuts from the block-matching cost and clears the temporal history. |
+| Frame guidance | Motion vectors | NVIDIA Optical Flow (driver `nvofapi64.dll`, with a bidirectional consistency check), GPU block matching, or none (zero). |
+| Frame guidance | Depth | AI estimated (Depth Anything V2 Small on DirectML; update interval and network resolution are adjustable), flat, gradient, or zero. |
+| Frame guidance | Auto reset | Clears the temporal history on sharp matching-cost jumps (scene cuts). Off by default. |
 | DLAA | Enable / Preset | Optional DLSS anti-aliasing pass at native resolution before neural rendering. |
 | Capture | Keep alpha / Save original / Hotkey / Time-lapse | Capture options. |
 | Display | Compare / Fit / VSync / Overlay | Preview options. |
@@ -82,7 +84,8 @@ Settings are stored in `%LOCALAPPDATA%\VRChatDLSS5Cam\settings.ini`; the log is 
 - **NGX not initialized / DLAA unsupported** – the NGX runtime needs an NVIDIA GPU and a current driver. DLSSNR still works through the *Signed snippet* route.
 - **The app does not start / closes immediately** – open `%LOCALAPPDATA%\VRChatDLSS5Cam\` and check `log.txt` (its last line is the step that failed) and `crash.txt` (written whenever the process crashes). Attach both files to an issue.
 - **Neural rendering failed** – some runtime builds need a newer driver; check `log.txt` for the NGX result code. Try *Preset* 0 and the *NGX core* route.
-- **Low frame rate** – disable DLAA, lower the search radius, or choose NVIDIA Optical Flow for motion vectors.
+- **Depth estimator unavailable** – `onnxruntime.dll`, `onnxruntime_providers_shared.dll`, `DirectML.dll` and `models\depth_anything_v2_small_fp16.onnx` must sit next to the executable (all are part of the release package). Until the estimator is ready the app falls back to zero depth; its state is shown under *Frame guidance*.
+- **Low frame rate** – disable DLAA, raise the depth update interval or lower the depth network resolution, lower the search radius, or choose NVIDIA Optical Flow for motion vectors.
 
 ## Building from source
 
@@ -96,19 +99,28 @@ cmake --build build --config Release --parallel
 ```
 
 The configure step downloads the NVIDIA DLSS SDK (headers, `nvsdk_ngx_s.lib`, `nvngx_dlss.dll`) from NVIDIA's public
-GitHub repository. Shaders are compiled at run time, so no shader toolchain is needed.
+GitHub repository, ONNX Runtime (DirectML build) and DirectML from NuGet, and the Depth Anything V2 Small FP16 model
+from Hugging Face (`-DVDC_FETCH_DEPTH_MODEL=OFF` skips the model). All downloads are hash-checked. Shaders are compiled
+at run time, so no shader toolchain is needed.
 
 ## How it works
 
 ```
 VRChat Stream Camera ──Spout──▶ D3D11on12 receive ──▶ convert (sRGB / resize)
-      ▶ luma pyramid ──▶ block matching / NVIDIA Optical Flow ──▶ motion vectors + depth
+      ▶ NVIDIA Optical Flow (forward + backward) / block matching ──▶ motion vectors + confidence
+      ▶ Depth Anything V2 (ONNX Runtime DirectML, every N frames) ──▶ normalized depth, reprojected in between
       ▶ [DLAA] ──▶ DLSSNR (nvngx_dlssnr.dll) ──▶ composite / compare ──▶ preview + PNG capture
 ```
 
 The application hosts the DLSS 5 neural-rendering snippet outside the NGX runtime: the DLL is
 loaded directly, its module-name check is satisfied, and the `DLSSNR.*` NGX parameter contract is used to create and
 evaluate the feature on a D3D12 compute queue. See `src/ngx/DlssnrFeature.cpp`.
+
+The guidance scheme is built for video input: same-resolution SDR input, hardware optical flow whose
+confidence is lowered where forward and backward vectors disagree, monocular depth from Depth Anything V2 normalized
+(2nd/98th percentile) to inverted relative depth and carried along the motion vectors between inferences, and no
+per-frame history resets. Everything here is an independent MIT
+implementation (`src/gfx/Pipeline.cpp`, `src/gfx/DepthEstimator.cpp`, `src/gfx/Shaders.cpp`).
 
 ## License
 

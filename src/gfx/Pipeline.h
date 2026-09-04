@@ -3,6 +3,7 @@
 #include "gfx/Device.h"
 #include "gfx/Shaders.h"
 #include "gfx/NvOpticalFlow.h"
+#include "gfx/DepthEstimator.h"
 #include "ngx/NgxCore.h"
 #include "ngx/DlssnrFeature.h"
 #include "ngx/DlaaFeature.h"
@@ -34,9 +35,21 @@ struct PipelineStatus {
     bool        dlaaFailed = false;
     std::string dlaaError;
     int         motionModeActive = MotionZero;   // what actually ran on the last processed frame
+    int         depthModeActive = DepthZero;     // depth actually fed to DLSSNR on the last processed frame
     bool        nvofAvailable = false;
     bool        nvofReady = false;
+    bool        nvofBidirectional = false;
     std::string nvofError;
+    int         depthState = 0;                  // DepthEstimatorState
+    std::string depthMessage;                    // failure reason or backend name
+    std::string depthBackend;
+    UINT        depthInferW = 0, depthInferH = 0;
+    double      depthInferMs = 0.0;              // last network run
+    double      depthWarmupMs = 0.0;
+    double      depthAgeMs = 0.0;                // time since the last network result was applied
+    UINT64      depthInferences = 0;
+    std::wstring depthModelPath;                 // effective model path
+    bool        depthModelExists = false;
     float       statAvgCost = 0.0f, statMaxCost = 0.0f, statAvgMotion = 0.0f;
     bool        sceneCut = false;
     UINT64      resets = 0;
@@ -54,6 +67,7 @@ public:
     void UnloadNrRuntime(Device& device);
 
     void RequestReset() { m_resetRequested = true; }
+    void RestartDepthEstimator() { m_depthRestart = true; }
     void MarkNrDirty() { m_nrDirty = true; m_nrFailed = false; m_nrError.clear(); }
     void MarkDlaaDirty() { m_dlaaFailed = false; m_dlaaError.clear(); }
     void RequestCapture(const std::wstring& folder, bool keepAlpha, bool saveOriginal);
@@ -91,10 +105,12 @@ private:
     struct Config {
         UINT srcW = 0, srcH = 0; DXGI_FORMAT srcFmt = DXGI_FORMAT_UNKNOWN;
         UINT inW = 0, inH = 0, outW = 0, outH = 0;
-        bool nvof = false; UINT nvofGrid = 2, nvofPerf = 10;
+        bool nvof = false; UINT nvofGrid = 2, nvofPerf = 10; bool nvofBidir = true;
+        bool depthEst = false; UINT depthLongSide = 336; std::wstring depthModel;
         bool operator==(const Config& o) const {
             return srcW == o.srcW && srcH == o.srcH && srcFmt == o.srcFmt && inW == o.inW && inH == o.inH &&
-                   outW == o.outW && outH == o.outH && nvof == o.nvof && nvofGrid == o.nvofGrid && nvofPerf == o.nvofPerf;
+                   outW == o.outW && outH == o.outH && nvof == o.nvof && nvofGrid == o.nvofGrid && nvofPerf == o.nvofPerf &&
+                   nvofBidir == o.nvofBidir && depthEst == o.depthEst && depthLongSide == o.depthLongSide && depthModel == o.depthModel;
         }
     };
 
@@ -104,7 +120,10 @@ private:
     bool Rebuild(Device& device, const Config& cfg);
     void ReleaseResources(Device& device);
     void ReleaseFeatures(Device& device);
+    void ReleaseDepthResources(Device& device);
+    bool CreateDepthResources(Device& device, const Config& cfg);
     Config ComputeConfig(const SpoutReceiver& spout, const Settings& s) const;
+    std::wstring DepthModelPath(const Settings& s) const;
 
     void RunConvert(Device& device, ID3D12GraphicsCommandList* cmd, SpoutReceiver& spout, const Settings& s, bool writeNvof);
     void RunGuidance(Device& device, ID3D12GraphicsCommandList* cmd, const Settings& s, int motionMode, bool haveHistory);
@@ -112,6 +131,8 @@ private:
     void RunDensify(Device& device, ID3D12GraphicsCommandList* cmd, const Settings& s, int mode);
     void RunStats(Device& device, ID3D12GraphicsCommandList* cmd);
     void ReadStats(Device& device);
+    void RunDepthCapture(Device& device, ID3D12GraphicsCommandList*& cmd);      // colour -> network input -> CPU readback
+    bool RunDepthApply(Device& device, ID3D12GraphicsCommandList* cmd, bool reset);   // network output -> m_depth (temporally filtered)
     bool RunDlaa(Device& device, ID3D12GraphicsCommandList* cmd, const Settings& s, bool reset);
     bool RunNeural(Device& device, ID3D12GraphicsCommandList* cmd, const Settings& s, Tex& input, bool reset);
     void RunComposite(Device& device, ID3D12GraphicsCommandList* cmd, const Settings& s, Tex& processed, bool bypass);
@@ -122,6 +143,7 @@ private:
     DlssnrFeature  m_nr;
     DlaaFeature    m_dlaa;
     NvOpticalFlow  m_nvof;
+    DepthEstimator m_depthEst;
     std::wstring   m_exeDir, m_appDataDir;
 
     Config m_cfg;
@@ -136,7 +158,9 @@ private:
     Tex m_bm[3], m_bc[3];       // block motion / cost per level
     Tex m_bmMed[2];             // median-filtered level-0 motion, ping-pong
     Tex m_flow, m_cost;         // NVOF results (D3D12 side)
+    Tex m_flowBack, m_costBack; // NVOF backward pass (previous -> current)
     Tex m_mv, m_conf, m_depth;  // dense guidance
+    Tex m_depthHist[2];         // temporally filtered depth, ping-pong by frame parity
     Tex m_dlaaOut, m_nrOut;
     Tex m_final, m_display;
     ComPtr<ID3D12Resource>      m_statsBuf;
@@ -147,10 +171,32 @@ private:
     DescriptorPair              m_displayStatic;
 
     ComPtr<ID3D11Texture2D> m_nvofSrc11[2];
-    ComPtr<ID3D11Texture2D> m_flow11, m_cost11;
+    ComPtr<ID3D11Texture2D> m_flow11, m_cost11, m_flowBack11, m_costBack11;
     DXGI_FORMAT             m_nvofFmt = DXGI_FORMAT_UNKNOWN;
     bool                    m_nvofReady = false;
     std::string             m_nvofError;
+
+    // Depth estimation: GPU pre-pass -> readback -> worker thread (ONNX Runtime) -> upload -> GPU post-pass.
+    ComPtr<ID3D12Resource>      m_depthInBuf;                 // planar float network input (UAV)
+    D3D12_CPU_DESCRIPTOR_HANDLE m_depthInUav{};
+    D3D12_RESOURCE_STATES       m_depthInState = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
+    ComPtr<ID3D12Resource>      m_depthInReadback;
+    UINT64                      m_depthInFence = 0;
+    bool                        m_depthInPending = false;
+    ComPtr<ID3D12Resource>      m_depthRawBuf;                // network output (SRV)
+    D3D12_CPU_DESCRIPTOR_HANDLE m_depthRawSrv{};
+    D3D12_RESOURCE_STATES       m_depthRawState = D3D12_RESOURCE_STATE_COPY_DEST;
+    ComPtr<ID3D12Resource>      m_depthUpload[Device::kFramesInFlight];
+    UINT   m_depthInferW = 0, m_depthInferH = 0;              // network resolution
+    UINT   m_depthRawW = 0, m_depthRawH = 0;                  // size of the uploaded network output
+    bool   m_depthHaveRaw = false;
+    bool   m_depthHistValid = false;
+    bool   m_depthRestart = false;
+    bool   m_depthModelExists = false;
+    int    m_depthFramesSinceCapture = 1000;
+    float  m_depthP02 = 0.0f, m_depthInvRange = 1.0f;         // smoothed normalisation range
+    double m_depthLastResultTime = 0.0;
+    double m_depthInferMs = 0.0;
 
     int    m_cur = 0;                 // ping-pong index
     bool   m_haveHistory = false;
@@ -167,6 +213,7 @@ private:
     double m_lastFreshTime = 0.0;
     double m_frameIntervalMs = 16.7;
     float  m_statAvgCost = 0.0f, m_statMaxCost = 0.0f, m_statAvgMotion = 0.0f;
+    float  m_costEma = 0.0f;          // running average of the matching cost (scene-cut reference)
     bool   m_lastWasBlockMode = false;
 
     bool         m_captureRequested = false;

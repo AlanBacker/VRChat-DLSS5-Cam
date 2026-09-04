@@ -84,8 +84,22 @@ bool Settings::Load(const std::wstring& path) {
     r.Get("motionConfidence", motionConfidence);
     r.Get("nvofGrid", nvofGrid);
     r.Get("nvofPerf", nvofPerf);
+    r.Get("nvofBidirectional", nvofBidirectional);
+    r.Get("depthInterval", depthInterval);
+    r.Get("depthLongSide", depthLongSide);
+    r.Get("depthModelPath", depthModelPath);
     r.Get("autoReset", autoReset);
     r.Get("cutThreshold", cutThreshold);
+    int fileVersion = 1;
+    r.Get("settingsVersion", fileVersion);
+    if (fileVersion < 2) {
+        // 0.1.x files: block matching, flat depth and auto reset were the defaults. 0.2.0 moved to hardware optical
+        // flow, estimated depth and no automatic resets; adopt the new defaults once.
+        motionMode = Settings().motionMode;
+        depthMode = Settings().depthMode;
+        autoReset = Settings().autoReset;
+    }
+    settingsVersion = Settings().settingsVersion;
     r.Get("dlaaEnabled", dlaaEnabled);
     r.Get("dlaaPreset", dlaaPreset);
     r.Get("compareMode", compareMode);
@@ -137,12 +151,17 @@ bool Settings::Save(const std::wstring& path) const {
     w.Put("hdrHighlightCompression", hdrHighlightCompression);
     w.Put("nrUiCorrection", nrUiCorrection);
     w.Put("nrUpscale", nrUpscale);
+    w.Put("settingsVersion", settingsVersion);
     w.Put("motionMode", motionMode);
     w.Put("depthMode", depthMode);
     w.Put("searchRadius", searchRadius);
     w.Put("motionConfidence", motionConfidence);
     w.Put("nvofGrid", nvofGrid);
     w.Put("nvofPerf", nvofPerf);
+    w.Put("nvofBidirectional", nvofBidirectional);
+    w.Put("depthInterval", depthInterval);
+    w.Put("depthLongSide", depthLongSide);
+    w.Put("depthModelPath", depthModelPath);
     w.Put("autoReset", autoReset);
     w.Put("cutThreshold", cutThreshold);
     w.Put("dlaaEnabled", dlaaEnabled);
@@ -191,14 +210,16 @@ void Settings::Clamp() {
     hdrPaperWhite = std::clamp(hdrPaperWhite, 0.1f, 8.0f);
     hdrHighlightCompression = std::clamp(hdrHighlightCompression, 0.0f, 1.0f);
     motionMode = std::clamp(motionMode, 0, 2);
-    depthMode = std::clamp(depthMode, 0, 2);
+    depthMode = std::clamp(depthMode, 0, 3);
+    depthInterval = std::clamp(depthInterval, 1, 10);
+    if (depthLongSide != 252 && depthLongSide != 336 && depthLongSide != 420 && depthLongSide != 518) depthLongSide = 336;
     searchRadius = std::clamp(searchRadius, 2, 12);
     motionConfidence = std::clamp(motionConfidence, 0.0f, 1.0f);
     if (nvofGrid != 1 && nvofGrid != 2 && nvofGrid != 4) nvofGrid = 2;
     if (nvofPerf != 5 && nvofPerf != 10 && nvofPerf != 20) nvofPerf = 10;
     cutThreshold = std::clamp(cutThreshold, 0.01f, 0.5f);
     if (dlaaPreset != 0 && dlaaPreset != 10 && dlaaPreset != 11 && dlaaPreset != 12 && dlaaPreset != 13) dlaaPreset = 11;
-    compareMode = std::clamp(compareMode, 0, 3);
+    compareMode = std::clamp(compareMode, 0, 4);
     wipePosition = std::clamp(wipePosition, 0.0f, 1.0f);
     fitMode = std::clamp(fitMode, 0, 1);
     timelapseSeconds = std::clamp(timelapseSeconds, 0, 3600);

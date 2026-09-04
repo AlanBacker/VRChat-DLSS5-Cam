@@ -36,6 +36,7 @@ private:
     std::wstring EffectiveRuntimePath() const;
     std::wstring EffectiveCaptureFolder() const;
     void BrowseRuntime();
+    void BrowseDepthModel();
     void BrowseFolder();
     void OpenPath(const std::wstring& path);
 
@@ -52,6 +53,7 @@ private:
     bool          m_pendingResize = false;
     UINT          m_pendingWidth = 0, m_pendingHeight = 0;
     bool          m_pendingBrowseRuntime = false;
+    bool          m_pendingBrowseDepthModel = false;
     bool          m_pendingBrowseFolder = false;
     float         m_dpiScale = 1.0f;
 
