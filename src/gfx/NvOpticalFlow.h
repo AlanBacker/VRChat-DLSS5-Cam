@@ -22,7 +22,7 @@ public:
 
     // Inputs are R8_UNORM (luma) or B8G8R8A8_UNORM textures (width x height). grid = 1/2/4 output grid size, perfLevel 5 (slow) / 10 / 20 (fast).
     // bidirectional = also compute the backward flow (previous -> current) so that a forward/backward consistency check can be applied.
-    bool Init(Device& device, UINT width, UINT height, DXGI_FORMAT inputFormat, UINT grid, UINT perfLevel, bool bidirectional, std::string& error);
+    bool Init(GpuContext& gpu, UINT width, UINT height, DXGI_FORMAT inputFormat, UINT grid, UINT perfLevel, bool bidirectional, std::string& error);
     void Shutdown();
     bool Ready() const { return m_session != nullptr && m_fence12 != nullptr; }
 
@@ -39,7 +39,7 @@ public:
     // Waits on the GPU for that submission, runs the forward (current -> previous) and, when available, backward pass, publishes
     // the results in Flow12()/Cost12()/FlowBack12()/CostBack12() and makes the D3D12 queue wait for them. resetHints disables the
     // temporal hints for this frame (scene cut / history reset). Returns false (with an empty error) while only priming.
-    bool Execute(Device& device, bool resetHints, std::string& error);
+    bool Execute(GpuContext& gpu, bool resetHints, std::string& error);
 
     bool HasCost() const { return m_sharedCost12 != nullptr; }
     bool Bidirectional() const { return m_sharedFlowBack12 != nullptr; }
@@ -53,10 +53,10 @@ public:
     UINT64 ExecuteCount() const { return m_executeCount; }
 
 private:
-    bool EnsureDevice(Device& device, std::string& error);
-    bool CreateSharedTexture(Device& device, UINT w, UINT h, DXGI_FORMAT fmt, ComPtr<ID3D11Texture2D>& tex11, ComPtr<ID3D12Resource>& res12,
+    bool EnsureDevice(GpuContext& gpu, std::string& error);
+    bool CreateSharedTexture(GpuContext& gpu, UINT w, UINT h, DXGI_FORMAT fmt, ComPtr<ID3D11Texture2D>& tex11, ComPtr<ID3D12Resource>& res12,
                              const char* what, std::string& error);
-    bool CreateSessionAndRegister(Device& device, bool withCost, bool bidirectional, bool verbose, std::string& error);
+    bool CreateSessionAndRegister(GpuContext& gpu, bool withCost, bool bidirectional, bool verbose, std::string& error);
     void ReleaseSession();
     void WaitForD3D11();
     std::string LastError() const;

@@ -8,7 +8,8 @@
 
 VRChat DLSS5 Cam grabs the picture of VRChat's built-in camera (Stream Camera with *Spout Stream* enabled),
 runs it through **DLSS 5 Neural Rendering (DLSSNR)** in real time, shows the result live and saves
-lossless PNG photos. It is a stand-alone Windows application: nothing is injected into VRChat and no mod is required.
+lossless PNG photos. It can also open a picture from disk and run it through DLSS 5. It is a stand-alone Windows
+application: nothing is injected into VRChat and no mod is required.
 
 [![Build](https://github.com/AlanBacker/VRChat-DLSS5-Cam/actions/workflows/build.yml/badge.svg)](https://github.com/AlanBacker/VRChat-DLSS5-Cam/actions/workflows/build.yml)
 
@@ -22,16 +23,19 @@ lossless PNG photos. It is a stand-alone Windows application: nothing is injecte
 - **DLSS 5 Neural Rendering** hosted directly from `nvngx_dlssnr.dll`, with the same parameters exposed by RenoDX's
   DLSS 5 ReShade add-on: preset, style, intensity, global tone, local tone, local structure, skin structure,
   auto mask and UI correction. Parameters are applied instantly and can be tuned on a frozen frame.
-- **Frame guidance.** DLSSNR is a temporal model that expects motion vectors and depth.
-  The app feeds it **NVIDIA Optical Flow** motion vectors with a forward/backward consistency check and a depth map
-  estimated on the GPU by **Depth Anything V2** (ONNX Runtime + DirectML). GPU block matching and placeholder depth
-  remain available as fallbacks, and a **DLAA** pass (DLSS super resolution at native size) can be added before
-  neural rendering.
+- **Still images.** Open a photo or screenshot (PNG, JPEG, BMP, TIFF, GIF, WebP, HEIC…) or drop it onto the window;
+  DLSS 5 refines it over several passes and *Process & save PNG* writes the result next to your captures.
+- **Frame guidance.** DLSSNR is a temporal model that expects motion vectors and depth. The app feeds it
+  **NVIDIA Optical Flow** motion vectors with a forward/backward consistency check and a depth map estimated on the
+  GPU by **Depth Anything V2** (ONNX Runtime + DirectML). GPU block matching and placeholder depth remain available
+  as fallbacks, and a **DLAA** pass (DLSS super resolution at native size) can be added before neural rendering.
 - **Adaptive resolution.** The sender resolution is detected automatically; a custom output resolution can be set,
   optionally letting DLSS 5 upscale to it. Optional scene-cut detection resets the temporal history.
 - **Lossless capture.** PNG photos of the processed frame (and optionally of the original), with a global hotkey
   (`Ctrl+Alt+P` by default) that works while VRChat is in the foreground, and an optional time-lapse mode.
 - **Four languages** (English, 简体中文, 日本語, 한국어), automatic selection from the Windows UI language.
+- **Responsive interface.** The window runs on its own thread and GPU queue; the preview and controls stay smooth even
+  when a 4K neural pass takes tens of milliseconds.
 - Per-monitor DPI aware, dark themed UI, GPU timers and a built-in log.
 
 ## Requirements
@@ -55,17 +59,22 @@ Tips
 - The Spout stream resolution is controlled by VRChat. Raise `camera_spout_res_width` / `camera_spout_res_height` in VRChat's `config.json` for higher-resolution input; the app adapts automatically.
 - If you prefer a different output size, enable *Custom resolution* in the *Source* section. With *DLSS 5 upscale* on, DLSSNR renders the larger image itself.
 - Use the *Wipe* compare mode and drag the handle in the preview to judge the effect of each parameter.
+- To process a picture instead of the live camera, switch *Input* in the *Source* section to *Image file* and open it
+  (or simply drop the file onto the window). Adjust the sliders, then press *Process & save PNG* (or the hotkey); the
+  result is written as `<name>_DLSS5_<w>x<h>.png` into the capture folder. Pictures larger than 8192 px on the long side
+  are processed at a reduced size.
 
 ## Parameters
 
 | Section | Setting | Meaning |
 |---|---|---|
+| Source | Input | *VRChat camera (Spout)* or *Image file*. |
 | Source | Paper white / Highlight compression | Shown only for floating-point (linear HDR) Spout textures: exposure reference and soft highlight roll-off applied before the SDR neural pass. |
 | DLSS 5 | Preset | Hint render preset passed to DLSSNR (0–3). |
 | DLSS 5 | Style | `DLSSNR.Style`: default / natural / cinematic. |
-| DLSS 5 | Intensity | Overall strength of the neural pass. |
-| DLSS 5 | Global tone / Local tone | Global and local tone mapping strength. |
-| DLSS 5 | Local structure / Skin structure | Detail enhancement; skin structure may be left at the runtime default. |
+| DLSS 5 | Intensity | Overall strength of the neural pass, 0–2. Up to 1 it is the runtime's own strength; above 1 the app amplifies the difference between the neural result and the original (may exaggerate artifacts). |
+| DLSS 5 | Global tone / Local tone | Global and local tone mapping strength, 0–1 (the runtime clamps its strengths to this range). |
+| DLSS 5 | Local structure / Skin structure | Detail enhancement, 0–1; skin structure may be left at the runtime default. |
 | DLSS 5 | Auto mask / UI correction | Automatic subject mask, UI-safe processing. |
 | DLSS 5 | Route | *Signed snippet*: host `nvngx_dlssnr.dll` directly. *NGX core*: create the feature through the NGX runtime. |
 | Frame guidance | Motion vectors | NVIDIA Optical Flow (driver `nvofapi64.dll`, with a bidirectional consistency check), GPU block matching, or none (zero). |
@@ -86,7 +95,7 @@ Settings are stored in `%LOCALAPPDATA%\VRChatDLSS5Cam\settings.ini`; the log is 
 - **Neural rendering failed** – some runtime builds need a newer driver; check `log.txt` for the NGX result code. Try *Preset* 0 and the *NGX core* route.
 - **Depth estimator unavailable** – `onnxruntime.dll`, `onnxruntime_providers_shared.dll`, `DirectML.dll` and `models\depth_anything_v2_small_fp16.onnx` must sit next to the executable (all are part of the release package). Until the estimator is ready the app falls back to zero depth; its state is shown under *Frame guidance*.
 - **Optical flow unavailable** – NVIDIA Optical Flow runs on a private native D3D11 device (the driver rejects the D3D11On12 layer, which was the cause of the "UNSUPPORTED_DEVICE" error in 0.2.0). If `log.txt` says "NVOF unavailable, falling back to block matching", update the GeForce driver; block matching is used automatically until then. The status dot under *Frame guidance* shows which source is active.
-- **Low frame rate** – disable DLAA, raise the depth update interval or lower the depth network resolution, lower the search radius, or choose NVIDIA Optical Flow for motion vectors. With NVIDIA Optical Flow keep the flow grid at 4 px (the fastest setting; 2 px and 1 px cost far more at 4K). The log prints a `Perf:` line every 15 s with the GPU time of each stage.
+- **Low frame rate** – disable DLAA, raise the depth update interval or lower the depth network resolution, lower the search radius, or choose NVIDIA Optical Flow for motion vectors. With NVIDIA Optical Flow keep the flow grid at 4 px (the fastest setting; 2 px and 1 px cost far more at 4K). The log prints a `Perf:` line every 15 s with the processing rate, the CPU cost per frame (receive / wait / record / submit), the GPU time of each stage and the depth network cost; only frames that were actually processed count. The interface has its own thread, so a low processing rate no longer slows down the window.
 
 ## Building from source
 
@@ -113,17 +122,23 @@ VRChat Stream Camera ──Spout──▶ D3D11on12 receive ──▶ convert (s
       ▶ [DLAA] ──▶ DLSSNR (nvngx_dlssnr.dll) ──▶ composite / compare ──▶ preview + PNG capture
 ```
 
-The application hosts the DLSS 5 neural-rendering snippet outside the NGX runtime: the DLL is
-loaded directly, its module-name check is satisfied, and the `DLSSNR.*` NGX parameter contract is used to create and
-evaluate the feature on a D3D12 compute queue. See `src/ngx/DlssnrFeature.cpp`.
+The application hosts the DLSS 5 neural-rendering snippet outside the NGX runtime: the DLL is loaded directly, its
+module-name check is satisfied, and the `DLSSNR.*` NGX parameter contract is used to create and evaluate the feature on
+a D3D12 queue. See `src/ngx/DlssnrFeature.cpp`.
 
-The guidance scheme is built for video input: same-resolution SDR input, hardware optical flow whose
-confidence is lowered where forward and backward vectors disagree, monocular depth from Depth Anything V2 normalized
-(2nd/98th percentile) to inverted relative depth and carried along the motion vectors between inferences, and no
-per-frame history resets. Everything here is an independent MIT
-implementation (`src/gfx/Pipeline.cpp`, `src/gfx/DepthEstimator.cpp`, `src/gfx/Shaders.cpp`). The optical flow engine
-runs on a private native D3D11 device; frames and vectors cross to D3D12 through NT-handle shared textures ordered by a
-shared fence (`src/gfx/NvOpticalFlow.cpp`).
+The guidance scheme is built for video input: same-resolution SDR input, hardware optical flow whose confidence is
+lowered where forward and backward vectors disagree, monocular depth from Depth Anything V2 normalized (2nd/98th
+percentile) to inverted relative depth and carried along the motion vectors between inferences, and no per-frame
+history resets. Everything is an independent MIT implementation (`src/gfx/Pipeline.cpp`, `src/gfx/DepthEstimator.cpp`,
+`src/gfx/Shaders.cpp`). The optical flow engine runs on a private native D3D11 device; frames and vectors cross to
+D3D12 through NT-handle shared textures ordered by a shared fence (`src/gfx/NvOpticalFlow.cpp`).
+
+Two threads share the GPU: the processing thread owns the Spout receiver (or the still image), the pipeline and a
+D3D12 queue of its own; the interface thread owns the window, ImGui and a high-priority present queue. Finished
+pictures are handed over through three display buffers with cross-queue fence waits, so the preview always shows the
+newest completed frame and the window never waits for the neural pass (`src/core/App.cpp`, `src/gfx/Device.cpp`).
+A still image is decoded with WIC (EXIF orientation applied), uploaded once and run through the same pipeline with zero
+motion for a number of passes until the temporal network settles.
 
 ## License
 

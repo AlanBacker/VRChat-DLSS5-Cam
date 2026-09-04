@@ -31,7 +31,9 @@ class Shaders {
 public:
     bool Init(Device& device, std::wstring& error);
     void Shutdown();
-    void Dispatch(ID3D12GraphicsCommandList* cmd, Device& device, const DispatchDesc& d);
+    // Records one compute dispatch. The descriptor table lives in gpu's per-frame ring, so cmd must be that
+    // context's command list.
+    void Dispatch(ID3D12GraphicsCommandList* cmd, GpuContext& gpu, const DispatchDesc& d);
 
     static UINT Groups(UINT size, UINT threads) { return (size + threads - 1) / threads; }
 

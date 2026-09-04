@@ -13,15 +13,23 @@ namespace vdc::ui {
 struct UiFrameInfo {
     const PipelineStatus* status = nullptr;
     const AdapterInfo*    adapter = nullptr;
-    const Device*         device = nullptr;
-    double                fps = 0.0;
-    double                cpuMs = 0.0;
+    double                fps = 0.0;               // interface thread
+    double                cpuMs = 0.0;             // interface thread, per frame
+    double                uiGpuMs = 0.0;           // present-queue time of the last interface frame
+    double                processingFps = 0.0;     // processed source frames per second (processing thread)
+    int                   sourceMode = SourceSpout;
     const std::vector<std::string>* senders = nullptr;
     std::string           senderName;
     double                senderFps = 0.0;
     std::string           sourceFormat;
-    bool                  sourceConnected = false;
+    bool                  sourceConnected = false;  // sender receiving / image decoded
     bool                  sourceIsHdr = false;      // floating-point (linear HDR) Spout texture
+    std::wstring          imagePath;
+    std::string           imageName;                // file name of the opened picture (UTF-8)
+    UINT                  imageWidth = 0, imageHeight = 0;           // as processed
+    UINT                  imageOrigWidth = 0, imageOrigHeight = 0;   // as stored in the file
+    bool                  imageLoaded = false;
+    bool                  imageConverging = false;  // still-image passes still running
     std::wstring          nrRuntimePath;      // effective path
     bool                  nrRuntimeExists = false;
     std::wstring          captureFolder;      // effective folder
@@ -56,6 +64,8 @@ struct UiEvents {
     bool refreshSenders = false;
     bool resetDefaults = false;
     bool reloadRuntime = false;
+    bool openImage = false;          // browse for a picture
+    bool sourceModeChanged = false;  // s.sourceMode switched between Spout and image
 };
 
 class MainUI {

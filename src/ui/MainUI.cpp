@@ -114,7 +114,11 @@ void MainUI::DrawTopBar(Settings& s, const UiFrameInfo& info, UiEvents& ev, cons
     ImGui::PopFont();
     ImGui::SameLine(0.0f, 14.0f);
     ImGui::SetCursorPosY(y + 2.0f);
-    if (info.sourceConnected) Pill(TR(StatusConnected), WithAlpha(p.good, 0.18f), p.good);
+    const bool imageMode = s.sourceMode == SourceImage;
+    if (imageMode) {
+        if (info.imageLoaded) Pill(TR(ImageLabel), WithAlpha(p.good, 0.18f), p.good);
+        else Pill(TR(NoImage), WithAlpha(p.muted, 0.2f), p.muted);
+    } else if (info.sourceConnected) Pill(TR(StatusConnected), WithAlpha(p.good, 0.18f), p.good);
     else if (info.senders && !info.senders->empty()) Pill(TR(StatusWaiting), WithAlpha(p.warn, 0.18f), p.warn);
     else Pill(TR(StatusNoSpout), WithAlpha(p.muted, 0.2f), p.muted);
     if (info.status && info.status->nrActive) {
@@ -123,11 +127,14 @@ void MainUI::DrawTopBar(Settings& s, const UiFrameInfo& info, UiEvents& ev, cons
         Pill("DLSS 5", WithAlpha(p.accent, 0.2f), p.accentHover);
     }
 
-    // Right-aligned controls: FPS, language, sidebar toggle, capture.
-    const float captureW = ImGui::CalcTextSize(TR(Capture)).x + style.FramePadding.x * 2.0f + 24.0f;
+    // Right-aligned controls: processing / interface rates, language, sidebar toggle, capture.
+    const char* captureText = imageMode ? TR(ProcessAndSave) : TR(Capture);
+    const float captureW = ImGui::CalcTextSize(captureText).x + style.FramePadding.x * 2.0f + 24.0f;
     const float langW = ImGui::GetFontSize() * 8.0f;
     const float sidebarBtnW = ImGui::GetFrameHeight() + 6.0f;
-    const std::string fpsText = StrPrintf("%.0f %s", info.fps, TR(Fps));
+    const std::string fpsText = imageMode
+        ? StrPrintf("%s %.0f %s", TR(UiFps), info.fps, TR(Fps))
+        : StrPrintf("%s %.0f %s  \xC2\xB7  %s %.0f %s", TR(ProcessingFps), info.processingFps, TR(Fps), TR(UiFps), info.fps, TR(Fps));
     const float fpsW = ImGui::CalcTextSize(fpsText.c_str()).x;
     const float total = captureW + langW + sidebarBtnW + fpsW + style.ItemSpacing.x * 3.0f;
     ImGui::SameLine(std::max(ImGui::GetCursorPosX(), ImGui::GetWindowWidth() - style.WindowPadding.x - total));
@@ -135,6 +142,7 @@ void MainUI::DrawTopBar(Settings& s, const UiFrameInfo& info, UiEvents& ev, cons
     ImGui::PushFont(fonts.Mono(), 0.0f);
     ImGui::TextDisabled("%s", fpsText.c_str());
     ImGui::PopFont();
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip)) ImGui::SetTooltip("%s", TR(TipUiFps));
     ImGui::SameLine();
     ImGui::SetCursorPosY(y);
     ImGui::SetNextItemWidth(langW);
@@ -148,9 +156,9 @@ void MainUI::DrawTopBar(Settings& s, const UiFrameInfo& info, UiEvents& ev, cons
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip)) ImGui::SetTooltip("%s", TR(Sidebar));
     ImGui::SameLine();
     ImGui::SetCursorPosY(y);
-    const std::string captureLabel = std::string("\xE2\x97\x8F ") + TR(Capture);
+    const std::string captureLabel = std::string("\xE2\x97\x8F ") + captureText;
     if (AccentButton(captureLabel.c_str(), ImVec2(captureW, 0))) ev.captureNow = true;
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip)) ImGui::SetTooltip("%s (%s)", TR(CaptureHint), info.hotkeyText.c_str());
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip)) ImGui::SetTooltip("%s (%s)", imageMode ? TR(ImageHint) : TR(CaptureHint), info.hotkeyText.c_str());
     ImGui::EndChild();
 }
 
@@ -170,6 +178,30 @@ void MainUI::DrawSidebar(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
 
 void MainUI::SectionSource(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
     const Palette& p = Colors();
+    // Live camera stream or a picture from disk.
+    {
+        const char* modes[] = { TR(SourceSpout), TR(SourceImage) };
+        if (ComboIds(TR(SourceMode), &s.sourceMode, modes, 2, TR(SourceModeHint))) { ev.sourceModeChanged = true; ev.settingsChanged = true; }
+    }
+    if (s.sourceMode == SourceImage) {
+        if (ImGui::Button(TR(OpenImage), ImVec2(-FLT_MIN, 0))) ev.openImage = true;
+        if (info.imageLoaded) {
+            StatusDot(p.good, StrPrintf("%s  %ux%u", info.imageName.c_str(), info.imageOrigWidth, info.imageOrigHeight).c_str());
+            if (info.imageWidth != info.imageOrigWidth || info.imageHeight != info.imageOrigHeight)
+                ImGui::TextDisabled("%s (%ux%u)", TR(ImageDownscaled), info.imageWidth, info.imageHeight);
+            if (info.imageConverging) ImGui::TextDisabled("%s", TR(Processing));
+            if (AccentButton(TR(ProcessAndSave), ImVec2(-FLT_MIN, 0))) ev.captureNow = true;
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip)) ImGui::SetTooltip("%s", TR(CaptureHint));
+        } else {
+            StatusDot(p.muted, TR(NoImage));
+            ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(ImGuiCol_TextDisabled));
+            ImGui::TextWrapped("%s", TR(ImageHint));
+            ImGui::PopStyleColor();
+        }
+        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(ImGuiCol_TextDisabled));
+        ImGui::TextWrapped("%s", TR(DropHint));
+        ImGui::PopStyleColor();
+    } else {
     // Sender selection.
     {
         const std::string preview = s.senderName.empty() ? std::string(TR(SenderAuto)) : s.senderName;
@@ -200,6 +232,7 @@ void MainUI::SectionSource(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         ImGui::TextWrapped("%s", TR(HowToEnable));
         ImGui::PopStyleColor();
     }
+    }
     ImGui::Spacing();
     // Custom resolution.
     if (Toggle(TR(CustomResolution), &s.customResolution)) ev.settingsChanged = true;
@@ -221,11 +254,13 @@ void MainUI::SectionSource(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         ImGui::NewLine();
         ImGui::Unindent(6.0f);
     }
-    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(ImGuiCol_TextDisabled));
-    ImGui::TextWrapped("%s", TR(VrchatResHint));
-    ImGui::PopStyleColor();
+    if (s.sourceMode != SourceImage) {
+        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(ImGuiCol_TextDisabled));
+        ImGui::TextWrapped("%s", TR(VrchatResHint));
+        ImGui::PopStyleColor();
+    }
     // HDR source controls: only meaningful for floating-point (scene-linear) Spout textures.
-    if (info.sourceIsHdr) {
+    if (info.sourceIsHdr && s.sourceMode != SourceImage) {
         ImGui::Spacing();
         ImGui::TextUnformatted(TR(HdrSource));
         ImGui::Indent(6.0f);
@@ -302,17 +337,24 @@ void MainUI::SectionNeural(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         if (ComboIds(TR(Style), &s.nrStyle, styles, 3, TR(TipStyle))) { ev.nrChanged = true; ev.settingsChanged = true; }
     }
     bool ch = false;
+    // The runtime clamps every strength to 0..1. Intensity keeps the 0..2 range: above 1 the composite pass
+    // amplifies the difference between the neural result and the original.
     ch |= SliderReset(TR(Intensity), &s.nrIntensity, 0.0f, 2.0f, 1.0f, "%.2f", TR(TipIntensity));
-    ch |= SliderReset(TR(GlobalTone), &s.nrGlobalTone, 0.0f, 2.0f, 1.0f, "%.2f", TR(TipGlobalTone));
-    ch |= SliderReset(TR(LocalTone), &s.nrLocalTone, 0.0f, 2.0f, 1.0f, "%.2f", TR(TipLocalTone));
-    ch |= SliderReset(TR(LocalStructure), &s.nrLocalStructure, 0.0f, 2.0f, 1.0f, "%.2f", TR(TipLocalStructure));
+    if (s.nrIntensity > 1.0f) {
+        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(ImGuiCol_TextDisabled));
+        ImGui::TextWrapped("%s", TR(ResidualHint));
+        ImGui::PopStyleColor();
+    }
+    ch |= SliderReset(TR(GlobalTone), &s.nrGlobalTone, 0.0f, 1.0f, 1.0f, "%.2f", TR(TipGlobalTone));
+    ch |= SliderReset(TR(LocalTone), &s.nrLocalTone, 0.0f, 1.0f, 1.0f, "%.2f", TR(TipLocalTone));
+    ch |= SliderReset(TR(LocalStructure), &s.nrLocalStructure, 0.0f, 1.0f, 1.0f, "%.2f", TR(TipLocalStructure));
     {
         bool useDefault = s.nrSkinStructure < 0.0f;
         ImGui::PushID("skin");
         if (ImGui::Checkbox(TR(UseDefault), &useDefault)) { s.nrSkinStructure = useDefault ? -1.0f : 1.0f; ch = true; }
         ImGui::SameLine();
         ImGui::TextDisabled("(%s)", TR(SkinStructure));
-        if (!useDefault) ch |= SliderReset(TR(SkinStructure), &s.nrSkinStructure, 0.0f, 2.0f, 1.0f, "%.2f", TR(TipSkinStructure));
+        if (!useDefault) ch |= SliderReset(TR(SkinStructure), &s.nrSkinStructure, 0.0f, 1.0f, 1.0f, "%.2f", TR(TipSkinStructure));
         else if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip)) ImGui::SetTooltip("%s", TR(TipSkinStructure));
         ImGui::PopID();
     }
@@ -334,8 +376,8 @@ void MainUI::SectionNeural(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         s.nrLocalStructure = 1.0f; s.nrSkinStructure = -1.0f; s.nrAutoMask = false; s.nrUiCorrection = false;
         ev.nrChanged = true; ev.settingsChanged = true;
     }
-    if (st && info.device) {
-        ImGui::TextDisabled("%s: %s   %s: %llu", TR(GpuTime), FormatMs(info.device->TimerMs(GpuTimer::Neural)).c_str(),
+    if (st) {
+        ImGui::TextDisabled("%s: %s   %s: %llu", TR(GpuTime), FormatMs(st->gpuMs[(UINT)GpuTimer::Neural]).c_str(),
                             TR(Frames), (unsigned long long)st->processedFrames);
     }
     ImGui::Spacing();
@@ -429,9 +471,9 @@ void MainUI::SectionGuidance(Settings& s, const UiFrameInfo& info, UiEvents& ev)
     if (st) {
         ImGui::TextDisabled("%s: %.3f (max %.3f)   |mv| %.2f px", TR(FrameCost), st->statAvgCost, st->statMaxCost, st->statAvgMotion);
         ImGui::TextDisabled("%s: %llu", TR(Resets), (unsigned long long)st->resets);
-        if (info.device)
-            ImGui::TextDisabled("%s: %s / %s: %s", TR(TmGuidance), FormatMs(info.device->TimerMs(GpuTimer::Guidance)).c_str(),
-                                TR(TmOpticalFlow), FormatMs(info.device->TimerMs(GpuTimer::OpticalFlow)).c_str());
+        if (info.status)
+            ImGui::TextDisabled("%s: %s / %s: %s", TR(TmGuidance), FormatMs(info.status->gpuMs[(UINT)GpuTimer::Guidance]).c_str(),
+                                TR(TmOpticalFlow), FormatMs(info.status->gpuMs[(UINT)GpuTimer::OpticalFlow]).c_str());
     }
     ImGui::Spacing();
 }
@@ -464,13 +506,13 @@ void MainUI::SectionDlaa(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         if (ComboIds(TR(DlaaPreset), &s.dlaaPreset, presets, 16, TR(TipDlaaPreset))) { ev.dlaaChanged = true; ev.settingsChanged = true; }
         ImGui::EndDisabled();
     }
-    if (info.device) ImGui::TextDisabled("%s: %s", TR(GpuTime), FormatMs(info.device->TimerMs(GpuTimer::Dlaa)).c_str());
+    if (info.status) ImGui::TextDisabled("%s: %s", TR(GpuTime), FormatMs(info.status->gpuMs[(UINT)GpuTimer::Dlaa]).c_str());
     ImGui::Spacing();
 }
 
 void MainUI::SectionCapture(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
     const Palette& p = Colors();
-    if (AccentButton(TR(Capture), ImVec2(-FLT_MIN, 0))) ev.captureNow = true;
+    if (AccentButton(s.sourceMode == SourceImage ? TR(ProcessAndSave) : TR(Capture), ImVec2(-FLT_MIN, 0))) ev.captureNow = true;
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip)) ImGui::SetTooltip("%s", TR(CaptureHint));
     {
         SyncBuffer(m_folderBuf, sizeof(m_folderBuf), s.captureFolder, m_folderEditing);
@@ -556,20 +598,23 @@ void MainUI::SectionDisplay(Settings& s, const UiFrameInfo& info, UiEvents& ev) 
     if (Toggle(TR(Vsync), &s.vsync)) ev.settingsChanged = true;
     if (Toggle(TR(Overlay), &s.showOverlay)) ev.settingsChanged = true;
     if (Toggle(TR(ShowLog), &s.showLog)) ev.settingsChanged = true;
-    if (info.device) {
+    if (info.status) {
         ImGui::TextDisabled("%s:", TR(Timers));
         const struct { GpuTimer t; const char* name; } timers[] = {
             { GpuTimer::Convert, TR(TmConvert) }, { GpuTimer::Guidance, TR(TmGuidance) }, { GpuTimer::OpticalFlow, TR(TmOpticalFlow) },
-            { GpuTimer::Dlaa, TR(TmDlaa) }, { GpuTimer::Neural, TR(TmNeural) }, { GpuTimer::Composite, TR(TmComposite) }, { GpuTimer::Ui, TR(TmUi) },
+            { GpuTimer::Dlaa, TR(TmDlaa) }, { GpuTimer::Neural, TR(TmNeural) }, { GpuTimer::Composite, TR(TmComposite) },
         };
         if (ImGui::BeginTable("timers", 2, ImGuiTableFlags_SizingStretchProp)) {
             for (const auto& t : timers) {
                 ImGui::TableNextRow();
                 ImGui::TableNextColumn(); ImGui::TextDisabled("%s", t.name);
-                ImGui::TableNextColumn(); ImGui::Text("%s", FormatMs(info.device->TimerMs(t.t)).c_str());
+                ImGui::TableNextColumn(); ImGui::Text("%s", FormatMs(info.status->gpuMs[(UINT)t.t]).c_str());
             }
             ImGui::TableNextRow();
-            ImGui::TableNextColumn(); ImGui::TextDisabled("CPU");
+            ImGui::TableNextColumn(); ImGui::TextDisabled("%s", TR(TmUi));
+            ImGui::TableNextColumn(); ImGui::Text("%s", FormatMs(info.uiGpuMs).c_str());
+            ImGui::TableNextRow();
+            ImGui::TableNextColumn(); ImGui::TextDisabled("%s CPU", TR(UiFps));
             ImGui::TableNextColumn(); ImGui::Text("%s", FormatMs(info.cpuMs).c_str());
             ImGui::EndTable();
         }
@@ -622,7 +667,8 @@ void MainUI::DrawPreview(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
     ImDrawList* dl = ImGui::GetWindowDrawList();
 
     if (!info.hasDisplay || !info.displayTexture || !info.displayWidth || !info.displayHeight) {
-        const char* text = info.sourceConnected ? TR(NoDisplay) : TR(PreviewHint);
+        const char* text = (s.sourceMode == SourceImage) ? (info.imageLoaded ? TR(NoDisplay) : TR(ImageHint))
+                                                         : (info.sourceConnected ? TR(NoDisplay) : TR(PreviewHint));
         ImGui::PushFont(fonts.Ui(), ImGui::GetStyle().FontSizeBase * 1.1f);
         const float wrap = std::min(region.x * 0.8f, ImGui::GetFontSize() * 30.0f);
         const ImVec2 size = ImGui::CalcTextSize(text, nullptr, false, wrap);
@@ -712,9 +758,10 @@ void MainUI::DrawPreview(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
                           : st.depthModeActive == DepthZero ? TR(DepthZero) : TR(DepthFlat);
         lines[2] = StrPrintf("%s: %s   %s: %s%s%s", TR(MotionSource), motion, TR(DepthSource), depth, st.dlaaActive ? "  +DLAA" : "",
                              st.sceneCut ? StrPrintf("  [%s]", TR(SceneCut)).c_str() : "");
-        lines[3] = info.device ? StrPrintf("GPU %s   %.0f %s   %s %.0f %s", FormatMs(info.device->TimerMs(GpuTimer::Frame)).c_str(), info.fps, TR(Fps),
-                                           TR(SenderFps), info.senderFps, TR(Fps))
-                               : std::string();
+        lines[3] = (s.sourceMode == SourceImage)
+            ? StrPrintf("GPU %s   %s %.0f %s   %s", FormatMs(st.gpuMs[(UINT)GpuTimer::Frame]).c_str(), TR(UiFps), info.fps, TR(Fps), info.imageName.c_str())
+            : StrPrintf("GPU %s   %s %.0f %s   %s %.0f %s   %s %.0f %s", FormatMs(st.gpuMs[(UINT)GpuTimer::Frame]).c_str(),
+                        TR(ProcessingFps), info.processingFps, TR(Fps), TR(UiFps), info.fps, TR(Fps), TR(SenderFps), info.senderFps, TR(Fps));
         ImGui::PushFont(fonts.Mono(), ImGui::GetStyle().FontSizeBase * 0.92f);
         float w = 0.0f;
         for (auto& l : lines) w = std::max(w, ImGui::CalcTextSize(l.c_str()).x);
@@ -739,20 +786,25 @@ void MainUI::DrawPreview(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
 
 // ------------------------------------------------------------------------------------------
 
-void MainUI::DrawStatusBar(Settings& /*s*/, const UiFrameInfo& info, UiEvents& /*ev*/, const Fonts& fonts) {
+void MainUI::DrawStatusBar(Settings& s, const UiFrameInfo& info, UiEvents& /*ev*/, const Fonts& fonts) {
     const Palette& p = Colors();
     ImGui::BeginChild("##status", ImVec2(0, 0), ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar);
     ImGui::SetCursorPosY(ImGui::GetStyle().ItemSpacing.y);
-    if (info.sourceConnected && info.status)
+    if (s.sourceMode == SourceImage) {
+        if (info.imageLoaded) StatusDot(p.good, StrPrintf("%s  %ux%u", info.imageName.c_str(), info.imageWidth, info.imageHeight).c_str());
+        else StatusDot(p.muted, TR(NoImage));
+    } else if (info.sourceConnected && info.status) {
         StatusDot(p.good, StrPrintf("%s  %ux%u @ %.0f", info.senderName.c_str(), info.status->srcWidth, info.status->srcHeight, info.senderFps).c_str());
-    else
+    } else {
         StatusDot(p.muted, TR(StatusWaiting));
-    if (info.status && info.device) {
+    }
+    if (info.status) {
+        const PipelineStatus& st = *info.status;
         ImGui::SameLine(0.0f, 24.0f);
         ImGui::PushFont(fonts.Mono(), 0.0f);
-        ImGui::TextDisabled("%s %s | %s %s | %s %s | %s %s", TR(TmGuidance), FormatMs(info.device->TimerMs(GpuTimer::Guidance) + info.device->TimerMs(GpuTimer::OpticalFlow)).c_str(),
-                            TR(TmNeural), FormatMs(info.device->TimerMs(GpuTimer::Neural)).c_str(), TR(TmComposite), FormatMs(info.device->TimerMs(GpuTimer::Composite)).c_str(),
-                            TR(TmUi), FormatMs(info.device->TimerMs(GpuTimer::Ui)).c_str());
+        ImGui::TextDisabled("%s %s | %s %s | %s %s | %s %s", TR(TmGuidance), FormatMs(st.gpuMs[(UINT)GpuTimer::Guidance] + st.gpuMs[(UINT)GpuTimer::OpticalFlow]).c_str(),
+                            TR(TmNeural), FormatMs(st.gpuMs[(UINT)GpuTimer::Neural]).c_str(), TR(TmComposite), FormatMs(st.gpuMs[(UINT)GpuTimer::Composite]).c_str(),
+                            TR(TmUi), FormatMs(info.uiGpuMs).c_str());
         ImGui::PopFont();
     }
     if (!info.lastCapture.empty()) {

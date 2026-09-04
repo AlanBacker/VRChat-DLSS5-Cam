@@ -4,8 +4,8 @@
 IDI_APP ICON "app.ico"
 
 VS_VERSION_INFO VERSIONINFO
- FILEVERSION    0,2,2,0
- PRODUCTVERSION 0,2,2,0
+ FILEVERSION    0,3,0,0
+ PRODUCTVERSION 0,3,0,0
  FILEFLAGSMASK  VS_FFI_FILEFLAGSMASK
  FILEFLAGS      0x0L
  FILEOS         VOS_NT_WINDOWS32
@@ -18,12 +18,12 @@ BEGIN
         BEGIN
             VALUE "CompanyName",      "VRChat DLSS5 Cam contributors"
             VALUE "FileDescription",  "VRChat DLSS5 Cam - DLSS 5 neural rendering for the VRChat camera"
-            VALUE "FileVersion",      "0.2.2.0"
+            VALUE "FileVersion",      "0.3.0.0"
             VALUE "InternalName",     "VRChatDLSS5Cam"
             VALUE "LegalCopyright",   "MIT License. Not affiliated with VRChat Inc. or NVIDIA Corporation."
             VALUE "OriginalFilename", "VRChatDLSS5Cam.exe"
             VALUE "ProductName",      "VRChat DLSS5 Cam"
-            VALUE "ProductVersion",   "0.2.2.0"
+            VALUE "ProductVersion",   "0.3.0.0"
         END
     END
     BLOCK "VarFileInfo"

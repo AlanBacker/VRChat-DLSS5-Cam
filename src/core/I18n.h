@@ -196,7 +196,7 @@ enum class Lang { English = 0, Chinese = 1, Japanese = 2, Korean = 3, Count = 4 
     X(Apply,              "Apply", "应用", "適用", "적용") \
     X(Key,                "Key", "按键", "キー", "키") \
     X(PreviewHint,        "Start VRChat, open the camera, switch to Stream mode and enable Spout Stream.", "启动 VRChat，打开相机，切换到 Stream 模式并开启 Spout Stream。", "VRChat を起動し、カメラを開いて Stream モードに切り替え、Spout Stream を有効にしてください。", "VRChat를 실행하고 카메라를 열어 Stream 모드로 전환한 뒤 Spout Stream을 켜세요.") \
-    X(TipIntensity,       "Overall strength of the neural rendering (1 = default, 0 = off).", "神经渲染的整体强度（1 = 默认，0 = 关闭）。", "ニューラルレンダリングの全体強度（1 = 既定、0 = オフ）。", "뉴럴 렌더링의 전체 강도(1 = 기본, 0 = 끔).") \
+    X(TipIntensity,       "Overall strength of the neural rendering (1 = default, 0 = off). The runtime stops at 1; values above 1 amplify the difference to the original in the composite pass, which can also exaggerate artifacts.", "神经渲染的整体强度（1 = 默认，0 = 关闭）。运行时最高只到 1；大于 1 时会在合成阶段放大与原图的差异，瑕疵也可能被一并放大。", "ニューラルレンダリングの全体強度（1 = 既定、0 = オフ）。ランタイム側の上限は 1 で、1 を超える値は合成段階で元画像との差分を増幅するため、アーティファクトも強調されることがあります。", "뉴럴 렌더링의 전체 강도(1 = 기본, 0 = 끔). 런타임은 1까지만 적용하며, 1보다 크면 합성 단계에서 원본과의 차이를 증폭하므로 아티팩트도 커질 수 있습니다.") \
     X(TipGlobalTone,      "How much the model may change global exposure and colour.", "允许模型改变全局曝光与色彩的程度。", "モデルが全体の露出と色をどれだけ変えられるか。", "모델이 전체 노출과 색을 얼마나 바꿀 수 있는지.") \
     X(TipLocalTone,       "Local contrast and lighting adjustments.", "局部对比度与光照调整。", "ローカルコントラストとライティングの調整。", "로컬 대비와 조명 조정.") \
     X(TipLocalStructure,  "Fine detail and texture enhancement.", "细节与纹理增强。", "ディテールとテクスチャの強調。", "세부 묘사와 질감 강조.") \
@@ -206,7 +206,7 @@ enum class Lang { English = 0, Chinese = 1, Japanese = 2, Korean = 3, Count = 4 
     X(TipAutoMask,        "Let the runtime mask regions it should not change.", "让运行库自动遮罩不应改变的区域。", "変更すべきでない領域をランタイムに自動でマスクさせます。", "런타임이 변경하지 말아야 할 영역을 자동으로 마스크합니다.") \
     X(TipUiCorrection,    "Protect flat UI-like regions from being altered.", "保护平面 UI 类区域不被改动。", "UI のような平坦な領域を保護します。", "UI 같은 평면 영역을 보호합니다.") \
     X(TipMotion,          "Motion vectors tell DLSS 5 how the image moved since the previous frame (better temporal stability).", "运动矢量告诉 DLSS 5 画面相对上一帧的移动（提升时序稳定性）。", "モーションベクトルは前フレームからの動きを DLSS 5 に伝えます（時間的安定性が向上）。", "모션 벡터는 이전 프레임 대비 움직임을 DLSS 5에 전달합니다(시간적 안정성 향상).") \
-    X(TipDepth,           "DLSS 5 uses depth to separate subject and background. VRChat's stream has none, so Depth Anything V2 estimates it from the picture on the GPU (DirectML). Flat / gradient / zero are simple placeholders.", "DLSS 5 用深度区分主体与背景。VRChat 串流没有深度，因此用 Depth Anything V2 在 GPU（DirectML）上从画面估计深度。平面 / 渐变 / 零只是简单的占位值。", "DLSS 5 は深度で被写体と背景を区別します。VRChat のストリームには深度がないため、同様に Depth Anything V2 が GPU（DirectML）上で画像から深度を推定します。フラット / グラデーション / ゼロは単純な代替値です。", "DLSS 5는 깊이로 피사체와 배경을 구분합니다. VRChat 스트림에는 깊이가 없으므로 Depth Anything V2가 GPU(DirectML)에서 화면으로부터 깊이를 추정합니다. 평면 / 그라데이션 / 0은 단순한 대체값입니다.") \
+    X(TipDepth,           "DLSS 5 uses depth to separate subject and background. VRChat's stream has none, so Depth Anything V2 estimates it from the picture on the GPU (DirectML). Flat / gradient / zero are simple placeholders.", "DLSS 5 用深度区分主体与背景。VRChat 串流没有深度，因此用 Depth Anything V2 在 GPU（DirectML）上从画面估计深度。平面 / 渐变 / 零只是简单的占位值。", "DLSS 5 は深度で被写体と背景を区別します。VRChat のストリームには深度がないため、Depth Anything V2 が GPU（DirectML）上で画像から深度を推定します。フラット / グラデーション / ゼロは単純な代替値です。", "DLSS 5는 깊이로 피사체와 배경을 구분합니다. VRChat 스트림에는 깊이가 없으므로 Depth Anything V2가 GPU(DirectML)에서 화면으로부터 깊이를 추정합니다. 평면 / 그라데이션 / 0은 단순한 대체값입니다.") \
     X(ScaleAuto,          "Adaptive", "自适应", "自動", "자동") \
     X(NoSenders,          "(none)", "（无）", "（なし）", "(없음)") \
     X(NotLoaded,          "Not loaded", "未加载", "未読み込み", "로드되지 않음") \
@@ -216,7 +216,26 @@ enum class Lang { English = 0, Chinese = 1, Japanese = 2, Korean = 3, Count = 4 
     X(Unsupported,        "Unsupported", "不支持", "非対応", "지원되지 않음") \
     X(Pixels,             "px", "像素", "px", "px") \
     X(SettingsSaved,      "Settings saved", "设置已保存", "設定を保存しました", "설정이 저장되었습니다") \
-    X(CaptureOriginalSuffix, "Also saved the original frame", "已同时保存原始画面", "元のフレームも保存しました", "원본 프레임도 저장했습니다")
+    X(CaptureOriginalSuffix, "Also saved the original frame", "已同时保存原始画面", "元のフレームも保存しました", "원본 프레임도 저장했습니다") \
+    X(ResidualHint,       "Above 1: residual amplification (may exaggerate artifacts)", "大于 1：残差放大（可能放大瑕疵）", "1 超過：残差増幅（アーティファクトが強調される場合があります）", "1 초과: 잔차 증폭(아티팩트가 커질 수 있음)") \
+    X(SourceMode,         "Input", "输入来源", "入力ソース", "입력 소스") \
+    X(SourceSpout,        "VRChat camera (Spout)", "VRChat 相机（Spout）", "VRChat カメラ（Spout）", "VRChat 카메라(Spout)") \
+    X(SourceImage,        "Image file", "图片文件", "画像ファイル", "이미지 파일") \
+    X(OpenImage,          "Open image...", "打开图片…", "画像を開く…", "이미지 열기…") \
+    X(ProcessAndSave,     "Process & save PNG", "处理并保存 PNG", "処理して PNG を保存", "처리 후 PNG 저장") \
+    X(NoImage,            "No image opened", "尚未打开图片", "画像が開かれていません", "열린 이미지가 없습니다") \
+    X(ImageHint,          "Open a picture (PNG, JPEG, BMP, TIFF, WebP, HEIC...) or drop it onto this window. DLSS 5 refines a still image over several passes; adjust the sliders, then save the result as a lossless PNG.", "打开一张图片（PNG、JPEG、BMP、TIFF、WebP、HEIC…）或直接拖进窗口。DLSS 5 会对静态图片进行多遍收敛处理；调整滑块后，可将结果保存为无损 PNG。", "画像（PNG、JPEG、BMP、TIFF、WebP、HEIC…）を開くか、このウィンドウにドロップしてください。DLSS 5 は静止画を数パスかけて仕上げます。スライダーを調整し、結果をロスレス PNG として保存できます。", "이미지(PNG, JPEG, BMP, TIFF, WebP, HEIC…)를 열거나 이 창에 끌어다 놓으세요. DLSS 5는 정지 이미지를 여러 패스에 걸쳐 다듬습니다. 슬라이더를 조정한 뒤 결과를 무손실 PNG로 저장할 수 있습니다.") \
+    X(DropHint,           "Tip: you can also drag & drop an image onto the window.", "提示：也可以把图片直接拖进窗口。", "ヒント：画像をウィンドウにドラッグ＆ドロップすることもできます。", "팁: 이미지를 창에 끌어다 놓아도 됩니다.") \
+    X(ImageLoaded,        "Image opened", "图片已打开", "画像を開きました", "이미지를 열었습니다") \
+    X(ImageLoadFailed,    "Could not open the image", "无法打开图片", "画像を開けませんでした", "이미지를 열 수 없습니다") \
+    X(ImageLabel,         "Image", "图片", "画像", "이미지") \
+    X(ImageDownscaled,    "Large picture: processed at a reduced size", "图片过大：已缩小后处理", "大きな画像：縮小して処理します", "큰 이미지: 축소하여 처리합니다") \
+    X(CaptureNoImage,     "Open an image first", "请先打开一张图片", "先に画像を開いてください", "먼저 이미지를 여세요") \
+    X(ImageFilter,        "Images", "图片", "画像", "이미지") \
+    X(UiFps,              "UI", "界面", "UI", "UI") \
+    X(ProcessingFps,      "processing", "处理", "処理", "처리") \
+    X(TipUiFps,           "Interface refresh rate. The interface runs on its own queue and thread, so it stays smooth even when processing is slow.", "界面刷新率。界面在独立的队列和线程上运行，即使处理很慢也能保持流畅。", "インターフェースの更新レート。UI は独自のキューとスレッドで動作するため、処理が遅くても滑らかなままです。", "인터페이스 갱신률. UI는 별도의 큐와 스레드에서 실행되므로 처리가 느려도 부드럽게 유지됩니다.") \
+    X(SourceModeHint,     "Process the VRChat camera stream live, or open a picture from disk and run it through DLSS 5.", "实时处理 VRChat 相机串流，或打开磁盘上的图片交给 DLSS 5 处理。", "VRChat のカメラストリームをリアルタイムで処理するか、ディスク上の画像を開いて DLSS 5 で処理します。", "VRChat 카메라 스트림을 실시간으로 처리하거나, 디스크의 이미지를 열어 DLSS 5로 처리합니다.")
 
 enum class Str {
 #define VDC_STR_ENUM(id, en, zh, ja, ko) id,

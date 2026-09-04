@@ -233,7 +233,7 @@ std::string NvOpticalFlow::LastError() const {
     return std::string(buf, strnlen(buf, sizeof(buf) - 1));
 }
 
-bool NvOpticalFlow::EnsureDevice(Device& device, std::string& error) {
+bool NvOpticalFlow::EnsureDevice(GpuContext& gpu, std::string& error) {
     if (m_dev11 && m_ctx11 && m_fence11 && m_fence12) return true;
     m_fence12.Reset(); m_fence11.Reset(); m_ctx11.Reset(); m_dev11.Reset();
 
@@ -243,7 +243,7 @@ bool NvOpticalFlow::EnsureDevice(Device& device, std::string& error) {
     ComPtr<ID3D11DeviceContext> ctx;
     const D3D_FEATURE_LEVEL levels[] = { D3D_FEATURE_LEVEL_11_1, D3D_FEATURE_LEVEL_11_0 };
     D3D_FEATURE_LEVEL got = D3D_FEATURE_LEVEL_11_0;
-    HRESULT hr = D3D11CreateDevice(device.Adapter(), D3D_DRIVER_TYPE_UNKNOWN, nullptr, D3D11_CREATE_DEVICE_BGRA_SUPPORT, levels, 2,
+    HRESULT hr = D3D11CreateDevice(gpu.Dev().Adapter(), D3D_DRIVER_TYPE_UNKNOWN, nullptr, D3D11_CREATE_DEVICE_BGRA_SUPPORT, levels, 2,
                                    D3D11_SDK_VERSION, &dev, &got, &ctx);
     if (FAILED(hr)) { error = "D3D11CreateDevice (optical flow device): " + FormatHr(hr); return false; }
     if (FAILED(dev.As(&m_dev11)) || FAILED(ctx.As(&m_ctx11))) {
@@ -258,7 +258,7 @@ bool NvOpticalFlow::EnsureDevice(Device& device, std::string& error) {
     HANDLE handle = nullptr;
     hr = m_fence11->CreateSharedHandle(nullptr, GENERIC_ALL, nullptr, &handle);
     if (FAILED(hr)) { error = "fence CreateSharedHandle: " + FormatHr(hr); m_fence11.Reset(); m_ctx11.Reset(); m_dev11.Reset(); return false; }
-    hr = device.D3D12()->OpenSharedHandle(handle, IID_PPV_ARGS(&m_fence12));
+    hr = gpu.Dev().D3D12()->OpenSharedHandle(handle, IID_PPV_ARGS(&m_fence12));
     CloseHandle(handle);
     if (FAILED(hr)) { error = "OpenSharedHandle (fence): " + FormatHr(hr); m_fence11.Reset(); m_ctx11.Reset(); m_dev11.Reset(); return false; }
     m_fenceValue = 0;
@@ -266,7 +266,7 @@ bool NvOpticalFlow::EnsureDevice(Device& device, std::string& error) {
     return true;
 }
 
-bool NvOpticalFlow::CreateSharedTexture(Device& device, UINT w, UINT h, DXGI_FORMAT fmt, ComPtr<ID3D11Texture2D>& tex11,
+bool NvOpticalFlow::CreateSharedTexture(GpuContext& gpu, UINT w, UINT h, DXGI_FORMAT fmt, ComPtr<ID3D11Texture2D>& tex11,
                                         ComPtr<ID3D12Resource>& res12, const char* what, std::string& error) {
     res12.Reset();
     tex11.Reset();
@@ -284,13 +284,13 @@ bool NvOpticalFlow::CreateSharedTexture(Device& device, UINT w, UINT h, DXGI_FOR
     hr = tex11.As(&dxgi);
     if (SUCCEEDED(hr)) hr = dxgi->CreateSharedHandle(nullptr, DXGI_SHARED_RESOURCE_READ | DXGI_SHARED_RESOURCE_WRITE, nullptr, &handle);
     if (FAILED(hr)) { error = StrPrintf("shared %s texture handle: %s", what, FormatHr(hr).c_str()); tex11.Reset(); return false; }
-    hr = device.D3D12()->OpenSharedHandle(handle, IID_PPV_ARGS(&res12));
+    hr = gpu.Dev().D3D12()->OpenSharedHandle(handle, IID_PPV_ARGS(&res12));
     CloseHandle(handle);
     if (FAILED(hr)) { error = StrPrintf("open shared %s texture on D3D12: %s", what, FormatHr(hr).c_str()); tex11.Reset(); return false; }
     return true;
 }
 
-bool NvOpticalFlow::CreateSessionAndRegister(Device& device, bool withCost, bool bidirectional, bool verbose, std::string& error) {
+bool NvOpticalFlow::CreateSessionAndRegister(GpuContext& gpu, bool withCost, bool bidirectional, bool verbose, std::string& error) {
     unsigned long seh = 0;
     NvOfStatus st = SafeCreateSession(m_dev11.Get(), m_ctx11.Get(), &m_session, &seh);
     if (seh || st != kNvOfSuccess || !m_session) {
@@ -375,7 +375,7 @@ bool NvOpticalFlow::CreateSessionAndRegister(Device& device, bool withCost, bool
         st = SafeRegister(m_session, m_inputs[i].Get(), &m_inputHandles[i], &seh);
         if (seh || st != kNvOfSuccess) { error = StrPrintf("NVOF RegisterResource(input) failed (%s) %s", StatusText(st, seh).c_str(), LastError().c_str()); return false; }
     }
-    if (!CreateSharedTexture(device, m_width, m_height, m_inputFormat, m_sharedInput11, m_sharedInput12, "input", error)) return false;
+    if (!CreateSharedTexture(gpu, m_width, m_height, m_inputFormat, m_sharedInput11, m_sharedInput12, "input", error)) return false;
 
     D3D11_TEXTURE2D_DESC fd = td;
     fd.Width = m_flowW; fd.Height = m_flowH;
@@ -384,7 +384,7 @@ bool NvOpticalFlow::CreateSessionAndRegister(Device& device, bool withCost, bool
     if (FAILED(hr)) { error = "NVOF flow texture: " + FormatHr(hr); return false; }
     st = SafeRegister(m_session, m_flow.Get(), &m_flowHandle, &seh);
     if (seh || st != kNvOfSuccess) { error = StrPrintf("NVOF RegisterResource(flow) failed (%s) %s", StatusText(st, seh).c_str(), LastError().c_str()); return false; }
-    if (!CreateSharedTexture(device, m_flowW, m_flowH, DXGI_FORMAT_R16G16_SINT, m_sharedFlow11, m_sharedFlow12, "flow", error)) return false;
+    if (!CreateSharedTexture(gpu, m_flowW, m_flowH, DXGI_FORMAT_R16G16_SINT, m_sharedFlow11, m_sharedFlow12, "flow", error)) return false;
 
     D3D11_TEXTURE2D_DESC cd = fd;
     cd.Format = DXGI_FORMAT_R8_UINT;
@@ -393,7 +393,7 @@ bool NvOpticalFlow::CreateSessionAndRegister(Device& device, bool withCost, bool
         if (FAILED(hr)) { error = "NVOF cost texture: " + FormatHr(hr); return false; }
         st = SafeRegister(m_session, m_cost.Get(), &m_costHandle, &seh);
         if (seh || st != kNvOfSuccess) { error = StrPrintf("NVOF RegisterResource(cost) failed (%s) %s", StatusText(st, seh).c_str(), LastError().c_str()); return false; }
-        if (!CreateSharedTexture(device, m_flowW, m_flowH, DXGI_FORMAT_R8_UINT, m_sharedCost11, m_sharedCost12, "cost", error)) return false;
+        if (!CreateSharedTexture(gpu, m_flowW, m_flowH, DXGI_FORMAT_R8_UINT, m_sharedCost11, m_sharedCost12, "cost", error)) return false;
     }
 
     if (bidirectional) {
@@ -402,23 +402,23 @@ bool NvOpticalFlow::CreateSessionAndRegister(Device& device, bool withCost, bool
         if (FAILED(hr)) { error = "NVOF backward flow texture: " + FormatHr(hr); return false; }
         st = SafeRegister(m_session, m_flowBack.Get(), &m_flowBackHandle, &seh);
         if (seh || st != kNvOfSuccess) { error = StrPrintf("NVOF RegisterResource(backward flow) failed (%s) %s", StatusText(st, seh).c_str(), LastError().c_str()); return false; }
-        if (!CreateSharedTexture(device, m_flowW, m_flowH, DXGI_FORMAT_R16G16_SINT, m_sharedFlowBack11, m_sharedFlowBack12, "backward flow", error)) return false;
+        if (!CreateSharedTexture(gpu, m_flowW, m_flowH, DXGI_FORMAT_R16G16_SINT, m_sharedFlowBack11, m_sharedFlowBack12, "backward flow", error)) return false;
         if (withCost) {
             hr = m_dev11->CreateTexture2D(&cd, nullptr, m_costBack.ReleaseAndGetAddressOf());
             if (FAILED(hr)) { error = "NVOF backward cost texture: " + FormatHr(hr); return false; }
             st = SafeRegister(m_session, m_costBack.Get(), &m_costBackHandle, &seh);
             if (seh || st != kNvOfSuccess) { error = StrPrintf("NVOF RegisterResource(backward cost) failed (%s) %s", StatusText(st, seh).c_str(), LastError().c_str()); return false; }
-            if (!CreateSharedTexture(device, m_flowW, m_flowH, DXGI_FORMAT_R8_UINT, m_sharedCostBack11, m_sharedCostBack12, "backward cost", error)) return false;
+            if (!CreateSharedTexture(gpu, m_flowW, m_flowH, DXGI_FORMAT_R8_UINT, m_sharedCostBack11, m_sharedCostBack12, "backward cost", error)) return false;
         }
     }
     return true;
 }
 
-bool NvOpticalFlow::Init(Device& device, UINT width, UINT height, DXGI_FORMAT inputFormat, UINT grid, UINT perfLevel, bool bidirectional, std::string& error) {
+bool NvOpticalFlow::Init(GpuContext& gpu, UINT width, UINT height, DXGI_FORMAT inputFormat, UINT grid, UINT perfLevel, bool bidirectional, std::string& error) {
     ReleaseSession();
     if (!LoadApi()) { error = "nvofapi64.dll unavailable"; return false; }
     if (!width || !height) { error = "invalid size"; return false; }
-    if (!EnsureDevice(device, error)) return false;
+    if (!EnsureDevice(gpu, error)) return false;
     if (grid != 1 && grid != 2 && grid != 4) grid = 4;
     if (perfLevel != 5 && perfLevel != 10 && perfLevel != 20) perfLevel = 10;
     m_inputFormat = inputFormat;
@@ -444,7 +444,7 @@ bool NvOpticalFlow::Init(Device& device, UINT width, UINT height, DXGI_FORMAT in
             ReleaseSession();
         }
         configure();
-        if (CreateSessionAndRegister(device, cost, bidir, i == 0, err)) {
+        if (CreateSessionAndRegister(gpu, cost, bidir, i == 0, err)) {
             Log::Info("NVOF session ready (API %u.%u): %ux%u fmt %d grid %u perf %u -> %ux%u vectors, cost %s, %s", g_api.apiVersion >> 4, g_api.apiVersion & 0xF,
                       width, height, (int)inputFormat, m_grid, perfLevel, m_flowW, m_flowH, HasCost() ? "enabled" : "disabled",
                       Bidirectional() ? (m_twoPass ? "bidirectional (two passes)" : "bidirectional (single pass)") : "forward only");
@@ -524,14 +524,14 @@ void NvOpticalFlow::Shutdown() {
     m_dev11.Reset();
 }
 
-bool NvOpticalFlow::Execute(Device& device, bool resetHints, std::string& error) {
+bool NvOpticalFlow::Execute(GpuContext& gpu, bool resetHints, std::string& error) {
     error.clear();
     if (!Ready()) { error = "NVOF session not ready"; return false; }
     const int cur = (int)(m_executeCount & 1);
 
     // 1. The optical flow device waits (on the GPU) for the D3D12 queue, which has just received the input copy.
     const UINT64 inputReady = ++m_fenceValue;
-    HRESULT hr = device.Queue()->Signal(m_fence12.Get(), inputReady);
+    HRESULT hr = gpu.Queue()->Signal(m_fence12.Get(), inputReady);
     if (FAILED(hr)) { error = "NVOF fence signal (D3D12): " + FormatHr(hr); return false; }
     hr = m_ctx11->Wait(m_fence11.Get(), inputReady);
     if (FAILED(hr)) { error = "NVOF fence wait (D3D11): " + FormatHr(hr); return false; }
@@ -587,7 +587,7 @@ bool NvOpticalFlow::Execute(Device& device, bool resetHints, std::string& error)
     const UINT64 outputReady = ++m_fenceValue;
     hr = m_ctx11->Signal(m_fence11.Get(), outputReady);
     m_ctx11->Flush();
-    if (SUCCEEDED(hr)) hr = device.Queue()->Wait(m_fence12.Get(), outputReady);
+    if (SUCCEEDED(hr)) hr = gpu.Queue()->Wait(m_fence12.Get(), outputReady);
     if (FAILED(hr)) {
         if (ok) error = "NVOF fence publish: " + FormatHr(hr);
         return false;

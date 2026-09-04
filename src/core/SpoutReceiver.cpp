@@ -35,7 +35,7 @@ bool IsVrchatSender(const char* name) {
 } // namespace
 
 bool SpoutReceiver::Init(Device& device) {
-    // Route Spout's D3D11 work through the D3D11On12 device so that the shared queue orders everything.
+    // Route Spout's D3D11 work through the D3D11On12 device so that the processing queue orders everything.
     if (!m_spout.OpenDirectX11(device.D3D11())) {
         Log::Error("Spout: OpenDirectX11 failed");
         return false;
@@ -46,16 +46,32 @@ bool SpoutReceiver::Init(Device& device) {
     return true;
 }
 
-void SpoutReceiver::Shutdown(Device& device) {
+void SpoutReceiver::Shutdown(GpuContext& gpu) {
     if (!m_open) return;
     m_spout.ReleaseReceiver();
-    ReleaseTexture(device);
+    ReleaseTexture(gpu);
     m_spout.CloseDirectX11();
     m_open = false;
 }
 
 void SpoutReceiver::SetRequestedSender(const std::string& name) {
-    m_requested = name;
+    std::lock_guard<std::mutex> lock(m_requestMutex);
+    m_requestedShared = name;
+}
+
+SourceFrame SpoutReceiver::Frame() const {
+    SourceFrame f;
+    if (!m_connected || !m_tex12) return f;
+    f.texture = m_tex12.Get();
+    f.srv = m_srv;
+    f.width = m_width;
+    f.height = m_height;
+    f.format = m_format;
+    f.viewFormat = m_viewFormat;
+    f.linear = m_linear;
+    f.stillImage = false;
+    f.hasFrame = m_freshFrames > 0;
+    return f;
 }
 
 void SpoutReceiver::ApplySenderName(const char* name) {
@@ -76,8 +92,9 @@ std::vector<std::string> SpoutReceiver::EnumerateSenders() {
     return out;
 }
 
-bool SpoutReceiver::CreateTexture(Device& device, UINT w, UINT h, DXGI_FORMAT fmt) {
-    ReleaseTexture(device);
+bool SpoutReceiver::CreateTexture(GpuContext& gpu, UINT w, UINT h, DXGI_FORMAT fmt) {
+    Device& device = gpu.Dev();
+    ReleaseTexture(gpu);
     if (fmt == DXGI_FORMAT_UNKNOWN) fmt = DXGI_FORMAT_B8G8R8A8_UNORM;
 
     D3D12_HEAP_PROPERTIES hp{};
@@ -119,27 +136,32 @@ bool SpoutReceiver::CreateTexture(Device& device, UINT w, UINT h, DXGI_FORMAT fm
     return true;
 }
 
-void SpoutReceiver::ReleaseTexture(Device& device) {
-    if (m_tex11) device.DeferRelease(m_tex11);
-    if (m_tex12) device.DeferRelease(m_tex12);
+void SpoutReceiver::ReleaseTexture(GpuContext& gpu) {
+    if (m_tex11) gpu.DeferRelease(m_tex11);
+    if (m_tex12) gpu.DeferRelease(m_tex12);
     m_tex11.Reset();
     m_tex12.Reset();
-    if (m_srv.ptr) { device.FreeStaging(m_srv); m_srv = {}; }
+    if (m_srv.ptr) { gpu.Dev().FreeStaging(m_srv); m_srv = {}; }
     m_width = m_height = 0;
 }
 
-bool SpoutReceiver::Receive(Device& device, bool& changed, bool& fresh) {
+bool SpoutReceiver::Receive(GpuContext& gpu, bool& changed, bool& fresh) {
     changed = false;
     fresh = false;
     if (!m_open) return false;
+    Device& device = gpu.Dev();
 
     const double now = NowSeconds();
+    {
+        std::lock_guard<std::mutex> lock(m_requestMutex);
+        m_requested = m_requestedShared;
+    }
 
     // Apply a changed user request.
     if (!m_requested.empty()) {
         if (m_requested != m_applied) {
             ApplySenderName(m_requested.c_str());
-            ReleaseTexture(device);
+            ReleaseTexture(gpu);
             changed = true;
         }
     } else if (now - m_lastScan > 1.0) {
@@ -153,7 +175,7 @@ bool SpoutReceiver::Receive(Device& device, bool& changed, bool& fresh) {
         }
         if (vrc != m_applied) {
             ApplySenderName(vrc.empty() ? nullptr : vrc.c_str());
-            ReleaseTexture(device);
+            ReleaseTexture(gpu);
             changed = true;
         }
     }
@@ -167,7 +189,7 @@ bool SpoutReceiver::Receive(Device& device, bool& changed, bool& fresh) {
     if (!ok) {
         if (m_connected) {
             Log::Info("Spout: sender %s disconnected", m_senderName.c_str());
-            ReleaseTexture(device);
+            ReleaseTexture(gpu);
             changed = true;
         }
         m_connected = false;
@@ -182,7 +204,7 @@ bool SpoutReceiver::Receive(Device& device, bool& changed, bool& fresh) {
         const UINT w = m_spout.GetSenderWidth();
         const UINT h = m_spout.GetSenderHeight();
         const DXGI_FORMAT fmt = m_spout.GetSenderFormat();
-        if (w == 0 || h == 0 || !CreateTexture(device, w, h, fmt)) {
+        if (w == 0 || h == 0 || !CreateTexture(gpu, w, h, fmt)) {
             m_connected = false;
             return false;
         }

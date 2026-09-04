@@ -54,6 +54,19 @@ std::wstring Capture::MakeFileName(const std::wstring& folder, UINT width, UINT 
     return JoinPath(folder, buf);
 }
 
+std::wstring Capture::MakeImageFileName(const std::wstring& folder, const std::wstring& stem, UINT width, UINT height,
+                                        const wchar_t* suffix) {
+    std::wstring base = stem.empty() ? L"image" : stem;
+    for (int n = 1; n < 10000; ++n) {
+        wchar_t buf[256];
+        if (n == 1) swprintf_s(buf, L"_DLSS5_%ux%u%s.png", width, height, suffix ? suffix : L"");
+        else        swprintf_s(buf, L"_DLSS5_%ux%u%s_%d.png", width, height, suffix ? suffix : L"", n);
+        std::wstring path = JoinPath(folder, base + buf);
+        if (!FileExists(path)) return path;
+    }
+    return MakeFileName(folder, width, height, suffix);
+}
+
 void Capture::WorkerMain() {
     const HRESULT coInit = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
     for (;;) {

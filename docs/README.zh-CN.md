@@ -18,12 +18,15 @@ VRChat DLSS5 Cam 会捕获 VRChat 内置相机（Stream 相机并开启 *Spout S
 - **实时预览** DLSS 5 处理后的 VRChat 相机画面，支持擦除对比、原图、运动矢量和深度视图。
 - **DLSS 5 神经渲染** 直接从 `nvngx_dlssnr.dll` 加载，提供与 RenoDX 的 DLSS 5 ReShade 插件相同的参数：
   预设、风格、强度、全局色调、局部色调、局部结构、皮肤结构、自动遮罩和 UI 修正。参数即时生效，也可以在定格画面上调节。
+- **静态图片处理。** 打开一张照片或截图（PNG、JPEG、BMP、TIFF、GIF、WebP、HEIC…），或直接拖进窗口；DLSS 5 会对其进行多遍收敛处理，
+  点击 *处理并保存 PNG* 即可把结果保存到拍照目录。
 - **帧引导。** DLSSNR 是时域模型，需要运动矢量和深度。本程序提供带正反向一致性检查的
   **NVIDIA Optical Flow** 运动矢量，以及由 **Depth Anything V2** 在 GPU 上估计的深度图（ONNX Runtime + DirectML）。
   GPU 块匹配和占位深度仍可作为回退方案，另外还可以在神经渲染之前增加一次 **DLAA**（原生分辨率的 DLSS 抗锯齿）。
 - **自适应分辨率。** 自动检测发送端分辨率；可设置自定义输出分辨率，并可让 DLSS 5 直接放大到该分辨率。可选的镜头切换检测会重置时域历史。
 - **无损拍照。** 将处理后的画面（可选同时保存原图）保存为 PNG，全局快捷键（默认 `Ctrl+Alt+P`）在 VRChat 处于前台时同样有效，并支持定时连拍。
 - **四种语言**（English、简体中文、日本語、한국어），根据 Windows 界面语言自动选择。
+- **界面独立流畅。** 窗口运行在独立的线程和 GPU 队列上，即使 4K 神经渲染一帧要几十毫秒，预览和控件依然顺滑。
 - 支持逐显示器 DPI、深色主题、GPU 计时和内置日志。
 
 ## 系统要求
@@ -47,17 +50,20 @@ VRChat DLSS5 Cam 会捕获 VRChat 内置相机（Stream 相机并开启 *Spout S
 - Spout 输出分辨率由 VRChat 决定。可以在 VRChat 的 `config.json` 中提高 `camera_spout_res_width` / `camera_spout_res_height` 以获得更高分辨率的输入，程序会自动适配。
 - 如果想要不同的输出尺寸，在 *视频源* 中开启 *自定义分辨率*；开启 *DLSS 5 放大* 后由 DLSSNR 直接渲染更大的图像。
 - 使用 *擦除* 对比模式并拖动预览中的分割线，可以直观比较每个参数的效果。
+- 想处理一张图片而不是实时相机画面：在 *视频源* 一栏把 *输入来源* 切换为 *图片文件* 并打开图片（或直接把文件拖进窗口）。
+  调整好滑块后点击 *处理并保存 PNG*（或按快捷键），结果会以 `<文件名>_DLSS5_<宽>x<高>.png` 保存到拍照目录。长边超过 8192 px 的图片会缩小后处理。
 
 ## 参数说明
 
 | 分组 | 设置 | 含义 |
 |---|---|---|
+| 源 | 输入来源 | *VRChat 相机（Spout）* 或 *图片文件*。 |
 | 源 | 纸白 / 高光压缩 | 仅在 Spout 纹理为浮点（线性 HDR）格式时显示：神经渲染前的曝光基准与高光柔化。 |
 | DLSS 5 | 预设 | 传给 DLSSNR 的渲染预设提示（0–3）。 |
 | DLSS 5 | 风格 | `DLSSNR.Style`：默认 / 自然 / 电影感。 |
-| DLSS 5 | 强度 | 神经渲染的整体强度。 |
-| DLSS 5 | 全局色调 / 局部色调 | 全局与局部色调映射强度。 |
-| DLSS 5 | 局部结构 / 皮肤结构 | 细节增强；皮肤结构可保持运行库默认值。 |
+| DLSS 5 | 强度 | 神经渲染的整体强度，0–2。0–1 由运行库本身控制；大于 1 时程序会放大神经渲染结果与原图之间的差异（可能放大瑕疵）。 |
+| DLSS 5 | 全局色调 / 局部色调 | 全局与局部色调映射强度，0–1（运行库会把强度限制在此范围内）。 |
+| DLSS 5 | 局部结构 / 皮肤结构 | 细节增强，0–1；皮肤结构可保持运行库默认值。 |
 | DLSS 5 | 自动遮罩 / UI 修正 | 自动主体遮罩、UI 安全处理。 |
 | DLSS 5 | 路径 | *签名片段*：直接加载 `nvngx_dlssnr.dll`。*NGX 核心*：通过 NGX 运行库创建功能。 |
 | 帧引导 | 运动矢量 | NVIDIA Optical Flow（驱动自带 `nvofapi64.dll`，带双向一致性检查）、GPU 块匹配，或无（零）。 |
@@ -78,7 +84,7 @@ VRChat DLSS5 Cam 会捕获 VRChat 内置相机（Stream 相机并开启 *Spout S
 - **神经渲染失败** —— 某些运行库版本需要更新的驱动；请查看 `log.txt` 中的 NGX 结果码。可尝试 *预设* 0 和 *NGX 核心* 路径。
 - **深度估计器不可用** —— `onnxruntime.dll`、`onnxruntime_providers_shared.dll`、`DirectML.dll` 和 `models\depth_anything_v2_small_fp16.onnx` 必须放在程序目录下（发布包里都有）。估计器就绪之前程序会回退到零深度，状态显示在 *帧引导* 一栏。
 - **光流不可用** —— NVIDIA Optical Flow 在程序自建的原生 D3D11 设备上运行（驱动会拒绝 D3D11On12 层，这正是 0.2.0 里 “UNSUPPORTED_DEVICE” 错误的原因）。若 `log.txt` 出现 "NVOF unavailable, falling back to block matching"，请更新 GeForce 驱动；在此之前程序会自动改用块匹配。*帧引导* 一栏的状态点会显示当前使用的来源。
-- **帧率低** —— 关闭 DLAA、增大深度更新间隔或降低深度网络分辨率、降低搜索半径，或改用 NVIDIA Optical Flow 生成运动矢量。使用 NVIDIA Optical Flow 时请把光流网格保持在 4 px（最快；2 px、1 px 在 4K 下开销大得多）。日志每 15 秒输出一行 `Perf:`，列出各阶段的 GPU 耗时。
+- **帧率低** —— 关闭 DLAA、增大深度更新间隔或降低深度网络分辨率、降低搜索半径，或改用 NVIDIA Optical Flow 生成运动矢量。使用 NVIDIA Optical Flow 时请把光流网格保持在 4 px（最快；2 px、1 px 在 4K 下开销大得多）。日志每 15 秒输出一行 `Perf:`，列出处理帧率、每帧 CPU 开销（接收 / 等待 / 录制 / 提交）、各阶段 GPU 耗时以及深度网络的开销，只统计真正处理过的帧。界面运行在独立线程上，处理帧率低不会再拖慢窗口。
 
 ## 从源码构建
 
@@ -105,12 +111,16 @@ VRChat Stream 相机 ──Spout──▶ D3D11on12 接收 ──▶ 转换（sR
 ```
 
 程序在 NGX 运行库之外托管 DLSS 5 神经渲染片段：直接加载 DLL、满足其模块名检查，
-并使用 `DLSSNR.*` NGX 参数约定在 D3D12 计算队列上创建和执行功能。详见 `src/ngx/DlssnrFeature.cpp`。
+并使用 `DLSSNR.*` NGX 参数约定在 D3D12 队列上创建和执行功能。详见 `src/ngx/DlssnrFeature.cpp`。
 
 引导方案针对视频输入设计：同分辨率 SDR 输入；硬件光流，并在正反向矢量不一致处降低置信度；
 用 Depth Anything V2 估计单目深度，按 2%/98% 分位数归一化为反向相对深度，推理间隔期间用运动矢量搬运；不做逐帧历史重置。
 全部为独立的 MIT 实现（`src/gfx/Pipeline.cpp`、`src/gfx/DepthEstimator.cpp`、`src/gfx/Shaders.cpp`）。
 光流引擎运行在程序自建的原生 D3D11 设备上，帧与矢量通过 NT 句柄共享纹理在 D3D11/D3D12 之间传递，并由共享 fence 保证顺序（`src/gfx/NvOpticalFlow.cpp`）。
+
+两个线程共享 GPU：处理线程拥有 Spout 接收器（或静态图片）、处理管线和一条独立的 D3D12 队列；界面线程拥有窗口、ImGui 和一条高优先级的呈现队列。
+处理完的画面通过三个显示缓冲区交接，并用跨队列 fence 等待保证顺序，因此预览始终显示最新完成的一帧，窗口也永远不会等待神经渲染（`src/core/App.cpp`、`src/gfx/Device.cpp`）。
+静态图片由 WIC 解码（应用 EXIF 方向），上传一次后以零运动经过同一条管线多遍处理，直到时域网络收敛。
 
 ## 许可证
 

@@ -59,6 +59,8 @@ bool Settings::Load(const std::wstring& path) {
 
     r.Get("language", language);
     r.Get("senderName", senderName);
+    r.Get("sourceMode", sourceMode);
+    r.Get("imagePath", imagePath);
     r.Get("customResolution", customResolution);
     r.Get("customWidth", customWidth);
     r.Get("customHeight", customHeight);
@@ -132,6 +134,8 @@ bool Settings::Save(const std::wstring& path) const {
     w.out += "# VRChat DLSS5 Cam settings\n";
     w.Put("language", language);
     w.Put("senderName", senderName);
+    w.Put("sourceMode", sourceMode);
+    w.Put("imagePath", imagePath);
     w.Put("customResolution", customResolution);
     w.Put("customWidth", customWidth);
     w.Put("customHeight", customHeight);
@@ -202,11 +206,12 @@ void Settings::Clamp() {
     nrRoute = std::clamp(nrRoute, 0, 1);
     nrPreset = std::clamp(nrPreset, 0, 3);
     nrStyle = std::clamp(nrStyle, 0, 2);
+    sourceMode = std::clamp(sourceMode, 0, 1);
     nrIntensity = std::clamp(nrIntensity, 0.0f, 2.0f);
-    nrGlobalTone = std::clamp(nrGlobalTone, 0.0f, 2.0f);
-    nrLocalTone = std::clamp(nrLocalTone, 0.0f, 2.0f);
-    nrLocalStructure = std::clamp(nrLocalStructure, 0.0f, 2.0f);
-    nrSkinStructure = std::clamp(nrSkinStructure, -1.0f, 2.0f);
+    nrGlobalTone = std::clamp(nrGlobalTone, 0.0f, 1.0f);
+    nrLocalTone = std::clamp(nrLocalTone, 0.0f, 1.0f);
+    nrLocalStructure = std::clamp(nrLocalStructure, 0.0f, 1.0f);
+    nrSkinStructure = nrSkinStructure < 0.0f ? -1.0f : std::clamp(nrSkinStructure, 0.0f, 1.0f);
     hdrPaperWhite = std::clamp(hdrPaperWhite, 0.1f, 8.0f);
     hdrHighlightCompression = std::clamp(hdrHighlightCompression, 0.0f, 1.0f);
     motionMode = std::clamp(motionMode, 0, 2);

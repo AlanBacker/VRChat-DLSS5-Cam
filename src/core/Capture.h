@@ -38,6 +38,10 @@ public:
 
     // Builds "<folder>\VRChat_DLSS5_<timestamp>_<w>x<h>[suffix].png".
     static std::wstring MakeFileName(const std::wstring& folder, UINT width, UINT height, const wchar_t* suffix);
+    // Builds "<folder>\<stem>_DLSS5_<w>x<h>[suffix].png" for a processed still image, appending _2, _3, ... while the
+    // name is taken.
+    static std::wstring MakeImageFileName(const std::wstring& folder, const std::wstring& stem, UINT width, UINT height,
+                                          const wchar_t* suffix);
 
 private:
     void WorkerMain();

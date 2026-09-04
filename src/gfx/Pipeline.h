@@ -8,8 +8,10 @@
 #include "ngx/DlssnrFeature.h"
 #include "ngx/DlaaFeature.h"
 #include "core/Settings.h"
-#include "core/SpoutReceiver.h"
+#include "core/SourceFrame.h"
 #include "core/Capture.h"
+#include <atomic>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -17,7 +19,7 @@ namespace vdc {
 
 struct PipelineStatus {
     bool        sourceConnected = false;
-    UINT        srcWidth = 0, srcHeight = 0;     // Spout sender
+    UINT        srcWidth = 0, srcHeight = 0;     // source picture (Spout sender or still image)
     UINT        inWidth = 0, inHeight = 0;       // neural renderer input
     UINT        outWidth = 0, outHeight = 0;     // output / capture / display
     bool        ngxInitialized = false;
@@ -58,33 +60,54 @@ struct PipelineStatus {
     UINT64      processedFrames = 0;
     double      frameIntervalMs = 0.0;
     size_t      capturesInFlight = 0;
+    double      gpuMs[(UINT)GpuTimer::Count] = {};   // processing-queue timers (Frame/Ui slots come from the UI context)
+    bool        hasDisplay = false;
+};
+
+// What the UI thread draws this frame.
+struct DisplayView {
+    D3D12_GPU_DESCRIPTOR_HANDLE srv{};
+    UINT width = 0, height = 0;
+    bool valid = false;
 };
 
 class Pipeline {
 public:
+    static constexpr UINT kDisplayBuffers = 3;
+
+    // Main thread, before the processing thread starts / after it stopped.
     bool Init(Device& device, const std::wstring& exeDir, const std::wstring& appDataDir, std::wstring& error);
     void Shutdown(Device& device);
 
-    bool LoadNrRuntime(Device& device, const std::wstring& dllPath, std::string& error);
-    void UnloadNrRuntime(Device& device);
-
-    void RequestReset() { m_resetRequested = true; }
-    void RestartDepthEstimator() { m_depthRestart = true; }
-    void MarkNrDirty() { m_nrDirty = true; m_nrFailed = false; m_nrError.clear(); }
-    void MarkDlaaDirty() { m_dlaaFailed = false; m_dlaaError.clear(); }
-    void RequestCapture(const std::wstring& folder, bool keepAlpha, bool saveOriginal);
-
-    // Records this frame's GPU work into cmd. fresh = a new source frame arrived, sourceChanged = the source texture was recreated.
-    void Render(Device& device, SpoutReceiver& spout, const Settings& s, ID3D12GraphicsCommandList* cmd, bool fresh, bool sourceChanged);
-    void AfterPresent(Device& device);                // call right after Device::EndFrame
-    void Update(Device& device, Capture& capture);    // call before Device::BeginFrame: completes readbacks, feeds the PNG worker
-
-    bool HasDisplay() const { return m_hasDisplay; }
-    D3D12_GPU_DESCRIPTOR_HANDLE DisplaySrv() const { return m_displayStatic.gpu; }
-    UINT DisplayWidth() const { return m_outW; }
-    UINT DisplayHeight() const { return m_outH; }
+    // Processing thread -------------------------------------------------------
+    bool LoadNrRuntime(GpuContext& gpu, const std::wstring& dllPath, std::string& error);
+    void UnloadNrRuntime(GpuContext& gpu);
+    // Records this frame's GPU work into cmd (the processing context's list). fresh = a new source frame arrived,
+    // sourceChanged = the source texture was recreated.
+    void Render(GpuContext& gpu, const SourceFrame& src, const Settings& s, ID3D12GraphicsCommandList* cmd, bool fresh, bool sourceChanged);
+    void AfterSubmit(GpuContext& gpu, UINT64 fenceValue);   // right after GpuContext::EndFrame: publishes the display, tags readbacks
+    void Update(GpuContext& gpu, Capture& capture);         // completes readbacks, feeds the PNG worker and the depth network
+    void PublishStatus(GpuContext& gpu);                    // copies the status (plus GPU timers) for StatusSnapshot
     const PipelineStatus& Status() const { return m_status; }
+    bool NeedsFrame() const;                                // pending requests that want a frame even without new input
+    bool HasDisplay() const { return m_hasDisplay; }
     NgxCore& Ngx() { return m_ngx; }
+
+    // Any thread -----------------------------------------------------------------
+    void RequestReset() { m_resetReq = true; }
+    void RestartDepthEstimator() { m_depthRestartReq = true; }
+    void MarkNrDirty() { m_nrDirtyReq = true; }
+    void MarkDlaaDirty() { m_dlaaDirtyReq = true; }
+    // baseName: empty = timestamped VRChat_DLSS5_... name; else "<baseName>_DLSS5_<w>x<h>.png" (still images).
+    void RequestCapture(const std::wstring& folder, bool keepAlpha, bool saveOriginal, const std::wstring& baseName);
+    bool CapturePending() const;
+    void StatusSnapshot(PipelineStatus& out) const;
+
+    // UI thread ---------------------------------------------------------------------
+    // AcquireDisplay picks the newest completed composite (call after Device::BeginFrame); ReleaseDisplay records the
+    // fence value of the UI frame that sampled it (call after Device::EndFrame).
+    DisplayView AcquireDisplay(GpuContext& ui);
+    void        ReleaseDisplay(UINT64 uiFenceValue);
 
 private:
     struct Tex {
@@ -116,30 +139,32 @@ private:
         }
     };
 
-    bool CreateTex(Device& device, Tex& t, UINT w, UINT h, DXGI_FORMAT fmt, bool uav, const wchar_t* name);
-    void ReleaseTex(Device& device, Tex& t);
-    bool WrapShared(Device& device, Tex& t, ID3D12Resource* res, UINT w, UINT h, DXGI_FORMAT fmt, const wchar_t* name);
+    bool CreateTex(GpuContext& gpu, Tex& t, UINT w, UINT h, DXGI_FORMAT fmt, bool uav, const wchar_t* name);
+    void ReleaseTex(GpuContext& gpu, Tex& t);
+    bool WrapShared(GpuContext& gpu, Tex& t, ID3D12Resource* res, UINT w, UINT h, DXGI_FORMAT fmt, const wchar_t* name);
     void Transition(ID3D12GraphicsCommandList* cmd, Tex& t, D3D12_RESOURCE_STATES state);
-    bool Rebuild(Device& device, const Config& cfg);
-    void ReleaseResources(Device& device);
-    void ReleaseFeatures(Device& device);
-    void ReleaseDepthResources(Device& device);
-    bool CreateDepthResources(Device& device, const Config& cfg);
-    Config ComputeConfig(const SpoutReceiver& spout, const Settings& s) const;
+    bool Rebuild(GpuContext& gpu, const Config& cfg);
+    void ReleaseResources(GpuContext& gpu);
+    void ReleaseFeatures(GpuContext& gpu);
+    void ReleaseDepthResources(GpuContext& gpu);
+    bool CreateDepthResources(GpuContext& gpu, const Config& cfg);
+    bool CreateDisplayBuffers(GpuContext& gpu, UINT w, UINT h);
+    void RetireDisplayBuffers(GpuContext& gpu);
+    Config ComputeConfig(const SourceFrame& src, const Settings& s) const;
     std::wstring DepthModelPath(const Settings& s) const;
 
-    void RunConvert(Device& device, ID3D12GraphicsCommandList* cmd, SpoutReceiver& spout, const Settings& s, bool writeNvof);
-    void RunGuidance(Device& device, ID3D12GraphicsCommandList* cmd, const Settings& s, int motionMode, bool haveHistory);
-    bool RunOpticalFlow(Device& device, ID3D12GraphicsCommandList*& cmd, bool resetHints);
-    void RunDensify(Device& device, ID3D12GraphicsCommandList* cmd, const Settings& s, int mode);
-    void RunStats(Device& device, ID3D12GraphicsCommandList* cmd);
-    void ReadStats(Device& device);
-    void RunDepthCapture(Device& device, ID3D12GraphicsCommandList*& cmd);      // colour -> network input -> CPU readback
-    bool RunDepthApply(Device& device, ID3D12GraphicsCommandList* cmd, bool reset);   // network output -> m_depth (temporally filtered)
-    bool RunDlaa(Device& device, ID3D12GraphicsCommandList* cmd, const Settings& s, bool reset);
-    bool RunNeural(Device& device, ID3D12GraphicsCommandList* cmd, const Settings& s, Tex& input, bool reset);
-    void RunComposite(Device& device, ID3D12GraphicsCommandList* cmd, const Settings& s, Tex& processed, bool bypass);
-    void EnqueueReadback(Device& device, ID3D12GraphicsCommandList* cmd, Tex& src, const std::wstring& path, bool keepAlpha);
+    void RunConvert(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const SourceFrame& src, const Settings& s, bool writeNvof);
+    void RunGuidance(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const Settings& s, int motionMode, bool haveHistory);
+    bool RunOpticalFlow(GpuContext& gpu, ID3D12GraphicsCommandList*& cmd, bool resetHints);
+    void RunDensify(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const Settings& s, int mode);
+    void RunStats(GpuContext& gpu, ID3D12GraphicsCommandList* cmd);
+    void ReadStats(GpuContext& gpu);
+    void RunDepthCapture(GpuContext& gpu, ID3D12GraphicsCommandList*& cmd);      // colour -> network input -> CPU readback
+    bool RunDepthApply(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, bool reset);   // network output -> m_depth (temporally filtered)
+    bool RunDlaa(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const Settings& s, bool reset);
+    bool RunNeural(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const Settings& s, Tex& input, bool reset);
+    void RunComposite(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const Settings& s, Tex& processed, bool bypass);
+    void EnqueueReadback(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, Tex& src, const std::wstring& path, bool keepAlpha);
 
     Shaders        m_shaders;
     NgxCore        m_ngx;
@@ -165,13 +190,29 @@ private:
     Tex m_mv, m_conf, m_depth;  // dense guidance
     Tex m_depthHist[2];         // temporally filtered depth, ping-pong by frame parity
     Tex m_dlaaOut, m_nrOut;
-    Tex m_final, m_display;
+    Tex m_final;
     ComPtr<ID3D12Resource>      m_statsBuf;
     D3D12_CPU_DESCRIPTOR_HANDLE m_statsUav{};
-    ComPtr<ID3D12Resource>      m_statsReadback[Device::kFramesInFlight];
-    UINT64                      m_statsFence[Device::kFramesInFlight] = {};
-    bool                        m_statsPending[Device::kFramesInFlight] = {};
-    DescriptorPair              m_displayStatic;
+    ComPtr<ID3D12Resource>      m_statsReadback[GpuContext::kFramesInFlight];
+    UINT64                      m_statsFence[GpuContext::kFramesInFlight] = {};
+    bool                        m_statsPending[GpuContext::kFramesInFlight] = {};
+
+    // Preview hand-off: the composite pass writes one of three display buffers on the processing queue, the UI thread
+    // samples the newest completed one from the present queue. SRVs live in the present heap.
+    Tex            m_displayBuf[kDisplayBuffers];
+    DescriptorPair m_displaySrv[kDisplayBuffers];
+    int            m_displayTarget = -1;            // buffer written by the frame being recorded
+    struct DisplayShared {
+        int    published = -1;                      // newest finished buffer (-1: none)
+        UINT64 publishedFence = 0;                  // processing fence that completes it
+        UINT   generation = 0;                      // bumped whenever the buffers are recreated
+        UINT   width = 0, height = 0;
+        int    uiUsing = -1;                        // buffer the UI thread currently samples
+        UINT   uiGeneration = 0;
+        UINT64 uiRelease[kDisplayBuffers] = {};     // present-queue fence after which a buffer is free again
+    };
+    mutable std::mutex m_displayMutex;
+    DisplayShared      m_disp;
 
     Tex                     m_nvofShared;       // shared input texture owned by the optical flow device (D3D12 view)
     DXGI_FORMAT             m_nvofFmt = DXGI_FORMAT_UNKNOWN;
@@ -188,7 +229,7 @@ private:
     ComPtr<ID3D12Resource>      m_depthRawBuf;                // network output (SRV)
     D3D12_CPU_DESCRIPTOR_HANDLE m_depthRawSrv{};
     D3D12_RESOURCE_STATES       m_depthRawState = D3D12_RESOURCE_STATE_COPY_DEST;
-    ComPtr<ID3D12Resource>      m_depthUpload[Device::kFramesInFlight];
+    ComPtr<ID3D12Resource>      m_depthUpload[GpuContext::kFramesInFlight];
     UINT   m_depthInferW = 0, m_depthInferH = 0;              // network resolution
     UINT   m_depthRawW = 0, m_depthRawH = 0;                  // size of the uploaded network output
     bool   m_depthHaveRaw = false;
@@ -204,6 +245,10 @@ private:
     bool   m_haveHistory = false;
     bool   m_hasDisplay = false;
     bool   m_resetRequested = true;
+    std::atomic<bool> m_resetReq{false};
+    std::atomic<bool> m_depthRestartReq{false};
+    std::atomic<bool> m_nrDirtyReq{false};
+    std::atomic<bool> m_dlaaDirtyReq{false};
     bool   m_nrDirty = false;
     bool   m_nrFailed = false;
     std::string m_nrError;
@@ -218,13 +263,17 @@ private:
     float  m_costEma = 0.0f;          // running average of the matching cost (scene-cut reference)
     bool   m_lastWasBlockMode = false;
 
+    mutable std::mutex m_captureMutex;
     bool         m_captureRequested = false;
     std::wstring m_captureFolder;
+    std::wstring m_captureBase;
     bool         m_captureKeepAlpha = true;
     bool         m_captureOriginal = false;
     std::vector<Readback> m_readbacks;
 
-    PipelineStatus m_status;
+    PipelineStatus     m_status;          // processing thread's working copy
+    mutable std::mutex m_statusMutex;
+    PipelineStatus     m_statusShared;    // copy handed to the UI
 };
 
 } // namespace vdc

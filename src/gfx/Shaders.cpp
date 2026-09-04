@@ -554,6 +554,9 @@ void main(uint3 id : SV_DispatchThreadID) {
     float4 orig = scaled ? Original.SampleLevel(LinearClamp, uv, 0) : Original.Load(int3(id.xy, 0));
     float4 proc = Processed.Load(int3(id.xy, 0));
     float3 outRgb = (Flags & 4) ? orig.rgb : proc.rgb;
+    // Intensity above 1: the runtime caps its own strength at 1, so the extra range amplifies the difference
+    // between the neural result and the original (ParamC = gain).
+    if (Flags & 64) outRgb = saturate(orig.rgb + (proc.rgb - orig.rgb) * ParamC);
     float alpha = (Flags & 1) ? orig.a : 1.0;
     OutFinal[id.xy] = float4(outRgb, alpha);
 
@@ -693,11 +696,12 @@ void Shaders::Shutdown() {
     m_rootSignature.Reset();
 }
 
-void Shaders::Dispatch(ID3D12GraphicsCommandList* cmd, Device& device, const DispatchDesc& d) {
+void Shaders::Dispatch(ID3D12GraphicsCommandList* cmd, GpuContext& gpu, const DispatchDesc& d) {
     ID3D12PipelineState* pso = m_pso[(UINT)d.id].Get();
     if (!pso) return;
-    DescriptorPair table = device.AllocFrame(12);
+    DescriptorPair table = gpu.AllocFrame(12);
     if (!table.Valid()) return;
+    Device& device = gpu.Dev();
     ID3D12Device* dev = device.D3D12();
     const UINT inc = device.SrvDescriptorSize();
     for (UINT i = 0; i < 8; ++i) {

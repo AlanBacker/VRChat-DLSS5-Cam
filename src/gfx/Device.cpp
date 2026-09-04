@@ -18,6 +18,301 @@ const char* VendorName(UINT id) {
 
 } // namespace
 
+// ===========================================================================
+// GpuContext
+
+bool GpuContext::Init(Device& device, const char* name, D3D12_COMMAND_QUEUE_PRIORITY priority, UINT staticDescriptors,
+                      std::wstring& error) {
+    m_device = &device;
+    m_name = name;
+    ID3D12Device* dev = device.D3D12();
+    HRESULT hr = S_OK;
+
+    D3D12_COMMAND_QUEUE_DESC qd{};
+    qd.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
+    qd.Priority = priority;
+    hr = dev->CreateCommandQueue(&qd, IID_PPV_ARGS(&m_queue));
+    if (FAILED(hr) && priority != D3D12_COMMAND_QUEUE_PRIORITY_NORMAL) {
+        qd.Priority = D3D12_COMMAND_QUEUE_PRIORITY_NORMAL;
+        hr = dev->CreateCommandQueue(&qd, IID_PPV_ARGS(&m_queue));
+    }
+    if (FAILED(hr)) { error = L"CreateCommandQueue failed: " + Utf8ToWide(FormatHr(hr)); return false; }
+    m_queue->SetName(Utf8ToWide(std::string("VDC ") + name + " queue").c_str());
+
+    hr = dev->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&m_fence));
+    if (FAILED(hr)) { error = L"CreateFence failed: " + Utf8ToWide(FormatHr(hr)); return false; }
+    m_fenceEvent = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+    if (!m_fenceEvent) { error = L"CreateEvent failed"; return false; }
+
+    for (UINT i = 0; i < kFramesInFlight; ++i) {
+        hr = dev->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&m_frames[i].allocator));
+        if (FAILED(hr)) { error = L"CreateCommandAllocator failed: " + Utf8ToWide(FormatHr(hr)); return false; }
+    }
+    hr = dev->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, m_frames[0].allocator.Get(), nullptr,
+                                IID_PPV_ARGS(&m_cmd));
+    if (FAILED(hr)) { error = L"CreateCommandList failed: " + Utf8ToWide(FormatHr(hr)); return false; }
+    m_cmd->Close();
+
+    m_staticCount = staticDescriptors;
+    m_descSize = dev->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+    D3D12_DESCRIPTOR_HEAP_DESC hd{};
+    hd.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+    hd.NumDescriptors = m_staticCount + kFramesInFlight * kFrameDescriptors;
+    hd.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+    hr = dev->CreateDescriptorHeap(&hd, IID_PPV_ARGS(&m_srvHeap));
+    if (FAILED(hr)) { error = L"CreateDescriptorHeap (srv) failed: " + Utf8ToWide(FormatHr(hr)); return false; }
+    m_staticFree.clear();
+    for (UINT i = m_staticCount; i > 0; --i) m_staticFree.push_back(i - 1);
+
+    // GPU timestamp queries
+    {
+        const UINT count = kFramesInFlight * (UINT)GpuTimer::Count * 2;
+        D3D12_QUERY_HEAP_DESC qh{};
+        qh.Type = D3D12_QUERY_HEAP_TYPE_TIMESTAMP;
+        qh.Count = count;
+        if (SUCCEEDED(dev->CreateQueryHeap(&qh, IID_PPV_ARGS(&m_queryHeap)))) {
+            D3D12_HEAP_PROPERTIES hp{};
+            hp.Type = D3D12_HEAP_TYPE_READBACK;
+            D3D12_RESOURCE_DESC bd{};
+            bd.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+            bd.Width = count * sizeof(UINT64);
+            bd.Height = 1; bd.DepthOrArraySize = 1; bd.MipLevels = 1;
+            bd.SampleDesc.Count = 1;
+            bd.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+            if (FAILED(dev->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &bd, D3D12_RESOURCE_STATE_COPY_DEST,
+                                                    nullptr, IID_PPV_ARGS(&m_queryReadback)))) {
+                m_queryHeap.Reset();
+            }
+        }
+        if (m_queryHeap && FAILED(m_queue->GetTimestampFrequency(&m_timestampFreq))) {
+            m_queryHeap.Reset();
+            m_queryReadback.Reset();
+        }
+        if (!m_queryHeap) Log::Warn("GPU timestamp queries unavailable (%s)", name);
+    }
+    return true;
+}
+
+void GpuContext::Shutdown() {
+    if (m_queue && m_fence) WaitIdle();
+    for (auto& f : m_frames) { f.deferred.clear(); f.allocator.Reset(); }
+    m_pendingDeferred.clear();
+    m_cmd.Reset();
+    m_queryReadback.Reset();
+    m_queryHeap.Reset();
+    m_srvHeap.Reset();
+    if (m_fenceEvent) { CloseHandle(m_fenceEvent); m_fenceEvent = nullptr; }
+    m_fence.Reset();
+    m_queue.Reset();
+    m_device = nullptr;
+}
+
+// --- descriptors -----------------------------------------------------------
+
+DescriptorPair GpuContext::AllocStatic() {
+    DescriptorPair d{};
+    std::lock_guard<std::mutex> lock(m_staticMutex);
+    if (m_staticFree.empty()) { Log::Error("Static descriptor heap exhausted (%s)", m_name.c_str()); return d; }
+    const UINT idx = m_staticFree.back();
+    m_staticFree.pop_back();
+    d.cpu = m_srvHeap->GetCPUDescriptorHandleForHeapStart();
+    d.cpu.ptr += (SIZE_T)idx * m_descSize;
+    d.gpu = m_srvHeap->GetGPUDescriptorHandleForHeapStart();
+    d.gpu.ptr += (UINT64)idx * m_descSize;
+    return d;
+}
+
+void GpuContext::FreeStatic(const DescriptorPair& d) {
+    if (!d.Valid() || !m_srvHeap) return;
+    std::lock_guard<std::mutex> lock(m_staticMutex);
+    const SIZE_T base = m_srvHeap->GetCPUDescriptorHandleForHeapStart().ptr;
+    const UINT idx = (UINT)((d.cpu.ptr - base) / m_descSize);
+    if (idx < m_staticCount) m_staticFree.push_back(idx);
+}
+
+void GpuContext::DeferFreeStatic(const DescriptorPair& d) {
+    if (!d.Valid()) return;
+    std::lock_guard<std::mutex> lock(m_deferMutex);
+    Deferred e;
+    e.staticSlot = d;
+    m_pendingDeferred.push_back(std::move(e));
+}
+
+DescriptorPair GpuContext::AllocFrame(UINT count) {
+    DescriptorPair d{};
+    FrameSlot& f = m_frames[m_frameIndex];
+    if (f.frameDescCursor + count > kFrameDescriptors) {
+        Log::Error("Per-frame descriptor ring exhausted (%s)", m_name.c_str());
+        return d;
+    }
+    const UINT idx = m_staticCount + m_frameIndex * kFrameDescriptors + f.frameDescCursor;
+    f.frameDescCursor += count;
+    d.cpu = m_srvHeap->GetCPUDescriptorHandleForHeapStart();
+    d.cpu.ptr += (SIZE_T)idx * m_descSize;
+    d.gpu = m_srvHeap->GetGPUDescriptorHandleForHeapStart();
+    d.gpu.ptr += (UINT64)idx * m_descSize;
+    return d;
+}
+
+// --- synchronisation -----------------------------------------------------------
+
+UINT64 GpuContext::Signal() {
+    std::lock_guard<std::mutex> lock(m_fenceMutex);
+    const UINT64 v = ++m_fenceValue;
+    m_queue->Signal(m_fence.Get(), v);
+    m_lastSignaled.store(v);
+    return v;
+}
+
+bool GpuContext::IsFenceComplete(UINT64 value) const {
+    return value == 0 || !m_fence || m_fence->GetCompletedValue() >= value;
+}
+
+void GpuContext::WaitForFence(UINT64 value) {
+    if (value == 0 || !m_fence || m_fence->GetCompletedValue() >= value) return;
+    std::lock_guard<std::mutex> lock(m_fenceMutex);
+    if (m_fence->GetCompletedValue() >= value) return;
+    if (SUCCEEDED(m_fence->SetEventOnCompletion(value, m_fenceEvent)))
+        WaitForSingleObject(m_fenceEvent, 5000);
+}
+
+void GpuContext::WaitIdle() {
+    if (!m_queue || !m_fence) return;
+    WaitForFence(Signal());
+    for (auto& f : m_frames) ReleaseDeferred(f.deferred);
+    std::vector<Deferred> pending;
+    {
+        std::lock_guard<std::mutex> lock(m_deferMutex);
+        pending.swap(m_pendingDeferred);
+    }
+    ReleaseDeferred(pending);
+}
+
+void GpuContext::WaitOnGpu(ID3D12Fence* fence, UINT64 value) {
+    if (fence && value) m_queue->Wait(fence, value);
+}
+
+void GpuContext::DeferRelease(ComPtr<IUnknown> obj) {
+    if (!obj) return;
+    std::lock_guard<std::mutex> lock(m_deferMutex);
+    Deferred e;
+    e.obj = std::move(obj);
+    m_pendingDeferred.push_back(std::move(e));
+}
+
+void GpuContext::ReleaseDeferred(std::vector<Deferred>& list) {
+    for (auto& e : list) {
+        e.obj.Reset();
+        if (e.staticSlot.Valid()) FreeStatic(e.staticSlot);
+    }
+    list.clear();
+}
+
+// --- frame loop ------------------------------------------------------------------
+
+ID3D12GraphicsCommandList* GpuContext::BeginFrame() {
+    ID3D12Device* dev = m_device->D3D12();
+    if (dev && dev->GetDeviceRemovedReason() != S_OK) m_device->NoteDeviceRemoved(m_name.c_str());
+    m_frameIndex = (UINT)(m_frameNumber % kFramesInFlight);
+    FrameSlot& f = m_frames[m_frameIndex];
+    WaitForFence(f.fenceValue);
+    ReleaseDeferred(f.deferred);
+    // Objects retired since the previous frame (from any thread) ride with this frame: by the time its fence
+    // passes every earlier frame that could still reference them is complete too.
+    {
+        std::lock_guard<std::mutex> lock(m_deferMutex);
+        f.deferred.swap(m_pendingDeferred);
+        m_pendingDeferred.clear();
+    }
+    ReadTimers();
+    f.frameDescCursor = 0;
+    for (auto& u : m_timerUsed) u = false;
+    f.allocator->Reset();
+    m_cmd->Reset(f.allocator.Get(), nullptr);
+    m_cmdOpen = true;
+    ID3D12DescriptorHeap* heaps[] = { m_srvHeap.Get() };
+    m_cmd->SetDescriptorHeaps(1, heaps);
+    TimerBegin(m_cmd.Get(), GpuTimer::Frame);
+    return m_cmd.Get();
+}
+
+ID3D12GraphicsCommandList* GpuContext::SubmitAndContinue() {
+    if (!m_cmdOpen) return m_cmd.Get();
+    m_cmd->Close();
+    ID3D12CommandList* lists[] = { m_cmd.Get() };
+    m_queue->ExecuteCommandLists(1, lists);
+    m_cmd->Reset(m_frames[m_frameIndex].allocator.Get(), nullptr);
+    ID3D12DescriptorHeap* heaps[] = { m_srvHeap.Get() };
+    m_cmd->SetDescriptorHeaps(1, heaps);
+    return m_cmd.Get();
+}
+
+void GpuContext::Execute() {
+    if (!m_cmdOpen) return;
+    TimerEnd(m_cmd.Get(), GpuTimer::Frame);
+    ResolveTimers(m_cmd.Get());
+    m_cmd->Close();
+    m_cmdOpen = false;
+    ID3D12CommandList* lists[] = { m_cmd.Get() };
+    m_queue->ExecuteCommandLists(1, lists);
+}
+
+UINT64 GpuContext::FinishFrame() {
+    FrameSlot& f = m_frames[m_frameIndex];
+    f.fenceValue = Signal();
+    ++m_frameNumber;
+    return f.fenceValue;
+}
+
+// --- GPU timers ----------------------------------------------------------------
+
+void GpuContext::TimerBegin(ID3D12GraphicsCommandList* cmd, GpuTimer t) {
+    if (!m_queryHeap) return;
+    const UINT idx = (m_frameIndex * (UINT)GpuTimer::Count + (UINT)t) * 2;
+    cmd->EndQuery(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, idx);
+    m_timerUsed[(UINT)t] = true;
+}
+
+void GpuContext::TimerEnd(ID3D12GraphicsCommandList* cmd, GpuTimer t) {
+    if (!m_queryHeap) return;
+    const UINT idx = (m_frameIndex * (UINT)GpuTimer::Count + (UINT)t) * 2 + 1;
+    cmd->EndQuery(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, idx);
+}
+
+void GpuContext::ResolveTimers(ID3D12GraphicsCommandList* cmd) {
+    if (!m_queryHeap) return;
+    const UINT perFrame = (UINT)GpuTimer::Count * 2;
+    const UINT first = m_frameIndex * perFrame;
+    // Give unused timers a zero-length interval so the resolve reads defined data.
+    for (UINT t = 0; t < (UINT)GpuTimer::Count; ++t) {
+        if (!m_timerUsed[t]) {
+            cmd->EndQuery(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, first + t * 2);
+            cmd->EndQuery(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, first + t * 2 + 1);
+        }
+    }
+    cmd->ResolveQueryData(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, first, perFrame,
+                          m_queryReadback.Get(), (UINT64)first * sizeof(UINT64));
+}
+
+void GpuContext::ReadTimers() {
+    if (!m_queryHeap || m_frameNumber < kFramesInFlight || !m_timestampFreq) return;
+    const UINT perFrame = (UINT)GpuTimer::Count * 2;
+    const UINT first = m_frameIndex * perFrame;
+    D3D12_RANGE range{ (SIZE_T)first * sizeof(UINT64), (SIZE_T)(first + perFrame) * sizeof(UINT64) };
+    void* data = nullptr;
+    if (FAILED(m_queryReadback->Map(0, &range, &data)) || !data) return;
+    const UINT64* ts = reinterpret_cast<const UINT64*>(data) + first;
+    for (UINT t = 0; t < (UINT)GpuTimer::Count; ++t) {
+        const UINT64 b = ts[t * 2], e = ts[t * 2 + 1];
+        m_timerMs[t] = (e > b) ? (double)(e - b) * 1000.0 / (double)m_timestampFreq : 0.0;
+    }
+    D3D12_RANGE none{ 0, 0 };
+    m_queryReadback->Unmap(0, &none);
+}
+
+// ===========================================================================
+// Device
+
 void Device::Barrier(ID3D12GraphicsCommandList* cmd, ID3D12Resource* res,
                      D3D12_RESOURCE_STATES before, D3D12_RESOURCE_STATES after) {
     if (before == after) return;
@@ -35,6 +330,11 @@ void Device::UavBarrier(ID3D12GraphicsCommandList* cmd, ID3D12Resource* res) {
     b.Type = D3D12_RESOURCE_BARRIER_TYPE_UAV;
     b.UAV.pResource = res;
     cmd->ResourceBarrier(1, &b);
+}
+
+void Device::NoteDeviceRemoved(const char* who) {
+    if (m_deviceRemoved.exchange(true)) return;
+    Log::Hr(LogLevel::Error, StrPrintf("Device removed (%s)", who).c_str(), m_device ? m_device->GetDeviceRemovedReason() : 0);
 }
 
 void Device::SelectAdapter(IDXGIFactory6* factory, bool /*debug*/) {
@@ -106,39 +406,21 @@ bool Device::Init(HWND hwnd, bool debugLayer, std::wstring& error) {
         }
     }
 
-    D3D12_COMMAND_QUEUE_DESC qd{};
-    qd.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
-    hr = m_device->CreateCommandQueue(&qd, IID_PPV_ARGS(&m_queue));
-    if (FAILED(hr)) { error = L"CreateCommandQueue failed: " + Utf8ToWide(FormatHr(hr)); return false; }
-    m_queue->SetName(L"VDC main queue");
+    m_srvDescSize = m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
-    hr = m_device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&m_fence));
-    if (FAILED(hr)) { error = L"CreateFence failed: " + Utf8ToWide(FormatHr(hr)); return false; }
-    m_fenceEvent = CreateEventW(nullptr, FALSE, FALSE, nullptr);
-    if (!m_fenceEvent) { error = L"CreateEvent failed"; return false; }
+    // Two queues: the interface presents from a high-priority queue so a long processing frame (optical flow, the
+    // neural network, a large still image) never holds back window updates.
+    if (!m_ui.Init(*this, "present", D3D12_COMMAND_QUEUE_PRIORITY_HIGH, kStaticDescriptors, error)) return false;
+    if (!m_proc.Init(*this, "processing", D3D12_COMMAND_QUEUE_PRIORITY_NORMAL, 0, error)) return false;
 
-    for (UINT i = 0; i < kFramesInFlight; ++i) {
-        hr = m_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&m_frames[i].allocator));
-        if (FAILED(hr)) { error = L"CreateCommandAllocator failed: " + Utf8ToWide(FormatHr(hr)); return false; }
-    }
-    hr = m_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, m_frames[0].allocator.Get(), nullptr,
-                                     IID_PPV_ARGS(&m_cmd));
-    if (FAILED(hr)) { error = L"CreateCommandList failed: " + Utf8ToWide(FormatHr(hr)); return false; }
-    m_cmd->Close();
-
-    // Descriptor heaps
+    // Staging heap, null views
     {
         D3D12_DESCRIPTOR_HEAP_DESC hd{};
         hd.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-        hd.NumDescriptors = kStaticDescriptors + kFramesInFlight * kFrameDescriptors;
-        hd.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
-        hr = m_device->CreateDescriptorHeap(&hd, IID_PPV_ARGS(&m_srvHeap));
-        if (FAILED(hr)) { error = L"CreateDescriptorHeap (srv) failed: " + Utf8ToWide(FormatHr(hr)); return false; }
         hd.NumDescriptors = kStagingDescriptors;
         hd.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_NONE;
         hr = m_device->CreateDescriptorHeap(&hd, IID_PPV_ARGS(&m_stagingHeap));
         if (FAILED(hr)) { error = L"CreateDescriptorHeap (staging) failed: " + Utf8ToWide(FormatHr(hr)); return false; }
-        m_srvDescSize = m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
         D3D12_DESCRIPTOR_HEAP_DESC rd{};
         rd.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
@@ -147,8 +429,6 @@ bool Device::Init(HWND hwnd, bool debugLayer, std::wstring& error) {
         if (FAILED(hr)) { error = L"CreateDescriptorHeap (rtv) failed: " + Utf8ToWide(FormatHr(hr)); return false; }
         m_rtvDescSize = m_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
 
-        m_staticFree.clear();
-        for (UINT i = kStaticDescriptors; i > 0; --i) m_staticFree.push_back(i - 1);
         m_stagingFree.clear();
         for (UINT i = kStagingDescriptors; i > 0; --i) m_stagingFree.push_back(i - 1);
 
@@ -167,39 +447,12 @@ bool Device::Init(HWND hwnd, bool debugLayer, std::wstring& error) {
         m_device->CreateUnorderedAccessView(nullptr, nullptr, &ud, m_nullUav);
     }
 
-    // GPU timestamp queries
-    {
-        const UINT count = kFramesInFlight * (UINT)GpuTimer::Count * 2;
-        D3D12_QUERY_HEAP_DESC qh{};
-        qh.Type = D3D12_QUERY_HEAP_TYPE_TIMESTAMP;
-        qh.Count = count;
-        if (SUCCEEDED(m_device->CreateQueryHeap(&qh, IID_PPV_ARGS(&m_queryHeap)))) {
-            D3D12_HEAP_PROPERTIES hp{};
-            hp.Type = D3D12_HEAP_TYPE_READBACK;
-            D3D12_RESOURCE_DESC bd{};
-            bd.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
-            bd.Width = count * sizeof(UINT64);
-            bd.Height = 1; bd.DepthOrArraySize = 1; bd.MipLevels = 1;
-            bd.SampleDesc.Count = 1;
-            bd.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-            if (FAILED(m_device->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &bd,
-                                                         D3D12_RESOURCE_STATE_COPY_DEST, nullptr,
-                                                         IID_PPV_ARGS(&m_queryReadback)))) {
-                m_queryHeap.Reset();
-            }
-        }
-        if (m_queryHeap && FAILED(m_queue->GetTimestampFrequency(&m_timestampFreq))) {
-            m_queryHeap.Reset();
-            m_queryReadback.Reset();
-        }
-        if (!m_queryHeap) Log::Warn("GPU timestamp queries unavailable");
-    }
-
-    // D3D11On12 (Spout and NVIDIA Optical Flow live in the D3D11 world)
+    // D3D11On12 (Spout lives in the D3D11 world). It shares the processing queue, so a received frame is ordered
+    // with the compute passes that read it.
     {
         UINT flags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
         if (debugLayer) flags |= D3D11_CREATE_DEVICE_DEBUG;
-        IUnknown* queues[] = { m_queue.Get() };
+        IUnknown* queues[] = { m_proc.Queue() };
         hr = D3D11On12CreateDevice(m_device.Get(), flags, nullptr, 0, queues, 1, 0,
                                    &m_device11, &m_context11, nullptr);
         if (FAILED(hr) && debugLayer) {
@@ -239,7 +492,7 @@ bool Device::CreateSwapChain() {
     sd.Flags = m_tearing ? DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING : 0;
 
     ComPtr<IDXGISwapChain1> sc1;
-    HRESULT hr = m_factory->CreateSwapChainForHwnd(m_queue.Get(), m_hwnd, &sd, nullptr, nullptr, &sc1);
+    HRESULT hr = m_factory->CreateSwapChainForHwnd(m_ui.Queue(), m_hwnd, &sd, nullptr, nullptr, &sc1);
     if (FAILED(hr)) { Log::Hr(LogLevel::Error, "CreateSwapChainForHwnd", hr); return false; }
     m_factory->MakeWindowAssociation(m_hwnd, DXGI_MWA_NO_ALT_ENTER);
     hr = sc1.As(&m_swapChain);
@@ -267,13 +520,13 @@ bool Device::Resize(UINT width, UINT height) {
     width = std::max<UINT>(1, width);
     height = std::max<UINT>(1, height);
     if (!m_swapChain || (width == m_width && height == m_height)) return true;
-    WaitIdle();
+    m_ui.WaitIdle();
     ReleaseBackBuffers();
     HRESULT hr = m_swapChain->ResizeBuffers(kBackBuffers, width, height, kBackBufferFormat,
                                             m_tearing ? DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING : 0);
     if (FAILED(hr)) {
         Log::Hr(LogLevel::Error, "ResizeBuffers", hr);
-        if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET) m_deviceRemoved = true;
+        if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET) NoteDeviceRemoved("ResizeBuffers");
         return false;
     }
     m_width = width;
@@ -287,46 +540,26 @@ D3D12_CPU_DESCRIPTOR_HANDLE Device::CurrentRtv() const {
     return h;
 }
 
+UINT64 Device::EndFrame(bool vsync) {
+    m_ui.Execute();
+    const UINT flags = (!vsync && m_tearing) ? DXGI_PRESENT_ALLOW_TEARING : 0;
+    HRESULT hr = m_swapChain->Present(vsync ? 1 : 0, flags);
+    if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET) {
+        NoteDeviceRemoved("Present");
+    } else if (FAILED(hr)) {
+        Log::Hr(LogLevel::Warn, "Present", hr);
+    }
+    const UINT64 fence = m_ui.FinishFrame();
+    m_backBufferIndex = m_swapChain->GetCurrentBackBufferIndex();
+    return fence;
+}
+
 // ---------------------------------------------------------------------------
 // Descriptors
 
-DescriptorPair Device::AllocStatic() {
-    DescriptorPair d{};
-    if (m_staticFree.empty()) { Log::Error("Static descriptor heap exhausted"); return d; }
-    const UINT idx = m_staticFree.back();
-    m_staticFree.pop_back();
-    d.cpu = m_srvHeap->GetCPUDescriptorHandleForHeapStart();
-    d.cpu.ptr += (SIZE_T)idx * m_srvDescSize;
-    d.gpu = m_srvHeap->GetGPUDescriptorHandleForHeapStart();
-    d.gpu.ptr += (UINT64)idx * m_srvDescSize;
-    return d;
-}
-
-void Device::FreeStatic(const DescriptorPair& d) {
-    if (!d.Valid()) return;
-    const SIZE_T base = m_srvHeap->GetCPUDescriptorHandleForHeapStart().ptr;
-    const UINT idx = (UINT)((d.cpu.ptr - base) / m_srvDescSize);
-    if (idx < kStaticDescriptors) m_staticFree.push_back(idx);
-}
-
-DescriptorPair Device::AllocFrame(UINT count) {
-    DescriptorPair d{};
-    Frame& f = m_frames[m_frameIndex];
-    if (f.frameDescCursor + count > kFrameDescriptors) {
-        Log::Error("Per-frame descriptor ring exhausted");
-        return d;
-    }
-    const UINT idx = kStaticDescriptors + m_frameIndex * kFrameDescriptors + f.frameDescCursor;
-    f.frameDescCursor += count;
-    d.cpu = m_srvHeap->GetCPUDescriptorHandleForHeapStart();
-    d.cpu.ptr += (SIZE_T)idx * m_srvDescSize;
-    d.gpu = m_srvHeap->GetGPUDescriptorHandleForHeapStart();
-    d.gpu.ptr += (UINT64)idx * m_srvDescSize;
-    return d;
-}
-
 D3D12_CPU_DESCRIPTOR_HANDLE Device::AllocStaging() {
     D3D12_CPU_DESCRIPTOR_HANDLE h{};
+    std::lock_guard<std::mutex> lock(m_stagingMutex);
     if (m_stagingFree.empty()) { Log::Error("Staging descriptor heap exhausted"); return h; }
     const UINT idx = m_stagingFree.back();
     m_stagingFree.pop_back();
@@ -336,7 +569,8 @@ D3D12_CPU_DESCRIPTOR_HANDLE Device::AllocStaging() {
 }
 
 void Device::FreeStaging(D3D12_CPU_DESCRIPTOR_HANDLE h) {
-    if (!h.ptr) return;
+    if (!h.ptr || !m_stagingHeap) return;
+    std::lock_guard<std::mutex> lock(m_stagingMutex);
     const SIZE_T base = m_stagingHeap->GetCPUDescriptorHandleForHeapStart().ptr;
     const UINT idx = (UINT)((h.ptr - base) / m_srvDescSize);
     if (idx < kStagingDescriptors) m_stagingFree.push_back(idx);
@@ -350,153 +584,10 @@ bool Device::TypedUavStoreSupported(DXGI_FORMAT fmt) const {
 }
 
 // ---------------------------------------------------------------------------
-// Synchronisation
-
-UINT64 Device::Signal() {
-    std::lock_guard<std::mutex> lock(m_fenceMutex);
-    const UINT64 v = ++m_fenceValue;
-    m_queue->Signal(m_fence.Get(), v);
-    return v;
-}
-
-bool Device::IsFenceComplete(UINT64 value) {
-    return m_fence->GetCompletedValue() >= value;
-}
-
-void Device::WaitForFence(UINT64 value) {
-    if (value == 0 || m_fence->GetCompletedValue() >= value) return;
-    std::lock_guard<std::mutex> lock(m_fenceMutex);
-    if (m_fence->GetCompletedValue() >= value) return;
-    if (SUCCEEDED(m_fence->SetEventOnCompletion(value, m_fenceEvent)))
-        WaitForSingleObject(m_fenceEvent, 5000);
-}
-
-void Device::WaitIdle() {
-    if (!m_queue || !m_fence) return;
-    WaitForFence(Signal());
-    for (auto& f : m_frames) { f.deferred.clear(); }
-}
-
-void Device::DeferRelease(ComPtr<IUnknown> obj) {
-    if (obj) m_frames[m_frameIndex].deferred.push_back(std::move(obj));
-}
-
-void Device::ProcessDeferredReleases() {
-    m_frames[m_frameIndex].deferred.clear();
-}
-
-// ---------------------------------------------------------------------------
-// Frame loop
-
-ID3D12GraphicsCommandList* Device::BeginFrame() {
-    if (m_device && m_device->GetDeviceRemovedReason() != S_OK && !m_deviceRemoved) {
-        Log::Hr(LogLevel::Error, "Device removed", m_device->GetDeviceRemovedReason());
-        m_deviceRemoved = true;
-    }
-    m_frameIndex = (UINT)(m_frameNumber % kFramesInFlight);
-    Frame& f = m_frames[m_frameIndex];
-    WaitForFence(f.fenceValue);
-    ProcessDeferredReleases();
-    ReadTimers();
-    f.frameDescCursor = 0;
-    for (auto& u : m_timerUsed) u = false;
-    f.allocator->Reset();
-    m_cmd->Reset(f.allocator.Get(), nullptr);
-    m_cmdOpen = true;
-    ID3D12DescriptorHeap* heaps[] = { m_srvHeap.Get() };
-    m_cmd->SetDescriptorHeaps(1, heaps);
-    TimerBegin(m_cmd.Get(), GpuTimer::Frame);
-    return m_cmd.Get();
-}
-
-ID3D12GraphicsCommandList* Device::SubmitAndContinue() {
-    if (!m_cmdOpen) return m_cmd.Get();
-    m_cmd->Close();
-    ID3D12CommandList* lists[] = { m_cmd.Get() };
-    m_queue->ExecuteCommandLists(1, lists);
-    m_cmd->Reset(m_frames[m_frameIndex].allocator.Get(), nullptr);
-    ID3D12DescriptorHeap* heaps[] = { m_srvHeap.Get() };
-    m_cmd->SetDescriptorHeaps(1, heaps);
-    return m_cmd.Get();
-}
-
-void Device::EndFrame(bool vsync) {
-    Frame& f = m_frames[m_frameIndex];
-    TimerEnd(m_cmd.Get(), GpuTimer::Frame);
-    ResolveTimers(m_cmd.Get());
-    m_cmd->Close();
-    m_cmdOpen = false;
-    ID3D12CommandList* lists[] = { m_cmd.Get() };
-    m_queue->ExecuteCommandLists(1, lists);
-
-    const UINT flags = (!vsync && m_tearing) ? DXGI_PRESENT_ALLOW_TEARING : 0;
-    HRESULT hr = m_swapChain->Present(vsync ? 1 : 0, flags);
-    if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET) {
-        Log::Hr(LogLevel::Error, "Present (device lost)", m_device->GetDeviceRemovedReason());
-        m_deviceRemoved = true;
-    } else if (FAILED(hr)) {
-        Log::Hr(LogLevel::Warn, "Present", hr);
-    }
-    f.fenceValue = Signal();
-    ++m_frameNumber;
-    m_backBufferIndex = m_swapChain->GetCurrentBackBufferIndex();
-}
-
-// ---------------------------------------------------------------------------
-// GPU timers
-
-void Device::TimerBegin(ID3D12GraphicsCommandList* cmd, GpuTimer t) {
-    if (!m_queryHeap) return;
-    const UINT idx = (m_frameIndex * (UINT)GpuTimer::Count + (UINT)t) * 2;
-    cmd->EndQuery(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, idx);
-    m_timerUsed[(UINT)t] = true;
-}
-
-void Device::TimerEnd(ID3D12GraphicsCommandList* cmd, GpuTimer t) {
-    if (!m_queryHeap) return;
-    const UINT idx = (m_frameIndex * (UINT)GpuTimer::Count + (UINT)t) * 2 + 1;
-    cmd->EndQuery(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, idx);
-}
-
-void Device::ResolveTimers(ID3D12GraphicsCommandList* cmd) {
-    if (!m_queryHeap) return;
-    const UINT perFrame = (UINT)GpuTimer::Count * 2;
-    const UINT first = m_frameIndex * perFrame;
-    // Give unused timers a zero-length interval so the resolve reads defined data.
-    for (UINT t = 0; t < (UINT)GpuTimer::Count; ++t) {
-        if (!m_timerUsed[t]) {
-            cmd->EndQuery(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, first + t * 2);
-            cmd->EndQuery(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, first + t * 2 + 1);
-        }
-    }
-    cmd->ResolveQueryData(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, first, perFrame,
-                          m_queryReadback.Get(), (UINT64)first * sizeof(UINT64));
-}
-
-void Device::ReadTimers() {
-    if (!m_queryHeap || m_frameNumber < kFramesInFlight || !m_timestampFreq) return;
-    const UINT perFrame = (UINT)GpuTimer::Count * 2;
-    const UINT first = m_frameIndex * perFrame;
-    D3D12_RANGE range{ (SIZE_T)first * sizeof(UINT64), (SIZE_T)(first + perFrame) * sizeof(UINT64) };
-    void* data = nullptr;
-    if (FAILED(m_queryReadback->Map(0, &range, &data)) || !data) return;
-    const UINT64* ts = reinterpret_cast<const UINT64*>(data) + first;
-    for (UINT t = 0; t < (UINT)GpuTimer::Count; ++t) {
-        const UINT64 b = ts[t * 2], e = ts[t * 2 + 1];
-        m_timerMs[t] = (e > b) ? (double)(e - b) * 1000.0 / (double)m_timestampFreq : 0.0;
-    }
-    D3D12_RANGE none{ 0, 0 };
-    m_queryReadback->Unmap(0, &none);
-}
-
-// ---------------------------------------------------------------------------
 
 void Device::Shutdown() {
-    if (m_queue && m_fence) WaitIdle();
-    for (auto& f : m_frames) { f.deferred.clear(); f.allocator.Reset(); }
-    m_cmd.Reset();
-    m_queryReadback.Reset();
-    m_queryHeap.Reset();
+    m_ui.WaitIdle();
+    m_proc.WaitIdle();
     if (m_context11) { m_context11->ClearState(); m_context11->Flush(); }
     m_on12.Reset();
     m_context11.Reset();
@@ -505,10 +596,8 @@ void Device::Shutdown() {
     m_swapChain.Reset();
     m_rtvHeap.Reset();
     m_stagingHeap.Reset();
-    m_srvHeap.Reset();
-    if (m_fenceEvent) { CloseHandle(m_fenceEvent); m_fenceEvent = nullptr; }
-    m_fence.Reset();
-    m_queue.Reset();
+    m_ui.Shutdown();
+    m_proc.Shutdown();
     m_device.Reset();
     m_adapter.Reset();
     m_factory.Reset();

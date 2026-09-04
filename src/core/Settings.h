@@ -10,11 +10,14 @@ enum DepthMode   { DepthFlat = 0, DepthGradient = 1, DepthZero = 2, DepthEstimat
 enum CompareMode { CompareOutput = 0, CompareOriginal = 1, CompareWipe = 2, CompareMotion = 3, CompareDepth = 4 };
 enum FitMode     { FitWindow = 0, FitOneToOne = 1 };
 enum NrRoute     { RouteSignedSnippet = 0, RouteNgxCore = 1 };
+enum SourceMode  { SourceSpout = 0, SourceImage = 1 };
 
 struct Settings {
     // General
     int         language = 0;          // 0 = auto, 1 = English, 2 = Chinese, 3 = Japanese, 4 = Korean
     std::string senderName;            // UTF-8, empty = automatic (prefers VRCSender1)
+    int         sourceMode = SourceSpout;   // Spout stream or a still image file
+    std::string imagePath;             // UTF-8, the picture opened in image mode (reopened at startup)
 
     // Resolution
     bool customResolution = false;
@@ -32,11 +35,11 @@ struct Settings {
     std::string nrDllPath;             // UTF-8, empty = <exe folder>\nvngx_dlssnr.dll
     int         nrPreset = 0;          // 0..3
     int         nrStyle = 0;           // 0 default, 1 natural, 2 cinematic
-    float       nrIntensity = 1.0f;    // 0..2
-    float       nrGlobalTone = 1.0f;   // 0..2
-    float       nrLocalTone = 1.0f;    // 0..2
-    float       nrLocalStructure = 1.0f; // 0..2
-    float       nrSkinStructure = -1.0f; // -1 = runtime default, else 0..2
+    float       nrIntensity = 1.0f;    // 0..2: 0..1 goes to the runtime, 1..2 amplifies the residual in the composite pass
+    float       nrGlobalTone = 1.0f;   // 0..1 (the runtime clamps its strengths to this range)
+    float       nrLocalTone = 1.0f;    // 0..1
+    float       nrLocalStructure = 1.0f; // 0..1
+    float       nrSkinStructure = -1.0f; // -1 = runtime default, else 0..1
     bool        nrAutoMask = false;
     bool        nrUiCorrection = false;
     bool        nrUpscale = false;     // experimental: let DLSSNR upscale to the custom resolution
