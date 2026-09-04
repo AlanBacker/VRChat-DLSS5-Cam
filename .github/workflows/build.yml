@@ -1,0 +1,49 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S . -B build -A x64 -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $out = "dist/VRChatDLSS5Cam"
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          Copy-Item build/Release/VRChatDLSS5Cam.exe $out
+          Copy-Item build/Release/nvngx_dlss.dll $out
+          Copy-Item README.md, LICENSE, THIRD_PARTY_NOTICES.md $out
+          Copy-Item build/ngx_sdk/NVIDIA_LICENSE.txt $out
+          Copy-Item -Recurse docs "$out/docs"
+          Set-Content -Path "$out/PLACE_nvngx_dlssnr.dll_HERE.txt" -Value "Copy your own nvngx_dlssnr.dll (DLSS 5 neural rendering runtime) into this folder. It is not distributed with this application."
+          Compress-Archive -Path "$out/*" -DestinationPath "dist/VRChatDLSS5Cam-win64.zip"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: VRChatDLSS5Cam-win64
+          path: dist/VRChatDLSS5Cam
+
+      - name: Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/VRChatDLSS5Cam-win64.zip
+          generate_release_notes: true

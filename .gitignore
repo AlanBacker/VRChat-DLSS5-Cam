@@ -1,0 +1,17 @@
+# Build output
+build/
+out/
+*.user
+*.suo
+.vs/
+.vscode/
+# Never commit NVIDIA runtimes (the SDK is fetched at configure time, the DLSS 5
+# runtime must be supplied by the user and is not redistributable here).
+nvngx_dlssnr.dll
+nvngx_dlss.dll
+nvngx_dlssd.dll
+nvngx_dlssg.dll
+_nvngx.dll
+*.lib
+# Local scratch
+*.log

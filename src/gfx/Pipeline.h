@@ -1,0 +1,181 @@
+// VRChat DLSS5 Cam - per-frame processing graph: convert -> guidance (motion/depth) -> DLAA -> DLSSNR -> composite -> capture.
+#pragma once
+#include "gfx/Device.h"
+#include "gfx/Shaders.h"
+#include "gfx/NvOpticalFlow.h"
+#include "ngx/NgxCore.h"
+#include "ngx/DlssnrFeature.h"
+#include "ngx/DlaaFeature.h"
+#include "core/Settings.h"
+#include "core/SpoutReceiver.h"
+#include "core/Capture.h"
+#include <string>
+#include <vector>
+
+namespace vdc {
+
+struct PipelineStatus {
+    bool        sourceConnected = false;
+    UINT        srcWidth = 0, srcHeight = 0;     // Spout sender
+    UINT        inWidth = 0, inHeight = 0;       // neural renderer input
+    UINT        outWidth = 0, outHeight = 0;     // output / capture / display
+    bool        ngxInitialized = false;
+    bool        dlssAvailable = false;
+    std::string ngxStatus;
+    bool        nrRuntimeLoaded = false;
+    std::string nrRuntimeVersion;
+    std::wstring nrRuntimePath;
+    bool        nrActive = false;
+    bool        nrFailed = false;
+    std::string nrError;
+    UINT64      nrEvaluations = 0;
+    bool        nrUpscaling = false;
+    bool        dlaaActive = false;
+    bool        dlaaFailed = false;
+    std::string dlaaError;
+    int         motionModeActive = MotionZero;   // what actually ran on the last processed frame
+    bool        nvofAvailable = false;
+    bool        nvofReady = false;
+    std::string nvofError;
+    float       statAvgCost = 0.0f, statMaxCost = 0.0f, statAvgMotion = 0.0f;
+    bool        sceneCut = false;
+    UINT64      resets = 0;
+    UINT64      processedFrames = 0;
+    double      frameIntervalMs = 0.0;
+    size_t      capturesInFlight = 0;
+};
+
+class Pipeline {
+public:
+    bool Init(Device& device, const std::wstring& exeDir, const std::wstring& appDataDir, std::wstring& error);
+    void Shutdown(Device& device);
+
+    bool LoadNrRuntime(Device& device, const std::wstring& dllPath, std::string& error);
+    void UnloadNrRuntime(Device& device);
+
+    void RequestReset() { m_resetRequested = true; }
+    void MarkNrDirty() { m_nrDirty = true; m_nrFailed = false; m_nrError.clear(); }
+    void MarkDlaaDirty() { m_dlaaFailed = false; m_dlaaError.clear(); }
+    void RequestCapture(const std::wstring& folder, bool keepAlpha, bool saveOriginal);
+
+    // Records this frame's GPU work into cmd. fresh = a new source frame arrived, sourceChanged = the source texture was recreated.
+    void Render(Device& device, SpoutReceiver& spout, const Settings& s, ID3D12GraphicsCommandList* cmd, bool fresh, bool sourceChanged);
+    void AfterPresent(Device& device);                // call right after Device::EndFrame
+    void Update(Device& device, Capture& capture);    // call before Device::BeginFrame: completes readbacks, feeds the PNG worker
+
+    bool HasDisplay() const { return m_hasDisplay; }
+    D3D12_GPU_DESCRIPTOR_HANDLE DisplaySrv() const { return m_displayStatic.gpu; }
+    UINT DisplayWidth() const { return m_outW; }
+    UINT DisplayHeight() const { return m_outH; }
+    const PipelineStatus& Status() const { return m_status; }
+    NgxCore& Ngx() { return m_ngx; }
+
+private:
+    struct Tex {
+        ComPtr<ID3D12Resource>      res;
+        D3D12_CPU_DESCRIPTOR_HANDLE srv{};
+        D3D12_CPU_DESCRIPTOR_HANDLE uav{};
+        D3D12_RESOURCE_STATES       state = D3D12_RESOURCE_STATE_COMMON;
+        UINT                        w = 0, h = 0;
+        DXGI_FORMAT                 fmt = DXGI_FORMAT_UNKNOWN;
+        bool Valid() const { return res != nullptr; }
+    };
+    struct Readback {
+        ComPtr<ID3D12Resource> buffer;
+        UINT         w = 0, h = 0, pitch = 0;
+        UINT64       fence = 0;
+        bool         inUse = false;
+        bool         keepAlpha = false;
+        std::wstring path;
+    };
+    struct Config {
+        UINT srcW = 0, srcH = 0; DXGI_FORMAT srcFmt = DXGI_FORMAT_UNKNOWN;
+        UINT inW = 0, inH = 0, outW = 0, outH = 0;
+        bool nvof = false; UINT nvofGrid = 2, nvofPerf = 10;
+        bool operator==(const Config& o) const {
+            return srcW == o.srcW && srcH == o.srcH && srcFmt == o.srcFmt && inW == o.inW && inH == o.inH &&
+                   outW == o.outW && outH == o.outH && nvof == o.nvof && nvofGrid == o.nvofGrid && nvofPerf == o.nvofPerf;
+        }
+    };
+
+    bool CreateTex(Device& device, Tex& t, UINT w, UINT h, DXGI_FORMAT fmt, bool uav, const wchar_t* name);
+    void ReleaseTex(Device& device, Tex& t);
+    void Transition(ID3D12GraphicsCommandList* cmd, Tex& t, D3D12_RESOURCE_STATES state);
+    bool Rebuild(Device& device, const Config& cfg);
+    void ReleaseResources(Device& device);
+    void ReleaseFeatures(Device& device);
+    Config ComputeConfig(const SpoutReceiver& spout, const Settings& s) const;
+
+    void RunConvert(Device& device, ID3D12GraphicsCommandList* cmd, SpoutReceiver& spout, bool writeNvof);
+    void RunGuidance(Device& device, ID3D12GraphicsCommandList* cmd, const Settings& s, int motionMode, bool haveHistory);
+    bool RunOpticalFlow(Device& device, ID3D12GraphicsCommandList*& cmd);
+    void RunDensify(Device& device, ID3D12GraphicsCommandList* cmd, const Settings& s, int mode);
+    void RunStats(Device& device, ID3D12GraphicsCommandList* cmd);
+    void ReadStats(Device& device);
+    bool RunDlaa(Device& device, ID3D12GraphicsCommandList* cmd, const Settings& s, bool reset);
+    bool RunNeural(Device& device, ID3D12GraphicsCommandList* cmd, const Settings& s, Tex& input, bool reset);
+    void RunComposite(Device& device, ID3D12GraphicsCommandList* cmd, const Settings& s, Tex& processed, bool bypass);
+    void EnqueueReadback(Device& device, ID3D12GraphicsCommandList* cmd, Tex& src, const std::wstring& path, bool keepAlpha);
+
+    Shaders        m_shaders;
+    NgxCore        m_ngx;
+    DlssnrFeature  m_nr;
+    DlaaFeature    m_dlaa;
+    NvOpticalFlow  m_nvof;
+    std::wstring   m_exeDir, m_appDataDir;
+
+    Config m_cfg;
+    bool   m_built = false;
+    UINT   m_srcW = 0, m_srcH = 0, m_inW = 0, m_inH = 0, m_outW = 0, m_outH = 0;
+    UINT   m_gridW[3] = {}, m_gridH[3] = {};
+    UINT   m_lumaW[3] = {}, m_lumaH[3] = {};
+
+    Tex m_color8;               // RGBA8 input colour (sRGB encoded)
+    Tex m_luma[2][3];           // R8 luma pyramid, ping-pong by frame parity
+    Tex m_nvofIn;               // BGRA8 optical-flow input (only when R8 input is rejected)
+    Tex m_bm[3], m_bc[3];       // block motion / cost per level
+    Tex m_bmMed[2];             // median-filtered level-0 motion, ping-pong
+    Tex m_flow, m_cost;         // NVOF results (D3D12 side)
+    Tex m_mv, m_conf, m_depth;  // dense guidance
+    Tex m_dlaaOut, m_nrOut;
+    Tex m_final, m_display;
+    ComPtr<ID3D12Resource>      m_statsBuf;
+    D3D12_CPU_DESCRIPTOR_HANDLE m_statsUav{};
+    ComPtr<ID3D12Resource>      m_statsReadback[Device::kFramesInFlight];
+    UINT64                      m_statsFence[Device::kFramesInFlight] = {};
+    bool                        m_statsPending[Device::kFramesInFlight] = {};
+    DescriptorPair              m_displayStatic;
+
+    ComPtr<ID3D11Texture2D> m_nvofSrc11[2];
+    ComPtr<ID3D11Texture2D> m_flow11, m_cost11;
+    DXGI_FORMAT             m_nvofFmt = DXGI_FORMAT_UNKNOWN;
+    bool                    m_nvofReady = false;
+    std::string             m_nvofError;
+
+    int    m_cur = 0;                 // ping-pong index
+    bool   m_haveHistory = false;
+    bool   m_hasDisplay = false;
+    bool   m_resetRequested = true;
+    bool   m_nrDirty = false;
+    bool   m_nrFailed = false;
+    std::string m_nrError;
+    bool   m_nrCreatedUseCore = false;
+    int    m_nrCreatedPreset = -1;
+    bool   m_dlaaFailed = false;
+    std::string m_dlaaError;
+    int    m_dlaaCreatedPreset = -1;
+    double m_lastFreshTime = 0.0;
+    double m_frameIntervalMs = 16.7;
+    float  m_statAvgCost = 0.0f, m_statMaxCost = 0.0f, m_statAvgMotion = 0.0f;
+    bool   m_lastWasBlockMode = false;
+
+    bool         m_captureRequested = false;
+    std::wstring m_captureFolder;
+    bool         m_captureKeepAlpha = true;
+    bool         m_captureOriginal = false;
+    std::vector<Readback> m_readbacks;
+
+    PipelineStatus m_status;
+};
+
+} // namespace vdc
