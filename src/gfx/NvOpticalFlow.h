@@ -1,5 +1,6 @@
 // VRChat DLSS5 Cam - NVIDIA Optical Flow (nvofapi64.dll, D3D11 interface) provider.
-// The ABI declarations in the .cpp are adapted from the MIT-licensed dlss5-bridge project (see THIRD_PARTY_NOTICES.md).
+// Driven through the NVIDIA Optical Flow SDK 5.0 interface headers (third_party/nvof, MIT); with a 5.0 driver the forward and
+// backward flow come out of a single pass, older drivers get a second pass for the backward flow.
 //
 // The NVOF D3D11 entry point only accepts a native NVIDIA D3D11 device (it rejects the D3D11On12 mapping layer with
 // UNSUPPORTED_DEVICE), so this provider owns a private D3D11 device on the same adapter as the D3D12 device. Frames cross
@@ -17,6 +18,7 @@ public:
     ~NvOpticalFlow() { Shutdown(); }
 
     static bool LibraryAvailable();
+    static UINT ApiVersion();   // 0x50 / 0x20 once the library is loaded, 0 otherwise
 
     // Inputs are R8_UNORM (luma) or B8G8R8A8_UNORM textures (width x height). grid = 1/2/4 output grid size, perfLevel 5 (slow) / 10 / 20 (fast).
     // bidirectional = also compute the backward flow (previous -> current) so that a forward/backward consistency check can be applied.
@@ -41,6 +43,7 @@ public:
 
     bool HasCost() const { return m_sharedCost12 != nullptr; }
     bool Bidirectional() const { return m_sharedFlowBack12 != nullptr; }
+    bool SinglePassBidirectional() const { return Bidirectional() && !m_twoPass; }
     UINT Width() const { return m_width; }
     UINT Height() const { return m_height; }
     UINT Grid() const { return m_grid; }
@@ -53,7 +56,7 @@ private:
     bool EnsureDevice(Device& device, std::string& error);
     bool CreateSharedTexture(Device& device, UINT w, UINT h, DXGI_FORMAT fmt, ComPtr<ID3D11Texture2D>& tex11, ComPtr<ID3D12Resource>& res12,
                              const char* what, std::string& error);
-    bool CreateSessionAndRegister(Device& device, bool withCost, std::string& error);
+    bool CreateSessionAndRegister(Device& device, bool withCost, bool bidirectional, bool verbose, std::string& error);
     void ReleaseSession();
     void WaitForD3D11();
     std::string LastError() const;
@@ -81,6 +84,7 @@ private:
     void*  m_flowBackHandle = nullptr;
     void*  m_costBackHandle = nullptr;
     bool   m_wantBidirectional = false;
+    bool   m_twoPass = false;              // backward flow computed by a second Execute (API 2.0 layout)
     UINT   m_width = 0, m_height = 0, m_grid = 2, m_flowW = 0, m_flowH = 0, m_perf = 10;
     DXGI_FORMAT m_inputFormat = DXGI_FORMAT_R8_UNORM;
     UINT64 m_executeCount = 0;

@@ -86,7 +86,7 @@ Settings are stored in `%LOCALAPPDATA%\VRChatDLSS5Cam\settings.ini`; the log is 
 - **Neural rendering failed** – some runtime builds need a newer driver; check `log.txt` for the NGX result code. Try *Preset* 0 and the *NGX core* route.
 - **Depth estimator unavailable** – `onnxruntime.dll`, `onnxruntime_providers_shared.dll`, `DirectML.dll` and `models\depth_anything_v2_small_fp16.onnx` must sit next to the executable (all are part of the release package). Until the estimator is ready the app falls back to zero depth; its state is shown under *Frame guidance*.
 - **Optical flow unavailable** – NVIDIA Optical Flow runs on a private native D3D11 device (the driver rejects the D3D11On12 layer, which was the cause of the "UNSUPPORTED_DEVICE" error in 0.2.0). If `log.txt` says "NVOF unavailable, falling back to block matching", update the GeForce driver; block matching is used automatically until then. The status dot under *Frame guidance* shows which source is active.
-- **Low frame rate** – disable DLAA, raise the depth update interval or lower the depth network resolution, lower the search radius, or choose NVIDIA Optical Flow for motion vectors.
+- **Low frame rate** – disable DLAA, raise the depth update interval or lower the depth network resolution, lower the search radius, or choose NVIDIA Optical Flow for motion vectors. With NVIDIA Optical Flow keep the flow grid at 4 px (the fastest setting; 2 px and 1 px cost far more at 4K). The log prints a `Perf:` line every 15 s with the GPU time of each stage.
 
 ## Building from source
 

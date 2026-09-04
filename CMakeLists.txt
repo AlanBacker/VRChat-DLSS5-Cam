@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(VRChatDLSS5Cam VERSION 0.2.1 LANGUAGES CXX)
+project(VRChatDLSS5Cam VERSION 0.2.2 LANGUAGES CXX)
 
 if(NOT WIN32)
   message(FATAL_ERROR "VRChat DLSS5 Cam targets Windows only.")
@@ -73,7 +73,7 @@ set(APP_SOURCES
 
 # The .manifest source is merged by CMake into the linker-generated manifest (per-monitor DPI, UTF-8 code page).
 add_executable(VRChatDLSS5Cam WIN32 ${APP_SOURCES} resources/app.rc resources/app.manifest)
-target_include_directories(VRChatDLSS5Cam PRIVATE src ${NGX_INCLUDE_DIR} ${ORT_INCLUDE_DIR} ${DML_INCLUDE_DIR})
+target_include_directories(VRChatDLSS5Cam PRIVATE src third_party/nvof ${NGX_INCLUDE_DIR} ${ORT_INCLUDE_DIR} ${DML_INCLUDE_DIR})
 target_compile_definitions(VRChatDLSS5Cam PRIVATE
   UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX _CRT_SECURE_NO_WARNINGS
   APP_VERSION_STRING="${PROJECT_VERSION}"

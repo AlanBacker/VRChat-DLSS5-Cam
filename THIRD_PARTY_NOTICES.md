@@ -26,13 +26,21 @@ own copy; the application only loads the file the user points it to.
 `third_party/imgui` is Dear ImGui by Omar Cornut and contributors
 (https://github.com/ocornut/imgui), MIT License. See `third_party/imgui/LICENSE.txt`.
 
+## NVIDIA Optical Flow SDK (interface headers)
+
+`third_party/nvof/nvOpticalFlowCommon.h` and `third_party/nvof/nvOpticalFlowD3D11.h`
+are the NVIDIA Optical Flow SDK 5.0 interface headers,
+Copyright (c) 2018-2024 NVIDIA CORPORATION & AFFILIATES, MIT License
+(the license text is at the top of each file). Only the headers are included;
+the runtime `nvofapi64.dll` is part of the NVIDIA driver and is not redistributed.
+
 ## dlss5-bridge
 
-The raw NVIDIA Optical Flow SDK ABI declarations in `src/gfx/NvOpticalFlow.cpp`
-(function-table layout and parameter structures) are adapted from
+The D3D11/D3D12 interop findings behind `src/gfx/NvOpticalFlow.cpp` (which resource
+formats can be shared between the two APIs and in which direction, and that the
+optical flow interface needs a native D3D11 device) were learned from
 dlss5-bridge (https://github.com/jpneagle/dlss5-webcam-demo lineage), MIT License.
-No NVIDIA Optical Flow SDK headers are included; the runtime `nvofapi64.dll`
-is part of the NVIDIA driver.
+No code is copied.
 
 ## ONNX Runtime
 

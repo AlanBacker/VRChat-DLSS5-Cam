@@ -82,7 +82,7 @@ VRChat DLSS5 Cam은 VRChat 내장 카메라(*Spout Stream*을 켠 Stream 카메�
 - **뉴럴 렌더링 실패** – 일부 런타임 빌드는 더 새로운 드라이버가 필요합니다. `log.txt`의 NGX 결과 코드를 확인하고 *프리셋* 0과 *NGX 코어* 경로를 시도해 보세요.
 - **깊이 추정기 사용 불가** – `onnxruntime.dll`, `onnxruntime_providers_shared.dll`, `DirectML.dll`, `models\depth_anything_v2_small_fp16.onnx`가 실행 파일 옆에 있어야 합니다(모두 릴리스 패키지에 포함). 추정기가 준비될 때까지 앱은 0 깊이로 대체하며, 상태는 *프레임 가이던스*에 표시됩니다.
 - **옵티컬 플로우 사용 불가** – NVIDIA Optical Flow는 앱 전용 네이티브 D3D11 장치에서 실행됩니다(드라이버가 D3D11On12 레이어를 거부하며, 이것이 0.2.0의 "UNSUPPORTED_DEVICE" 오류의 원인이었습니다). `log.txt`에 "NVOF unavailable, falling back to block matching"이 보이면 GeForce 드라이버를 업데이트하세요. 그때까지는 블록 매칭이 자동으로 사용됩니다. *프레임 가이던스*의 상태 점이 현재 사용 중인 소스를 보여 줍니다.
-- **낮은 프레임률** – DLAA를 끄거나, 깊이 갱신 간격을 늘리거나 깊이 네트워크 해상도를 낮추거나, 검색 반경을 줄이거나, 모션 벡터에 NVIDIA Optical Flow를 선택하세요.
+- **낮은 프레임률** – DLAA를 끄거나, 깊이 갱신 간격을 늘리거나 깊이 네트워크 해상도를 낮추거나, 검색 반경을 줄이거나, 모션 벡터에 NVIDIA Optical Flow를 선택하세요. NVIDIA Optical Flow를 사용할 때는 플로우 그리드를 4 px로 유지하세요(가장 빠른 설정. 2 px / 1 px는 4K에서 훨씬 무겁습니다). 로그에는 15초마다 각 단계의 GPU 시간을 보여주는 `Perf:` 줄이 기록됩니다.
 
 ## 소스에서 빌드
 

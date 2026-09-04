@@ -82,7 +82,7 @@ VRChat DLSS5 Cam は、VRChat 内蔵カメラ（*Spout Stream* を有効にし�
 - **ニューラルレンダリングに失敗** – 一部のランタイムビルドは新しいドライバーを必要とします。`log.txt` の NGX 結果コードを確認し、*プリセット* 0 や *NGX コア* ルートを試してください。
 - **深度推定が利用不可** – `onnxruntime.dll`、`onnxruntime_providers_shared.dll`、`DirectML.dll`、`models\depth_anything_v2_small_fp16.onnx` を実行ファイルの隣に置いてください（いずれもリリースパッケージに含まれます）。推定器の準備が整うまではゼロ深度にフォールバックし、状態は *フレームガイダンス* に表示されます。
 - **オプティカルフローが使えない** – NVIDIA Optical Flow はアプリ専用のネイティブ D3D11 デバイス上で動作します（ドライバーは D3D11On12 レイヤーを拒否し、これが 0.2.0 の「UNSUPPORTED_DEVICE」エラーの原因でした）。`log.txt` に "NVOF unavailable, falling back to block matching" と出る場合は GeForce ドライバーを更新してください。それまではブロックマッチングが自動的に使われます。*フレームガイダンス* の状態ドットに現在のソースが表示されます。
-- **フレームレートが低い** – DLAA を無効にする、深度更新間隔を大きくするか深度ネットワーク解像度を下げる、探索半径を下げる、モーションベクトルに NVIDIA Optical Flow を選ぶ。
+- **フレームレートが低い** – DLAA を無効にする、深度更新間隔を大きくするか深度ネットワーク解像度を下げる、探索半径を下げる、モーションベクトルに NVIDIA Optical Flow を選ぶ。 NVIDIA Optical Flow ではフローグリッドを 4 px のままにしてください（最速の設定。2 px / 1 px は 4K では大幅に重くなります）。ログには 15 秒ごとに各ステージの GPU 時間を示す `Perf:` 行が出力されます。
 
 ## ソースからのビルド
 

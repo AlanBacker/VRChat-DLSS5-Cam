@@ -352,16 +352,16 @@ void MainUI::SectionGuidance(Settings& s, const UiFrameInfo& info, UiEvents& ev)
         if (ImGui::SliderInt(TR(SearchRadius), &s.searchRadius, 2, 12, "%d px", ImGuiSliderFlags_AlwaysClamp)) ev.settingsChanged = true;
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip)) ImGui::SetTooltip("%s", TR(TipSearchRadius));
     } else if (s.motionMode == MotionNvOpticalFlow) {
-        int grid = (s.nvofGrid == 1) ? 0 : (s.nvofGrid == 4) ? 2 : 1;
-        const char* grids[] = { "1 px", "2 px", "4 px" };
-        if (ComboIds(TR(NvofGrid), &grid, grids, 3, TR(TipNvof))) { s.nvofGrid = (grid == 0) ? 1 : (grid == 2) ? 4 : 2; ev.settingsChanged = true; }
+        int grid = (s.nvofGrid == 4) ? 0 : (s.nvofGrid == 1) ? 2 : 1;
+        const char* grids[] = { "4 px", "2 px", "1 px" };
+        if (ComboIds(TR(NvofGrid), &grid, grids, 3, TR(TipNvof))) { s.nvofGrid = (grid == 0) ? 4 : (grid == 2) ? 1 : 2; ev.settingsChanged = true; }
         int perf = (s.nvofPerf == 5) ? 0 : (s.nvofPerf == 20) ? 2 : 1;
         const char* perfs[] = { TR(PerfSlow), TR(PerfMedium), TR(PerfFast) };
         if (ComboIds(TR(NvofPerf), &perf, perfs, 3)) { s.nvofPerf = (perf == 0) ? 5 : (perf == 2) ? 20 : 10; ev.settingsChanged = true; }
         if (Toggle(TR(NvofBidirectional), &s.nvofBidirectional)) ev.settingsChanged = true;
         Help(TR(TipNvofBidirectional));
         if (st) {
-            if (st->nvofReady) StatusDot(p.good, StrPrintf("%s: %s%s", TR(Nvof), TR(Available), st->nvofBidirectional ? "  \xE2\x87\x84" : "").c_str());
+            if (st->nvofReady) StatusDot(p.good, StrPrintf("%s: %s (%u px%s)", TR(Nvof), TR(Available), st->nvofGrid, st->nvofBidirectional ? " \xE2\x87\x84" : "").c_str());
             else if (!st->nvofAvailable) StatusDot(p.warn, StrPrintf("%s: %s", TR(Nvof), TR(NotAvailable)).c_str());
             else StatusDot(p.warn, StrPrintf("%s: %s", TR(Nvof), st->nvofError.empty() ? TR(NotAvailable) : st->nvofError.c_str()).c_str());
         }

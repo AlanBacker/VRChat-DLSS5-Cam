@@ -46,7 +46,7 @@ struct Settings {
     int   depthMode = DepthEstimated;         // falls back to zero depth when the estimator is unavailable
     int   searchRadius = 7;            // block-matching radius at quarter resolution
     float motionConfidence = 0.35f;    // confidence below which vectors are damped
-    int   nvofGrid = 2;                // 1, 2, 4
+    int   nvofGrid = 4;                // 4, 2, 1 source pixels between hardware vectors (4 = fastest)
     int   nvofPerf = 10;               // 5 slow, 10 medium, 20 fast
     bool  nvofBidirectional = true;    // forward/backward consistency check
     int   depthInterval = 4;           // run the depth network every N processed frames (1..10)

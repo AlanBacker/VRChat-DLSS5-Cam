@@ -215,7 +215,7 @@ void Settings::Clamp() {
     if (depthLongSide != 252 && depthLongSide != 336 && depthLongSide != 420 && depthLongSide != 518) depthLongSide = 336;
     searchRadius = std::clamp(searchRadius, 2, 12);
     motionConfidence = std::clamp(motionConfidence, 0.0f, 1.0f);
-    if (nvofGrid != 1 && nvofGrid != 2 && nvofGrid != 4) nvofGrid = 2;
+    if (nvofGrid != 1 && nvofGrid != 2 && nvofGrid != 4) nvofGrid = 4;
     if (nvofPerf != 5 && nvofPerf != 10 && nvofPerf != 20) nvofPerf = 10;
     cutThreshold = std::clamp(cutThreshold, 0.01f, 0.5f);
     if (dlaaPreset != 0 && dlaaPreset != 10 && dlaaPreset != 11 && dlaaPreset != 12 && dlaaPreset != 13) dlaaPreset = 11;

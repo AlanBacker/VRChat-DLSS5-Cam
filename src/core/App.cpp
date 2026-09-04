@@ -397,6 +397,22 @@ void App::Frame() {
     const double inst = 1.0 / dt;
     m_fps = (m_fps <= 0.0) ? inst : m_fps * 0.92 + inst * 0.08;
 
+    // Performance line every 15 s while a sender is connected: GPU stage times averaged since the previous line.
+    for (UINT t = 0; t < (UINT)GpuTimer::Count; ++t) m_perfSum[t] += m_device.TimerMs((GpuTimer)t);
+    ++m_perfSamples;
+    if (now - m_perfLogTime >= 15.0) {
+        if (m_perfLogTime > 0.0 && m_perfSamples > 0 && m_spout.Connected()) {
+            const double n = (double)m_perfSamples;
+            auto avg = [&](GpuTimer t) { return m_perfSum[(UINT)t] / n; };
+            Log::Info("Perf: %.1f fps (sender %.1f), cpu %.1f ms, gpu frame %.2f ms: convert %.2f, guidance %.2f, flow %.2f, dlaa %.2f, neural %.2f, composite %.2f, ui %.2f",
+                      m_fps, m_spout.SenderFps(), m_cpuMs, avg(GpuTimer::Frame), avg(GpuTimer::Convert), avg(GpuTimer::Guidance), avg(GpuTimer::OpticalFlow),
+                      avg(GpuTimer::Dlaa), avg(GpuTimer::Neural), avg(GpuTimer::Composite), avg(GpuTimer::Ui));
+        }
+        m_perfLogTime = now;
+        for (double& v : m_perfSum) v = 0.0;
+        m_perfSamples = 0;
+    }
+
     if (m_settings.timelapseSeconds > 0 && now - m_lastTimelapse >= (double)m_settings.timelapseSeconds) {
         m_lastTimelapse = now;
         if (m_spout.HasFrame() && m_pipeline.HasDisplay()) CaptureNow();

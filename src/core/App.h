@@ -76,6 +76,9 @@ private:
     double        m_fps = 0.0;
     double        m_cpuMs = 0.0;
     double        m_lastTimelapse = 0.0;
+    double        m_perfLogTime = 0.0;
+    double        m_perfSum[(UINT)GpuTimer::Count] = {};
+    UINT          m_perfSamples = 0;
     std::string   m_lastCapture;
     bool          m_lastCaptureOk = true;
 };

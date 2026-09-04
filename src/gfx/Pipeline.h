@@ -39,6 +39,8 @@ struct PipelineStatus {
     bool        nvofAvailable = false;
     bool        nvofReady = false;
     bool        nvofBidirectional = false;
+    bool        nvofSinglePass = false;          // forward + backward flow from one engine pass (driver API 5.0)
+    UINT        nvofGrid = 0;                    // spacing of the hardware vectors in source pixels
     std::string nvofError;
     int         depthState = 0;                  // DepthEstimatorState
     std::string depthMessage;                    // failure reason or backend name

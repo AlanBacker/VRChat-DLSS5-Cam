@@ -78,7 +78,7 @@ VRChat DLSS5 Cam 会捕获 VRChat 内置相机（Stream 相机并开启 *Spout S
 - **神经渲染失败** —— 某些运行库版本需要更新的驱动；请查看 `log.txt` 中的 NGX 结果码。可尝试 *预设* 0 和 *NGX 核心* 路径。
 - **深度估计器不可用** —— `onnxruntime.dll`、`onnxruntime_providers_shared.dll`、`DirectML.dll` 和 `models\depth_anything_v2_small_fp16.onnx` 必须放在程序目录下（发布包里都有）。估计器就绪之前程序会回退到零深度，状态显示在 *帧引导* 一栏。
 - **光流不可用** —— NVIDIA Optical Flow 在程序自建的原生 D3D11 设备上运行（驱动会拒绝 D3D11On12 层，这正是 0.2.0 里 “UNSUPPORTED_DEVICE” 错误的原因）。若 `log.txt` 出现 "NVOF unavailable, falling back to block matching"，请更新 GeForce 驱动；在此之前程序会自动改用块匹配。*帧引导* 一栏的状态点会显示当前使用的来源。
-- **帧率低** —— 关闭 DLAA、增大深度更新间隔或降低深度网络分辨率、降低搜索半径，或改用 NVIDIA Optical Flow 生成运动矢量。
+- **帧率低** —— 关闭 DLAA、增大深度更新间隔或降低深度网络分辨率、降低搜索半径，或改用 NVIDIA Optical Flow 生成运动矢量。使用 NVIDIA Optical Flow 时请把光流网格保持在 4 px（最快；2 px、1 px 在 4K 下开销大得多）。日志每 15 秒输出一行 `Perf:`，列出各阶段的 GPU 耗时。
 
 ## 从源码构建
 

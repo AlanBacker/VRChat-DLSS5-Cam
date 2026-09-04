@@ -337,9 +337,12 @@ bool Pipeline::Rebuild(Device& device, const Config& cfg) {
     m_resetRequested = true;
     m_costEma = 0.0f;
     m_cur = 0;
-    Log::Info("Pipeline resources: source %ux%u, input %ux%u, output %ux%u%s%s%s", m_srcW, m_srcH, m_inW, m_inH, m_outW, m_outH,
-              m_nvofReady ? " (NVOF" : "", m_nvofReady ? (m_nvof.Bidirectional() ? ", bidirectional)" : ")") : "",
-              m_depthInBuf ? StrPrintf(" (depth network %ux%u)", m_depthInferW, m_depthInferH).c_str() : "");
+    const std::string nvofInfo = m_nvofReady
+        ? StrPrintf(" (NVOF grid %u%s)", m_nvof.Grid(),
+                    m_nvof.Bidirectional() ? (m_nvof.SinglePassBidirectional() ? ", bidirectional" : ", bidirectional two-pass") : "")
+        : std::string();
+    Log::Info("Pipeline resources: source %ux%u, input %ux%u, output %ux%u%s%s", m_srcW, m_srcH, m_inW, m_inH, m_outW, m_outH,
+              nvofInfo.c_str(), m_depthInBuf ? StrPrintf(" (depth network %ux%u)", m_depthInferW, m_depthInferH).c_str() : "");
     return true;
 }
 
@@ -848,6 +851,8 @@ void Pipeline::Render(Device& device, SpoutReceiver& spout, const Settings& s, I
     m_status.nrUpscaling = (m_inW != m_outW || m_inH != m_outH);
     m_status.nvofReady = m_nvofReady;
     m_status.nvofBidirectional = m_nvofReady && m_nvof.Bidirectional();
+    m_status.nvofSinglePass = m_nvofReady && m_nvof.SinglePassBidirectional();
+    m_status.nvofGrid = m_nvofReady ? m_nvof.Grid() : 0;
     m_status.nvofError = m_nvofError;
     m_status.depthState = (int)m_depthEst.State();
     m_status.depthMessage = m_depthEst.Message();
