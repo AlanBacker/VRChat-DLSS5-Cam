@@ -135,7 +135,7 @@ D3D12 through NT-handle shared textures ordered by a shared fence (`src/gfx/NvOp
 
 Two threads share the GPU: the processing thread owns the Spout receiver (or the still image), the pipeline and a
 D3D12 queue of its own; the interface thread owns the window, ImGui and a high-priority present queue. Finished
-pictures are handed over through three display buffers with cross-queue fence waits, so the preview always shows the
+pictures are handed over through four display buffers with cross-queue fence waits, so the preview always shows the
 newest completed frame and the window never waits for the neural pass (`src/core/App.cpp`, `src/gfx/Device.cpp`).
 A still image is decoded with WIC (EXIF orientation applied), uploaded once and run through the same pipeline with zero
 motion for a number of passes until the temporal network settles.

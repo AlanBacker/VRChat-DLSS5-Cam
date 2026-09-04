@@ -226,7 +226,7 @@ ID3D12GraphicsCommandList* GpuContext::BeginFrame() {
     }
     ReadTimers();
     f.frameDescCursor = 0;
-    for (auto& u : m_timerUsed) u = false;
+    for (auto& u : f.timerUsed) u = false;
     f.allocator->Reset();
     m_cmd->Reset(f.allocator.Get(), nullptr);
     m_cmdOpen = true;
@@ -270,7 +270,7 @@ void GpuContext::TimerBegin(ID3D12GraphicsCommandList* cmd, GpuTimer t) {
     if (!m_queryHeap) return;
     const UINT idx = (m_frameIndex * (UINT)GpuTimer::Count + (UINT)t) * 2;
     cmd->EndQuery(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, idx);
-    m_timerUsed[(UINT)t] = true;
+    m_frames[m_frameIndex].timerUsed[(UINT)t] = true;
 }
 
 void GpuContext::TimerEnd(ID3D12GraphicsCommandList* cmd, GpuTimer t) {
@@ -285,7 +285,7 @@ void GpuContext::ResolveTimers(ID3D12GraphicsCommandList* cmd) {
     const UINT first = m_frameIndex * perFrame;
     // Give unused timers a zero-length interval so the resolve reads defined data.
     for (UINT t = 0; t < (UINT)GpuTimer::Count; ++t) {
-        if (!m_timerUsed[t]) {
+        if (!m_frames[m_frameIndex].timerUsed[t]) {
             cmd->EndQuery(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, first + t * 2);
             cmd->EndQuery(m_queryHeap.Get(), D3D12_QUERY_TYPE_TIMESTAMP, first + t * 2 + 1);
         }
@@ -302,9 +302,12 @@ void GpuContext::ReadTimers() {
     void* data = nullptr;
     if (FAILED(m_queryReadback->Map(0, &range, &data)) || !data) return;
     const UINT64* ts = reinterpret_cast<const UINT64*>(data) + first;
+    // The slot still carries the flags of the frame that produced these timestamps (reset after this read). A timer
+    // that frame never recorded reports zero: its placeholder pair can straddle a queue switch and read as real time.
+    const bool* used = m_frames[m_frameIndex].timerUsed;
     for (UINT t = 0; t < (UINT)GpuTimer::Count; ++t) {
         const UINT64 b = ts[t * 2], e = ts[t * 2 + 1];
-        m_timerMs[t] = (e > b) ? (double)(e - b) * 1000.0 / (double)m_timestampFreq : 0.0;
+        m_timerMs[t] = (used[t] && e > b) ? (double)(e - b) * 1000.0 / (double)m_timestampFreq : 0.0;
     }
     D3D12_RANGE none{ 0, 0 };
     m_queryReadback->Unmap(0, &none);

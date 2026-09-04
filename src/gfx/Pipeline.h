@@ -73,7 +73,7 @@ struct DisplayView {
 
 class Pipeline {
 public:
-    static constexpr UINT kDisplayBuffers = 3;
+    static constexpr UINT kDisplayBuffers = 4;
 
     // Main thread, before the processing thread starts / after it stopped.
     bool Init(Device& device, const std::wstring& exeDir, const std::wstring& appDataDir, std::wstring& error);
@@ -197,14 +197,20 @@ private:
     UINT64                      m_statsFence[GpuContext::kFramesInFlight] = {};
     bool                        m_statsPending[GpuContext::kFramesInFlight] = {};
 
-    // Preview hand-off: the composite pass writes one of three display buffers on the processing queue, the UI thread
-    // samples the newest completed one from the present queue. SRVs live in the present heap.
+    // Preview hand-off: the composite pass writes one of the display buffers on the processing queue, the UI thread
+    // samples the newest *finished* one from the present queue. Every submitted composite stays listed until the UI
+    // has taken it or a newer one has finished: the processing queue runs several frames deep, so the most recent
+    // submission is practically never complete when the UI looks, and the one before it must remain on offer.
+    // Buffers: one shown by the UI + up to kFramesInFlight in flight; a fourth keeps a free one under normal pacing.
+    // SRVs live in the present heap.
     Tex            m_displayBuf[kDisplayBuffers];
     DescriptorPair m_displaySrv[kDisplayBuffers];
     int            m_displayTarget = -1;            // buffer written by the frame being recorded
     struct DisplayShared {
-        int    published = -1;                      // newest finished buffer (-1: none)
-        UINT64 publishedFence = 0;                  // processing fence that completes it
+        struct Pending { int buffer = -1; UINT64 fence = 0; };
+        Pending pending[kDisplayBuffers];           // submitted composites, oldest first, with their processing fence
+        UINT   pendingCount = 0;
+        bool   starved = false;                     // the last composite found no free buffer (display write skipped)
         UINT   generation = 0;                      // bumped whenever the buffers are recreated
         UINT   width = 0, height = 0;
         int    uiUsing = -1;                        // buffer the UI thread currently samples
@@ -213,6 +219,7 @@ private:
     };
     mutable std::mutex m_displayMutex;
     DisplayShared      m_disp;
+    std::atomic<bool>  m_displayRetryReq{false};    // UI freed a buffer after a skipped display write: composite again
 
     Tex                     m_nvofShared;       // shared input texture owned by the optical flow device (D3D12 view)
     DXGI_FORMAT             m_nvofFmt = DXGI_FORMAT_UNKNOWN;
@@ -234,6 +241,7 @@ private:
     UINT   m_depthRawW = 0, m_depthRawH = 0;                  // size of the uploaded network output
     bool   m_depthHaveRaw = false;
     bool   m_depthHistValid = false;
+    bool   m_depthStillCaptured = false;                      // still image: the single estimate has been requested
     bool   m_depthRestart = false;
     bool   m_depthModelExists = false;
     int    m_depthFramesSinceCapture = 1000;

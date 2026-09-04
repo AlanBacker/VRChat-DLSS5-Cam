@@ -448,6 +448,7 @@ void App::WorkerMain() {
     } perf;
     perf.Reset(NowSeconds());
     UINT64 depthInferencesSeen = 0;
+    UINT64 imageDepthSeen = 0;
 
     while (!m_workerStop.load(std::memory_order_acquire)) {
         const double now = NowSeconds();
@@ -545,6 +546,11 @@ void App::WorkerMain() {
             m_pipeline.PublishStatus(gpu);
             const double tEnd = NowSeconds();
             lastRun = tEnd;
+            // A still picture gets one depth estimate, which may land after the passes ran out: converge again with it.
+            if (imageMode) {
+                const UINT64 inferences = m_pipeline.Status().depthInferences;
+                if (inferences != imageDepthSeen) { imageDepthSeen = inferences; passesLeft = std::max(passesLeft, kImageSettingsPasses); }
+            }
 
             const bool processed = fresh && src.Connected() && src.hasFrame;
             if (processed) {
@@ -612,12 +618,17 @@ void App::WorkerMain() {
                 const double n = (double)perf.frames;
                 auto g = [&](GpuTimer t) { return perf.gpu[(UINT)t] / n; };
                 const double cpu = (perf.receive + perf.wait + perf.record + perf.submit + perf.update) / n;
+                // "other" is frame time outside every stage: barriers, copies, and the GPU serving another queue
+                // (the interface, the depth network) in the middle of the frame.
+                const double stages = g(GpuTimer::Convert) + g(GpuTimer::Guidance) + g(GpuTimer::OpticalFlow) + g(GpuTimer::Dlaa) +
+                                      g(GpuTimer::Neural) + g(GpuTimer::Composite);
+                const double other = std::max(0.0, g(GpuTimer::Frame) - stages);
                 Log::Info("Perf: %s %.1f fps (sender %.1f, ui %.0f fps / %.2f ms gpu), cpu %.2f ms/frame (receive %.2f, wait %.2f, record %.2f, submit %.2f, update %.2f), "
-                          "gpu %.2f ms (convert %.2f, guidance %.2f, flow %.2f, dlaa %.2f, neural %.2f, composite %.2f), depth net %.1f ms x %u, frames %u",
+                          "gpu %.2f ms (convert %.2f, guidance %.2f, flow %.2f, dlaa %.2f, neural %.2f, composite %.2f, other %.2f), depth net %.1f ms x %u, frames %u",
                           imageMode ? "image passes" : "processing", perf.frames / (now - perf.logTime), m_spout.SenderFps(),
                           m_uiFpsShared.load(), m_uiGpuMsShared.load(), cpu, perf.receive / n, perf.wait / n, perf.record / n, perf.submit / n, perf.update / n,
                           g(GpuTimer::Frame), g(GpuTimer::Convert), g(GpuTimer::Guidance), g(GpuTimer::OpticalFlow), g(GpuTimer::Dlaa),
-                          g(GpuTimer::Neural), g(GpuTimer::Composite), perf.depthRuns ? perf.depthMs / perf.depthRuns : 0.0, perf.depthRuns, perf.frames);
+                          g(GpuTimer::Neural), g(GpuTimer::Composite), other, perf.depthRuns ? perf.depthMs / perf.depthRuns : 0.0, perf.depthRuns, perf.frames);
             }
             perf.Reset(now);
         }

@@ -173,7 +173,7 @@ void Pipeline::ReleaseDepthResources(GpuContext& gpu) {
     m_depthInPending = false; m_depthInFence = 0;
     m_depthInState = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
     m_depthRawState = D3D12_RESOURCE_STATE_COPY_DEST;
-    m_depthHaveRaw = false; m_depthHistValid = false;
+    m_depthHaveRaw = false; m_depthHistValid = false; m_depthStillCaptured = false;
     m_depthRawW = m_depthRawH = 0;
     m_depthFramesSinceCapture = 1000;
 }
@@ -392,11 +392,14 @@ bool Pipeline::CapturePending() const {
 }
 
 bool Pipeline::NeedsFrame() const {
-    return m_resetReq.load() || m_depthRestartReq.load() || m_nrDirtyReq.load() || m_dlaaDirtyReq.load() || CapturePending();
+    return m_resetReq.load() || m_depthRestartReq.load() || m_nrDirtyReq.load() || m_dlaaDirtyReq.load() ||
+           m_displayRetryReq.load() || CapturePending();
 }
 
 void Pipeline::PublishStatus(GpuContext& gpu) {
     for (UINT t = 0; t < (UINT)GpuTimer::Count; ++t) m_status.gpuMs[t] = gpu.TimerMs((GpuTimer)t);
+    // The guidance figure covers both halves (pyramid / matching before the optical flow, densify / depth after it).
+    m_status.gpuMs[(UINT)GpuTimer::Guidance] += m_status.gpuMs[(UINT)GpuTimer::Densify];
     m_status.hasDisplay = m_hasDisplay;
     std::lock_guard<std::mutex> lock(m_statusMutex);
     m_statusShared = m_status;
@@ -442,8 +445,8 @@ void Pipeline::RetireDisplayBuffers(GpuContext& gpu) {
         if (m_displaySrv[i].Valid()) { ui.DeferFreeStatic(m_displaySrv[i]); m_displaySrv[i] = {}; }
         m_disp.uiRelease[i] = 0;
     }
-    m_disp.published = -1;
-    m_disp.publishedFence = 0;
+    m_disp.pendingCount = 0;
+    m_disp.starved = false;
     m_disp.width = m_disp.height = 0;
     ++m_disp.generation;
     m_displayTarget = -1;
@@ -454,9 +457,18 @@ DisplayView Pipeline::AcquireDisplay(GpuContext& ui) {
     GpuContext& proc = ui.Dev().Proc();
     std::lock_guard<std::mutex> lock(m_displayMutex);
     if (m_disp.uiUsing >= 0 && m_disp.uiGeneration != m_disp.generation) m_disp.uiUsing = -1;   // buffers were rebuilt
-    if (m_disp.published >= 0 && proc.IsFenceComplete(m_disp.publishedFence)) {
-        m_disp.uiUsing = m_disp.published;
+    // Take the newest composite whose processing fence has passed; everything older is superseded and free again.
+    int newest = -1;
+    for (int i = (int)m_disp.pendingCount - 1; i >= 0; --i) {
+        if (proc.IsFenceComplete(m_disp.pending[i].fence)) { newest = i; break; }
+    }
+    if (newest >= 0) {
+        m_disp.uiUsing = m_disp.pending[newest].buffer;
         m_disp.uiGeneration = m_disp.generation;
+        const UINT remaining = m_disp.pendingCount - (UINT)newest - 1;
+        for (UINT i = 0; i < remaining; ++i) m_disp.pending[i] = m_disp.pending[(UINT)newest + 1 + i];
+        m_disp.pendingCount = remaining;
+        if (m_disp.starved) { m_disp.starved = false; m_displayRetryReq = true; }   // a buffer is free: composite again
     }
     if (m_disp.uiUsing < 0 || !m_displaySrv[m_disp.uiUsing].Valid()) return v;
     v.srv = m_displaySrv[m_disp.uiUsing].gpu;
@@ -833,22 +845,35 @@ bool Pipeline::RunNeural(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const 
 }
 
 void Pipeline::RunComposite(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const Settings& s, Tex& processed, bool bypass) {
-    // Pick a display buffer the UI is not sampling and that is not the newest published one, and make the processing
-    // queue wait (GPU side) until the last UI frame that read it has finished.
+    // Pick a display buffer the UI is not sampling and that no submitted composite still occupies, and make the
+    // processing queue wait (GPU side) until the last UI frame that read it has finished. Finished composites that a
+    // newer finished one supersedes will never be shown, so their buffers are reclaimed first. With every buffer
+    // busy (the UI has not looked for a while) only the capture image is written this frame; the UI asks for a fresh
+    // composite as soon as it frees a buffer.
     int target = -1;
     UINT64 uiRelease = 0;
     {
         std::lock_guard<std::mutex> lock(m_displayMutex);
-        for (int i = 0; i < (int)kDisplayBuffers; ++i) {
-            if (i == m_disp.uiUsing || i == m_disp.published) continue;
-            target = i;
-            break;
+        int newestDone = -1;
+        for (int i = (int)m_disp.pendingCount - 1; i >= 0; --i) {
+            if (gpu.IsFenceComplete(m_disp.pending[i].fence)) { newestDone = i; break; }
         }
+        if (newestDone > 0) {
+            const UINT remaining = m_disp.pendingCount - (UINT)newestDone;
+            for (UINT i = 0; i < remaining; ++i) m_disp.pending[i] = m_disp.pending[(UINT)newestDone + i];
+            m_disp.pendingCount = remaining;
+        }
+        bool busy[kDisplayBuffers] = {};
+        if (m_disp.uiUsing >= 0 && m_disp.uiUsing < (int)kDisplayBuffers) busy[m_disp.uiUsing] = true;
+        for (UINT i = 0; i < m_disp.pendingCount; ++i) busy[m_disp.pending[i].buffer] = true;
+        for (int i = 0; i < (int)kDisplayBuffers; ++i) {
+            if (!busy[i] && m_displayBuf[i].Valid()) { target = i; break; }
+        }
+        m_disp.starved = target < 0;
         if (target >= 0) uiRelease = m_disp.uiRelease[target];
     }
-    if (target < 0 || !m_displayBuf[target].Valid()) { m_displayTarget = -1; return; }
     if (uiRelease) gpu.WaitOnGpu(gpu.Dev().Ui().Fence(), uiRelease);
-    Tex& display = m_displayBuf[target];
+    Tex* display = target >= 0 ? &m_displayBuf[target] : nullptr;
     m_displayTarget = target;
 
     gpu.TimerBegin(cmd, GpuTimer::Composite);
@@ -858,7 +883,7 @@ void Pipeline::RunComposite(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, con
     Transition(cmd, m_conf, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
     Transition(cmd, m_depth, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
     Transition(cmd, m_final, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
-    Transition(cmd, display, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+    if (display) Transition(cmd, *display, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
     DispatchDesc d;
     d.id = ShaderId::Composite;
     d.constants.srcWidth = m_inW; d.constants.srcHeight = m_inH;
@@ -878,10 +903,10 @@ void Pipeline::RunComposite(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, con
     d.constants.paramA = s.wipePosition;
     d.constants.paramB = kMotionViewScale;
     d.srv[0] = m_color8.srv; d.srv[1] = processed.srv; d.srv[2] = m_mv.srv; d.srv[3] = m_conf.srv; d.srv[4] = m_depth.srv;
-    d.uav[0] = m_final.uav; d.uav[1] = display.uav;
+    d.uav[0] = m_final.uav; d.uav[1] = display ? display->uav : D3D12_CPU_DESCRIPTOR_HANDLE{};   // null view: writes dropped
     d.groupsX = Shaders::Groups(m_outW, 8); d.groupsY = Shaders::Groups(m_outH, 8);
     m_shaders.Dispatch(cmd, gpu, d);
-    Transition(cmd, display, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
+    if (display) Transition(cmd, *display, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
     gpu.TimerEnd(cmd, GpuTimer::Composite);
 }
 
@@ -932,6 +957,7 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
     if (m_depthRestartReq.exchange(false)) m_depthRestart = true;
     if (m_nrDirtyReq.exchange(false)) { m_nrDirty = true; m_nrFailed = false; m_nrError.clear(); }
     if (m_dlaaDirtyReq.exchange(false)) { m_dlaaFailed = false; m_dlaaError.clear(); }
+    m_displayRetryReq.exchange(false);   // this frame composites in any case
     m_displayTarget = -1;
 
     m_status.ngxInitialized = m_ngx.Initialized();
@@ -979,7 +1005,7 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
         m_depthRestart = false;
         m_depthEst.Start(gpu.Dev(), m_exeDir, m_cfg.depthModel, m_depthInferW, m_depthInferH);
         m_depthModelExists = FileExists(m_cfg.depthModel);
-        m_depthHaveRaw = false; m_depthHistValid = false;
+        m_depthHaveRaw = false; m_depthHistValid = false; m_depthStillCaptured = false;
     }
     if (!src.hasFrame) { m_hasDisplay = false; return; }
 
@@ -1019,7 +1045,13 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
         const bool depthWanted = s.depthMode == DepthEstimated && m_depthInBuf;
         if (depthWanted) {
             ++m_depthFramesSinceCapture;
-            if (!m_depthInPending && m_depthEst.Idle() && m_depthFramesSinceCapture >= s.depthInterval) RunDepthCapture(gpu, cmd);
+            // Live input refreshes the estimate every depthInterval frames. A still picture needs exactly one: the
+            // network is deterministic, and repeating it would keep the GPU busy with identical inferences.
+            const bool due = src.stillImage ? !m_depthStillCaptured : m_depthFramesSinceCapture >= s.depthInterval;
+            if (due && !m_depthInPending && m_depthEst.Idle()) {
+                RunDepthCapture(gpu, cmd);
+                m_depthStillCaptured = src.stillImage;
+            }
         }
 
         gpu.TimerBegin(cmd, GpuTimer::Guidance);
@@ -1039,10 +1071,10 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
             // Prime the optical flow reference frame without using its result.
             RunOpticalFlow(gpu, cmd, true);
         }
-        gpu.TimerBegin(cmd, GpuTimer::Guidance);
+        gpu.TimerBegin(cmd, GpuTimer::Densify);
         RunDensify(gpu, cmd, s, densifyMode);
         const bool depthApplied = depthWanted && RunDepthApply(gpu, cmd, reset);
-        gpu.TimerEnd(cmd, GpuTimer::Guidance);
+        gpu.TimerEnd(cmd, GpuTimer::Densify);
         m_status.motionModeActive = densifyMode;
         m_status.depthModeActive = depthApplied ? DepthEstimated : (s.depthMode == DepthEstimated ? DepthZero : s.depthMode);
 
@@ -1072,7 +1104,7 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
     if (!dlaaWanted && m_dlaa.Created()) { gpu.WaitIdle(); m_dlaa.Release(m_ngx); m_dlaaCreatedPreset = -1; }
 
     RunComposite(gpu, cmd, s, *processed, processed == &m_color8);
-    m_hasDisplay = m_displayTarget >= 0;
+    if (m_displayTarget >= 0) m_hasDisplay = true;   // a skipped display write keeps the previous state: the results exist
 
     bool captureNow = false;
     std::wstring captureFolder, captureBase;
@@ -1119,8 +1151,7 @@ void Pipeline::AfterSubmit(GpuContext& gpu, UINT64 fenceValue) {
         if (r.inUse && r.fence == 0) r.fence = fence;
     if (m_displayTarget >= 0) {
         std::lock_guard<std::mutex> lock(m_displayMutex);
-        m_disp.published = m_displayTarget;
-        m_disp.publishedFence = fence;
+        if (m_disp.pendingCount < kDisplayBuffers) m_disp.pending[m_disp.pendingCount++] = { m_displayTarget, fence };
         m_displayTarget = -1;
     }
 }
@@ -1132,7 +1163,10 @@ void Pipeline::Update(GpuContext& gpu, Capture& capture) {
         D3D12_RANGE range{ 0, count * sizeof(float) };
         void* p = nullptr;
         if (m_depthInReadback && SUCCEEDED(m_depthInReadback->Map(0, &range, &p)) && p) {
-            if (!m_depthEst.Submit(static_cast<const float*>(p), count)) m_depthFramesSinceCapture = 1000;   // worker busy/not ready: retry next frame
+            if (!m_depthEst.Submit(static_cast<const float*>(p), count)) {   // worker busy/not ready: retry next frame
+                m_depthFramesSinceCapture = 1000;
+                m_depthStillCaptured = false;
+            }
             D3D12_RANGE none{ 0, 0 };
             m_depthInReadback->Unmap(0, &none);
         }

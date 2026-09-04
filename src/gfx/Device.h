@@ -30,7 +30,7 @@ struct AdapterInfo {
 
 // GPU timer slots (timestamp pairs per frame). Frame/Ui are measured on the present queue, the rest on the
 // processing queue.
-enum class GpuTimer : UINT { Frame = 0, Convert, Guidance, OpticalFlow, Dlaa, Neural, Composite, Ui, Count };
+enum class GpuTimer : UINT { Frame = 0, Convert, Guidance, OpticalFlow, Dlaa, Neural, Composite, Densify, Ui, Count };
 
 class Device;
 
@@ -104,6 +104,7 @@ private:
         UINT64                         fenceValue = 0;
         UINT                           frameDescCursor = 0;
         std::vector<Deferred>          deferred;
+        bool                           timerUsed[(UINT)GpuTimer::Count]{};   // timers this frame recorded
     };
 
     void ReleaseDeferred(std::vector<Deferred>& list);
@@ -123,7 +124,6 @@ private:
     UINT                              m_frameIndex = 0;
     UINT64                            m_frameNumber = 0;
     bool                              m_cmdOpen = false;
-    bool                              m_timerUsed[(UINT)GpuTimer::Count]{};
 
     ComPtr<ID3D12DescriptorHeap>      m_srvHeap;
     UINT                              m_staticCount = 0;

@@ -123,8 +123,7 @@ bool ImageSource::Load(GpuContext& gpu, const std::wstring& path, std::string& e
     UINT w = 0, h = 0;
     frame->GetSize(&w, &h);
     if (w == 0 || h == 0) { error = "the image is empty"; return false; }
-    m_origWidth = w;
-    m_origHeight = h;
+    const UINT fileW = w, fileH = h;   // as stored (recorded once the old picture is released below)
 
     ComPtr<IWICBitmapSource> source = frame;
     const UINT orientation = ReadOrientation(frame.Get());
@@ -215,6 +214,8 @@ bool ImageSource::Load(GpuContext& gpu, const std::wstring& path, std::string& e
     m_path = path;
     m_width = texW;
     m_height = texH;
+    m_origWidth = fileW;
+    m_origHeight = fileH;
     m_uploadPending = true;
     m_uploaded = false;
     Log::Info("Image: %s %ux%u (decoded %ux%u, orientation %u) in %.0f ms", WideToUtf8(path).c_str(), texW, texH,
