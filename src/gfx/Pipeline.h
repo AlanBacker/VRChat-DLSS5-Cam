@@ -29,6 +29,7 @@ struct PipelineStatus {
     std::string nrRuntimeVersion;
     std::wstring nrRuntimePath;
     bool        nrActive = false;
+    bool        nrStandby = false;              // "neural pass only for captures": idle until a capture is requested
     bool        nrFailed = false;
     std::string nrError;
     UINT64      nrEvaluations = 0;
@@ -277,6 +278,10 @@ private:
 
     mutable std::mutex m_captureMutex;
     bool         m_captureRequested = false;
+    // "Neural pass only for captures": a request arms the capture and starts a warm-up burst of fresh frames.
+    bool         m_captureArmed = false;
+    double       m_captureArmedTime = 0.0;
+    int          m_nrBurst = 0;
     std::wstring m_captureFolder;
     std::wstring m_captureBase;
     bool         m_captureKeepAlpha = true;

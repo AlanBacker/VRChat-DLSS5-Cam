@@ -66,6 +66,7 @@ bool Settings::Load(const std::wstring& path) {
     r.Get("customHeight", customHeight);
     r.Get("keepAspect", keepAspect);
     r.Get("nrEnabled", nrEnabled);
+    r.Get("nrCaptureOnly", nrCaptureOnly);
     r.Get("nrRoute", nrRoute);
     r.Get("nrDllPath", nrDllPath);
     r.Get("nrPreset", nrPreset);
@@ -144,6 +145,7 @@ bool Settings::Save(const std::wstring& path) const {
     w.Put("customHeight", customHeight);
     w.Put("keepAspect", keepAspect);
     w.Put("nrEnabled", nrEnabled);
+    w.Put("nrCaptureOnly", nrCaptureOnly);
     w.Put("nrRoute", nrRoute);
     w.Put("nrDllPath", nrDllPath);
     w.Put("nrPreset", nrPreset);

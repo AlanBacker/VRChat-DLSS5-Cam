@@ -43,7 +43,7 @@ application: nothing is injected into VRChat and no mod is required.
 | | |
 |---|---|
 | OS | Windows 10 21H2 / Windows 11, 64-bit |
-| GPU | NVIDIA GeForce RTX (DLSS 5 neural rendering runs on RTX hardware only), recent Game Ready driver |
+| GPU | NVIDIA GeForce RTX. The DLSS 5 runtime build decides which generation can run the neural pass: the 310.8 build only contains code for RTX 50 (Blackwell); on RTX 40/30/20 the app reports the failure and keeps working with DLAA and the original picture. Nothing in the app itself is generation-specific. |
 | VRChat | Any build with the Stream Camera *Spout Stream* option (desktop or VR) |
 | DLSS 5 runtime | Your own copy of `nvngx_dlssnr.dll`. **It is not included and never downloaded by this project.** |
 
@@ -75,6 +75,7 @@ Tips
 | DLSS 5 | Intensity | Overall strength of the neural pass, 0–2. Up to 1 it is the runtime's own strength; above 1 the app amplifies the difference between the neural result and the original picture (this can exaggerate artifacts too). |
 | DLSS 5 | Global tone / Local tone | Global and local tone strength, 0–2. Up to 1 goes to the runtime; above 1 the app amplifies the difference between the neural result and the original, the same way as the intensity (the highest strength above 1 sets the gain). |
 | DLSS 5 | Local structure / Skin structure | Detail enhancement, 0–2, with the same rule above 1. Skin structure may be left at the runtime default. |
+| DLSS 5 | Neural pass only for captures | For GPUs too slow for live use: the preview bypasses the neural pass, and a capture (button, hotkey, timelapse) first runs it for 16 fresh frames, then saves. Still images are not affected. |
 | DLSS 5 | Auto mask / UI correction | Automatic subject mask, UI-safe processing. |
 | DLSS 5 | Input exposure / Tone transfer / Colour strength | Output blend. Input exposure (0.25–4×) scales the picture the network sees, like a paper-white scale, and is undone afterwards. Tone transfer and colour strength (0–2) set how much of the neural pass's brightness and colour changes reach the output, in linear light; 1 / 1 reproduces the neural result exactly, 0 keeps the original, above 1 exaggerates. |
 | DLSS 5 | Route | *Signed snippet*: host `nvngx_dlssnr.dll` directly. *NGX core*: create the feature through the NGX runtime. |
@@ -93,7 +94,7 @@ Settings are stored in `%LOCALAPPDATA%\VRChatDLSS5Cam\settings.ini`; the log is 
 - **"nvngx_dlssnr.dll not found"** – copy the runtime next to the executable or select its path.
 - **NGX not initialized / DLAA unsupported** – the NGX runtime needs an NVIDIA GPU and a current driver. DLSSNR still works through the *Signed snippet* route.
 - **The app does not start / closes immediately** – open `%LOCALAPPDATA%\VRChatDLSS5Cam\` and check `log.txt` (its last line is the step that failed) and `crash.txt` (written whenever the process crashes). Attach both files to an issue.
-- **Neural rendering failed** – some runtime builds need a newer driver; check `log.txt` for the NGX result code. Try *Preset* 0 and the *NGX core* route.
+- **Neural rendering failed** – on RTX 40/30/20 with the 310.8 runtime this is expected: that build only contains RTX 50 code (the app says so under the error). Otherwise some runtime builds need a newer driver; check `log.txt` for the NGX result code. Try *Preset* 0 and the *NGX core* route.
 - **Depth estimator unavailable** – `onnxruntime.dll`, `onnxruntime_providers_shared.dll`, `DirectML.dll` and `models\depth_anything_v2_small_fp16.onnx` must sit next to the executable (all are part of the release package). Until the estimator is ready the app falls back to zero depth; its state is shown under *Frame guidance*.
 - **Optical flow unavailable** – NVIDIA Optical Flow runs on a private native D3D11 device (the driver rejects the D3D11On12 layer, which was the cause of the "UNSUPPORTED_DEVICE" error in 0.2.0). If `log.txt` says "NVOF unavailable, falling back to block matching", update the GeForce driver; block matching is used automatically until then. The status dot under *Frame guidance* shows which source is active.
 - **Low frame rate** – disable DLAA, raise the depth update interval or lower the depth network resolution, lower the search radius, or choose NVIDIA Optical Flow for motion vectors. With NVIDIA Optical Flow keep the flow grid at 4 px (the fastest setting; 2 px and 1 px cost far more at 4K). The log prints a `Perf:` line every 15 s with the processing rate, the CPU cost per frame (receive / wait / record / submit), the GPU time of each stage and the depth network cost; only frames that were actually processed count. The interface has its own thread, so a low processing rate no longer slows down the window.

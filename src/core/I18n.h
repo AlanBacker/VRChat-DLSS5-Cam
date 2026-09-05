@@ -88,6 +88,9 @@ enum class Lang { English = 0, Chinese = 1, Japanese = 2, Korean = 3, Count = 4 
     X(HowToEnable,        "Enable in VRChat: Camera → Stream mode → turn on \"Spout Stream\"", "在 VRChat 中启用：相机 → Stream（串流）模式 → 打开“Spout Stream”", "VRChat での有効化：カメラ → Stream モード → 「Spout Stream」をオン", "VRChat에서 켜기: 카메라 → Stream 모드 → \"Spout Stream\" 켜기") \
     X(VrchatResHint,      "Stream resolution is set in VRChat's camera settings (720p–2160p) or with camera_spout_res_width/height in config.json", "串流分辨率在 VRChat 相机设置中选择（720p–2160p），或通过 config.json 的 camera_spout_res_width/height 自定义", "ストリーム解像度は VRChat のカメラ設定（720p～2160p）または config.json の camera_spout_res_width/height で指定します", "스트림 해상도는 VRChat 카메라 설정(720p~2160p) 또는 config.json의 camera_spout_res_width/height로 지정합니다") \
     X(NrEnable,           "Enable DLSS 5 (DLSSNR)", "启用 DLSS 5（DLSSNR）", "DLSS 5（DLSSNR）を有効化", "DLSS 5(DLSSNR) 사용") \
+    X(NrCaptureOnly,      "Neural pass only for captures", "仅拍照时运行神经渲染", "撮影時のみニューラルパスを実行", "촬영 시에만 뉴럴 패스 실행") \
+    X(TipNrCaptureOnly,   "For GPUs where the neural pass is too slow for live use: the preview bypasses it, and a capture (button, hotkey or timelapse) first runs it for 16 fresh frames so its temporal history converges, then saves. Still images are not affected.", "适合神经渲染跑不动实时预览的显卡：预览时旁路，按下拍照（按钮、热键或定时拍照）后先用 16 帧新画面预热让时序历史收敛，再保存。图片模式不受影响。", "ニューラルパスがリアルタイムには重すぎる GPU 向け：プレビューではバイパスし、撮影（ボタン、ホットキー、タイムラプス）時にまず新しい 16 フレームで時間履歴を収束させてから保存します。静止画モードには影響しません。", "뉴럴 패스가 실시간에는 너무 느린 GPU용: 미리보기에서는 우회하고, 촬영(버튼, 단축키, 타임랩스) 시 먼저 새 프레임 16장으로 시간 이력을 수렴시킨 뒤 저장합니다. 정지 이미지 모드에는 영향이 없습니다.") \
+    X(NrArchHint,         "This runtime build (310.8) only contains code for RTX 50 series (Blackwell) GPUs, so the neural pass cannot start on an RTX 40/30/20 card unless the runtime has been adapted for that generation. Everything else keeps working with DLAA and the original picture.", "这份运行库版本（310.8）只包含 RTX 50 系列（Blackwell）的代码，在 RTX 40/30/20 显卡上神经渲染无法启动，除非运行库已针对该代显卡适配。其余功能仍以 DLAA 和原始画面继续工作。", "このランタイムビルド（310.8）には RTX 50 シリーズ（Blackwell）向けのコードしか含まれていないため、その世代向けに適合させたランタイムでない限り、RTX 40/30/20 ではニューラルパスを開始できません。他の機能は DLAA と元画像で動作し続けます。", "이 런타임 빌드(310.8)에는 RTX 50 시리즈(Blackwell)용 코드만 들어 있어, 해당 세대에 맞게 조정된 런타임이 아니면 RTX 40/30/20에서는 뉴럴 패스를 시작할 수 없습니다. 나머지 기능은 DLAA와 원본 화면으로 계속 동작합니다.") \
     X(NrHint,             "Adjustable DLSS 5 parameters (the same set exposed by the RenoDX add-on)", "可调节的 DLSS 5 参数（与 RenoDX 插件提供的相同）", "調整可能な DLSS 5 パラメーター（RenoDX アドオンと同じ項目）", "조정 가능한 DLSS 5 매개변수(RenoDX 애드온과 동일한 항목)") \
     X(Runtime,            "Runtime", "运行库", "ランタイム", "런타임") \
     X(RuntimeMissing,     "nvngx_dlssnr.dll not found. Place it next to the executable or choose its path below.", "未找到 nvngx_dlssnr.dll。请将其放到程序目录，或在下方选择路径。", "nvngx_dlssnr.dll が見つかりません。実行ファイルと同じフォルダに置くか、下でパスを指定してください。", "nvngx_dlssnr.dll을 찾을 수 없습니다. 실행 파일 옆에 두거나 아래에서 경로를 선택하세요.") \
@@ -115,6 +118,7 @@ enum class Lang { English = 0, Chinese = 1, Japanese = 2, Korean = 3, Count = 4 
     X(Status,             "Status", "状态", "状態", "상태") \
     X(Active,             "Active", "运行中", "動作中", "동작 중") \
     X(Inactive,           "Inactive", "未运行", "停止中", "비활성") \
+    X(Standby,            "Standby", "待机", "待機", "대기") \
     X(Failed,             "Failed", "失败", "失敗", "실패") \
     X(GpuTime,            "GPU time", "GPU 耗时", "GPU 時間", "GPU 시간") \
     X(MotionSource,       "Motion vectors", "运动矢量", "モーションベクトル", "모션 벡터") \

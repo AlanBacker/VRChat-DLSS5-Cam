@@ -26,6 +26,7 @@ struct AdapterInfo {
     std::wstring nvidiaDriverVersion; // "566.14" (NVIDIA only)
     LUID         luid{};
     bool IsNvidia() const { return vendorId == 0x10DE; }
+    int  RtxGeneration() const;      // from the name: 2 = RTX 20 (Turing) ... 5 = RTX 50 (Blackwell), 0 = unknown
 };
 
 // GPU timer slots (timestamp pairs per frame). Frame/Ui are measured on the present queue, the rest on the

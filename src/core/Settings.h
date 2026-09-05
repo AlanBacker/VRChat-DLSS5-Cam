@@ -31,6 +31,7 @@ struct Settings {
 
     // DLSS 5 neural rendering (DLSSNR)
     bool        nrEnabled = true;
+    bool        nrCaptureOnly = false;  // live source: the neural pass idles for the preview and runs for a burst before each capture
     int         nrRoute = RouteSignedSnippet;
     std::string nrDllPath;             // UTF-8, empty = <exe folder>\nvngx_dlssnr.dll
     int         nrPreset = 0;          // 0..3

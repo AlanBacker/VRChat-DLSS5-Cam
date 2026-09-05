@@ -360,11 +360,16 @@ void MainUI::SectionNeural(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
     if (st) {
         if (st->nrActive) Pill(TR(Active), WithAlpha(p.good, 0.18f), p.good);
         else if (st->nrFailed) Pill(TR(Failed), WithAlpha(p.bad, 0.18f), p.bad);
+        else if (st->nrStandby) Pill(TR(Standby), WithAlpha(p.warn, 0.18f), p.warn);
         else Pill(TR(Inactive), WithAlpha(p.muted, 0.2f), p.muted);
     }
     ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(ImGuiCol_TextDisabled));
     ImGui::TextWrapped("%s", TR(NrHint));
     ImGui::PopStyleColor();
+    if (s.sourceMode != SourceImage) {
+        if (Toggle(TR(NrCaptureOnly), &s.nrCaptureOnly)) ev.settingsChanged = true;
+        Help(TR(TipNrCaptureOnly));
+    }
 
     // Runtime.
     ImGui::Spacing();
@@ -384,6 +389,13 @@ void MainUI::SectionNeural(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         ImGui::PushStyleColor(ImGuiCol_Text, p.bad);
         ImGui::TextWrapped("%s", st->nrError.c_str());
         ImGui::PopStyleColor();
+        // The 310.8 runtime build only carries RTX 50 code: say so on older cards instead of leaving a bare NGX code.
+        const int gen = info.adapter ? info.adapter->RtxGeneration() : 0;
+        if (gen >= 2 && gen <= 4 && (st->nrRuntimeVersion.empty() || st->nrRuntimeVersion.rfind("310.8", 0) == 0)) {
+            ImGui::PushStyleColor(ImGuiCol_Text, p.warn);
+            ImGui::TextWrapped("%s", TR(NrArchHint));
+            ImGui::PopStyleColor();
+        }
     }
     {
         SyncBuffer(m_runtimeBuf, sizeof(m_runtimeBuf), s.nrDllPath, m_runtimeEditing);

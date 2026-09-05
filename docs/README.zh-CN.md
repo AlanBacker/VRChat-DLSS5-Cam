@@ -34,7 +34,7 @@ VRChat DLSS5 Cam 会捕获 VRChat 内置相机（Stream 相机并开启 *Spout S
 | | |
 |---|---|
 | 系统 | Windows 10 21H2 / Windows 11，64 位 |
-| 显卡 | NVIDIA GeForce RTX（DLSS 5 神经渲染仅支持 RTX 硬件），较新的 Game Ready 驱动 |
+| 显卡 | NVIDIA GeForce RTX。能否运行神经渲染由 DLSS 5 运行库版本决定：310.8 版本只包含 RTX 50（Blackwell）的代码，在 RTX 40/30/20 上程序会报告失败并继续以 DLAA 和原始画面工作。程序本身不区分显卡代际。 |
 | VRChat | 任何带有 Stream 相机 *Spout Stream* 选项的版本（桌面或 VR） |
 | DLSS 5 运行库 | 你自己的 `nvngx_dlssnr.dll`。**本项目不包含、也绝不会下载该文件。** |
 
@@ -64,6 +64,7 @@ VRChat DLSS5 Cam 会捕获 VRChat 内置相机（Stream 相机并开启 *Spout S
 | DLSS 5 | 强度 | 神经渲染的整体强度，0–2。0–1 由运行库本身控制；大于 1 时程序放大神经结果与原图之间的差异（瑕疵也可能被放大）。 |
 | DLSS 5 | 全局色调 / 局部色调 | 全局与局部色调强度，0–2。0–1 交给运行库；大于 1 时与强度相同，程序放大神经结果与原图之间的差异（以五个强度中最高的为准）。 |
 | DLSS 5 | 局部结构 / 皮肤结构 | 细节增强，0–2，大于 1 时规则相同。皮肤结构可保持运行库默认值。 |
+| DLSS 5 | 仅拍照时运行神经渲染 | 适合跑不动实时预览的显卡：预览时旁路神经渲染，拍照（按钮、热键、定时拍照）时先用 16 帧新画面预热再保存。图片模式不受影响。 |
 | DLSS 5 | 自动遮罩 / UI 修正 | 自动主体遮罩、UI 安全处理。 |
 | DLSS 5 | 输入曝光 / 色调传递强度 / 色彩强度 | 输出混合。输入曝光（0.25–4 倍）缩放网络看到的画面（相当于纸白缩放），之后会被还原。色调传递强度与色彩强度（0–2）决定神经渲染带来的明暗变化和色彩变化有多少进入输出（线性光空间）：1 / 1 完全等于神经渲染结果，0 保留原图，大于 1 则夸张。 |
 | DLSS 5 | 路径 | *签名片段*：直接加载 `nvngx_dlssnr.dll`。*NGX 核心*：通过 NGX 运行库创建功能。 |
@@ -82,7 +83,7 @@ VRChat DLSS5 Cam 会捕获 VRChat 内置相机（Stream 相机并开启 *Spout S
 - **“未找到 nvngx_dlssnr.dll”** —— 把运行库复制到程序目录或选择其路径。
 - **NGX 未初始化 / DLAA 不支持** —— NGX 运行库需要 NVIDIA 显卡和较新的驱动。DLSSNR 仍可通过 *签名片段* 路径工作。
 - **程序打不开 / 一闪就退出** —— 打开 `%LOCALAPPDATA%\VRChatDLSS5Cam\`，查看 `log.txt`（最后一行就是失败的步骤）和 `crash.txt`（进程崩溃时写入）。提交 Issue 时请附上这两个文件。
-- **神经渲染失败** —— 某些运行库版本需要更新的驱动；请查看 `log.txt` 中的 NGX 结果码。可尝试 *预设* 0 和 *NGX 核心* 路径。
+- **神经渲染失败** —— 在 RTX 40/30/20 上搭配 310.8 运行库时属于正常现象：该版本只包含 RTX 50 的代码（程序会在错误下方说明）。其他情况下，某些运行库版本需要更新的驱动；请查看 `log.txt` 中的 NGX 结果码。可尝试 *预设* 0 和 *NGX 核心* 路径。
 - **深度估计器不可用** —— `onnxruntime.dll`、`onnxruntime_providers_shared.dll`、`DirectML.dll` 和 `models\depth_anything_v2_small_fp16.onnx` 必须放在程序目录下（发布包里都有）。估计器就绪之前程序会回退到零深度，状态显示在 *帧引导* 一栏。
 - **光流不可用** —— NVIDIA Optical Flow 在程序自建的原生 D3D11 设备上运行（驱动会拒绝 D3D11On12 层，这正是 0.2.0 里 “UNSUPPORTED_DEVICE” 错误的原因）。若 `log.txt` 出现 "NVOF unavailable, falling back to block matching"，请更新 GeForce 驱动；在此之前程序会自动改用块匹配。*帧引导* 一栏的状态点会显示当前使用的来源。
 - **帧率低** —— 关闭 DLAA、增大深度更新间隔或降低深度网络分辨率、降低搜索半径，或改用 NVIDIA Optical Flow 生成运动矢量。使用 NVIDIA Optical Flow 时请把光流网格保持在 4 px（最快；2 px、1 px 在 4K 下开销大得多）。日志每 15 秒输出一行 `Perf:`，列出处理帧率、每帧 CPU 开销（接收 / 等待 / 录制 / 提交）、各阶段 GPU 耗时以及深度网络的开销，只统计真正处理过的帧。界面运行在独立线程上，处理帧率低不会再拖慢窗口。

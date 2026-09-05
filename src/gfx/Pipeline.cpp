@@ -18,6 +18,16 @@ UINT AlignPatch(double v) { return std::max(14u, (UINT)std::lround(v / 14.0) * 1
 constexpr float kDepthHistoryWeight = 0.6f;   // temporal blend towards the reprojected previous depth
 constexpr float kDepthRangeSmoothing = 0.3f;  // EMA of the P02/P98 normalisation range
 constexpr float kSceneCutRatio = 2.5f;        // cost must exceed this multiple of its running average
+constexpr int   kNeuralWarmupFrames = 16;     // capture-only mode: fresh frames the neural pass sees before the capture
+constexpr double kNeuralWarmupTimeout = 3.0;  // ... and the longest wait for them (source stalled) in seconds
+
+// The 310.8 runtime build only carries code for RTX 50 (Blackwell): name the likely cause on older cards.
+void LogRuntimeGenerationHint(const GpuContext& gpu, const std::string& runtimeVersion) {
+    const int gen = gpu.Dev().Info().RtxGeneration();
+    if (gen >= 2 && gen <= 4 && (runtimeVersion.empty() || runtimeVersion.rfind("310.8", 0) == 0))
+        Log::Warn("DLSSNR: %s is an RTX %d0 series GPU; the 310.8 runtime build only contains code for RTX 50 (Blackwell), so the neural pass cannot start on it",
+                  WideToUtf8(gpu.Dev().Info().name).c_str(), gen);
+}
 
 bool CreateBuffer(ID3D12Device* dev, D3D12_HEAP_TYPE heap, UINT64 bytes, D3D12_RESOURCE_FLAGS flags, D3D12_RESOURCE_STATES state,
                   const wchar_t* name, ComPtr<ID3D12Resource>& out) {
@@ -836,6 +846,7 @@ bool Pipeline::RunNeural(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const 
         if (!m_nr.Create(m_ngx, cmd, m_inW, m_inH, m_outW, m_outH, s.nrPreset, useCore, err)) {
             m_nrFailed = true; m_nrError = err;
             Log::Error("DLSSNR: %s", err.c_str());
+            LogRuntimeGenerationHint(gpu, m_nr.RuntimeVersion());
             return false;
         }
         m_nrCreatedUseCore = useCore;
@@ -863,6 +874,7 @@ bool Pipeline::RunNeural(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const 
     if (!ok) {
         m_nrFailed = true; m_nrError = err;
         Log::Error("DLSSNR: %s", err.c_str());
+        LogRuntimeGenerationHint(gpu, m_nr.RuntimeVersion());
     }
     m_nrDirty = false;
     return ok;
@@ -1052,7 +1064,27 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
     Tex* neuralBase = nullptr;    // picture the neural pass started from
     Tex* neuralIn = nullptr;      // picture it actually saw (exposed copy or the base itself)
     bool nrOk = false, dlaaOk = false;
-    const bool nrWanted = s.nrEnabled;
+    // Capture requests. With "neural pass only for captures" on a live source, a request arms the capture and starts
+    // a warm-up burst of fresh frames with the neural pass running, so its temporal history has converged when the
+    // picture is saved on the burst's last frame. Otherwise the capture happens on this frame.
+    const bool captureOnly = s.nrCaptureOnly && s.nrEnabled && s.sourceMode == SourceSpout;
+    bool captureNow = false;
+    {
+        std::lock_guard<std::mutex> lock(m_captureMutex);
+        if (m_captureRequested) {
+            m_captureRequested = false;
+            if (captureOnly && !m_nrFailed) {
+                if (!m_captureArmed) { m_captureArmed = true; m_captureArmedTime = NowSeconds(); m_nrBurst = kNeuralWarmupFrames; }
+            } else {
+                captureNow = true;
+            }
+        }
+    }
+    if (m_captureArmed && (!captureOnly || m_nrFailed || NowSeconds() - m_captureArmedTime > kNeuralWarmupTimeout)) {
+        // The mode was switched off, the neural pass failed, or the source stalled: save what there is.
+        m_captureArmed = false; m_nrBurst = 0; captureNow = true;
+    }
+    const bool nrWanted = s.nrEnabled && (!captureOnly || m_nrBurst > 0);
     const bool dlaaWanted = s.dlaaEnabled;
 
     if (fresh || !m_hasDisplay) {
@@ -1062,6 +1094,7 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
 
         ReadStats(gpu);
         bool reset = m_resetRequested || !m_haveHistory;
+        const bool burstStart = captureOnly && m_nrBurst == kNeuralWarmupFrames;   // the neural history is stale between bursts
         bool sceneCut = false;
         if (m_haveHistory && m_lastWasBlockMode) {
             // A cut is a sudden jump of the matching cost, not merely a high value: fast camera motion also raises the
@@ -1126,9 +1159,10 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
         if (nrWanted) {
             neuralBase = processed;
             neuralIn = &PrepareNeuralInput(gpu, cmd, s, *processed);
-            nrOk = RunNeural(gpu, cmd, s, *neuralIn, reset);
+            nrOk = RunNeural(gpu, cmd, s, *neuralIn, reset || burstStart);
             if (nrOk) processed = &m_nrOut;
         }
+        if (captureOnly && m_nrBurst > 0 && nrOk && --m_nrBurst == 0 && m_captureArmed) { m_captureArmed = false; captureNow = true; }
         m_haveHistory = true;
         m_cur = 1 - m_cur;
         ++m_status.processedFrames;
@@ -1149,25 +1183,20 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
         }
     }
     if (!nrWanted) { m_nrDirty = false; }
-    if (!nrWanted && m_nr.Created()) { gpu.WaitIdle(); m_nr.Release(m_ngx); m_nrCreatedPreset = -1; }
+    if (!s.nrEnabled && m_nr.Created()) { gpu.WaitIdle(); m_nr.Release(m_ngx); m_nrCreatedPreset = -1; }   // kept alive between bursts
     if (!dlaaWanted && m_dlaa.Created()) { gpu.WaitIdle(); m_dlaa.Release(m_ngx); m_dlaaCreatedPreset = -1; }
 
     RunComposite(gpu, cmd, s, *processed, nrOk ? neuralBase : nullptr, nrOk ? neuralIn : nullptr, processed == &m_color8);
     if (m_displayTarget >= 0) m_hasDisplay = true;   // a skipped display write keeps the previous state: the results exist
 
-    bool captureNow = false;
-    std::wstring captureFolder, captureBase;
-    bool captureKeepAlpha = true, captureOriginal = false;
-    {
-        std::lock_guard<std::mutex> lock(m_captureMutex);
-        if (m_captureRequested) {
-            captureNow = true;
-            m_captureRequested = false;
+    if (captureNow) {
+        std::wstring captureFolder, captureBase;
+        bool captureKeepAlpha = true, captureOriginal = false;
+        {
+            std::lock_guard<std::mutex> lock(m_captureMutex);
             captureFolder = m_captureFolder; captureBase = m_captureBase;
             captureKeepAlpha = m_captureKeepAlpha; captureOriginal = m_captureOriginal;
         }
-    }
-    if (captureNow) {
         const std::wstring outPath = captureBase.empty()
             ? Capture::MakeFileName(captureFolder, m_outW, m_outH, L"")
             : Capture::MakeImageFileName(captureFolder, captureBase, m_outW, m_outH, L"");
@@ -1181,6 +1210,7 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
     }
 
     m_status.nrActive = nrOk;
+    m_status.nrStandby = captureOnly && !nrOk && !m_nrFailed;
     m_status.nrFailed = m_nrFailed;
     m_status.nrError = m_nrError;
     m_status.nrEvaluations = m_nr.EvaluateCount();

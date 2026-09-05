@@ -621,4 +621,20 @@ void Device::Shutdown() {
     m_factory.Reset();
 }
 
+
+// GeForce names carry the generation as the first digit of the model number ("GeForce RTX 4070 Ti"); workstation
+// parts name the architecture ("RTX 6000 Ada Generation", "RTX PRO 6000 Blackwell", "RTX A6000").
+int AdapterInfo::RtxGeneration() const {
+    if (!IsNvidia()) return 0;
+    if (name.find(L"Blackwell") != std::wstring::npos) return 5;
+    if (name.find(L"Ada") != std::wstring::npos) return 4;
+    if (name.find(L"RTX A") != std::wstring::npos) return 3;
+    const size_t p = name.find(L"RTX ");
+    if (p == std::wstring::npos || p + 8 > name.size()) return 0;
+    const wchar_t* d = name.c_str() + p + 4;
+    for (int i = 0; i < 4; ++i) if (d[i] < L'0' || d[i] > L'9') return 0;
+    const int gen = d[0] - L'0';
+    return (gen >= 2 && gen <= 5) ? gen : 0;
+}
+
 } // namespace vdc
