@@ -221,6 +221,7 @@ enum class Lang { English = 0, Chinese = 1, Japanese = 2, Korean = 3, Count = 4 
     X(NoSenders,          "(none)", "（无）", "（なし）", "(없음)") \
     X(NotLoaded,          "Not loaded", "未加载", "未読み込み", "로드되지 않음") \
     X(Loaded,             "Loaded", "已加载", "読み込み済み", "로드됨") \
+    X(RuntimeIdle,        "(released while DLSS 5 is off)", "（DLSS 5 关闭期间已释放）", "（DLSS 5 オフ中は解放）", "(DLSS 5 꺼짐 동안 해제됨)") \
     X(NotAvailable,       "Not available", "不可用", "利用不可", "사용 불가") \
     X(Available,          "Available", "可用", "利用可能", "사용 가능") \
     X(Unsupported,        "Unsupported", "不支持", "非対応", "지원되지 않음") \

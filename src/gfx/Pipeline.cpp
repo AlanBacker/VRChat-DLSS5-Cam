@@ -373,6 +373,8 @@ void Pipeline::Shutdown(Device& device) {
 }
 
 bool Pipeline::LoadNrRuntime(GpuContext& gpu, const std::wstring& dllPath, std::string& error) {
+    m_nrDllPath = dllPath;
+    m_nrRuntimeIdle = false;
     if (m_nr.RuntimeLoaded() && m_nr.RuntimePath() == dllPath) return true;
     UnloadNrRuntime(gpu);
     m_nrFailed = false;
@@ -1058,7 +1060,8 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
     m_status.dlssAvailable = m_ngx.DlssAvailable();
     m_status.ngxStatus = m_ngx.Status();
     m_status.nrRuntimeLoaded = m_nr.RuntimeLoaded();
-    m_status.nrRuntimeVersion = m_nr.RuntimeVersion();
+    m_status.nrRuntimeIdle = m_nrRuntimeIdle;
+    m_status.nrRuntimeVersion = m_nrRuntimeIdle ? m_nrIdleVersion : m_nr.RuntimeVersion();
     m_status.nrRuntimePath = m_nr.RuntimePath();
     m_status.sourceConnected = src.Connected() && src.hasFrame;
     m_status.capturesInFlight = 0;
@@ -1110,6 +1113,13 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
     // Capture requests. With "neural pass only for captures" on a live source, a request arms the capture and starts
     // a warm-up burst of fresh frames with the neural pass running, so its temporal history has converged when the
     // picture is saved on the burst's last frame. Otherwise the capture happens on this frame.
+    if (s.nrEnabled && m_nrRuntimeIdle) {
+        // Switch on: the runtime comes back from the file (see the switch-off branch below).
+        std::string err;
+        if (LoadNrRuntime(gpu, m_nrDllPath, err)) Log::Info("DLSS 5 runtime reloaded from %s", WideToUtf8(m_nrDllPath).c_str());
+        else m_nrFailed = true;
+        m_nrRuntimeIdle = false;
+    }
     const bool captureOnly = s.nrCaptureOnly && s.nrEnabled && s.sourceMode == SourceSpout;
     bool captureNow = false;
     {
@@ -1228,9 +1238,15 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
         }
     }
     if (!nrWanted) { m_nrDirty = false; }
-    // The neural feature stays created while the switch is off: re-creating it stalls the pipeline and, with some
-    // runtime builds, the re-created instance silently produces no picture. Size, preset and route changes still
-    // re-create it (RunNeural); shutdown releases it.
+    if (!s.nrEnabled && (m_nr.Created() || m_nr.RuntimeLoaded())) {
+        // Switch off: the feature and the runtime are released, so the neural pass holds no GPU memory while it is
+        // off. Switching it on loads the runtime from the file again and creates the feature, the same fresh start
+        // as launching the app (a plain re-creation of the feature leaves some runtime builds without a picture).
+        // With "neural pass only for captures" the switch stays on, so the feature is kept between bursts.
+        if (m_nr.RuntimeLoaded()) { m_nrIdleVersion = m_nr.RuntimeVersion(); m_nrRuntimeIdle = true; }
+        UnloadNrRuntime(gpu);
+        Log::Info("DLSS 5 switched off: neural feature%s released", m_nrRuntimeIdle ? " and runtime" : "");
+    }
     if (!dlaaWanted && m_dlaa.Created()) { gpu.WaitIdle(); m_dlaa.Release(m_ngx); m_dlaaCreatedPreset = -1; }
 
     RunComposite(gpu, cmd, s, *processed, nrOk ? neuralBase : nullptr, nrOk ? neuralIn : nullptr, processed == &m_color8);

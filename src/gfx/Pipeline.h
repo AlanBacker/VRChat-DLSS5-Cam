@@ -26,6 +26,7 @@ struct PipelineStatus {
     bool        dlssAvailable = false;
     std::string ngxStatus;
     bool        nrRuntimeLoaded = false;
+    bool        nrRuntimeIdle = false;         // released by the DLSS 5 switch; nrRuntimeVersion still names the file
     std::string nrRuntimeVersion;
     std::wstring nrRuntimePath;
     bool        nrActive = false;
@@ -276,6 +277,9 @@ private:
     std::string m_nrError;
     bool   m_nrCreatedUseCore = false;
     int    m_nrCreatedPreset = -1;
+    bool   m_nrRuntimeIdle = false;   // runtime released by the DLSS 5 switch; reloaded from m_nrDllPath when it comes back on
+    std::string  m_nrIdleVersion;     // version of the released runtime, still shown while idle
+    std::wstring m_nrDllPath;         // last path handed to LoadNrRuntime
     bool   m_dlaaFailed = false;
     std::string m_dlaaError;
     int    m_dlaaCreatedPreset = -1;
