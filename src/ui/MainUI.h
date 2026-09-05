@@ -95,7 +95,7 @@ private:
     // every place that shows them uses fixed-width text so a changing figure never moves the controls around it.
     struct ShownPerf {
         double gpuMs[(UINT)GpuTimer::Count] = {};
-        double fps = 0.0, cpuMs = 0.0, uiGpuMs = 0.0, processingFps = 0.0, senderFps = 0.0;
+        double fps = 0.0, cpuMs = 0.0, uiGpuMs = 0.0, processingFps = 0.0, senderFps = 0.0, depthMs = 0.0;
         float  statAvgCost = 0.0f, statMaxCost = 0.0f, statAvgMotion = 0.0f;
         unsigned long long processedFrames = 0, resets = 0;
     };
@@ -112,7 +112,8 @@ private:
     bool   m_runtimeEditing = false;
     bool   m_depthModelEditing = false;
     bool   m_folderEditing = false;
-    float  m_zoom = 1.0f;
+    float  m_zoom = 1.0f;          // manual magnification on top of the fit (1 = as fitted, or 1:1)
+    float  m_baseScale = 1.0f;     // preview pixels per picture pixel at zoom 1, from the last preview draw
     ImVec2 m_pan = ImVec2(0, 0);
     bool   m_wipeDragging = false;
     unsigned m_logGeneration = 0;

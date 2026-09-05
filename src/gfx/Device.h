@@ -45,7 +45,7 @@ class Device;
 class GpuContext {
 public:
     static constexpr UINT kFramesInFlight   = 3;
-    static constexpr UINT kFrameDescriptors = 2048;
+    static constexpr UINT kFrameDescriptors = 1024;
 
     GpuContext() = default;
     ~GpuContext() { Shutdown(); }

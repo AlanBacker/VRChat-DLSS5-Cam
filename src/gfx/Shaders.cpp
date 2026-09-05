@@ -567,150 +567,10 @@ void main(uint3 id : SV_DispatchThreadID) {
 )HLSL";
 
 // ---------------------------------------------------------------------------
-// Tone bands: the change the neural pass made (its output minus what it saw, in linear light, brought back to the
-// base picture's exposure) split into a global tone curve, a local low-frequency part and fine detail, so the 1..2
-// range of the strength sliders can amplify each part on its own (the runtime itself stops at 1). Every pass samples
-// the base picture (t0), the picture the network saw (t1) and its output (t2) through uv, so any resolution mix works.
-// ParamE = 1 / input exposure.
-
-// ToneHist. Flags 1 = clear the histogram (one group); else accumulate, over a DstWidth x DstHeight grid, the sum of
-// the change (fixed point, x4096) and the sample count per bin of base lightness (64 bins).
-const char* kToneHist = R"HLSL(
-Texture2D<float4>       Base   : register(t0);
-Texture2D<float4>       Seen   : register(t1);
-Texture2D<float4>       Neural : register(t2);
-RWStructuredBuffer<int> Hist   : register(u0);
-
-float3 SrgbToLinear(float3 c) {
-    float3 lo = c / 12.92;
-    float3 hi = pow(max((c + 0.055) / 1.055, 1e-6), 2.4);
-    return (c <= 0.04045) ? lo : hi;
-}
-float Luma(float3 c) { return dot(c, float3(0.2126, 0.7152, 0.0722)); }
-
-groupshared int sAcc[256];
-
-[numthreads(16, 16, 1)]
-void main(uint3 id : SV_DispatchThreadID, uint tid : SV_GroupIndex) {
-    if (Flags & 1) {
-        Hist[tid] = 0;
-    } else {
-        sAcc[tid] = 0;
-        GroupMemoryBarrierWithGroupSync();
-        if (id.x < DstWidth && id.y < DstHeight) {
-            float2 uv = (float2(id.xy) + 0.5) / float2(DstWidth, DstHeight);
-            float3 b = Base.SampleLevel(LinearClamp, uv, 0).rgb;
-            float3 i = SrgbToLinear(Seen.SampleLevel(LinearClamp, uv, 0).rgb);
-            float3 n = SrgbToLinear(Neural.SampleLevel(LinearClamp, uv, 0).rgb);
-            float3 r = clamp((n - i) * ParamE, -2.0, 2.0);
-            uint bin = (uint)(saturate(Luma(b)) * 63.999);
-            int3 q = (int3)round(r * 4096.0);
-            InterlockedAdd(sAcc[bin * 4 + 0], q.x);
-            InterlockedAdd(sAcc[bin * 4 + 1], q.y);
-            InterlockedAdd(sAcc[bin * 4 + 2], q.z);
-            InterlockedAdd(sAcc[bin * 4 + 3], 1);
-        }
-        GroupMemoryBarrierWithGroupSync();
-        int v = sAcc[tid];
-        if (v != 0) InterlockedAdd(Hist[tid], v);
-    }
-}
-)HLSL";
-
-// ToneResolve: one group of 64 threads turns the histogram into the tone curve (mean change per lightness bin,
-// smoothed over neighbouring bins), fades bins with few samples (ParamB = weighted sample count for full weight) and
-// blends it with the previous frame's curve (ParamA = blend factor, 1 = replace).
-const char* kToneResolve = R"HLSL(
-Texture2D<float4>       Prev   : register(t0);
-RWStructuredBuffer<int> Hist   : register(u0);
-RWTexture2D<float4>     OutLut : register(u1);
-
-[numthreads(64, 1, 1)]
-void main(uint3 id : SV_DispatchThreadID) {
-    int b = (int)id.x;
-    float3 sum = 0.0;
-    float cnt = 0.0;
-    [unroll] for (int d = -3; d <= 3; ++d) {
-        int j = b + d;
-        if (j >= 0 && j <= 63) {
-            float w = 4.0 - abs(float(d));
-            sum += w * float3(Hist[j * 4], Hist[j * 4 + 1], Hist[j * 4 + 2]) / 4096.0;
-            cnt += w * float(Hist[j * 4 + 3]);
-        }
-    }
-    float3 mean = (cnt > 0.0) ? sum / cnt : float3(0.0, 0.0, 0.0);
-    float4 cur = float4(mean, saturate(cnt / ParamB));
-    float4 prev = Prev.Load(int3(b, 0, 0));
-    OutLut[uint2(b, 0)] = (ParamA >= 1.0) ? cur : lerp(prev, cur, ParamA);
-}
-)HLSL";
-
-// ToneResidual: the change minus its global tone part, at DstWidth x DstHeight (a quarter of the output).
-const char* kToneResidual = R"HLSL(
-Texture2D<float4>   Base   : register(t0);
-Texture2D<float4>   Seen   : register(t1);
-Texture2D<float4>   Neural : register(t2);
-Texture2D<float4>   Lut    : register(t3);
-RWTexture2D<float4> Out    : register(u0);
-
-float3 SrgbToLinear(float3 c) {
-    float3 lo = c / 12.92;
-    float3 hi = pow(max((c + 0.055) / 1.055, 1e-6), 2.4);
-    return (c <= 0.04045) ? lo : hi;
-}
-float Luma(float3 c) { return dot(c, float3(0.2126, 0.7152, 0.0722)); }
-
-[numthreads(8, 8, 1)]
-void main(uint3 id : SV_DispatchThreadID) {
-    if (id.x >= DstWidth || id.y >= DstHeight) return;
-    float2 uv = (float2(id.xy) + 0.5) / float2(DstWidth, DstHeight);
-    float3 b = Base.SampleLevel(LinearClamp, uv, 0).rgb;
-    float3 i = SrgbToLinear(Seen.SampleLevel(LinearClamp, uv, 0).rgb);
-    float3 n = SrgbToLinear(Neural.SampleLevel(LinearClamp, uv, 0).rgb);
-    float3 r = (n - i) * ParamE;
-    float4 g = Lut.SampleLevel(LinearClamp, float2((saturate(Luma(b)) * 63.0 + 0.5) / 64.0, 0.5), 0);
-    Out[id.xy] = float4(r - g.rgb * g.a, 0.0);
-}
-)HLSL";
-
-// ToneBlur. Flags 1 = 4x4 box downsample (SrcWidth x SrcHeight -> DstWidth x DstHeight), 2 = horizontal and
-// 4 = vertical 13-tap Gaussian (sigma 3 texels) at the same size.
-const char* kToneBlur = R"HLSL(
-Texture2D<float4>   In  : register(t0);
-RWTexture2D<float4> Out : register(u0);
-
-[numthreads(8, 8, 1)]
-void main(uint3 id : SV_DispatchThreadID) {
-    if (id.x >= DstWidth || id.y >= DstHeight) return;
-    int2 mx = int2(SrcWidth - 1, SrcHeight - 1);
-    float4 acc = 0.0;
-    if (Flags & 1) {
-        int2 p = int2(id.xy) * 4;
-        [unroll] for (int y = 0; y < 4; ++y)
-            [unroll] for (int x = 0; x < 4; ++x)
-                acc += In.Load(int3(min(p + int2(x, y), mx), 0));
-        acc *= 1.0 / 16.0;
-    } else {
-        int2 dir = (Flags & 2) ? int2(1, 0) : int2(0, 1);
-        float wsum = 0.0;
-        [unroll] for (int t = -6; t <= 6; ++t) {
-            float w = exp(-float(t * t) / 18.0);
-            int2 p = clamp(int2(id.xy) + dir * t, int2(0, 0), mx);
-            acc += In.Load(int3(p, 0)) * w;
-            wsum += w;
-        }
-        acc /= wsum;
-    }
-    Out[id.xy] = acc;
-}
-)HLSL";
-
-// ---------------------------------------------------------------------------
 // Composite: final image (for capture) and display image (compare modes, checkerboard, motion view).
 // Flags: 1 = keep alpha, 2 = checkerboard, 4 = bypass, 32 = original/motion are at a different resolution,
-//        64 = output blend (ParamC = tone transfer, ParamD = colour strength, ParamE = 1 / input exposure,
-//        ParamF = intensity gain above 1), 128 = tone bands available (Extra0 = gains above 1 for the global tone
-//        curve, the local low-frequency part, fine detail, fine detail on skin).
+//        64 = output blend (ParamC = tone transfer, ParamD = colour strength, ParamE = 1 / input exposure),
+//        128 = strengths above 1: amplify the difference between the result and the original (ParamF = gain).
 // IntA = compare mode (0 output, 1 original, 2 wipe, 3 motion, 4 depth). ParamA = wipe position, ParamB = motion scale.
 
 const char* kComposite = R"HLSL(
@@ -721,8 +581,6 @@ Texture2D<float>    Conf        : register(t3);
 Texture2D<float>    Depth       : register(t4);
 Texture2D<float4>   NeuralBase  : register(t5);   // picture the neural pass started from (input resolution)
 Texture2D<float4>   NeuralInput : register(t6);   // picture the neural pass actually saw (after input exposure)
-Texture2D<float4>   ToneLut     : register(t7);   // global tone curve of the change: 64 bins over base lightness
-Texture2D<float4>   ToneLp      : register(t8);   // local low-frequency part of the change (1/16 resolution)
 RWTexture2D<float4> OutFinal    : register(u0);
 RWTexture2D<float4> OutDisplay  : register(u1);
 
@@ -747,13 +605,17 @@ float3 LinearToSrgb(float3 c) {
 
 float Luma(float3 c) { return dot(c, float3(0.2126, 0.7152, 0.0722)); }
 
-// Soft skin-colour mask from the sRGB-encoded picture (YCbCr chroma window, not too dark).
-float SkinMask(float3 c) {
-    float y  = 0.299 * c.r + 0.587 * c.g + 0.114 * c.b;
-    float cb = 128.0 + 255.0 * (-0.168736 * c.r - 0.331264 * c.g + 0.5 * c.b);
-    float cr = 128.0 + 255.0 * (0.5 * c.r - 0.418688 * c.g - 0.081312 * c.b);
-    return smoothstep(128.0, 138.0, cr) * (1.0 - smoothstep(168.0, 178.0, cr)) *
-           smoothstep(72.0, 82.0, cb) * (1.0 - smoothstep(122.0, 132.0, cb)) * smoothstep(0.10, 0.25, y);
+// Output blend: the neural pass's brightness and colour changes, measured against the picture it saw, are applied
+// to the picture it started from with separate strengths, in linear light. ParamC = tone transfer, ParamD = colour
+// strength, ParamE undoes the input exposure. Strengths 1/1 reproduce the neural result, 0 keeps the base picture,
+// above 1 exaggerates the change.
+float3 Blend(float3 base, float3 seen, float3 neural) {
+    float3 b = SrgbToLinear(base), i = SrgbToLinear(seen), n = SrgbToLinear(neural);
+    float yb = Luma(b), yi = Luma(i), yn = Luma(n);
+    float y = max(yb + (yn - yi) * ParamE * ParamC, 0.0);
+    float3 rb = b / max(yb, 1e-4), ri = i / max(yi, 1e-4), rn = n / max(yn, 1e-4);
+    float3 r = max(rb + (rn - ri) * ParamD, 0.0);
+    return LinearToSrgb(r * y);
 }
 
 [numthreads(8, 8, 1)]
@@ -765,29 +627,13 @@ void main(uint3 id : SV_DispatchThreadID) {
     float4 proc = Processed.Load(int3(id.xy, 0));
     float3 outRgb = (Flags & 4) ? orig.rgb : proc.rgb;
     if (Flags & 64) {
-        // Output blend, in linear light. r = the change the network made, brought back to the base picture's
-        // exposure; with tone bands each part of it gets its own gain (strength sliders above 1); the intensity
-        // gain scales all of it; tone transfer / colour strength then decide how much of the brightness and colour
-        // change reaches the output. Every gain at 1 reproduces the neural result exactly.
         float3 base = scaled ? NeuralBase.SampleLevel(LinearClamp, uv, 0).rgb : NeuralBase.Load(int3(id.xy, 0)).rgb;
         float3 seen = scaled ? NeuralInput.SampleLevel(LinearClamp, uv, 0).rgb : NeuralInput.Load(int3(id.xy, 0)).rgb;
-        float3 b = SrgbToLinear(base), i = SrgbToLinear(seen), n = SrgbToLinear(proc.rgb);
-        float3 r = (n - i) * ParamE;
-        if (Flags & 128) {
-            float4 g = ToneLut.SampleLevel(LinearClamp, float2((saturate(Luma(base)) * 63.0 + 0.5) / 64.0, 0.5), 0);
-            float3 rG = g.rgb * g.a;
-            float3 rL = ToneLp.SampleLevel(LinearClamp, uv, 0).rgb;
-            float3 rH = r - rG - rL;
-            float gH = lerp(Extra0.z, Extra0.w, SkinMask(base));
-            r = Extra0.x * rG + Extra0.y * rL + gH * rH;
-        }
-        float3 m = max(b + r * ParamF, 0.0);
-        float yb = Luma(b), ym = Luma(m);
-        float y = max(yb + (ym - yb) * ParamC, 0.0);
-        float3 rb = b / max(yb, 1e-4), rm = m / max(ym, 1e-4);
-        float3 ratio = max(rb + (rm - rb) * ParamD, 0.0);
-        outRgb = LinearToSrgb(ratio * y);
+        outRgb = Blend(base, seen, proc.rgb);
     }
+    // Strengths above 1: the runtime caps its own strengths at 1, so the extra range amplifies the difference between
+    // the neural result and the original picture (ParamF = gain, 1..2).
+    if (Flags & 128) outRgb = saturate(orig.rgb + (outRgb - orig.rgb) * ParamF);
     float alpha = (Flags & 1) ? orig.a : 1.0;
     OutFinal[id.xy] = float4(outRgb, alpha);
 
@@ -830,10 +676,6 @@ const ShaderSource kSources[] = {
     { ShaderId::DepthPre,   "DepthPre",   kDepthPre },
     { ShaderId::DepthPost,  "DepthPost",  kDepthPost },
     { ShaderId::Expose,     "Expose",     kExpose },
-    { ShaderId::ToneHist,   "ToneHist",   kToneHist },
-    { ShaderId::ToneResolve, "ToneResolve", kToneResolve },
-    { ShaderId::ToneResidual, "ToneResidual", kToneResidual },
-    { ShaderId::ToneBlur,   "ToneBlur",   kToneBlur },
 };
 
 } // namespace
@@ -871,7 +713,7 @@ bool Shaders::Compile(Device& device, ShaderId id, const char* name, const char*
 bool Shaders::Init(Device& device, std::wstring& error) {
     D3D12_DESCRIPTOR_RANGE srvRange{};
     srvRange.RangeType = D3D12_DESCRIPTOR_RANGE_TYPE_SRV;
-    srvRange.NumDescriptors = 12;
+    srvRange.NumDescriptors = 8;
     srvRange.BaseShaderRegister = 0;
     srvRange.OffsetInDescriptorsFromTableStart = D3D12_DESCRIPTOR_RANGE_OFFSET_APPEND;
     D3D12_DESCRIPTOR_RANGE uavRange{};
@@ -935,22 +777,22 @@ void Shaders::Shutdown() {
 void Shaders::Dispatch(ID3D12GraphicsCommandList* cmd, GpuContext& gpu, const DispatchDesc& d) {
     ID3D12PipelineState* pso = m_pso[(UINT)d.id].Get();
     if (!pso) return;
-    DescriptorPair table = gpu.AllocFrame(16);
+    DescriptorPair table = gpu.AllocFrame(12);
     if (!table.Valid()) return;
     Device& device = gpu.Dev();
     ID3D12Device* dev = device.D3D12();
     const UINT inc = device.SrvDescriptorSize();
-    for (UINT i = 0; i < 12; ++i) {
+    for (UINT i = 0; i < 8; ++i) {
         D3D12_CPU_DESCRIPTOR_HANDLE dst{ table.cpu.ptr + (SIZE_T)i * inc };
         D3D12_CPU_DESCRIPTOR_HANDLE src = d.srv[i].ptr ? d.srv[i] : device.NullSrv();
         dev->CopyDescriptorsSimple(1, dst, src, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
     }
     for (UINT i = 0; i < 4; ++i) {
-        D3D12_CPU_DESCRIPTOR_HANDLE dst{ table.cpu.ptr + (SIZE_T)(12 + i) * inc };
+        D3D12_CPU_DESCRIPTOR_HANDLE dst{ table.cpu.ptr + (SIZE_T)(8 + i) * inc };
         D3D12_CPU_DESCRIPTOR_HANDLE src = d.uav[i].ptr ? d.uav[i] : device.NullUav();
         dev->CopyDescriptorsSimple(1, dst, src, D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
     }
-    D3D12_GPU_DESCRIPTOR_HANDLE uavGpu{ table.gpu.ptr + (UINT64)12 * inc };
+    D3D12_GPU_DESCRIPTOR_HANDLE uavGpu{ table.gpu.ptr + (UINT64)8 * inc };
     cmd->SetComputeRootSignature(m_rootSignature.Get());
     cmd->SetPipelineState(pso);
     cmd->SetComputeRoot32BitConstants(0, 32, &d.constants, 0);

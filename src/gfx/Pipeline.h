@@ -163,10 +163,9 @@ private:
     bool RunDepthApply(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, bool reset);   // network output -> m_depth (temporally filtered)
     bool RunDlaa(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const Settings& s, bool reset);
     Tex& PrepareNeuralInput(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const Settings& s, Tex& base);
-    bool RunToneBands(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, Tex& base, Tex& seen, Tex& neural, float invExposure, bool reset);
     bool RunNeural(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const Settings& s, Tex& input, bool reset);
     void RunComposite(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const Settings& s, Tex& processed, Tex* neuralBase,
-                      Tex* neuralInput, bool bands, bool bypass);
+                      Tex* neuralInput, bool bypass);
     void EnqueueReadback(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, Tex& src, const std::wstring& path, bool keepAlpha);
 
     Shaders        m_shaders;
@@ -195,15 +194,6 @@ private:
     Tex m_dlaaOut, m_nrOut;
     Tex m_nrIn;                 // exposed copy of the neural input (nrInputExposure != 1)
     bool m_nrInExposed = false; // the last neural pass read m_nrIn rather than its base picture
-    // Tone bands (strength sliders above 1): histogram of the neural change over base lightness, the tone curve
-    // resolved from it (ping-pong, blended over time) and the low-frequency local part at 1/16 resolution.
-    ComPtr<ID3D12Resource>      m_toneHist;
-    D3D12_CPU_DESCRIPTOR_HANDLE m_toneHistUav{};
-    Tex  m_toneLut[2];
-    Tex  m_toneRes;
-    Tex  m_toneLp[2];
-    int  m_toneLutCur = 0;
-    bool m_toneLutValid = false;
     Tex m_final;
     ComPtr<ID3D12Resource>      m_statsBuf;
     D3D12_CPU_DESCRIPTOR_HANDLE m_statsUav{};

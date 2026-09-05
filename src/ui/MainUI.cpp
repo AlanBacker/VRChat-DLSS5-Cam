@@ -31,6 +31,18 @@ const char* HotkeyKeyName(unsigned vk) {
 
 std::string FormatMs(double ms) { return StrPrintf("%.2f ms", ms); }
 std::string FormatMsFixed(double ms) { return StrPrintf("%6.2f ms", ms); }   // for the monospace font: constant width
+constexpr float kZoomMin = 0.1f, kZoomMax = 8.0f;   // preview magnification limits, relative to the picture's pixels
+
+// A dimmed label with its value at the end of the line, in the monospace font and at a fixed column: a figure that
+// changes never pushes anything else around, and padded formats keep even its digits in place.
+void Readout(const Fonts* fonts, const char* label, const std::string& value) {
+    ImGui::TextDisabled("%s:", label);
+    const float labelEnd = ImGui::GetItemRectMax().x - ImGui::GetWindowPos().x + ImGui::GetScrollX();
+    ImGui::SameLine(std::max(ImGui::GetFontSize() * 9.0f, labelEnd + ImGui::GetStyle().ItemSpacing.x));
+    if (fonts) ImGui::PushFont(fonts->Mono(), 0.0f);
+    ImGui::TextDisabled("%s", value.c_str());
+    if (fonts) ImGui::PopFont();
+}
 
 void SyncBuffer(char* buf, size_t size, const std::string& value, bool editing) {
     if (editing) return;
@@ -63,7 +75,7 @@ void MainUI::Toast(const std::string& text, bool error) {
 
 void MainUI::UpdateShown(const UiFrameInfo& info) {
     const double now = ImGui::GetTime();
-    if (m_shownTime >= 0.0 && now - m_shownTime < 0.25) return;
+    if (m_shownTime >= 0.0 && now - m_shownTime < 0.5) return;
     m_shownTime = now;
     m_shown.fps = info.fps; m_shown.cpuMs = info.cpuMs; m_shown.uiGpuMs = info.uiGpuMs;
     m_shown.processingFps = info.processingFps; m_shown.senderFps = info.senderFps;
@@ -73,6 +85,7 @@ void MainUI::UpdateShown(const UiFrameInfo& info) {
         m_shown.statAvgMotion = info.status->statAvgMotion;
         m_shown.processedFrames = (unsigned long long)info.status->processedFrames;
         m_shown.resets = (unsigned long long)info.status->resets;
+        m_shown.depthMs = info.status->depthInferMs;
     }
 }
 
@@ -100,6 +113,7 @@ void MainUI::Draw(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Font
 
     if (s.sidebarVisible) {
         ImGui::BeginChild("##sidebar", ImVec2(sidebarW, bodyH), ImGuiChildFlags_Borders | ImGuiChildFlags_AlwaysUseWindowPadding);
+        ImGui::SetScrollX(0.0f);   // the sidebar only ever scrolls vertically
         DrawSidebar(s, info, ev, fonts);
         ImGui::EndChild();
         ImGui::SameLine();
@@ -122,13 +136,17 @@ void MainUI::Draw(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Font
 void MainUI::DrawTopBar(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts) {
     const ImGuiStyle& style = ImGui::GetStyle();
     const Palette& p = Colors();
-    const float h = ImGui::GetFrameHeight() * 1.35f;
-    // The bar never scrolls: it measures its parts first and drops the optional ones (rates, the wide language box,
-    // the status badges) when the window is too narrow for all of them.
-    ImGui::BeginChild("##top", ImVec2(0, h + style.WindowPadding.y), ImGuiChildFlags_None,
+    const float frameH = ImGui::GetFrameHeight();
+    const float rowH = frameH * 1.35f;
+    // One padded row with every element centred on its middle line. The bar never scrolls: its parts are measured
+    // first and the optional ones (rates, the wide language box, the status badges) are dropped when the window is too
+    // narrow for all of them.
+    ImGui::BeginChild("##top", ImVec2(0, rowH + style.WindowPadding.y * 2.0f), ImGuiChildFlags_AlwaysUseWindowPadding,
                       ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     ImGui::SetScrollX(0.0f);
-    const float y = (h - ImGui::GetFrameHeight()) * 0.5f;
+    ImGui::SetScrollY(0.0f);
+    const float top = style.WindowPadding.y;
+    auto centred = [&](float itemH) { return top + (rowH - itemH) * 0.5f; };
     const bool imageMode = s.sourceMode == SourceImage;
 
     // Left part: title and badges.
@@ -140,9 +158,11 @@ void MainUI::DrawTopBar(Settings& s, const UiFrameInfo& info, UiEvents& ev, cons
     const ImU32 badgeBg = WithAlpha(badgeFg, badgeFg == p.muted ? 0.2f : 0.18f);
     const bool nrBadge = info.status && info.status->nrActive;
     ImGui::PushFont(fonts.Bold(), style.FontSizeBase * 1.25f);
-    const float titleW = ImGui::CalcTextSize(TR(AppTitle)).x;
+    const ImVec2 titleSize = ImGui::CalcTextSize(TR(AppTitle));
     ImGui::PopFont();
+    const float textH = ImGui::GetTextLineHeight();
     const float pillPad = 18.0f;   // Pill() adds 9 px on each side
+    const float pillH = textH + 6.0f;
     const float badgesW = ImGui::CalcTextSize(badge).x + pillPad + (nrBadge ? ImGui::CalcTextSize("DLSS 5").x + pillPad + 6.0f : 0.0f);
 
     // Right part: processing / interface rates, language, sidebar toggle, capture. Rates are padded to three digits
@@ -150,7 +170,7 @@ void MainUI::DrawTopBar(Settings& s, const UiFrameInfo& info, UiEvents& ev, cons
     // controls to its right.
     const char* captureText = imageMode ? TR(ProcessAndSave) : TR(Capture);
     const float captureW = ImGui::CalcTextSize(captureText).x + style.FramePadding.x * 2.0f + 24.0f;
-    const float sidebarBtnW = ImGui::GetFrameHeight() + 6.0f;
+    const float sidebarBtnW = frameH + 6.0f;
     const std::string fpsText = imageMode
         ? StrPrintf("%s %3.0f %s", TR(UiFps), m_shown.fps, TR(Fps))
         : StrPrintf("%s %3.0f %s  \xC2\xB7  %s %3.0f %s", TR(ProcessingFps), m_shown.processingFps, TR(Fps), TR(UiFps), m_shown.fps, TR(Fps));
@@ -168,47 +188,48 @@ void MainUI::DrawTopBar(Settings& s, const UiFrameInfo& info, UiEvents& ev, cons
     auto rightW = [&]() {
         return captureW + sidebarBtnW + langW + style.ItemSpacing.x * 2.0f + (showFps ? fpsW + style.ItemSpacing.x : 0.0f);
     };
-    auto leftW = [&]() { return titleW + (showBadges ? 14.0f + badgesW : 0.0f); };
+    auto leftW = [&]() { return titleSize.x + (showBadges ? 14.0f + badgesW : 0.0f); };
     if (leftW() + gap + rightW() > availW) showFps = false;
     if (leftW() + gap + rightW() > availW) langW = ImGui::GetFontSize() * 4.5f;
     if (leftW() + gap + rightW() > availW) showBadges = false;
 
-    ImGui::SetCursorPosY(y);
+    ImGui::SetCursorPosY(centred(titleSize.y));
     ImGui::PushFont(fonts.Bold(), style.FontSizeBase * 1.25f);
     ImGui::TextUnformatted(TR(AppTitle));
     ImGui::PopFont();
     if (showBadges) {
         ImGui::SameLine(0.0f, 14.0f);
-        ImGui::SetCursorPosY(y + 2.0f);
+        ImGui::SetCursorPosY(centred(pillH));
         Pill(badge, badgeBg, badgeFg);
         if (nrBadge) {
             ImGui::SameLine(0.0f, 6.0f);
-            ImGui::SetCursorPosY(y + 2.0f);
+            ImGui::SetCursorPosY(centred(pillH));
             Pill("DLSS 5", WithAlpha(p.accent, 0.2f), p.accentHover);
         }
     }
+    const float leftEnd = ImGui::GetItemRectMax().x - ImGui::GetWindowPos().x;
 
-    ImGui::SameLine(std::max(ImGui::GetCursorPosX(), ImGui::GetWindowWidth() - style.WindowPadding.x - rightW()));
+    ImGui::SameLine(std::max(leftEnd + gap, ImGui::GetWindowWidth() - style.WindowPadding.x - rightW()));
     if (showFps) {
-        ImGui::SetCursorPosY(y + style.FramePadding.y);
+        ImGui::SetCursorPosY(centred(textH));
         ImGui::PushFont(fonts.Mono(), 0.0f);
         ImGui::TextDisabled("%s", fpsText.c_str());
         ImGui::PopFont();
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip)) ImGui::SetTooltip("%s", TR(TipUiFps));
         ImGui::SameLine();
     }
-    ImGui::SetCursorPosY(y);
+    ImGui::SetCursorPosY(centred(frameH));
     ImGui::SetNextItemWidth(langW);
     {
         const char* items[] = { TR(LangAuto), "English", "简体中文", "日本語", "한국어" };
         if (ComboIds("##lang", &s.language, items, 5)) { ev.languageChanged = true; ev.settingsChanged = true; }
     }
     ImGui::SameLine();
-    ImGui::SetCursorPosY(y);
+    ImGui::SetCursorPosY(centred(frameH));
     if (ImGui::Button(s.sidebarVisible ? "<" : ">", ImVec2(sidebarBtnW, 0))) { s.sidebarVisible = !s.sidebarVisible; ev.settingsChanged = true; }
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip)) ImGui::SetTooltip("%s", TR(Sidebar));
     ImGui::SameLine();
-    ImGui::SetCursorPosY(y);
+    ImGui::SetCursorPosY(centred(frameH));
     const std::string captureLabel = std::string("\xE2\x97\x8F ") + captureText;
     if (AccentButton(captureLabel.c_str(), ImVec2(captureW, 0))) ev.captureNow = true;
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip)) ImGui::SetTooltip("%s (%s)", imageMode ? TR(ImageHint) : TR(CaptureHint), info.hotkeyText.c_str());
@@ -242,7 +263,9 @@ void MainUI::SectionSource(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
             StatusDot(p.good, StrPrintf("%s  %ux%u", info.imageName.c_str(), info.imageOrigWidth, info.imageOrigHeight).c_str());
             if (info.imageWidth != info.imageOrigWidth || info.imageHeight != info.imageOrigHeight)
                 ImGui::TextDisabled("%s (%ux%u)", TR(ImageDownscaled), info.imageWidth, info.imageHeight);
-            if (info.imageConverging) ImGui::TextDisabled("%s", TR(Processing));
+            // Always one line here: a line that only appears while the picture converges would shift everything
+            // below it each time a setting changes.
+            ImGui::TextDisabled("%s", info.imageConverging ? TR(Processing) : TR(Converged));
             if (AccentButton(TR(ProcessAndSave), ImVec2(-FLT_MIN, 0))) ev.captureNow = true;
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip)) ImGui::SetTooltip("%s", TR(CaptureHint));
         } else {
@@ -277,8 +300,8 @@ void MainUI::SectionSource(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
     }
     // Detected info.
     if (info.status && info.sourceConnected) {
-        StatusDot(p.good, StrPrintf("%s  %ux%u  %s  %.0f %s", info.senderName.c_str(), info.status->srcWidth, info.status->srcHeight,
-                                    info.sourceFormat.c_str(), info.senderFps, TR(Fps)).c_str());
+        StatusDot(p.good, StrPrintf("%s  %ux%u  %s  %3.0f %s", info.senderName.c_str(), info.status->srcWidth, info.status->srcHeight,
+                                    info.sourceFormat.c_str(), m_shown.senderFps, TR(Fps)).c_str());
     } else {
         StatusDot(p.muted, TR(StatusWaiting));
         ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(ImGuiCol_TextDisabled));
@@ -434,8 +457,8 @@ void MainUI::SectionNeural(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         ev.nrChanged = true; ev.settingsChanged = true;
     }
     if (st) {
-        ImGui::TextDisabled("%s: %s   %s: %llu", TR(GpuTime), FormatMs(m_shown.gpuMs[(UINT)GpuTimer::Neural]).c_str(),
-                            TR(Frames), m_shown.processedFrames);
+        Readout(m_fonts, TR(GpuTime), FormatMsFixed(m_shown.gpuMs[(UINT)GpuTimer::Neural]));
+        Readout(m_fonts, TR(Frames), StrPrintf("%llu", m_shown.processedFrames));
     }
     ImGui::Spacing();
 }
@@ -479,8 +502,8 @@ void MainUI::SectionGuidance(Settings& s, const UiFrameInfo& info, UiEvents& ev)
         if (st) {
             switch (st->depthState) {
             case (int)DepthEstimatorState::Ready:
-                StatusDot(p.good, StrPrintf("%s: %s  %s %ux%u  %s %.1f ms", TR(DepthStatus), TR(DepthReady), st->depthBackend.c_str(),
-                                            st->depthInferW, st->depthInferH, TR(Inference), st->depthInferMs).c_str());
+                StatusDot(p.good, StrPrintf("%s: %s  %s %ux%u  %s %5.1f ms", TR(DepthStatus), TR(DepthReady), st->depthBackend.c_str(),
+                                            st->depthInferW, st->depthInferH, TR(Inference), m_shown.depthMs).c_str());
                 break;
             case (int)DepthEstimatorState::Initializing:
                 StatusDot(p.warn, StrPrintf("%s: %s", TR(DepthStatus), TR(DepthInitializing)).c_str());
@@ -526,10 +549,11 @@ void MainUI::SectionGuidance(Settings& s, const UiFrameInfo& info, UiEvents& ev)
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip)) ImGui::SetTooltip("%s", TR(TipCutThreshold));
     }
     if (st) {
-        ImGui::TextDisabled("%s: %.3f (max %.3f)   |mv| %.2f px", TR(FrameCost), m_shown.statAvgCost, m_shown.statMaxCost, m_shown.statAvgMotion);
-        ImGui::TextDisabled("%s: %llu", TR(Resets), m_shown.resets);
-        ImGui::TextDisabled("%s: %s / %s: %s", TR(TmGuidance), FormatMs(m_shown.gpuMs[(UINT)GpuTimer::Guidance]).c_str(),
-                            TR(TmOpticalFlow), FormatMs(m_shown.gpuMs[(UINT)GpuTimer::OpticalFlow]).c_str());
+        Readout(m_fonts, TR(FrameCost), StrPrintf("%5.3f  max %5.3f", m_shown.statAvgCost, m_shown.statMaxCost));
+        Readout(m_fonts, "|mv|", StrPrintf("%5.2f px", m_shown.statAvgMotion));
+        Readout(m_fonts, TR(Resets), StrPrintf("%llu", m_shown.resets));
+        Readout(m_fonts, TR(TmGuidance), FormatMsFixed(m_shown.gpuMs[(UINT)GpuTimer::Guidance]));
+        Readout(m_fonts, TR(TmOpticalFlow), FormatMsFixed(m_shown.gpuMs[(UINT)GpuTimer::OpticalFlow]));
     }
     ImGui::Spacing();
 }
@@ -562,7 +586,7 @@ void MainUI::SectionDlaa(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         if (ComboIds(TR(DlaaPreset), &s.dlaaPreset, presets, 16, TR(TipDlaaPreset))) { ev.dlaaChanged = true; ev.settingsChanged = true; }
         ImGui::EndDisabled();
     }
-    if (info.status) ImGui::TextDisabled("%s: %s", TR(GpuTime), FormatMs(m_shown.gpuMs[(UINT)GpuTimer::Dlaa]).c_str());
+    if (info.status) Readout(m_fonts, TR(GpuTime), FormatMsFixed(m_shown.gpuMs[(UINT)GpuTimer::Dlaa]));
     ImGui::Spacing();
 }
 
@@ -630,7 +654,9 @@ void MainUI::SectionCapture(Settings& s, const UiFrameInfo& info, UiEvents& ev) 
         ImGui::TextWrapped("%s: %s", TR(LastCapture), info.lastCapture.c_str());
         ImGui::PopStyleColor();
     }
+    // Always one line: a count that only appears during a capture would shift the sections below it.
     if (info.capturePending) ImGui::TextDisabled("%zu %s", info.capturePending, TR(Pending));
+    else ImGui::TextDisabled(" ");
     ImGui::Spacing();
 }
 
@@ -646,10 +672,24 @@ void MainUI::SectionDisplay(Settings& s, const UiFrameInfo& info, UiEvents& ev) 
     {
         const char* items[] = { TR(FitWindowLabel), TR(OneToOne) };
         if (ComboIds("##fit", &s.fitMode, items, 2)) { ev.settingsChanged = true; m_pan = ImVec2(0, 0); m_zoom = 1.0f; }
-        if (s.fitMode == FitOneToOne) {
-            ImGui::SameLine();
-            if (ImGui::SmallButton(TR(ResetView))) { m_pan = ImVec2(0, 0); m_zoom = 1.0f; }
-        }
+        // Manual magnification on top of the fit, shown relative to the picture's pixels. The wheel over the preview
+        // does the same; the button returns to the fitted view.
+        ImGui::PushID("zoom");
+        const ImGuiStyle& style = ImGui::GetStyle();
+        const float resetW = ImGui::GetFrameHeight();
+        ImGui::SetNextItemWidth(ImGui::CalcItemWidth() - resetW - style.ItemInnerSpacing.x);
+        float pct = m_zoom * m_baseScale * 100.0f;
+        if (ImGui::SliderFloat("##z", &pct, kZoomMin * 100.0f, kZoomMax * 100.0f, "%.0f%%", ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_AlwaysClamp))
+            m_zoom = pct / (100.0f * std::max(m_baseScale, 1e-6f));
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip)) ImGui::SetTooltip("%s", TR(TipZoom));
+        ImGui::SameLine(0.0f, style.ItemInnerSpacing.x);
+        ImGui::BeginDisabled(std::fabs(m_zoom - 1.0f) < 1e-4f && m_pan.x == 0.0f && m_pan.y == 0.0f);
+        if (ImGui::Button("\xE2\x86\xBA", ImVec2(resetW, 0))) { m_pan = ImVec2(0, 0); m_zoom = 1.0f; }
+        ImGui::EndDisabled();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip)) ImGui::SetTooltip("%s", TR(ResetView));
+        ImGui::SameLine(0.0f, style.ItemInnerSpacing.x);
+        ImGui::TextUnformatted(TR(Zoom));
+        ImGui::PopID();
     }
     if (Toggle(TR(Vsync), &s.vsync)) ev.settingsChanged = true;
     if (Toggle(TR(Overlay), &s.showOverlay)) ev.settingsChanged = true;
@@ -743,28 +783,48 @@ void MainUI::DrawPreview(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
         return;
     }
 
-    // Image rectangle.
+    // Image rectangle: fitted to the view or 1:1, times the manual magnification (wheel, slider; double-click resets).
     const float texW = (float)info.displayWidth, texH = (float)info.displayHeight;
-    ImVec2 imgSize;
-    if (s.fitMode == FitWindow) {
-        const float scale = std::min(region.x / texW, region.y / texH);
-        imgSize = ImVec2(texW * scale, texH * scale);
-    } else {
-        imgSize = ImVec2(texW * m_zoom, texH * m_zoom);
-    }
-    ImVec2 imgPos(origin.x + (region.x - imgSize.x) * 0.5f + m_pan.x, origin.y + (region.y - imgSize.y) * 0.5f + m_pan.y);
-    if (s.fitMode == FitOneToOne) {
-        // Keep the image within reach.
-        if (imgSize.x > region.x) imgPos.x = std::clamp(imgPos.x, origin.x + region.x - imgSize.x, origin.x);
-        if (imgSize.y > region.y) imgPos.y = std::clamp(imgPos.y, origin.y + region.y - imgSize.y, origin.y);
-    }
-    const ImVec2 imgMax(imgPos.x + imgSize.x, imgPos.y + imgSize.y);
+    m_baseScale = (s.fitMode == FitWindow) ? std::min(region.x / texW, region.y / texH) : 1.0f;
+    const float zoomMin = kZoomMin / m_baseScale, zoomMax = kZoomMax / m_baseScale;
+    m_zoom = std::clamp(m_zoom, zoomMin, zoomMax);
+    auto imageSize = [&]() { return ImVec2(texW * m_baseScale * m_zoom, texH * m_baseScale * m_zoom); };
+    auto imagePos = [&](const ImVec2& size) {
+        return ImVec2(origin.x + (region.x - size.x) * 0.5f + m_pan.x, origin.y + (region.y - size.y) * 0.5f + m_pan.y);
+    };
 
     ImGui::SetCursorScreenPos(origin);
     ImGui::InvisibleButton("##canvas", region, ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonMiddle);
     const bool hovered = ImGui::IsItemHovered();
     const bool active = ImGui::IsItemActive();
     ImGuiIO& io = ImGui::GetIO();
+
+    // Pan with the left or middle button, zoom with the wheel around the cursor, double-click to return to the fit.
+    // The wipe handle, when it is being dragged, takes priority.
+    if (!m_wipeDragging) {
+        if (active && (ImGui::IsMouseDragging(ImGuiMouseButton_Left) || ImGui::IsMouseDragging(ImGuiMouseButton_Middle))) {
+            m_pan.x += io.MouseDelta.x; m_pan.y += io.MouseDelta.y;
+        }
+        if (hovered && io.MouseWheel != 0.0f) {
+            const float old = m_zoom;
+            m_zoom = std::clamp(m_zoom * (io.MouseWheel > 0 ? 1.25f : 0.8f), zoomMin, zoomMax);
+            if (std::fabs(m_zoom - 1.0f) < 0.06f) m_zoom = 1.0f;   // snaps back to the fitted view
+            // Keep the picture point under the cursor where it is.
+            const float k = m_zoom / old;
+            const ImVec2 centre(origin.x + region.x * 0.5f, origin.y + region.y * 0.5f);
+            m_pan.x = (m_pan.x + centre.x - io.MousePos.x) * k + io.MousePos.x - centre.x;
+            m_pan.y = (m_pan.y + centre.y - io.MousePos.y) * k + io.MousePos.y - centre.y;
+        }
+        if (hovered && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) { m_zoom = 1.0f; m_pan = ImVec2(0, 0); }
+    }
+    // The picture stays within reach: centred while it is smaller than the view, and never leaving a gap on a side
+    // once it is larger.
+    const ImVec2 imgSize = imageSize();
+    const float slackX = std::max(0.0f, (imgSize.x - region.x) * 0.5f), slackY = std::max(0.0f, (imgSize.y - region.y) * 0.5f);
+    m_pan.x = std::clamp(m_pan.x, -slackX, slackX);
+    m_pan.y = std::clamp(m_pan.y, -slackY, slackY);
+    const ImVec2 imgPos = imagePos(imgSize);
+    const ImVec2 imgMax(imgPos.x + imgSize.x, imgPos.y + imgSize.y);
 
     // Wipe handle.
     if (s.compareMode == CompareWipe) {
@@ -780,20 +840,7 @@ void MainUI::DrawPreview(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
     } else {
         m_wipeDragging = false;
     }
-    // Pan / zoom in 1:1 mode.
-    if (s.fitMode == FitOneToOne) {
-        if (active && !m_wipeDragging && (ImGui::IsMouseDragging(ImGuiMouseButton_Left) || ImGui::IsMouseDragging(ImGuiMouseButton_Middle))) {
-            m_pan.x += io.MouseDelta.x; m_pan.y += io.MouseDelta.y;
-        }
-        if (hovered && io.MouseWheel != 0.0f) {
-            const float old = m_zoom;
-            m_zoom = std::clamp(m_zoom * (io.MouseWheel > 0 ? 1.25f : 0.8f), 0.1f, 8.0f);
-            if (std::fabs(m_zoom - 1.0f) < 0.06f) m_zoom = 1.0f;
-            const float k = m_zoom / old;
-            m_pan.x = (m_pan.x + (origin.x + region.x * 0.5f - io.MousePos.x)) * k - (origin.x + region.x * 0.5f - io.MousePos.x);
-            m_pan.y = (m_pan.y + (origin.y + region.y * 0.5f - io.MousePos.y)) * k - (origin.y + region.y * 0.5f - io.MousePos.y);
-        }
-    }
+    if (active && !m_wipeDragging && (slackX > 0.0f || slackY > 0.0f)) ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
 
     dl->PushClipRect(origin, ImVec2(origin.x + region.x, origin.y + region.y), true);
     dl->AddImageRounded(ImTextureRef(info.displayTexture), imgPos, imgMax, ImVec2(0, 0), ImVec2(1, 1), IM_COL32_WHITE, 6.0f);
@@ -836,9 +883,9 @@ void MainUI::DrawPreview(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
             dl->AddText(ImVec2(bpos.x + pad.x, bpos.y + pad.y + lh * i), i == 1 && st.nrActive ? p.good : IM_COL32(235, 237, 242, 255), lines[i].c_str());
         ImGui::PopFont();
     }
-    if (s.fitMode == FitOneToOne) {
+    if (s.fitMode == FitOneToOne || std::fabs(m_zoom - 1.0f) > 1e-3f) {
         ImGui::PushFont(fonts.Mono(), 0.0f);
-        const std::string z = StrPrintf("%s %.0f%%", TR(Zoom), m_zoom * 100.0f);
+        const std::string z = StrPrintf("%s %.0f%%", TR(Zoom), m_baseScale * m_zoom * 100.0f);
         const ImVec2 zs = ImGui::CalcTextSize(z.c_str());
         dl->AddRectFilled(ImVec2(origin.x + region.x - zs.x - 28.0f, origin.y + 12.0f), ImVec2(origin.x + region.x - 12.0f, origin.y + 12.0f + zs.y + 10.0f), p.overlayBg, 6.0f);
         dl->AddText(ImVec2(origin.x + region.x - zs.x - 20.0f, origin.y + 17.0f), IM_COL32(235, 237, 242, 255), z.c_str());

@@ -35,9 +35,8 @@ struct Settings {
     std::string nrDllPath;             // UTF-8, empty = <exe folder>\nvngx_dlssnr.dll
     int         nrPreset = 0;          // 0..3
     int         nrStyle = 0;           // 0 default, 1 natural, 2 cinematic
-    // Strengths are 0..2: up to 1 goes to the runtime (which stops there), above 1 the composite pass amplifies the
-    // matching part of the change the network made (intensity: all of it; global tone: the global tone curve; local
-    // tone: the local low-frequency part; local / skin structure: fine detail, on skin colours only for the latter).
+    // Strengths are 0..2. Up to 1 goes to the runtime, which stops there; above 1 the composite pass amplifies the
+    // difference between the neural result and the original picture, with the highest of the five as the gain.
     float       nrIntensity = 1.0f;
     float       nrGlobalTone = 1.0f;
     float       nrLocalTone = 1.0f;
