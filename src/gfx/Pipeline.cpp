@@ -120,7 +120,8 @@ void Pipeline::ReleaseResources(GpuContext& gpu) {
     for (int i = 0; i < 3; ++i) { ReleaseTex(gpu, m_bm[i]); ReleaseTex(gpu, m_bc[i]); }
     for (auto& t : m_bmMed) ReleaseTex(gpu, t);
     ReleaseTex(gpu, m_mv); ReleaseTex(gpu, m_conf); ReleaseTex(gpu, m_depth);
-    ReleaseTex(gpu, m_dlaaOut); ReleaseTex(gpu, m_nrOut);
+    ReleaseTex(gpu, m_dlaaOut); ReleaseTex(gpu, m_nrOut); ReleaseTex(gpu, m_nrIn);
+    m_nrInExposed = false;
     ReleaseTex(gpu, m_final);
     RetireDisplayBuffers(gpu);
     if (m_statsUav.ptr) { gpu.Dev().FreeStaging(m_statsUav); m_statsUav = {}; }
@@ -244,6 +245,7 @@ bool Pipeline::Rebuild(GpuContext& gpu, const Config& cfg) {
     ok &= CreateTex(gpu, m_depth, m_inW, m_inH, DXGI_FORMAT_R32_FLOAT, true, L"depth");
     ok &= CreateTex(gpu, m_dlaaOut, m_inW, m_inH, DXGI_FORMAT_R8G8B8A8_UNORM, true, L"dlaaOut");
     ok &= CreateTex(gpu, m_nrOut, m_outW, m_outH, DXGI_FORMAT_R8G8B8A8_UNORM, true, L"nrOut");
+    ok &= CreateTex(gpu, m_nrIn, m_inW, m_inH, DXGI_FORMAT_R8G8B8A8_UNORM, true, L"nrIn");
     ok &= CreateTex(gpu, m_final, m_outW, m_outH, DXGI_FORMAT_R8G8B8A8_UNORM, true, L"final");
     ok &= CreateDisplayBuffers(gpu, m_outW, m_outH);
     if (!ok) { ReleaseResources(gpu); return false; }
@@ -803,6 +805,26 @@ bool Pipeline::RunDlaa(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const Se
     return ok;
 }
 
+// The network may look at an exposed copy of its input (a paper-white scale for the neural pass only); the composite
+// pass undoes the gain, so the output keeps the original brightness and only the character of the result changes.
+Pipeline::Tex& Pipeline::PrepareNeuralInput(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const Settings& s, Tex& base) {
+    m_nrInExposed = false;
+    if (std::fabs(s.nrInputExposure - 1.0f) < 1e-3f || !m_nrIn.Valid()) return base;
+    Transition(cmd, base, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    Transition(cmd, m_nrIn, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+    DispatchDesc d;
+    d.id = ShaderId::Expose;
+    d.constants.srcWidth = m_inW; d.constants.srcHeight = m_inH;
+    d.constants.dstWidth = m_inW; d.constants.dstHeight = m_inH;
+    d.constants.paramA = s.nrInputExposure;
+    d.srv[0] = base.srv;
+    d.uav[0] = m_nrIn.uav;
+    d.groupsX = Shaders::Groups(m_inW, 8); d.groupsY = Shaders::Groups(m_inH, 8);
+    m_shaders.Dispatch(cmd, gpu, d);
+    m_nrInExposed = true;
+    return m_nrIn;
+}
+
 bool Pipeline::RunNeural(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const Settings& s, Tex& input, bool reset) {
     if (m_nrFailed || !m_ngx.Initialized()) return false;
     const bool useCore = s.nrRoute == RouteNgxCore;
@@ -844,7 +866,8 @@ bool Pipeline::RunNeural(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const 
     return ok;
 }
 
-void Pipeline::RunComposite(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const Settings& s, Tex& processed, bool bypass) {
+void Pipeline::RunComposite(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const Settings& s, Tex& processed, Tex* neuralBase,
+                            Tex* neuralInput, bool bypass) {
     // Pick a display buffer the UI is not sampling and that no submitted composite still occupies, and make the
     // processing queue wait (GPU side) until the last UI frame that read it has finished. Finished composites that a
     // newer finished one supersedes will never be shown, so their buffers are reclaimed first. With every buffer
@@ -883,6 +906,8 @@ void Pipeline::RunComposite(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, con
     Transition(cmd, m_conf, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
     Transition(cmd, m_depth, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
     Transition(cmd, m_final, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+    if (neuralBase) Transition(cmd, *neuralBase, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    if (neuralInput) Transition(cmd, *neuralInput, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
     if (display) Transition(cmd, *display, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
     DispatchDesc d;
     d.id = ShaderId::Composite;
@@ -893,16 +918,21 @@ void Pipeline::RunComposite(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, con
     if (s.checkerboard) flags |= 2;
     if (bypass) flags |= 4;
     if (m_inW != m_outW || m_inH != m_outH) flags |= 32;
-    if (!bypass && s.nrEnabled && s.nrIntensity > 1.0f) {
-        // The runtime caps its intensity at 1; the 1..2 range of the slider amplifies the residual instead.
+    if (!bypass && neuralBase && neuralInput &&
+        (neuralInput != neuralBase || std::fabs(s.nrToneTransfer - 1.0f) > 1e-3f || std::fabs(s.nrColorStrength - 1.0f) > 1e-3f)) {
+        // Output blend: the neural pass's brightness and colour changes reach the output with separate strengths, and
+        // the exposure the network saw is undone. All three at their defaults leave the neural result untouched.
         flags |= 64;
-        d.constants.paramC = std::clamp(s.nrIntensity, 1.0f, 2.0f);
+        d.constants.paramC = s.nrToneTransfer;
+        d.constants.paramD = s.nrColorStrength;
+        d.constants.paramE = neuralInput != neuralBase ? 1.0f / std::max(s.nrInputExposure, 0.01f) : 1.0f;
     }
     d.constants.flags = flags;
     d.constants.intA = (UINT)s.compareMode;
     d.constants.paramA = s.wipePosition;
     d.constants.paramB = kMotionViewScale;
     d.srv[0] = m_color8.srv; d.srv[1] = processed.srv; d.srv[2] = m_mv.srv; d.srv[3] = m_conf.srv; d.srv[4] = m_depth.srv;
+    if (flags & 64) { d.srv[5] = neuralBase->srv; d.srv[6] = neuralInput->srv; }
     d.uav[0] = m_final.uav; d.uav[1] = display ? display->uav : D3D12_CPU_DESCRIPTOR_HANDLE{};   // null view: writes dropped
     d.groupsX = Shaders::Groups(m_outW, 8); d.groupsY = Shaders::Groups(m_outH, 8);
     m_shaders.Dispatch(cmd, gpu, d);
@@ -1010,6 +1040,8 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
     if (!src.hasFrame) { m_hasDisplay = false; return; }
 
     Tex* processed = &m_color8;
+    Tex* neuralBase = nullptr;    // picture the neural pass started from
+    Tex* neuralIn = nullptr;      // picture it actually saw (exposed copy or the base itself)
     bool nrOk = false, dlaaOk = false;
     const bool nrWanted = s.nrEnabled;
     const bool dlaaWanted = s.dlaaEnabled;
@@ -1083,7 +1115,9 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
             if (dlaaOk) processed = &m_dlaaOut;
         }
         if (nrWanted) {
-            nrOk = RunNeural(gpu, cmd, s, *processed, reset);
+            neuralBase = processed;
+            neuralIn = &PrepareNeuralInput(gpu, cmd, s, *processed);
+            nrOk = RunNeural(gpu, cmd, s, *neuralIn, reset);
             if (nrOk) processed = &m_nrOut;
         }
         m_haveHistory = true;
@@ -1094,8 +1128,14 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
         dlaaOk = dlaaWanted && !m_dlaaFailed && m_dlaa.Created();
         if (dlaaOk) processed = &m_dlaaOut;
         if (nrWanted && !m_nrFailed && m_nr.Created()) {
-            if (m_nrDirty) nrOk = RunNeural(gpu, cmd, s, *processed, false);
-            else nrOk = true;
+            neuralBase = processed;
+            if (m_nrDirty) {
+                neuralIn = &PrepareNeuralInput(gpu, cmd, s, *processed);
+                nrOk = RunNeural(gpu, cmd, s, *neuralIn, false);
+            } else {
+                nrOk = true;
+                neuralIn = m_nrInExposed ? &m_nrIn : processed;
+            }
             if (nrOk) processed = &m_nrOut;
         }
     }
@@ -1103,7 +1143,7 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
     if (!nrWanted && m_nr.Created()) { gpu.WaitIdle(); m_nr.Release(m_ngx); m_nrCreatedPreset = -1; }
     if (!dlaaWanted && m_dlaa.Created()) { gpu.WaitIdle(); m_dlaa.Release(m_ngx); m_dlaaCreatedPreset = -1; }
 
-    RunComposite(gpu, cmd, s, *processed, processed == &m_color8);
+    RunComposite(gpu, cmd, s, *processed, nrOk ? neuralBase : nullptr, nrOk ? neuralIn : nullptr, processed == &m_color8);
     if (m_displayTarget >= 0) m_hasDisplay = true;   // a skipped display write keeps the previous state: the results exist
 
     bool captureNow = false;

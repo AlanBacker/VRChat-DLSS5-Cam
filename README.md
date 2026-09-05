@@ -22,7 +22,7 @@ application: nothing is injected into VRChat and no mod is required.
 - **Live preview** of the VRChat camera after DLSS 5 processing, with side-by-side wipe, original, motion-vector and depth views.
 - **DLSS 5 Neural Rendering** hosted directly from `nvngx_dlssnr.dll`, with the same parameters exposed by RenoDX's
   DLSS 5 ReShade add-on: preset, style, intensity, global tone, local tone, local structure, skin structure,
-  auto mask and UI correction. Parameters are applied instantly and can be tuned on a frozen frame.
+  auto mask and UI correction, plus an output blend (input exposure, tone transfer, colour strength). Parameters are applied instantly and can be tuned on a frozen frame.
 - **Still images.** Open a photo or screenshot (PNG, JPEG, BMP, TIFF, GIF, WebP, HEIC…) or drop it onto the window;
   DLSS 5 refines it over several passes and *Process & save PNG* writes the result next to your captures.
 - **Frame guidance.** DLSSNR is a temporal model that expects motion vectors and depth. The app feeds it
@@ -72,10 +72,11 @@ Tips
 | Source | Paper white / Highlight compression | Shown only for floating-point (linear HDR) Spout textures: exposure reference and soft highlight roll-off applied before the SDR neural pass. |
 | DLSS 5 | Preset | Hint render preset passed to DLSSNR (0–3). |
 | DLSS 5 | Style | `DLSSNR.Style`: default / natural / cinematic. |
-| DLSS 5 | Intensity | Overall strength of the neural pass, 0–2. Up to 1 it is the runtime's own strength; above 1 the app amplifies the difference between the neural result and the original (may exaggerate artifacts). |
+| DLSS 5 | Intensity | Overall strength of the neural pass, 0–1 (the runtime's own range). |
 | DLSS 5 | Global tone / Local tone | Global and local tone mapping strength, 0–1 (the runtime clamps its strengths to this range). |
 | DLSS 5 | Local structure / Skin structure | Detail enhancement, 0–1; skin structure may be left at the runtime default. |
 | DLSS 5 | Auto mask / UI correction | Automatic subject mask, UI-safe processing. |
+| DLSS 5 | Input exposure / Tone transfer / Colour strength | Output blend. Input exposure (0.25–4×) scales the picture the network sees, like a paper-white scale, and is undone afterwards. Tone transfer and colour strength (0–2) set how much of the neural pass's brightness and colour changes reach the output, in linear light; 1 / 1 reproduces the neural result exactly, 0 keeps the original, above 1 exaggerates. |
 | DLSS 5 | Route | *Signed snippet*: host `nvngx_dlssnr.dll` directly. *NGX core*: create the feature through the NGX runtime. |
 | Frame guidance | Motion vectors | NVIDIA Optical Flow (driver `nvofapi64.dll`, with a bidirectional consistency check), GPU block matching, or none (zero). |
 | Frame guidance | Depth | AI estimated (Depth Anything V2 Small on DirectML; update interval and network resolution are adjustable), flat, gradient, or zero. |

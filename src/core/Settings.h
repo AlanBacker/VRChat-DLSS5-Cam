@@ -35,7 +35,7 @@ struct Settings {
     std::string nrDllPath;             // UTF-8, empty = <exe folder>\nvngx_dlssnr.dll
     int         nrPreset = 0;          // 0..3
     int         nrStyle = 0;           // 0 default, 1 natural, 2 cinematic
-    float       nrIntensity = 1.0f;    // 0..2: 0..1 goes to the runtime, 1..2 amplifies the residual in the composite pass
+    float       nrIntensity = 1.0f;    // 0..1 (the runtime's own range; stronger looks come from the output blend below)
     float       nrGlobalTone = 1.0f;   // 0..1 (the runtime clamps its strengths to this range)
     float       nrLocalTone = 1.0f;    // 0..1
     float       nrLocalStructure = 1.0f; // 0..1
@@ -43,6 +43,10 @@ struct Settings {
     bool        nrAutoMask = false;
     bool        nrUiCorrection = false;
     bool        nrUpscale = false;     // experimental: let DLSSNR upscale to the custom resolution
+    // Output blend (composite pass)
+    float       nrInputExposure = 1.0f; // 0.25..4: gain on the picture the network sees (paper-white scale), undone afterwards
+    float       nrToneTransfer = 1.0f;  // 0..2: share of the neural pass's brightness change that reaches the output
+    float       nrColorStrength = 1.0f; // 0..2: share of the neural pass's colour change that reaches the output
 
     // Frame guidance (motion vectors / depth)
     int   motionMode = MotionNvOpticalFlow;   // falls back to block matching when the hardware engine is unavailable
@@ -57,7 +61,7 @@ struct Settings {
     std::string depthModelPath;        // UTF-8, empty = <exe folder>\models\depth_anything_v2_small_fp16.onnx
     bool  autoReset = false;           // reset the temporal history on detected scene cuts (DLSS 5 recovers by itself)
     float cutThreshold = 0.10f;
-    int   settingsVersion = 2;         // bumped when defaults change; older files are migrated in Load()
+    int   settingsVersion = 3;         // bumped when defaults change; older files are migrated in Load()
 
     // DLAA pre-pass (DLSS super resolution at native resolution)
     bool dlaaEnabled = false;

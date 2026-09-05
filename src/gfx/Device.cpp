@@ -172,14 +172,29 @@ void GpuContext::WaitForFence(UINT64 value) {
     if (value == 0 || !m_fence || m_fence->GetCompletedValue() >= value) return;
     std::lock_guard<std::mutex> lock(m_fenceMutex);
     if (m_fence->GetCompletedValue() >= value) return;
-    if (SUCCEEDED(m_fence->SetEventOnCompletion(value, m_fenceEvent)))
-        WaitForSingleObject(m_fenceEvent, 5000);
+    if (FAILED(m_fence->SetEventOnCompletion(value, m_fenceEvent))) return;
+    // Wait until the work has really finished. Returning after a timeout would let the caller reset a command
+    // allocator or free a resource the GPU is still reading, turning a stall into memory corruption and a device
+    // hang. A removed device completes its fences and is detected below, so a lost GPU cannot hang here.
+    for (UINT waited = 1;; ++waited) {
+        if (WaitForSingleObject(m_fenceEvent, 1000) == WAIT_OBJECT_0) return;
+        if (m_fence->GetCompletedValue() >= value) return;
+        ID3D12Device* dev = m_device ? m_device->D3D12() : nullptr;
+        if (dev && dev->GetDeviceRemovedReason() != S_OK) { m_device->NoteDeviceRemoved(m_name.c_str()); return; }
+        if (waited == 5 || waited % 30 == 0)
+            Log::Warn("%s queue: GPU still busy after %u s (fence %llu)", m_name.c_str(), waited, (unsigned long long)value);
+    }
 }
 
 void GpuContext::WaitIdle() {
     if (!m_queue || !m_fence) return;
     WaitForFence(Signal());
     for (auto& f : m_frames) ReleaseDeferred(f.deferred);
+    // Objects deferred since the last BeginFrame may still be referenced by the command list being recorded right
+    // now (an upload buffer whose copy is recorded but not yet submitted, textures a rebuild replaces mid-frame).
+    // While the list is open they must stay alive and ride with the next frame's fence; only a closed list makes
+    // them safe to free here.
+    if (m_cmdOpen) return;
     std::vector<Deferred> pending;
     {
         std::lock_guard<std::mutex> lock(m_deferMutex);

@@ -162,8 +162,10 @@ private:
     void RunDepthCapture(GpuContext& gpu, ID3D12GraphicsCommandList*& cmd);      // colour -> network input -> CPU readback
     bool RunDepthApply(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, bool reset);   // network output -> m_depth (temporally filtered)
     bool RunDlaa(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const Settings& s, bool reset);
+    Tex& PrepareNeuralInput(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const Settings& s, Tex& base);
     bool RunNeural(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const Settings& s, Tex& input, bool reset);
-    void RunComposite(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const Settings& s, Tex& processed, bool bypass);
+    void RunComposite(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const Settings& s, Tex& processed, Tex* neuralBase,
+                      Tex* neuralInput, bool bypass);
     void EnqueueReadback(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, Tex& src, const std::wstring& path, bool keepAlpha);
 
     Shaders        m_shaders;
@@ -190,6 +192,8 @@ private:
     Tex m_mv, m_conf, m_depth;  // dense guidance
     Tex m_depthHist[2];         // temporally filtered depth, ping-pong by frame parity
     Tex m_dlaaOut, m_nrOut;
+    Tex m_nrIn;                 // exposed copy of the neural input (nrInputExposure != 1)
+    bool m_nrInExposed = false; // the last neural pass read m_nrIn rather than its base picture
     Tex m_final;
     ComPtr<ID3D12Resource>      m_statsBuf;
     D3D12_CPU_DESCRIPTOR_HANDLE m_statsUav{};

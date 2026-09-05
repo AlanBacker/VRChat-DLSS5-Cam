@@ -337,14 +337,8 @@ void MainUI::SectionNeural(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         if (ComboIds(TR(Style), &s.nrStyle, styles, 3, TR(TipStyle))) { ev.nrChanged = true; ev.settingsChanged = true; }
     }
     bool ch = false;
-    // The runtime clamps every strength to 0..1. Intensity keeps the 0..2 range: above 1 the composite pass
-    // amplifies the difference between the neural result and the original.
-    ch |= SliderReset(TR(Intensity), &s.nrIntensity, 0.0f, 2.0f, 1.0f, "%.2f", TR(TipIntensity));
-    if (s.nrIntensity > 1.0f) {
-        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(ImGuiCol_TextDisabled));
-        ImGui::TextWrapped("%s", TR(ResidualHint));
-        ImGui::PopStyleColor();
-    }
+    // The runtime clamps every strength to 0..1; stronger or weaker looks come from the output blend below.
+    ch |= SliderReset(TR(Intensity), &s.nrIntensity, 0.0f, 1.0f, 1.0f, "%.2f", TR(TipIntensity));
     ch |= SliderReset(TR(GlobalTone), &s.nrGlobalTone, 0.0f, 1.0f, 1.0f, "%.2f", TR(TipGlobalTone));
     ch |= SliderReset(TR(LocalTone), &s.nrLocalTone, 0.0f, 1.0f, 1.0f, "%.2f", TR(TipLocalTone));
     ch |= SliderReset(TR(LocalStructure), &s.nrLocalStructure, 0.0f, 1.0f, 1.0f, "%.2f", TR(TipLocalStructure));
@@ -366,7 +360,15 @@ void MainUI::SectionNeural(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         if (Toggle(TR(NrUpscale), &s.nrUpscale)) ch = true;
         Help(TR(TipUpscale));
     }
+    ImGui::Spacing();
+    ImGui::TextUnformatted(TR(OutputBlend));
+    // The exposure changes what the network sees (neural pass re-run); the two strengths only change the composite.
+    ch |= SliderReset(TR(InputExposure), &s.nrInputExposure, 0.25f, 4.0f, 1.0f, "%.2fx", TR(TipInputExposure));
+    bool blend = false;
+    blend |= SliderReset(TR(ToneTransfer), &s.nrToneTransfer, 0.0f, 2.0f, 1.0f, "%.2f", TR(TipToneTransfer));
+    blend |= SliderReset(TR(ColorStrength), &s.nrColorStrength, 0.0f, 2.0f, 1.0f, "%.2f", TR(TipColorStrength));
     ImGui::EndDisabled();
+    if (blend) ev.settingsChanged = true;
     if (ch) { ev.nrChanged = true; ev.settingsChanged = true; }
     ImGui::Spacing();
     if (ImGui::Button(TR(ResetHistory))) ev.resetHistory = true;
@@ -374,6 +376,7 @@ void MainUI::SectionNeural(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
     if (ImGui::Button(TR(ResetDefaults))) {
         s.nrPreset = 0; s.nrStyle = 0; s.nrIntensity = 1.0f; s.nrGlobalTone = 1.0f; s.nrLocalTone = 1.0f;
         s.nrLocalStructure = 1.0f; s.nrSkinStructure = -1.0f; s.nrAutoMask = false; s.nrUiCorrection = false;
+        s.nrInputExposure = 1.0f; s.nrToneTransfer = 1.0f; s.nrColorStrength = 1.0f;
         ev.nrChanged = true; ev.settingsChanged = true;
     }
     if (st) {

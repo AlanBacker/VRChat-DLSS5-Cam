@@ -196,7 +196,7 @@ enum class Lang { English = 0, Chinese = 1, Japanese = 2, Korean = 3, Count = 4 
     X(Apply,              "Apply", "应用", "適用", "적용") \
     X(Key,                "Key", "按键", "キー", "키") \
     X(PreviewHint,        "Start VRChat, open the camera, switch to Stream mode and enable Spout Stream.", "启动 VRChat，打开相机，切换到 Stream 模式并开启 Spout Stream。", "VRChat を起動し、カメラを開いて Stream モードに切り替え、Spout Stream を有効にしてください。", "VRChat를 실행하고 카메라를 열어 Stream 모드로 전환한 뒤 Spout Stream을 켜세요.") \
-    X(TipIntensity,       "Overall strength of the neural rendering (1 = default, 0 = off). The runtime stops at 1; values above 1 amplify the difference to the original in the composite pass, which can also exaggerate artifacts.", "神经渲染的整体强度（1 = 默认，0 = 关闭）。运行时最高只到 1；大于 1 时会在合成阶段放大与原图的差异，瑕疵也可能被一并放大。", "ニューラルレンダリングの全体強度（1 = 既定、0 = オフ）。ランタイム側の上限は 1 で、1 を超える値は合成段階で元画像との差分を増幅するため、アーティファクトも強調されることがあります。", "뉴럴 렌더링의 전체 강도(1 = 기본, 0 = 끔). 런타임은 1까지만 적용하며, 1보다 크면 합성 단계에서 원본과의 차이를 증폭하므로 아티팩트도 커질 수 있습니다.") \
+    X(TipIntensity,       "Overall strength of the neural rendering (1 = default, 0 = off). The runtime accepts 0–1; use the output blend below to push the result further or to hold it back.", "神经渲染的整体强度（1 = 默认，0 = 关闭）。运行库只接受 0–1；想进一步加强或收敛效果，请使用下方的输出混合。", "ニューラルレンダリングの全体強度（1 = 既定、0 = オフ）。ランタイムが受け付けるのは 0–1 です。さらに強めたり抑えたりするには下の出力ブレンドを使います。", "뉴럴 렌더링의 전체 강도(1 = 기본, 0 = 끔). 런타임은 0–1만 받습니다. 더 강하게 하거나 억제하려면 아래의 출력 블렌드를 사용하세요.") \
     X(TipGlobalTone,      "How much the model may change global exposure and colour.", "允许模型改变全局曝光与色彩的程度。", "モデルが全体の露出と色をどれだけ変えられるか。", "모델이 전체 노출과 색을 얼마나 바꿀 수 있는지.") \
     X(TipLocalTone,       "Local contrast and lighting adjustments.", "局部对比度与光照调整。", "ローカルコントラストとライティングの調整。", "로컬 대비와 조명 조정.") \
     X(TipLocalStructure,  "Fine detail and texture enhancement.", "细节与纹理增强。", "ディテールとテクスチャの強調。", "세부 묘사와 질감 강조.") \
@@ -217,7 +217,13 @@ enum class Lang { English = 0, Chinese = 1, Japanese = 2, Korean = 3, Count = 4 
     X(Pixels,             "px", "像素", "px", "px") \
     X(SettingsSaved,      "Settings saved", "设置已保存", "設定を保存しました", "설정이 저장되었습니다") \
     X(CaptureOriginalSuffix, "Also saved the original frame", "已同时保存原始画面", "元のフレームも保存しました", "원본 프레임도 저장했습니다") \
-    X(ResidualHint,       "Above 1: residual amplification (may exaggerate artifacts)", "大于 1：残差放大（可能放大瑕疵）", "1 超過：残差増幅（アーティファクトが強調される場合があります）", "1 초과: 잔차 증폭(아티팩트가 커질 수 있음)") \
+    X(OutputBlend,        "Output blend", "输出混合", "出力ブレンド", "출력 블렌드") \
+    X(InputExposure,      "Input exposure (paper-white scale)", "输入曝光（纸白缩放）", "入力露出（ペーパーホワイト倍率）", "입력 노출(페이퍼 화이트 배율)") \
+    X(TipInputExposure,   "Gain on the picture the neural pass sees, like scaling the scene's paper white. A brighter input makes the network treat the scene as well lit and relight it more gently; a darker input does the opposite. The output keeps the original brightness, only the character of the result changes.", "神经渲染看到的画面增益，相当于缩放场景纸白。调亮后网络会把场景视为光照充足、重打光更克制；调暗则相反。输出亮度保持原样，只改变结果的风格。", "ニューラルパスが見る画像へのゲインで、シーンのペーパーホワイトを拡大縮小するのと同じです。明るくするとネットワークは十分に照らされたシーンとみなしてリライトを控えめにし、暗くすると逆になります。出力の明るさは元のままで、結果の性格だけが変わります。", "뉴럴 패스가 보는 화면의 게인으로, 장면의 페이퍼 화이트를 배율 조정하는 것과 같습니다. 밝게 하면 네트워크가 장면을 충분히 밝은 것으로 보고 재조명을 절제하며, 어둡게 하면 반대가 됩니다. 출력 밝기는 원본 그대로이고 결과의 성격만 바뀝니다.") \
+    X(ToneTransfer,       "Tone transfer strength", "色调传递强度", "トーン転送強度", "톤 전달 강도") \
+    X(TipToneTransfer,    "How much of the neural pass's brightness change reaches the output. 0 keeps the original tones, 1 = as rendered, up to 2 exaggerates the change.", "神经渲染带来的明暗变化有多少进入输出。0 = 保留原图明暗，1 = 按渲染结果，最高 2 为加倍夸张。", "ニューラルパスによる明るさの変化をどれだけ出力に反映するか。0 = 元のトーンを維持、1 = レンダリング結果どおり、最大 2 で変化を強調します。", "뉴럴 패스가 바꾼 밝기가 출력에 얼마나 반영되는지. 0 = 원본 톤 유지, 1 = 렌더링 결과 그대로, 최대 2는 변화를 과장합니다.") \
+    X(ColorStrength,      "Colour strength", "色彩强度", "色の強度", "색 강도") \
+    X(TipColorStrength,   "How much of the neural pass's colour change (hue and saturation) reaches the output. 0 keeps the original colours, 1 = as rendered, up to 2 exaggerates the change.", "神经渲染带来的色彩变化（色相与饱和度）有多少进入输出。0 = 保留原图色彩，1 = 按渲染结果，最高 2 为加倍夸张。", "ニューラルパスによる色の変化（色相と彩度）をどれだけ出力に反映するか。0 = 元の色を維持、1 = レンダリング結果どおり、最大 2 で変化を強調します。", "뉴럴 패스가 바꾼 색(색상과 채도)이 출력에 얼마나 반영되는지. 0 = 원본 색 유지, 1 = 렌더링 결과 그대로, 최대 2는 변화를 과장합니다.") \
     X(SourceMode,         "Input", "输入来源", "入力ソース", "입력 소스") \
     X(SourceSpout,        "VRChat camera (Spout)", "VRChat 相机（Spout）", "VRChat カメラ（Spout）", "VRChat 카메라(Spout)") \
     X(SourceImage,        "Image file", "图片文件", "画像ファイル", "이미지 파일") \

@@ -527,23 +527,94 @@ void main(uint tid : SV_GroupIndex) {
 )HLSL";
 
 // ---------------------------------------------------------------------------
+// Expose: exposed copy of the neural input. ParamA = gain applied in linear light (a paper-white scale for the
+// network only); values pushed above white roll off softly so highlights keep their colour.
+
+const char* kExpose = R"HLSL(
+Texture2D<float4>   Src : register(t0);
+RWTexture2D<float4> Out : register(u0);
+
+float3 SrgbToLinear(float3 c) {
+    float3 lo = c / 12.92;
+    float3 hi = pow(max((c + 0.055) / 1.055, 1e-6), 2.4);
+    return (c <= 0.04045) ? lo : hi;
+}
+
+float3 LinearToSrgb(float3 c) {
+    c = saturate(c);
+    float3 lo = c * 12.92;
+    float3 hi = 1.055 * pow(max(c, 1e-6), 1.0 / 2.4) - 0.055;
+    return (c < 0.0031308) ? lo : hi;
+}
+
+float3 CompressHighlights(float3 c, float strength) {
+    const float knee = 0.8;
+    float m = max(c.r, max(c.g, c.b));
+    if (m <= knee || strength <= 0.0) return c;
+    float over = (m - knee) / (1.0 - knee);
+    float soft = knee + (1.0 - knee) * (1.0 - exp(-over));
+    return c * lerp(1.0, soft / m, strength);
+}
+
+[numthreads(8, 8, 1)]
+void main(uint3 id : SV_DispatchThreadID) {
+    if (id.x >= DstWidth || id.y >= DstHeight) return;
+    float4 c = Src.Load(int3(id.xy, 0));
+    float3 lin = SrgbToLinear(c.rgb) * ParamA;
+    if (ParamA > 1.0) lin = CompressHighlights(lin, 1.0);
+    Out[id.xy] = float4(LinearToSrgb(lin), c.a);
+}
+)HLSL";
+
+// ---------------------------------------------------------------------------
 // Composite: final image (for capture) and display image (compare modes, checkerboard, motion view).
-// Flags: 1 = keep alpha, 2 = checkerboard, 4 = bypass, 32 = original/motion are at a different resolution.
+// Flags: 1 = keep alpha, 2 = checkerboard, 4 = bypass, 32 = original/motion are at a different resolution,
+//        64 = output blend (ParamC = tone transfer, ParamD = colour strength, ParamE = 1 / input exposure).
 // IntA = compare mode (0 output, 1 original, 2 wipe, 3 motion, 4 depth). ParamA = wipe position, ParamB = motion scale.
 
 const char* kComposite = R"HLSL(
-Texture2D<float4>   Original   : register(t0);
-Texture2D<float4>   Processed  : register(t1);
-Texture2D<float2>   Mv         : register(t2);
-Texture2D<float>    Conf       : register(t3);
-Texture2D<float>    Depth      : register(t4);
-RWTexture2D<float4> OutFinal   : register(u0);
-RWTexture2D<float4> OutDisplay : register(u1);
+Texture2D<float4>   Original    : register(t0);
+Texture2D<float4>   Processed   : register(t1);
+Texture2D<float2>   Mv          : register(t2);
+Texture2D<float>    Conf        : register(t3);
+Texture2D<float>    Depth       : register(t4);
+Texture2D<float4>   NeuralBase  : register(t5);   // picture the neural pass started from (input resolution)
+Texture2D<float4>   NeuralInput : register(t6);   // picture the neural pass actually saw (after input exposure)
+RWTexture2D<float4> OutFinal    : register(u0);
+RWTexture2D<float4> OutDisplay  : register(u1);
 
 float3 Hsv(float h, float s, float v) {
     float3 k = float3(1.0, 2.0 / 3.0, 1.0 / 3.0);
     float3 p = abs(frac(h + k) * 6.0 - 3.0);
     return v * lerp(1.0, saturate(p - 1.0), s);
+}
+
+float3 SrgbToLinear(float3 c) {
+    float3 lo = c / 12.92;
+    float3 hi = pow(max((c + 0.055) / 1.055, 1e-6), 2.4);
+    return (c <= 0.04045) ? lo : hi;
+}
+
+float3 LinearToSrgb(float3 c) {
+    c = saturate(c);
+    float3 lo = c * 12.92;
+    float3 hi = 1.055 * pow(max(c, 1e-6), 1.0 / 2.4) - 0.055;
+    return (c < 0.0031308) ? lo : hi;
+}
+
+float Luma(float3 c) { return dot(c, float3(0.2126, 0.7152, 0.0722)); }
+
+// Output blend: the neural pass's brightness and colour changes, measured against the picture it saw, are applied
+// to the picture it started from with separate strengths, in linear light. ParamC = tone transfer, ParamD = colour
+// strength, ParamE undoes the input exposure. Strengths 1/1 reproduce the neural result, 0 keeps the base picture,
+// above 1 exaggerates the change.
+float3 Blend(float3 base, float3 seen, float3 neural) {
+    float3 b = SrgbToLinear(base), i = SrgbToLinear(seen), n = SrgbToLinear(neural);
+    float yb = Luma(b), yi = Luma(i), yn = Luma(n);
+    float y = max(yb + (yn - yi) * ParamE * ParamC, 0.0);
+    float3 rb = b / max(yb, 1e-4), ri = i / max(yi, 1e-4), rn = n / max(yn, 1e-4);
+    float3 r = max(rb + (rn - ri) * ParamD, 0.0);
+    return LinearToSrgb(r * y);
 }
 
 [numthreads(8, 8, 1)]
@@ -554,9 +625,11 @@ void main(uint3 id : SV_DispatchThreadID) {
     float4 orig = scaled ? Original.SampleLevel(LinearClamp, uv, 0) : Original.Load(int3(id.xy, 0));
     float4 proc = Processed.Load(int3(id.xy, 0));
     float3 outRgb = (Flags & 4) ? orig.rgb : proc.rgb;
-    // Intensity above 1: the runtime caps its own strength at 1, so the extra range amplifies the difference
-    // between the neural result and the original (ParamC = gain).
-    if (Flags & 64) outRgb = saturate(orig.rgb + (proc.rgb - orig.rgb) * ParamC);
+    if (Flags & 64) {
+        float3 base = scaled ? NeuralBase.SampleLevel(LinearClamp, uv, 0).rgb : NeuralBase.Load(int3(id.xy, 0)).rgb;
+        float3 seen = scaled ? NeuralInput.SampleLevel(LinearClamp, uv, 0).rgb : NeuralInput.Load(int3(id.xy, 0)).rgb;
+        outRgb = Blend(base, seen, proc.rgb);
+    }
     float alpha = (Flags & 1) ? orig.a : 1.0;
     OutFinal[id.xy] = float4(outRgb, alpha);
 
@@ -598,6 +671,7 @@ const ShaderSource kSources[] = {
     { ShaderId::Composite,  "Composite",  kComposite },
     { ShaderId::DepthPre,   "DepthPre",   kDepthPre },
     { ShaderId::DepthPost,  "DepthPost",  kDepthPost },
+    { ShaderId::Expose,     "Expose",     kExpose },
 };
 
 } // namespace
