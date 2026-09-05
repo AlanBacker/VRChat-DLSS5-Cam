@@ -72,9 +72,9 @@ Tips
 | Source | Paper white / Highlight compression | Shown only for floating-point (linear HDR) Spout textures: exposure reference and soft highlight roll-off applied before the SDR neural pass. |
 | DLSS 5 | Preset | Hint render preset passed to DLSSNR (0–3). |
 | DLSS 5 | Style | `DLSSNR.Style`: default / natural / cinematic. |
-| DLSS 5 | Intensity | Overall strength of the neural pass, 0–1 (the runtime's own range). |
-| DLSS 5 | Global tone / Local tone | Global and local tone mapping strength, 0–1 (the runtime clamps its strengths to this range). |
-| DLSS 5 | Local structure / Skin structure | Detail enhancement, 0–1; skin structure may be left at the runtime default. |
+| DLSS 5 | Intensity | Overall strength of the neural pass, 0–2. Up to 1 it is the runtime's own strength; above 1 the app amplifies the whole change the network made (this can exaggerate artifacts too). |
+| DLSS 5 | Global tone / Local tone | Global and local tone strength, 0–2. Up to 1 goes to the runtime; above 1 the app amplifies that part of the network's change: the global tone curve (brightness and colour as a function of the original lightness), or the local low-frequency lighting. |
+| DLSS 5 | Local structure / Skin structure | Detail enhancement, 0–2; above 1 amplifies the fine-detail part of the change (skin structure: on skin-like colours only). Skin structure may be left at the runtime default. |
 | DLSS 5 | Auto mask / UI correction | Automatic subject mask, UI-safe processing. |
 | DLSS 5 | Input exposure / Tone transfer / Colour strength | Output blend. Input exposure (0.25–4×) scales the picture the network sees, like a paper-white scale, and is undone afterwards. Tone transfer and colour strength (0–2) set how much of the neural pass's brightness and colour changes reach the output, in linear light; 1 / 1 reproduces the neural result exactly, 0 keeps the original, above 1 exaggerates. |
 | DLSS 5 | Route | *Signed snippet*: host `nvngx_dlssnr.dll` directly. *NGX core*: create the feature through the NGX runtime. |

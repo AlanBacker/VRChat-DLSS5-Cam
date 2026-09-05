@@ -122,6 +122,12 @@ void Pipeline::ReleaseResources(GpuContext& gpu) {
     ReleaseTex(gpu, m_mv); ReleaseTex(gpu, m_conf); ReleaseTex(gpu, m_depth);
     ReleaseTex(gpu, m_dlaaOut); ReleaseTex(gpu, m_nrOut); ReleaseTex(gpu, m_nrIn);
     m_nrInExposed = false;
+    for (auto& t : m_toneLut) ReleaseTex(gpu, t);
+    ReleaseTex(gpu, m_toneRes);
+    for (auto& t : m_toneLp) ReleaseTex(gpu, t);
+    if (m_toneHistUav.ptr) { gpu.Dev().FreeStaging(m_toneHistUav); m_toneHistUav = {}; }
+    if (m_toneHist) { gpu.DeferRelease(m_toneHist); m_toneHist.Reset(); }
+    m_toneLutValid = false; m_toneLutCur = 0;
     ReleaseTex(gpu, m_final);
     RetireDisplayBuffers(gpu);
     if (m_statsUav.ptr) { gpu.Dev().FreeStaging(m_statsUav); m_statsUav = {}; }
@@ -246,6 +252,12 @@ bool Pipeline::Rebuild(GpuContext& gpu, const Config& cfg) {
     ok &= CreateTex(gpu, m_dlaaOut, m_inW, m_inH, DXGI_FORMAT_R8G8B8A8_UNORM, true, L"dlaaOut");
     ok &= CreateTex(gpu, m_nrOut, m_outW, m_outH, DXGI_FORMAT_R8G8B8A8_UNORM, true, L"nrOut");
     ok &= CreateTex(gpu, m_nrIn, m_inW, m_inH, DXGI_FORMAT_R8G8B8A8_UNORM, true, L"nrIn");
+    {
+        const UINT g4W = (m_outW + 3) / 4, g4H = (m_outH + 3) / 4, g16W = (g4W + 3) / 4, g16H = (g4H + 3) / 4;
+        for (auto& t : m_toneLut) ok &= CreateTex(gpu, t, 64, 1, DXGI_FORMAT_R16G16B16A16_FLOAT, true, L"toneLut");
+        ok &= CreateTex(gpu, m_toneRes, g4W, g4H, DXGI_FORMAT_R16G16B16A16_FLOAT, true, L"toneResidual");
+        for (auto& t : m_toneLp) ok &= CreateTex(gpu, t, g16W, g16H, DXGI_FORMAT_R16G16B16A16_FLOAT, true, L"toneLowpass");
+    }
     ok &= CreateTex(gpu, m_final, m_outW, m_outH, DXGI_FORMAT_R8G8B8A8_UNORM, true, L"final");
     ok &= CreateDisplayBuffers(gpu, m_outW, m_outH);
     if (!ok) { ReleaseResources(gpu); return false; }
@@ -271,6 +283,22 @@ bool Pipeline::Rebuild(GpuContext& gpu, const Config& cfg) {
             hr = dev->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &bd, D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&m_statsReadback[i]));
             if (FAILED(hr)) { Log::Hr(LogLevel::Error, "stats readback", hr); ReleaseResources(gpu); return false; }
         }
+    }
+    // Tone-band histogram: 64 bins x {sum r, sum g, sum b, count} as 32-bit integers.
+    {
+        D3D12_HEAP_PROPERTIES heap{}; heap.Type = D3D12_HEAP_TYPE_DEFAULT;
+        D3D12_RESOURCE_DESC bd{};
+        bd.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER; bd.Width = 256 * 4; bd.Height = 1; bd.DepthOrArraySize = 1; bd.MipLevels = 1;
+        bd.Format = DXGI_FORMAT_UNKNOWN; bd.SampleDesc.Count = 1; bd.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+        bd.Flags = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+        HRESULT hr = dev->CreateCommittedResource(&heap, D3D12_HEAP_FLAG_NONE, &bd, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, nullptr, IID_PPV_ARGS(&m_toneHist));
+        if (FAILED(hr)) { Log::Hr(LogLevel::Error, "tone histogram", hr); ReleaseResources(gpu); return false; }
+        m_toneHist->SetName(L"toneHist");
+        m_toneHistUav = gpu.Dev().AllocStaging();
+        D3D12_UNORDERED_ACCESS_VIEW_DESC ud{};
+        ud.Format = DXGI_FORMAT_UNKNOWN; ud.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
+        ud.Buffer.NumElements = 256; ud.Buffer.StructureByteStride = 4;
+        dev->CreateUnorderedAccessView(m_toneHist.Get(), nullptr, &ud, m_toneHistUav);
     }
 
     // Optical flow session on its own native D3D11 device. BGRA8 input written by the convert pass is preferred (the
@@ -852,8 +880,10 @@ bool Pipeline::RunNeural(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const 
     in.reset = reset;
     DlssnrFeature::Params p;
     p.preset = s.nrPreset; p.style = s.nrStyle;
-    p.intensity = std::min(s.nrIntensity, 1.0f); p.globalTone = s.nrGlobalTone; p.localTone = s.nrLocalTone;
-    p.localStructure = s.nrLocalStructure; p.skinStructure = s.nrSkinStructure;
+    // The runtime accepts 0..1; the 1..2 range of every strength is applied by the composite pass (tone bands).
+    p.intensity = std::min(s.nrIntensity, 1.0f); p.globalTone = std::min(s.nrGlobalTone, 1.0f); p.localTone = std::min(s.nrLocalTone, 1.0f);
+    p.localStructure = std::min(s.nrLocalStructure, 1.0f);
+    p.skinStructure = s.nrSkinStructure < 0.0f ? -1.0f : std::min(s.nrSkinStructure, 1.0f);
     p.autoMask = s.nrAutoMask; p.uiCorrection = s.nrUiCorrection;
     std::string err;
     const bool ok = m_nr.Evaluate(cmd, in, p, err);
@@ -866,8 +896,94 @@ bool Pipeline::RunNeural(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const 
     return ok;
 }
 
+// Strength sliders above 1: the runtime stops at 1, so the extra range amplifies the matching part of the change the
+// network made. The change is split by lightness (a global tone curve from a 64-bin histogram), by scale (a 13-tap
+// Gaussian at 1/16 resolution separates the local low-frequency part from fine detail) and, for skin structure, by a
+// skin-colour mask in the composite pass. Leaves the tone curve in m_toneLut[m_toneLutCur] and the low-pass in
+// m_toneLp[0], both ready to be read.
+bool Pipeline::RunToneBands(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, Tex& base, Tex& seen, Tex& neural, float invExposure, bool reset) {
+    if (!m_toneHist || !m_toneRes.Valid() || !m_toneLp[0].Valid() || !m_toneLp[1].Valid() || !m_toneLut[0].Valid() || !m_toneLut[1].Valid()) return false;
+    const UINT g8W = (m_outW + 7) / 8, g8H = (m_outH + 7) / 8;
+    const UINT g4W = m_toneRes.w, g4H = m_toneRes.h, g16W = m_toneLp[0].w, g16H = m_toneLp[0].h;
+    Transition(cmd, base, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    Transition(cmd, seen, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    Transition(cmd, neural, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+
+    // 1. Histogram of the change over base lightness (clear, then accumulate on a 1/8 grid).
+    Device::UavBarrier(cmd, m_toneHist.Get());
+    {
+        DispatchDesc d;
+        d.id = ShaderId::ToneHist;
+        d.constants.flags = 1;
+        d.uav[0] = m_toneHistUav;
+        d.groupsX = 1; d.groupsY = 1;
+        m_shaders.Dispatch(cmd, gpu, d);
+    }
+    Device::UavBarrier(cmd, m_toneHist.Get());
+    {
+        DispatchDesc d;
+        d.id = ShaderId::ToneHist;
+        d.constants.dstWidth = g8W; d.constants.dstHeight = g8H;
+        d.constants.paramE = invExposure;
+        d.srv[0] = base.srv; d.srv[1] = seen.srv; d.srv[2] = neural.srv;
+        d.uav[0] = m_toneHistUav;
+        d.groupsX = Shaders::Groups(g8W, 16); d.groupsY = Shaders::Groups(g8H, 16);
+        m_shaders.Dispatch(cmd, gpu, d);
+    }
+    Device::UavBarrier(cmd, m_toneHist.Get());
+
+    // 2. Resolve the tone curve, blended with the previous frame's curve.
+    const int prev = m_toneLutCur, cur = 1 - m_toneLutCur;
+    Transition(cmd, m_toneLut[prev], D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    Transition(cmd, m_toneLut[cur], D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+    {
+        DispatchDesc d;
+        d.id = ShaderId::ToneResolve;
+        d.constants.paramA = (reset || !m_toneLutValid) ? 1.0f : 0.3f;
+        d.constants.paramB = 256.0f;
+        d.srv[0] = m_toneLut[prev].srv;
+        d.uav[0] = m_toneHistUav; d.uav[1] = m_toneLut[cur].uav;
+        d.groupsX = 1; d.groupsY = 1;
+        m_shaders.Dispatch(cmd, gpu, d);
+    }
+    m_toneLutCur = cur;
+    m_toneLutValid = true;
+
+    // 3. Change minus its global part at 1/4, box down to 1/16, then a separable Gaussian.
+    Transition(cmd, m_toneLut[cur], D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    Transition(cmd, m_toneRes, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+    {
+        DispatchDesc d;
+        d.id = ShaderId::ToneResidual;
+        d.constants.dstWidth = g4W; d.constants.dstHeight = g4H;
+        d.constants.paramE = invExposure;
+        d.srv[0] = base.srv; d.srv[1] = seen.srv; d.srv[2] = neural.srv; d.srv[3] = m_toneLut[cur].srv;
+        d.uav[0] = m_toneRes.uav;
+        d.groupsX = Shaders::Groups(g4W, 8); d.groupsY = Shaders::Groups(g4H, 8);
+        m_shaders.Dispatch(cmd, gpu, d);
+    }
+    const UINT blurFlags[3] = { 1, 2, 4 };
+    Tex* blurIn[3] = { &m_toneRes, &m_toneLp[0], &m_toneLp[1] };
+    Tex* blurOut[3] = { &m_toneLp[0], &m_toneLp[1], &m_toneLp[0] };
+    for (int pass = 0; pass < 3; ++pass) {
+        Transition(cmd, *blurIn[pass], D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+        Transition(cmd, *blurOut[pass], D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+        DispatchDesc d;
+        d.id = ShaderId::ToneBlur;
+        d.constants.flags = blurFlags[pass];
+        d.constants.srcWidth = blurIn[pass]->w; d.constants.srcHeight = blurIn[pass]->h;
+        d.constants.dstWidth = g16W; d.constants.dstHeight = g16H;
+        d.srv[0] = blurIn[pass]->srv;
+        d.uav[0] = blurOut[pass]->uav;
+        d.groupsX = Shaders::Groups(g16W, 8); d.groupsY = Shaders::Groups(g16H, 8);
+        m_shaders.Dispatch(cmd, gpu, d);
+    }
+    Transition(cmd, m_toneLp[0], D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    return true;
+}
+
 void Pipeline::RunComposite(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const Settings& s, Tex& processed, Tex* neuralBase,
-                            Tex* neuralInput, bool bypass) {
+                            Tex* neuralInput, bool bands, bool bypass) {
     // Pick a display buffer the UI is not sampling and that no submitted composite still occupies, and make the
     // processing queue wait (GPU side) until the last UI frame that read it has finished. Finished composites that a
     // newer finished one supersedes will never be shown, so their buffers are reclaimed first. With every buffer
@@ -918,14 +1034,21 @@ void Pipeline::RunComposite(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, con
     if (s.checkerboard) flags |= 2;
     if (bypass) flags |= 4;
     if (m_inW != m_outW || m_inH != m_outH) flags |= 32;
+    const float gI = std::max(s.nrIntensity, 1.0f), gG = std::max(s.nrGlobalTone, 1.0f), gL = std::max(s.nrLocalTone, 1.0f);
+    const float gH = std::max(s.nrLocalStructure, 1.0f), gK = s.nrSkinStructure < 0.0f ? gH : std::max(s.nrSkinStructure, 1.0f);
     if (!bypass && neuralBase && neuralInput &&
-        (neuralInput != neuralBase || std::fabs(s.nrToneTransfer - 1.0f) > 1e-3f || std::fabs(s.nrColorStrength - 1.0f) > 1e-3f)) {
-        // Output blend: the neural pass's brightness and colour changes reach the output with separate strengths, and
-        // the exposure the network saw is undone. All three at their defaults leave the neural result untouched.
+        (neuralInput != neuralBase || bands || gI > 1.001f || std::fabs(s.nrToneTransfer - 1.0f) > 1e-3f ||
+         std::fabs(s.nrColorStrength - 1.0f) > 1e-3f)) {
+        // Output blend: strengths above 1 amplify their part of the change the network made (tone bands, intensity
+        // = all of it), the exposure the network saw is undone, and tone transfer / colour strength decide how much of
+        // the brightness and colour change reaches the output. Everything at its default leaves the result untouched.
         flags |= 64;
+        if (bands) flags |= 128;
         d.constants.paramC = s.nrToneTransfer;
         d.constants.paramD = s.nrColorStrength;
         d.constants.paramE = neuralInput != neuralBase ? 1.0f / std::max(s.nrInputExposure, 0.01f) : 1.0f;
+        d.constants.paramF = gI;
+        d.constants.extra0[0] = gG; d.constants.extra0[1] = gL; d.constants.extra0[2] = gH; d.constants.extra0[3] = gK;
     }
     d.constants.flags = flags;
     d.constants.intA = (UINT)s.compareMode;
@@ -933,6 +1056,7 @@ void Pipeline::RunComposite(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, con
     d.constants.paramB = kMotionViewScale;
     d.srv[0] = m_color8.srv; d.srv[1] = processed.srv; d.srv[2] = m_mv.srv; d.srv[3] = m_conf.srv; d.srv[4] = m_depth.srv;
     if (flags & 64) { d.srv[5] = neuralBase->srv; d.srv[6] = neuralInput->srv; }
+    if (flags & 128) { d.srv[7] = m_toneLut[m_toneLutCur].srv; d.srv[8] = m_toneLp[0].srv; }
     d.uav[0] = m_final.uav; d.uav[1] = display ? display->uav : D3D12_CPU_DESCRIPTOR_HANDLE{};   // null view: writes dropped
     d.groupsX = Shaders::Groups(m_outW, 8); d.groupsY = Shaders::Groups(m_outH, 8);
     m_shaders.Dispatch(cmd, gpu, d);
@@ -1042,6 +1166,7 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
     Tex* processed = &m_color8;
     Tex* neuralBase = nullptr;    // picture the neural pass started from
     Tex* neuralIn = nullptr;      // picture it actually saw (exposed copy or the base itself)
+    bool toneReset = false;       // start the tone curve afresh (history reset)
     bool nrOk = false, dlaaOk = false;
     const bool nrWanted = s.nrEnabled;
     const bool dlaaWanted = s.dlaaEnabled;
@@ -1117,6 +1242,7 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
         if (nrWanted) {
             neuralBase = processed;
             neuralIn = &PrepareNeuralInput(gpu, cmd, s, *processed);
+            toneReset = reset;
             nrOk = RunNeural(gpu, cmd, s, *neuralIn, reset);
             if (nrOk) processed = &m_nrOut;
         }
@@ -1143,7 +1269,16 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
     if (!nrWanted && m_nr.Created()) { gpu.WaitIdle(); m_nr.Release(m_ngx); m_nrCreatedPreset = -1; }
     if (!dlaaWanted && m_dlaa.Created()) { gpu.WaitIdle(); m_dlaa.Release(m_ngx); m_dlaaCreatedPreset = -1; }
 
-    RunComposite(gpu, cmd, s, *processed, nrOk ? neuralBase : nullptr, nrOk ? neuralIn : nullptr, processed == &m_color8);
+    bool bands = false;
+    if (nrOk && neuralBase && neuralIn) {
+        const bool wantBands = s.nrGlobalTone > 1.001f || s.nrLocalTone > 1.001f || s.nrLocalStructure > 1.001f ||
+                               s.nrSkinStructure > 1.001f;
+        if (wantBands) {
+            const float invExposure = neuralIn != neuralBase ? 1.0f / std::max(s.nrInputExposure, 0.01f) : 1.0f;
+            bands = RunToneBands(gpu, cmd, *neuralBase, *neuralIn, m_nrOut, invExposure, toneReset);
+        }
+    }
+    RunComposite(gpu, cmd, s, *processed, nrOk ? neuralBase : nullptr, nrOk ? neuralIn : nullptr, bands, processed == &m_color8);
     if (m_displayTarget >= 0) m_hasDisplay = true;   // a skipped display write keeps the previous state: the results exist
 
     bool captureNow = false;

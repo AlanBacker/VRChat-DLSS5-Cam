@@ -104,12 +104,6 @@ bool Settings::Load(const std::wstring& path) {
         depthMode = Settings().depthMode;
         autoReset = Settings().autoReset;
     }
-    if (fileVersion < 3 && nrIntensity > 1.0f) {
-        // 0.3.0/0.3.1 files: intensity above 1 amplified the whole residual in the composite pass. The same look now
-        // comes from the output blend strengths; the runtime intensity itself stops at 1.
-        nrToneTransfer = nrColorStrength = std::min(nrIntensity, 2.0f);
-        nrIntensity = 1.0f;
-    }
     settingsVersion = Settings().settingsVersion;
     r.Get("dlaaEnabled", dlaaEnabled);
     r.Get("dlaaPreset", dlaaPreset);
@@ -219,14 +213,14 @@ void Settings::Clamp() {
     nrPreset = std::clamp(nrPreset, 0, 3);
     nrStyle = std::clamp(nrStyle, 0, 2);
     sourceMode = std::clamp(sourceMode, 0, 1);
-    nrIntensity = std::clamp(nrIntensity, 0.0f, 1.0f);
+    nrIntensity = std::clamp(nrIntensity, 0.0f, 2.0f);
     nrInputExposure = std::clamp(nrInputExposure, 0.25f, 4.0f);
     nrToneTransfer = std::clamp(nrToneTransfer, 0.0f, 2.0f);
     nrColorStrength = std::clamp(nrColorStrength, 0.0f, 2.0f);
-    nrGlobalTone = std::clamp(nrGlobalTone, 0.0f, 1.0f);
-    nrLocalTone = std::clamp(nrLocalTone, 0.0f, 1.0f);
-    nrLocalStructure = std::clamp(nrLocalStructure, 0.0f, 1.0f);
-    nrSkinStructure = nrSkinStructure < 0.0f ? -1.0f : std::clamp(nrSkinStructure, 0.0f, 1.0f);
+    nrGlobalTone = std::clamp(nrGlobalTone, 0.0f, 2.0f);
+    nrLocalTone = std::clamp(nrLocalTone, 0.0f, 2.0f);
+    nrLocalStructure = std::clamp(nrLocalStructure, 0.0f, 2.0f);
+    nrSkinStructure = nrSkinStructure < 0.0f ? -1.0f : std::clamp(nrSkinStructure, 0.0f, 2.0f);
     hdrPaperWhite = std::clamp(hdrPaperWhite, 0.1f, 8.0f);
     hdrHighlightCompression = std::clamp(hdrHighlightCompression, 0.0f, 1.0f);
     motionMode = std::clamp(motionMode, 0, 2);

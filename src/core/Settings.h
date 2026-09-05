@@ -35,11 +35,14 @@ struct Settings {
     std::string nrDllPath;             // UTF-8, empty = <exe folder>\nvngx_dlssnr.dll
     int         nrPreset = 0;          // 0..3
     int         nrStyle = 0;           // 0 default, 1 natural, 2 cinematic
-    float       nrIntensity = 1.0f;    // 0..1 (the runtime's own range; stronger looks come from the output blend below)
-    float       nrGlobalTone = 1.0f;   // 0..1 (the runtime clamps its strengths to this range)
-    float       nrLocalTone = 1.0f;    // 0..1
-    float       nrLocalStructure = 1.0f; // 0..1
-    float       nrSkinStructure = -1.0f; // -1 = runtime default, else 0..1
+    // Strengths are 0..2: up to 1 goes to the runtime (which stops there), above 1 the composite pass amplifies the
+    // matching part of the change the network made (intensity: all of it; global tone: the global tone curve; local
+    // tone: the local low-frequency part; local / skin structure: fine detail, on skin colours only for the latter).
+    float       nrIntensity = 1.0f;
+    float       nrGlobalTone = 1.0f;
+    float       nrLocalTone = 1.0f;
+    float       nrLocalStructure = 1.0f;
+    float       nrSkinStructure = -1.0f; // -1 = runtime default, else 0..2
     bool        nrAutoMask = false;
     bool        nrUiCorrection = false;
     bool        nrUpscale = false;     // experimental: let DLSSNR upscale to the custom resolution

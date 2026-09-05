@@ -91,6 +91,19 @@ private:
     void SectionDisplay(Settings& s, const UiFrameInfo& info, UiEvents& ev);
     void SectionAbout(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts);
 
+    // Performance readouts are refreshed a few times per second rather than every frame, so the digits stay legible;
+    // every place that shows them uses fixed-width text so a changing figure never moves the controls around it.
+    struct ShownPerf {
+        double gpuMs[(UINT)GpuTimer::Count] = {};
+        double fps = 0.0, cpuMs = 0.0, uiGpuMs = 0.0, processingFps = 0.0, senderFps = 0.0;
+        float  statAvgCost = 0.0f, statMaxCost = 0.0f, statAvgMotion = 0.0f;
+        unsigned long long processedFrames = 0, resets = 0;
+    };
+    void UpdateShown(const UiFrameInfo& info);
+    ShownPerf    m_shown;
+    double       m_shownTime = -1.0;
+    const Fonts* m_fonts = nullptr;
+
     std::vector<ToastItem> m_toasts;
     char   m_runtimeBuf[1024] = {};
     char   m_depthModelBuf[1024] = {};

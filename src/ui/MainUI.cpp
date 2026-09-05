@@ -30,6 +30,7 @@ const char* HotkeyKeyName(unsigned vk) {
 }
 
 std::string FormatMs(double ms) { return StrPrintf("%.2f ms", ms); }
+std::string FormatMsFixed(double ms) { return StrPrintf("%6.2f ms", ms); }   // for the monospace font: constant width
 
 void SyncBuffer(char* buf, size_t size, const std::string& value, bool editing) {
     if (editing) return;
@@ -60,7 +61,24 @@ void MainUI::Toast(const std::string& text, bool error) {
 
 // ------------------------------------------------------------------------------------------
 
+void MainUI::UpdateShown(const UiFrameInfo& info) {
+    const double now = ImGui::GetTime();
+    if (m_shownTime >= 0.0 && now - m_shownTime < 0.25) return;
+    m_shownTime = now;
+    m_shown.fps = info.fps; m_shown.cpuMs = info.cpuMs; m_shown.uiGpuMs = info.uiGpuMs;
+    m_shown.processingFps = info.processingFps; m_shown.senderFps = info.senderFps;
+    if (info.status) {
+        for (UINT i = 0; i < (UINT)GpuTimer::Count; ++i) m_shown.gpuMs[i] = info.status->gpuMs[i];
+        m_shown.statAvgCost = info.status->statAvgCost; m_shown.statMaxCost = info.status->statMaxCost;
+        m_shown.statAvgMotion = info.status->statAvgMotion;
+        m_shown.processedFrames = (unsigned long long)info.status->processedFrames;
+        m_shown.resets = (unsigned long long)info.status->resets;
+    }
+}
+
 void MainUI::Draw(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts) {
+    m_fonts = &fonts;
+    UpdateShown(info);
     ImGuiViewport* vp = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(vp->WorkPos);
     ImGui::SetNextWindowSize(vp->WorkSize);
@@ -105,45 +123,80 @@ void MainUI::DrawTopBar(Settings& s, const UiFrameInfo& info, UiEvents& ev, cons
     const ImGuiStyle& style = ImGui::GetStyle();
     const Palette& p = Colors();
     const float h = ImGui::GetFrameHeight() * 1.35f;
-    ImGui::BeginChild("##top", ImVec2(0, h + style.WindowPadding.y), ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar);
+    // The bar never scrolls: it measures its parts first and drops the optional ones (rates, the wide language box,
+    // the status badges) when the window is too narrow for all of them.
+    ImGui::BeginChild("##top", ImVec2(0, h + style.WindowPadding.y), ImGuiChildFlags_None,
+                      ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+    ImGui::SetScrollX(0.0f);
     const float y = (h - ImGui::GetFrameHeight()) * 0.5f;
-    ImGui::SetCursorPosY(y);
+    const bool imageMode = s.sourceMode == SourceImage;
 
+    // Left part: title and badges.
+    const bool haveSenders = info.senders && !info.senders->empty();
+    const char* badge = imageMode ? (info.imageLoaded ? TR(ImageLabel) : TR(NoImage))
+                      : info.sourceConnected ? TR(StatusConnected) : haveSenders ? TR(StatusWaiting) : TR(StatusNoSpout);
+    const ImU32 badgeFg = imageMode ? (info.imageLoaded ? p.good : p.muted)
+                        : info.sourceConnected ? p.good : haveSenders ? p.warn : p.muted;
+    const ImU32 badgeBg = WithAlpha(badgeFg, badgeFg == p.muted ? 0.2f : 0.18f);
+    const bool nrBadge = info.status && info.status->nrActive;
+    ImGui::PushFont(fonts.Bold(), style.FontSizeBase * 1.25f);
+    const float titleW = ImGui::CalcTextSize(TR(AppTitle)).x;
+    ImGui::PopFont();
+    const float pillPad = 18.0f;   // Pill() adds 9 px on each side
+    const float badgesW = ImGui::CalcTextSize(badge).x + pillPad + (nrBadge ? ImGui::CalcTextSize("DLSS 5").x + pillPad + 6.0f : 0.0f);
+
+    // Right part: processing / interface rates, language, sidebar toggle, capture. Rates are padded to three digits
+    // in the monospace font and their reserved width comes from a template, so a changing number never moves the
+    // controls to its right.
+    const char* captureText = imageMode ? TR(ProcessAndSave) : TR(Capture);
+    const float captureW = ImGui::CalcTextSize(captureText).x + style.FramePadding.x * 2.0f + 24.0f;
+    const float sidebarBtnW = ImGui::GetFrameHeight() + 6.0f;
+    const std::string fpsText = imageMode
+        ? StrPrintf("%s %3.0f %s", TR(UiFps), m_shown.fps, TR(Fps))
+        : StrPrintf("%s %3.0f %s  \xC2\xB7  %s %3.0f %s", TR(ProcessingFps), m_shown.processingFps, TR(Fps), TR(UiFps), m_shown.fps, TR(Fps));
+    const std::string fpsTemplate = imageMode
+        ? StrPrintf("%s 000 %s", TR(UiFps), TR(Fps))
+        : StrPrintf("%s 000 %s  \xC2\xB7  %s 000 %s", TR(ProcessingFps), TR(Fps), TR(UiFps), TR(Fps));
+    ImGui::PushFont(fonts.Mono(), 0.0f);
+    const float fpsW = ImGui::CalcTextSize(fpsTemplate.c_str()).x;
+    ImGui::PopFont();
+
+    const float availW = ImGui::GetWindowWidth() - style.WindowPadding.x * 2.0f;
+    const float gap = 24.0f;
+    float langW = ImGui::GetFontSize() * 8.0f;
+    bool showFps = true, showBadges = true;
+    auto rightW = [&]() {
+        return captureW + sidebarBtnW + langW + style.ItemSpacing.x * 2.0f + (showFps ? fpsW + style.ItemSpacing.x : 0.0f);
+    };
+    auto leftW = [&]() { return titleW + (showBadges ? 14.0f + badgesW : 0.0f); };
+    if (leftW() + gap + rightW() > availW) showFps = false;
+    if (leftW() + gap + rightW() > availW) langW = ImGui::GetFontSize() * 4.5f;
+    if (leftW() + gap + rightW() > availW) showBadges = false;
+
+    ImGui::SetCursorPosY(y);
     ImGui::PushFont(fonts.Bold(), style.FontSizeBase * 1.25f);
     ImGui::TextUnformatted(TR(AppTitle));
     ImGui::PopFont();
-    ImGui::SameLine(0.0f, 14.0f);
-    ImGui::SetCursorPosY(y + 2.0f);
-    const bool imageMode = s.sourceMode == SourceImage;
-    if (imageMode) {
-        if (info.imageLoaded) Pill(TR(ImageLabel), WithAlpha(p.good, 0.18f), p.good);
-        else Pill(TR(NoImage), WithAlpha(p.muted, 0.2f), p.muted);
-    } else if (info.sourceConnected) Pill(TR(StatusConnected), WithAlpha(p.good, 0.18f), p.good);
-    else if (info.senders && !info.senders->empty()) Pill(TR(StatusWaiting), WithAlpha(p.warn, 0.18f), p.warn);
-    else Pill(TR(StatusNoSpout), WithAlpha(p.muted, 0.2f), p.muted);
-    if (info.status && info.status->nrActive) {
-        ImGui::SameLine(0.0f, 6.0f);
+    if (showBadges) {
+        ImGui::SameLine(0.0f, 14.0f);
         ImGui::SetCursorPosY(y + 2.0f);
-        Pill("DLSS 5", WithAlpha(p.accent, 0.2f), p.accentHover);
+        Pill(badge, badgeBg, badgeFg);
+        if (nrBadge) {
+            ImGui::SameLine(0.0f, 6.0f);
+            ImGui::SetCursorPosY(y + 2.0f);
+            Pill("DLSS 5", WithAlpha(p.accent, 0.2f), p.accentHover);
+        }
     }
 
-    // Right-aligned controls: processing / interface rates, language, sidebar toggle, capture.
-    const char* captureText = imageMode ? TR(ProcessAndSave) : TR(Capture);
-    const float captureW = ImGui::CalcTextSize(captureText).x + style.FramePadding.x * 2.0f + 24.0f;
-    const float langW = ImGui::GetFontSize() * 8.0f;
-    const float sidebarBtnW = ImGui::GetFrameHeight() + 6.0f;
-    const std::string fpsText = imageMode
-        ? StrPrintf("%s %.0f %s", TR(UiFps), info.fps, TR(Fps))
-        : StrPrintf("%s %.0f %s  \xC2\xB7  %s %.0f %s", TR(ProcessingFps), info.processingFps, TR(Fps), TR(UiFps), info.fps, TR(Fps));
-    const float fpsW = ImGui::CalcTextSize(fpsText.c_str()).x;
-    const float total = captureW + langW + sidebarBtnW + fpsW + style.ItemSpacing.x * 3.0f;
-    ImGui::SameLine(std::max(ImGui::GetCursorPosX(), ImGui::GetWindowWidth() - style.WindowPadding.x - total));
-    ImGui::SetCursorPosY(y + style.FramePadding.y);
-    ImGui::PushFont(fonts.Mono(), 0.0f);
-    ImGui::TextDisabled("%s", fpsText.c_str());
-    ImGui::PopFont();
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip)) ImGui::SetTooltip("%s", TR(TipUiFps));
-    ImGui::SameLine();
+    ImGui::SameLine(std::max(ImGui::GetCursorPosX(), ImGui::GetWindowWidth() - style.WindowPadding.x - rightW()));
+    if (showFps) {
+        ImGui::SetCursorPosY(y + style.FramePadding.y);
+        ImGui::PushFont(fonts.Mono(), 0.0f);
+        ImGui::TextDisabled("%s", fpsText.c_str());
+        ImGui::PopFont();
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip)) ImGui::SetTooltip("%s", TR(TipUiFps));
+        ImGui::SameLine();
+    }
     ImGui::SetCursorPosY(y);
     ImGui::SetNextItemWidth(langW);
     {
@@ -337,18 +390,19 @@ void MainUI::SectionNeural(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         if (ComboIds(TR(Style), &s.nrStyle, styles, 3, TR(TipStyle))) { ev.nrChanged = true; ev.settingsChanged = true; }
     }
     bool ch = false;
-    // The runtime clamps every strength to 0..1; stronger or weaker looks come from the output blend below.
-    ch |= SliderReset(TR(Intensity), &s.nrIntensity, 0.0f, 1.0f, 1.0f, "%.2f", TR(TipIntensity));
-    ch |= SliderReset(TR(GlobalTone), &s.nrGlobalTone, 0.0f, 1.0f, 1.0f, "%.2f", TR(TipGlobalTone));
-    ch |= SliderReset(TR(LocalTone), &s.nrLocalTone, 0.0f, 1.0f, 1.0f, "%.2f", TR(TipLocalTone));
-    ch |= SliderReset(TR(LocalStructure), &s.nrLocalStructure, 0.0f, 1.0f, 1.0f, "%.2f", TR(TipLocalStructure));
+    // 0..2: up to 1 goes to the runtime (which stops there); above 1 the composite pass amplifies the matching part
+    // of the change the network made (see the tooltips).
+    ch |= SliderReset(TR(Intensity), &s.nrIntensity, 0.0f, 2.0f, 1.0f, "%.2f", TR(TipIntensity));
+    ch |= SliderReset(TR(GlobalTone), &s.nrGlobalTone, 0.0f, 2.0f, 1.0f, "%.2f", TR(TipGlobalTone));
+    ch |= SliderReset(TR(LocalTone), &s.nrLocalTone, 0.0f, 2.0f, 1.0f, "%.2f", TR(TipLocalTone));
+    ch |= SliderReset(TR(LocalStructure), &s.nrLocalStructure, 0.0f, 2.0f, 1.0f, "%.2f", TR(TipLocalStructure));
     {
         bool useDefault = s.nrSkinStructure < 0.0f;
         ImGui::PushID("skin");
         if (ImGui::Checkbox(TR(UseDefault), &useDefault)) { s.nrSkinStructure = useDefault ? -1.0f : 1.0f; ch = true; }
         ImGui::SameLine();
         ImGui::TextDisabled("(%s)", TR(SkinStructure));
-        if (!useDefault) ch |= SliderReset(TR(SkinStructure), &s.nrSkinStructure, 0.0f, 1.0f, 1.0f, "%.2f", TR(TipSkinStructure));
+        if (!useDefault) ch |= SliderReset(TR(SkinStructure), &s.nrSkinStructure, 0.0f, 2.0f, 1.0f, "%.2f", TR(TipSkinStructure));
         else if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip)) ImGui::SetTooltip("%s", TR(TipSkinStructure));
         ImGui::PopID();
     }
@@ -380,8 +434,8 @@ void MainUI::SectionNeural(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         ev.nrChanged = true; ev.settingsChanged = true;
     }
     if (st) {
-        ImGui::TextDisabled("%s: %s   %s: %llu", TR(GpuTime), FormatMs(st->gpuMs[(UINT)GpuTimer::Neural]).c_str(),
-                            TR(Frames), (unsigned long long)st->processedFrames);
+        ImGui::TextDisabled("%s: %s   %s: %llu", TR(GpuTime), FormatMs(m_shown.gpuMs[(UINT)GpuTimer::Neural]).c_str(),
+                            TR(Frames), m_shown.processedFrames);
     }
     ImGui::Spacing();
 }
@@ -472,11 +526,10 @@ void MainUI::SectionGuidance(Settings& s, const UiFrameInfo& info, UiEvents& ev)
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip)) ImGui::SetTooltip("%s", TR(TipCutThreshold));
     }
     if (st) {
-        ImGui::TextDisabled("%s: %.3f (max %.3f)   |mv| %.2f px", TR(FrameCost), st->statAvgCost, st->statMaxCost, st->statAvgMotion);
-        ImGui::TextDisabled("%s: %llu", TR(Resets), (unsigned long long)st->resets);
-        if (info.status)
-            ImGui::TextDisabled("%s: %s / %s: %s", TR(TmGuidance), FormatMs(info.status->gpuMs[(UINT)GpuTimer::Guidance]).c_str(),
-                                TR(TmOpticalFlow), FormatMs(info.status->gpuMs[(UINT)GpuTimer::OpticalFlow]).c_str());
+        ImGui::TextDisabled("%s: %.3f (max %.3f)   |mv| %.2f px", TR(FrameCost), m_shown.statAvgCost, m_shown.statMaxCost, m_shown.statAvgMotion);
+        ImGui::TextDisabled("%s: %llu", TR(Resets), m_shown.resets);
+        ImGui::TextDisabled("%s: %s / %s: %s", TR(TmGuidance), FormatMs(m_shown.gpuMs[(UINT)GpuTimer::Guidance]).c_str(),
+                            TR(TmOpticalFlow), FormatMs(m_shown.gpuMs[(UINT)GpuTimer::OpticalFlow]).c_str());
     }
     ImGui::Spacing();
 }
@@ -509,7 +562,7 @@ void MainUI::SectionDlaa(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         if (ComboIds(TR(DlaaPreset), &s.dlaaPreset, presets, 16, TR(TipDlaaPreset))) { ev.dlaaChanged = true; ev.settingsChanged = true; }
         ImGui::EndDisabled();
     }
-    if (info.status) ImGui::TextDisabled("%s: %s", TR(GpuTime), FormatMs(info.status->gpuMs[(UINT)GpuTimer::Dlaa]).c_str());
+    if (info.status) ImGui::TextDisabled("%s: %s", TR(GpuTime), FormatMs(m_shown.gpuMs[(UINT)GpuTimer::Dlaa]).c_str());
     ImGui::Spacing();
 }
 
@@ -607,18 +660,25 @@ void MainUI::SectionDisplay(Settings& s, const UiFrameInfo& info, UiEvents& ev) 
             { GpuTimer::Convert, TR(TmConvert) }, { GpuTimer::Guidance, TR(TmGuidance) }, { GpuTimer::OpticalFlow, TR(TmOpticalFlow) },
             { GpuTimer::Dlaa, TR(TmDlaa) }, { GpuTimer::Neural, TR(TmNeural) }, { GpuTimer::Composite, TR(TmComposite) },
         };
-        if (ImGui::BeginTable("timers", 2, ImGuiTableFlags_SizingStretchProp)) {
-            for (const auto& t : timers) {
+        // Fixed-width value column in the monospace font: the table must not re-flow when a figure changes width.
+        ImFont* mono = m_fonts ? m_fonts->Mono() : nullptr;
+        ImGui::PushFont(mono, 0.0f);
+        const float valueW = ImGui::CalcTextSize("0000.00 ms").x + ImGui::GetStyle().CellPadding.x * 2.0f;
+        ImGui::PopFont();
+        if (ImGui::BeginTable("timers", 2)) {
+            ImGui::TableSetupColumn("##name", ImGuiTableColumnFlags_WidthStretch);
+            ImGui::TableSetupColumn("##value", ImGuiTableColumnFlags_WidthFixed, valueW);
+            auto row = [&](const char* name, double ms) {
                 ImGui::TableNextRow();
-                ImGui::TableNextColumn(); ImGui::TextDisabled("%s", t.name);
-                ImGui::TableNextColumn(); ImGui::Text("%s", FormatMs(info.status->gpuMs[(UINT)t.t]).c_str());
-            }
-            ImGui::TableNextRow();
-            ImGui::TableNextColumn(); ImGui::TextDisabled("%s", TR(TmUi));
-            ImGui::TableNextColumn(); ImGui::Text("%s", FormatMs(info.uiGpuMs).c_str());
-            ImGui::TableNextRow();
-            ImGui::TableNextColumn(); ImGui::TextDisabled("%s CPU", TR(UiFps));
-            ImGui::TableNextColumn(); ImGui::Text("%s", FormatMs(info.cpuMs).c_str());
+                ImGui::TableNextColumn(); ImGui::TextDisabled("%s", name);
+                ImGui::TableNextColumn();
+                ImGui::PushFont(mono, 0.0f);
+                ImGui::TextUnformatted(FormatMsFixed(ms).c_str());
+                ImGui::PopFont();
+            };
+            for (const auto& t : timers) row(t.name, m_shown.gpuMs[(UINT)t.t]);
+            row(TR(TmUi), m_shown.uiGpuMs);
+            row(StrPrintf("%s CPU", TR(UiFps)).c_str(), m_shown.cpuMs);
             ImGui::EndTable();
         }
     }
@@ -762,9 +822,9 @@ void MainUI::DrawPreview(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
         lines[2] = StrPrintf("%s: %s   %s: %s%s%s", TR(MotionSource), motion, TR(DepthSource), depth, st.dlaaActive ? "  +DLAA" : "",
                              st.sceneCut ? StrPrintf("  [%s]", TR(SceneCut)).c_str() : "");
         lines[3] = (s.sourceMode == SourceImage)
-            ? StrPrintf("GPU %s   %s %.0f %s   %s", FormatMs(st.gpuMs[(UINT)GpuTimer::Frame]).c_str(), TR(UiFps), info.fps, TR(Fps), info.imageName.c_str())
-            : StrPrintf("GPU %s   %s %.0f %s   %s %.0f %s   %s %.0f %s", FormatMs(st.gpuMs[(UINT)GpuTimer::Frame]).c_str(),
-                        TR(ProcessingFps), info.processingFps, TR(Fps), TR(UiFps), info.fps, TR(Fps), TR(SenderFps), info.senderFps, TR(Fps));
+            ? StrPrintf("GPU %s   %s %3.0f %s   %s", FormatMsFixed(m_shown.gpuMs[(UINT)GpuTimer::Frame]).c_str(), TR(UiFps), m_shown.fps, TR(Fps), info.imageName.c_str())
+            : StrPrintf("GPU %s   %s %3.0f %s   %s %3.0f %s   %s %3.0f %s", FormatMsFixed(m_shown.gpuMs[(UINT)GpuTimer::Frame]).c_str(),
+                        TR(ProcessingFps), m_shown.processingFps, TR(Fps), TR(UiFps), m_shown.fps, TR(Fps), TR(SenderFps), m_shown.senderFps, TR(Fps));
         ImGui::PushFont(fonts.Mono(), ImGui::GetStyle().FontSizeBase * 0.92f);
         float w = 0.0f;
         for (auto& l : lines) w = std::max(w, ImGui::CalcTextSize(l.c_str()).x);
@@ -791,25 +851,28 @@ void MainUI::DrawPreview(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
 
 void MainUI::DrawStatusBar(Settings& s, const UiFrameInfo& info, UiEvents& /*ev*/, const Fonts& fonts) {
     const Palette& p = Colors();
-    ImGui::BeginChild("##status", ImVec2(0, 0), ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar);
+    ImGui::BeginChild("##status", ImVec2(0, 0), ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+    ImGui::SetScrollX(0.0f);
     ImGui::SetCursorPosY(ImGui::GetStyle().ItemSpacing.y);
+    // Monospace, padded figures throughout: nothing here may shift when a number changes.
+    ImGui::PushFont(fonts.Mono(), 0.0f);
     if (s.sourceMode == SourceImage) {
         if (info.imageLoaded) StatusDot(p.good, StrPrintf("%s  %ux%u", info.imageName.c_str(), info.imageWidth, info.imageHeight).c_str());
         else StatusDot(p.muted, TR(NoImage));
     } else if (info.sourceConnected && info.status) {
-        StatusDot(p.good, StrPrintf("%s  %ux%u @ %.0f", info.senderName.c_str(), info.status->srcWidth, info.status->srcHeight, info.senderFps).c_str());
+        StatusDot(p.good, StrPrintf("%s  %ux%u @ %3.0f", info.senderName.c_str(), info.status->srcWidth, info.status->srcHeight, m_shown.senderFps).c_str());
     } else {
         StatusDot(p.muted, TR(StatusWaiting));
     }
     if (info.status) {
-        const PipelineStatus& st = *info.status;
         ImGui::SameLine(0.0f, 24.0f);
-        ImGui::PushFont(fonts.Mono(), 0.0f);
-        ImGui::TextDisabled("%s %s | %s %s | %s %s | %s %s", TR(TmGuidance), FormatMs(st.gpuMs[(UINT)GpuTimer::Guidance] + st.gpuMs[(UINT)GpuTimer::OpticalFlow]).c_str(),
-                            TR(TmNeural), FormatMs(st.gpuMs[(UINT)GpuTimer::Neural]).c_str(), TR(TmComposite), FormatMs(st.gpuMs[(UINT)GpuTimer::Composite]).c_str(),
-                            TR(TmUi), FormatMs(info.uiGpuMs).c_str());
-        ImGui::PopFont();
+        ImGui::TextDisabled("%s %s | %s %s | %s %s | %s %s", TR(TmGuidance),
+                            FormatMsFixed(m_shown.gpuMs[(UINT)GpuTimer::Guidance] + m_shown.gpuMs[(UINT)GpuTimer::OpticalFlow]).c_str(),
+                            TR(TmNeural), FormatMsFixed(m_shown.gpuMs[(UINT)GpuTimer::Neural]).c_str(),
+                            TR(TmComposite), FormatMsFixed(m_shown.gpuMs[(UINT)GpuTimer::Composite]).c_str(),
+                            TR(TmUi), FormatMsFixed(m_shown.uiGpuMs).c_str());
     }
+    ImGui::PopFont();
     if (!info.lastCapture.empty()) {
         const std::string text = StrPrintf("%s: %s", TR(LastCapture), info.lastCapture.c_str());
         const float w = ImGui::CalcTextSize(text.c_str()).x;

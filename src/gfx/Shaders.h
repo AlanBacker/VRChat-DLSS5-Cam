@@ -4,7 +4,7 @@
 
 namespace vdc {
 
-enum class ShaderId : UINT { Convert = 0, Downsample, BlockMatch, MedianMv, Densify, Stats, Composite, DepthPre, DepthPost, Expose, Count };
+enum class ShaderId : UINT { Convert = 0, Downsample, BlockMatch, MedianMv, Densify, Stats, Composite, DepthPre, DepthPost, Expose, ToneHist, ToneResolve, ToneResidual, ToneBlur, Count };
 
 // Mirrors cbuffer Constants in the HLSL (32 DWORDs of root constants).
 struct alignas(16) ShaderConstants {
@@ -22,7 +22,7 @@ static_assert(sizeof(ShaderConstants) == 32 * 4, "root constant size");
 struct DispatchDesc {
     ShaderId                    id = ShaderId::Convert;
     ShaderConstants             constants;
-    D3D12_CPU_DESCRIPTOR_HANDLE srv[8]{};
+    D3D12_CPU_DESCRIPTOR_HANDLE srv[12]{};
     D3D12_CPU_DESCRIPTOR_HANDLE uav[4]{};
     UINT                        groupsX = 1, groupsY = 1, groupsZ = 1;
 };
