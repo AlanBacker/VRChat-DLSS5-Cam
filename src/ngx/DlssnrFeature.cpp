@@ -141,6 +141,7 @@ struct CreateValues { unsigned inW, inH, outW, outH; int preset; };
 bool SafeSetCreateParams(NVSDK_NGX_Parameter* p, const CreateValues* v, unsigned long* seh) noexcept {
     *seh = 0;
     VDC_SEH_TRY {
+        p->Reset();   // a recycled parameter object must not carry a previous instance's entries
         const bool upscaling = v->inW != v->outW || v->inH != v->outH;
         p->Set("DLSSNR.Width", v->inW);
         p->Set("DLSSNR.Height", v->inH);

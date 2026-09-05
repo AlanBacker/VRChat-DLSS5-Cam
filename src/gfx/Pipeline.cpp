@@ -20,6 +20,7 @@ constexpr float kDepthRangeSmoothing = 0.3f;  // EMA of the P02/P98 normalisatio
 constexpr float kSceneCutRatio = 2.5f;        // cost must exceed this multiple of its running average
 constexpr int   kNeuralWarmupFrames = 16;     // capture-only mode: fresh frames the neural pass sees before the capture
 constexpr double kNeuralWarmupTimeout = 3.0;  // ... and the longest wait for them (source stalled) in seconds
+constexpr UINT  kNeuralCheckGridW = 480, kNeuralCheckGridH = 270;   // sample grid of the neural output check
 
 // The 310.8 runtime build only carries code for RTX 50 (Blackwell): name the likely cause on older cards.
 void LogRuntimeGenerationHint(const GpuContext& gpu, const std::string& runtimeVersion) {
@@ -273,7 +274,7 @@ bool Pipeline::Rebuild(GpuContext& gpu, const Config& cfg) {
         m_statsUav = gpu.Dev().AllocStaging();
         D3D12_UNORDERED_ACCESS_VIEW_DESC ud{};
         ud.Format = DXGI_FORMAT_UNKNOWN; ud.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
-        ud.Buffer.NumElements = 4; ud.Buffer.StructureByteStride = 4;
+        ud.Buffer.NumElements = 8; ud.Buffer.StructureByteStride = 4;
         dev->CreateUnorderedAccessView(m_statsBuf.Get(), nullptr, &ud, m_statsUav);
         heap.Type = D3D12_HEAP_TYPE_READBACK;
         bd.Flags = D3D12_RESOURCE_FLAG_NONE;
@@ -670,12 +671,50 @@ void Pipeline::RunStats(GpuContext& gpu, ID3D12GraphicsCommandList* cmd) {
     d.srv[1] = m_bm[2].srv;
     d.uav[0] = m_statsUav;
     m_shaders.Dispatch(cmd, gpu, d);
+    m_statsGuidanceThisFrame = true;
+}
+
+void Pipeline::RunNeuralCheck(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, Tex& input) {
+    // Sparse comparison of the neural output with the picture the pass saw. A runtime that reports success but
+    // delivers a black or unchanged picture (seen with modified runtime builds) is invisible to every result code;
+    // this catches it, and the numbers feed the "Output change" readout.
+    Transition(cmd, m_nrOut, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    Transition(cmd, input, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    Device::UavBarrier(cmd, m_statsBuf.Get());
+    DispatchDesc d;
+    d.id = ShaderId::NeuralCheck;
+    d.constants.srcWidth = kNeuralCheckGridW; d.constants.srcHeight = kNeuralCheckGridH;
+    d.srv[0] = m_nrOut.srv;
+    d.srv[1] = input.srv;
+    d.uav[0] = m_statsUav;
+    m_shaders.Dispatch(cmd, gpu, d);
+    m_statsNeuralThisFrame = true;
+}
+
+void Pipeline::CopyStats(GpuContext& gpu, ID3D12GraphicsCommandList* cmd) {
+    if (!m_statsGuidanceThisFrame && !m_statsNeuralThisFrame) return;
     const UINT slot = gpu.FrameIndex();
     Device::Barrier(cmd, m_statsBuf.Get(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_SOURCE);
-    cmd->CopyBufferRegion(m_statsReadback[slot].Get(), 0, m_statsBuf.Get(), 0, 16);
+    cmd->CopyBufferRegion(m_statsReadback[slot].Get(), 0, m_statsBuf.Get(), 0, 32);
     Device::Barrier(cmd, m_statsBuf.Get(), D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
     m_statsPending[slot] = true;
     m_statsFence[slot] = 0;
+    m_statsHasGuidance[slot] = m_statsGuidanceThisFrame;
+    m_statsHasNeural[slot] = m_statsNeuralThisFrame;
+    m_statsGuidanceThisFrame = false;
+    m_statsNeuralThisFrame = false;
+}
+
+void Pipeline::UpdateNeuralCheck(float delta, float outLuma, float inLuma) {
+    m_nrOutDelta = delta; m_nrOutLuma = outLuma; m_nrInLuma = inLuma;
+    int state = 1;
+    if (outLuma < 0.002f && inLuma > 0.02f) state = 2;                  // black picture out of a lit one
+    else if (delta < 0.0005f && m_nrMaxStrength > 0.05f) state = 3;     // nothing changed although strengths are set
+    if (state == m_nrOutState) return;
+    m_nrOutState = state;
+    const char* verdict = state == 2 ? "output is black" : state == 3 ? "output equals the input (no effect)" : "ok";
+    if (state == 1) Log::Info("DLSSNR output check: mean |output - input| %.4f, output luma %.3f, input luma %.3f: %s", delta, outLuma, inLuma, verdict);
+    else Log::Warn("DLSSNR output check: mean |output - input| %.4f, output luma %.3f, input luma %.3f: %s", delta, outLuma, inLuma, verdict);
 }
 
 void Pipeline::ReadStats(GpuContext& gpu) {
@@ -686,14 +725,15 @@ void Pipeline::ReadStats(GpuContext& gpu) {
         if (m_statsFence[i] > bestFence) { bestFence = m_statsFence[i]; best = (int)i; }
     }
     if (best < 0) return;
-    float v[4] = {};
-    D3D12_RANGE range{ 0, 16 };
+    float v[8] = {};
+    D3D12_RANGE range{ 0, 32 };
     void* p = nullptr;
     if (SUCCEEDED(m_statsReadback[best]->Map(0, &range, &p)) && p) {
         std::memcpy(v, p, sizeof(v));
         D3D12_RANGE none{ 0, 0 };
         m_statsReadback[best]->Unmap(0, &none);
-        m_statAvgCost = v[0]; m_statMaxCost = v[1]; m_statAvgMotion = v[2];
+        if (m_statsHasGuidance[best]) { m_statAvgCost = v[0]; m_statMaxCost = v[1]; m_statAvgMotion = v[2]; }
+        if (m_statsHasNeural[best]) UpdateNeuralCheck(v[4], v[5], v[6]);
     }
     for (UINT i = 0; i < GpuContext::kFramesInFlight; ++i)
         if (m_statsPending[i] && m_statsFence[i] && m_statsFence[i] <= bestFence) m_statsPending[i] = false;
@@ -851,8 +891,10 @@ bool Pipeline::RunNeural(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const 
         }
         m_nrCreatedUseCore = useCore;
         m_nrCreatedPreset = s.nrPreset;
+        m_nrOutState = 0; m_nrOutDelta = -1.0f;   // the output check reports again for the new instance
         reset = true;
     }
+    if (m_nrSkipped) { reset = true; m_nrSkipped = false; }   // frames went by without the pass: its history is stale
     gpu.TimerBegin(cmd, GpuTimer::Neural);
     Transition(cmd, input, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
     Transition(cmd, m_mv, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
@@ -868,6 +910,7 @@ bool Pipeline::RunNeural(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const 
     p.localTone = std::min(s.nrLocalTone, 1.0f); p.localStructure = std::min(s.nrLocalStructure, 1.0f);
     p.skinStructure = s.nrSkinStructure < 0.0f ? -1.0f : std::min(s.nrSkinStructure, 1.0f);
     p.autoMask = s.nrAutoMask; p.uiCorrection = s.nrUiCorrection;
+    m_nrMaxStrength = std::max({ p.intensity, p.globalTone, p.localTone, p.localStructure, p.skinStructure < 0.0f ? 1.0f : p.skinStructure });
     std::string err;
     const bool ok = m_nr.Evaluate(cmd, in, p, err);
     gpu.TimerEnd(cmd, GpuTimer::Neural);
@@ -1094,7 +1137,6 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
 
         ReadStats(gpu);
         bool reset = m_resetRequested || !m_haveHistory;
-        const bool burstStart = captureOnly && m_nrBurst == kNeuralWarmupFrames;   // the neural history is stale between bursts
         bool sceneCut = false;
         if (m_haveHistory && m_lastWasBlockMode) {
             // A cut is a sudden jump of the matching cost, not merely a high value: fast camera motion also raises the
@@ -1159,9 +1201,12 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
         if (nrWanted) {
             neuralBase = processed;
             neuralIn = &PrepareNeuralInput(gpu, cmd, s, *processed);
-            nrOk = RunNeural(gpu, cmd, s, *neuralIn, reset || burstStart);
-            if (nrOk) processed = &m_nrOut;
+            nrOk = RunNeural(gpu, cmd, s, *neuralIn, reset);
+            if (nrOk) { processed = &m_nrOut; RunNeuralCheck(gpu, cmd, *neuralIn); }
+        } else if (m_nr.Created()) {
+            m_nrSkipped = true;   // switch off or between capture bursts: the history is stale when the pass resumes
         }
+        CopyStats(gpu, cmd);
         if (captureOnly && m_nrBurst > 0 && nrOk && --m_nrBurst == 0 && m_captureArmed) { m_captureArmed = false; captureNow = true; }
         m_haveHistory = true;
         m_cur = 1 - m_cur;
@@ -1183,7 +1228,9 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
         }
     }
     if (!nrWanted) { m_nrDirty = false; }
-    if (!s.nrEnabled && m_nr.Created()) { gpu.WaitIdle(); m_nr.Release(m_ngx); m_nrCreatedPreset = -1; }   // kept alive between bursts
+    // The neural feature stays created while the switch is off: re-creating it stalls the pipeline and, with some
+    // runtime builds, the re-created instance silently produces no picture. Size, preset and route changes still
+    // re-create it (RunNeural); shutdown releases it.
     if (!dlaaWanted && m_dlaa.Created()) { gpu.WaitIdle(); m_dlaa.Release(m_ngx); m_dlaaCreatedPreset = -1; }
 
     RunComposite(gpu, cmd, s, *processed, nrOk ? neuralBase : nullptr, nrOk ? neuralIn : nullptr, processed == &m_color8);
@@ -1214,6 +1261,7 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
     m_status.nrFailed = m_nrFailed;
     m_status.nrError = m_nrError;
     m_status.nrEvaluations = m_nr.EvaluateCount();
+    m_status.nrOutDelta = m_nrOutDelta; m_status.nrOutLuma = m_nrOutLuma; m_status.nrInLuma = m_nrInLuma; m_status.nrOutState = m_nrOutState;
     m_status.dlaaActive = dlaaOk;
     m_status.dlaaFailed = m_dlaaFailed;
     m_status.dlaaError = m_dlaaError;

@@ -664,6 +664,49 @@ void main(uint3 id : SV_DispatchThreadID) {
 }
 )HLSL";
 
+// ---------------------------------------------------------------------------
+// NeuralCheck: compares the neural output with the picture the pass saw on a SrcWidth x SrcHeight sample grid
+// (resolution independent). A runtime that reports success but delivers a black or unchanged picture shows up here.
+// Out[4] = mean |output - input| (largest channel), Out[5] = mean output luma, Out[6] = mean input luma.
+
+const char* kNeuralCheck = R"HLSL(
+Texture2D<float4>         NeuralOut : register(t0);
+Texture2D<float4>         NeuralIn  : register(t1);
+RWStructuredBuffer<float> Out       : register(u0);
+
+groupshared float sDiff[256];
+groupshared float sOut[256];
+groupshared float sIn[256];
+
+[numthreads(256, 1, 1)]
+void main(uint tid : SV_GroupIndex) {
+    uint n = SrcWidth * SrcHeight;
+    float diff = 0, yo = 0, yi = 0;
+    [loop] for (uint i = tid; i < n; i += 256) {
+        float2 uv = (float2(i % SrcWidth, i / SrcWidth) + 0.5) / float2(SrcWidth, SrcHeight);
+        float3 o = NeuralOut.SampleLevel(PointClamp, uv, 0).rgb;
+        float3 c = NeuralIn.SampleLevel(PointClamp, uv, 0).rgb;
+        float3 d = abs(o - c);
+        diff += max(d.r, max(d.g, d.b));
+        yo += dot(o, float3(0.2126, 0.7152, 0.0722));
+        yi += dot(c, float3(0.2126, 0.7152, 0.0722));
+    }
+    sDiff[tid] = diff; sOut[tid] = yo; sIn[tid] = yi;
+    GroupMemoryBarrierWithGroupSync();
+    [unroll] for (uint s = 128; s > 0; s >>= 1) {
+        if (tid < s) { sDiff[tid] += sDiff[tid + s]; sOut[tid] += sOut[tid + s]; sIn[tid] += sIn[tid + s]; }
+        GroupMemoryBarrierWithGroupSync();
+    }
+    if (tid == 0) {
+        float inv = 1.0 / max(float(n), 1.0);
+        Out[4] = sDiff[0] * inv;
+        Out[5] = sOut[0] * inv;
+        Out[6] = sIn[0] * inv;
+        Out[7] = float(n);
+    }
+}
+)HLSL";
+
 struct ShaderSource { ShaderId id; const char* name; const char* body; };
 const ShaderSource kSources[] = {
     { ShaderId::Convert,    "Convert",    kConvert },
@@ -676,6 +719,7 @@ const ShaderSource kSources[] = {
     { ShaderId::DepthPre,   "DepthPre",   kDepthPre },
     { ShaderId::DepthPost,  "DepthPost",  kDepthPost },
     { ShaderId::Expose,     "Expose",     kExpose },
+    { ShaderId::NeuralCheck, "NeuralCheck", kNeuralCheck },
 };
 
 } // namespace

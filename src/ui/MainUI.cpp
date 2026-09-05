@@ -86,6 +86,7 @@ void MainUI::UpdateShown(const UiFrameInfo& info) {
         m_shown.processedFrames = (unsigned long long)info.status->processedFrames;
         m_shown.resets = (unsigned long long)info.status->resets;
         m_shown.depthMs = info.status->depthInferMs;
+        m_shown.nrOutDelta = info.status->nrOutDelta;
     }
 }
 
@@ -397,6 +398,12 @@ void MainUI::SectionNeural(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
             ImGui::PopStyleColor();
         }
     }
+    if (st && st->nrActive && (st->nrOutState == 2 || st->nrOutState == 3)) {
+        // The runtime reports success but the output check found a black or unchanged picture.
+        ImGui::PushStyleColor(ImGuiCol_Text, p.bad);
+        ImGui::TextWrapped("%s", I18n::T(st->nrOutState == 2 ? Str::NrOutBlack : Str::NrOutSame));
+        ImGui::PopStyleColor();
+    }
     {
         SyncBuffer(m_runtimeBuf, sizeof(m_runtimeBuf), s.nrDllPath, m_runtimeEditing);
         const float btnW = ImGui::GetFrameHeight() * 1.6f;
@@ -471,6 +478,8 @@ void MainUI::SectionNeural(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
     if (st) {
         Readout(m_fonts, TR(GpuTime), FormatMsFixed(m_shown.gpuMs[(UINT)GpuTimer::Neural]));
         Readout(m_fonts, TR(Frames), StrPrintf("%llu", m_shown.processedFrames));
+        Readout(m_fonts, TR(NrOutputCheck), st->nrActive && m_shown.nrOutDelta >= 0.0f ? StrPrintf("%5.3f", m_shown.nrOutDelta) : std::string("    -"));
+        Help(TR(TipNrOutputCheck));
     }
     ImGui::Spacing();
 }

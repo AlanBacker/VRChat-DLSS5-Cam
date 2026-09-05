@@ -97,6 +97,7 @@ private:
         double gpuMs[(UINT)GpuTimer::Count] = {};
         double fps = 0.0, cpuMs = 0.0, uiGpuMs = 0.0, processingFps = 0.0, senderFps = 0.0, depthMs = 0.0;
         float  statAvgCost = 0.0f, statMaxCost = 0.0f, statAvgMotion = 0.0f;
+        float  nrOutDelta = -1.0f;
         unsigned long long processedFrames = 0, resets = 0;
     };
     void UpdateShown(const UiFrameInfo& info);

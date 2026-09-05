@@ -33,6 +33,9 @@ struct PipelineStatus {
     bool        nrFailed = false;
     std::string nrError;
     UINT64      nrEvaluations = 0;
+    float       nrOutDelta = -1.0f;             // output check: mean |output - input| on a sample grid (-1 = no result yet)
+    float       nrOutLuma = 0.0f, nrInLuma = 0.0f;
+    int         nrOutState = 0;                 // 0 unknown, 1 ok, 2 output black, 3 output equals the input
     bool        nrUpscaling = false;
     bool        dlaaActive = false;
     bool        dlaaFailed = false;
@@ -160,6 +163,9 @@ private:
     void RunDensify(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const Settings& s, int mode);
     void RunStats(GpuContext& gpu, ID3D12GraphicsCommandList* cmd);
     void ReadStats(GpuContext& gpu);
+    void RunNeuralCheck(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, Tex& input);   // neural output vs its input -> stats
+    void CopyStats(GpuContext& gpu, ID3D12GraphicsCommandList* cmd);                    // stats buffer -> this frame's readback
+    void UpdateNeuralCheck(float delta, float outLuma, float inLuma);
     void RunDepthCapture(GpuContext& gpu, ID3D12GraphicsCommandList*& cmd);      // colour -> network input -> CPU readback
     bool RunDepthApply(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, bool reset);   // network output -> m_depth (temporally filtered)
     bool RunDlaa(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const Settings& s, bool reset);
@@ -201,6 +207,9 @@ private:
     ComPtr<ID3D12Resource>      m_statsReadback[GpuContext::kFramesInFlight];
     UINT64                      m_statsFence[GpuContext::kFramesInFlight] = {};
     bool                        m_statsPending[GpuContext::kFramesInFlight] = {};
+    bool                        m_statsHasGuidance[GpuContext::kFramesInFlight] = {};   // which numbers each readback carries
+    bool                        m_statsHasNeural[GpuContext::kFramesInFlight] = {};
+    bool                        m_statsGuidanceThisFrame = false, m_statsNeuralThisFrame = false;
 
     // Preview hand-off: the composite pass writes one of the display buffers on the processing queue, the UI thread
     // samples the newest *finished* one from the present queue. Every submitted composite stays listed until the UI
@@ -273,6 +282,10 @@ private:
     double m_lastFreshTime = 0.0;
     double m_frameIntervalMs = 16.7;
     float  m_statAvgCost = 0.0f, m_statMaxCost = 0.0f, m_statAvgMotion = 0.0f;
+    float  m_nrOutDelta = -1.0f, m_nrOutLuma = 0.0f, m_nrInLuma = 0.0f;   // neural output check (see RunNeuralCheck)
+    int    m_nrOutState = 0;
+    float  m_nrMaxStrength = 1.0f;    // highest strength handed to the runtime on the last evaluate
+    bool   m_nrSkipped = false;       // fresh frames went by without the neural pass: reset its history next time
     float  m_costEma = 0.0f;          // running average of the matching cost (scene-cut reference)
     bool   m_lastWasBlockMode = false;
 
