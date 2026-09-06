@@ -145,13 +145,14 @@ bool DepthEstimator::Idle() const {
 }
 
 bool DepthEstimator::WaitIdle(double maxSeconds) const {
-    if (!Ready()) return true;
     const double deadline = NowSeconds() + maxSeconds;
-    while (!Idle()) {
+    for (;;) {
+        const DepthEstimatorState st = State();
+        if (st == DepthEstimatorState::Unavailable || st == DepthEstimatorState::Failed) return true;
+        if (st == DepthEstimatorState::Ready && Idle()) return true;   // Initializing: session build and warm-up
         if (NowSeconds() >= deadline) return false;
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
-    return true;
 }
 
 void DepthEstimator::Start(Device& device, const std::wstring& exeDir, const std::wstring& modelPath, UINT inferWidth, UINT inferHeight) {
@@ -199,6 +200,7 @@ void DepthEstimator::Stop() {
         m_resultReady = false;
     }
     m_state.store(DepthEstimatorState::Unavailable, std::memory_order_release);
+    m_modelPath.clear(); m_w = m_h = 0;   // see Matches()
 }
 
 bool DepthEstimator::Submit(const float* values, size_t count) {

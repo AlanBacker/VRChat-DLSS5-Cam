@@ -228,11 +228,10 @@ bool Pipeline::CreateDepthResources(GpuContext& gpu, const Config& cfg) {
     m_depthInState = D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
     m_depthRawState = D3D12_RESOURCE_STATE_COPY_DEST;
     m_depthModelExists = FileExists(cfg.depthModel);
-    // The worker survives resource rebuilds as long as the model and the network resolution stay the same.
-    if (m_depthRestart || !m_depthEst.Matches(cfg.depthModel, m_depthInferW, m_depthInferH)) {
-        m_depthRestart = false;
-        m_depthEst.Start(gpu.Dev(), m_exeDir, cfg.depthModel, m_depthInferW, m_depthInferH);
-    }
+    // The worker survives resource rebuilds as long as the model and the network resolution stay the same; a stopped
+    // worker (depth mode was switched away) matches nothing. The start itself happens in Render, once no creation of
+    // a neural feature is in flight: the warm-up inference must not overlap it either.
+    if (!m_depthEst.Matches(cfg.depthModel, m_depthInferW, m_depthInferH)) m_depthRestart = true;
     return true;
 }
 
@@ -1173,7 +1172,7 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
     m_status.nvofSinglePass = m_nvofReady && m_nvof.SinglePassBidirectional();
     m_status.nvofGrid = m_nvofReady ? m_nvof.Grid() : 0;
     m_status.nvofError = m_nvofError;
-    m_status.depthState = (int)m_depthEst.State();
+    m_status.depthState = (int)((m_depthRestart && m_depthInBuf) ? DepthEstimatorState::Initializing : m_depthEst.State());
     m_status.depthMessage = m_depthEst.Message();
     m_status.depthBackend = m_depthEst.Backend();
     m_status.depthInferW = m_depthInferW; m_status.depthInferH = m_depthInferH;
@@ -1183,12 +1182,6 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
     m_status.depthAgeMs = m_depthLastResultTime > 0.0 ? (NowSeconds() - m_depthLastResultTime) * 1000.0 : 0.0;
     m_status.depthModelPath = m_cfg.depthModel;
     m_status.depthModelExists = m_depthModelExists;
-    if (m_depthRestart && m_depthInBuf) {
-        m_depthRestart = false;
-        m_depthEst.Start(gpu.Dev(), m_exeDir, m_cfg.depthModel, m_depthInferW, m_depthInferH);
-        m_depthModelExists = FileExists(m_cfg.depthModel);
-        m_depthHaveRaw = false; m_depthHistValid = false; m_depthStillCaptured = false;
-    }
     if (!src.hasFrame) { m_hasDisplay = false; return; }
 
     Tex* processed = &m_color8;
@@ -1265,9 +1258,16 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
         // good, which is what a resolution change with the estimator active used to do.
         const bool depthWanted = s.depthMode == DepthEstimated && m_depthInBuf;
         const bool featureCreating = FeatureCreatesThisFrame(s, nrWanted, nrInW, nrInH, nrOutW, nrOutH, dlaaWanted);
-        if (depthWanted && featureCreating && !m_depthEst.WaitIdle(0.5))
+        if (depthWanted && featureCreating && !m_depthEst.WaitIdle(2.0))
             Log::Warn("Depth estimator still busy while a neural feature is created");
         const bool featureSettling = featureCreating || !gpu.IsFenceComplete(m_featureCreateFence);
+        // A pending (re)start of the depth network worker waits for the same thing (its warm-up inference).
+        if (m_depthRestart && m_depthInBuf && !featureSettling) {
+            m_depthRestart = false;
+            m_depthEst.Start(gpu.Dev(), m_exeDir, m_cfg.depthModel, m_depthInferW, m_depthInferH);
+            m_depthModelExists = FileExists(m_cfg.depthModel);
+            m_depthHaveRaw = false; m_depthHistValid = false; m_depthStillCaptured = false;
+        }
         if (depthWanted) {
             ++m_depthFramesSinceCapture;
             // Live input refreshes the estimate every depthInterval frames. A still picture needs exactly one: the

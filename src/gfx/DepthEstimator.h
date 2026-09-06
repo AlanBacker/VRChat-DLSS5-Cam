@@ -38,14 +38,15 @@ public:
     // loads ONNX Runtime, creates the DirectML session on the app's D3D12 device and runs a warm-up inference.
     void Start(Device& device, const std::wstring& exeDir, const std::wstring& modelPath, UINT inferWidth, UINT inferHeight);
     void Stop();
+    // False after Stop(): a stopped worker matches nothing, so the next start request is not skipped.
     bool Matches(const std::wstring& modelPath, UINT inferWidth, UINT inferHeight) const {
-        return m_modelPath == modelPath && m_w == inferWidth && m_h == inferHeight;
+        return !m_modelPath.empty() && m_modelPath == modelPath && m_w == inferWidth && m_h == inferHeight;
     }
 
     DepthEstimatorState State() const { return m_state.load(std::memory_order_acquire); }
     bool Ready() const { return State() == DepthEstimatorState::Ready; }
     bool Idle() const;                  // ready and no inference queued or running
-    bool WaitIdle(double maxSeconds) const;   // blocks until Idle() (bounded); true when idle, also when not ready
+    bool WaitIdle(double maxSeconds) const;   // blocks (bounded) until no inference or warm-up runs; true when so
     std::string Message() const;        // failure reason or backend description
     std::string Backend() const;        // "DirectML" / "CPU"
     UINT   InferWidth() const { return m_w; }
