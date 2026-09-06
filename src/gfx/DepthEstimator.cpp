@@ -6,6 +6,8 @@
 #include <cmath>
 #include <cstring>
 #include <mutex>
+#include <chrono>
+#include <thread>
 
 // ONNX Runtime headers come from the NuGet package fetched at configure time (cmake/FetchOnnxRuntime.cmake);
 // the DLL itself is loaded dynamically so the app still starts when it is missing.
@@ -140,6 +142,16 @@ bool DepthEstimator::Idle() const {
     if (!Ready()) return false;
     std::lock_guard<std::mutex> lock(m_mutex);
     return !m_jobPending && !m_jobRunning;
+}
+
+bool DepthEstimator::WaitIdle(double maxSeconds) const {
+    if (!Ready()) return true;
+    const double deadline = NowSeconds() + maxSeconds;
+    while (!Idle()) {
+        if (NowSeconds() >= deadline) return false;
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    return true;
 }
 
 void DepthEstimator::Start(Device& device, const std::wstring& exeDir, const std::wstring& modelPath, UINT inferWidth, UINT inferHeight) {

@@ -45,6 +45,7 @@ public:
     DepthEstimatorState State() const { return m_state.load(std::memory_order_acquire); }
     bool Ready() const { return State() == DepthEstimatorState::Ready; }
     bool Idle() const;                  // ready and no inference queued or running
+    bool WaitIdle(double maxSeconds) const;   // blocks until Idle() (bounded); true when idle, also when not ready
     std::string Message() const;        // failure reason or backend description
     std::string Backend() const;        // "DirectML" / "CPU"
     UINT   InferWidth() const { return m_w; }

@@ -174,6 +174,9 @@ private:
     Tex& PrepareNeuralInput(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const Settings& s, Tex& base);
     bool EnsureNeuralTextures(GpuContext& gpu, UINT inW, UINT inH, UINT outW, UINT outH, bool scaled);
     bool RunNeural(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const Settings& s, Tex& input, bool reset);
+    bool NeuralNeedsCreate(const Settings& s, UINT inW, UINT inH, UINT outW, UINT outH) const;
+    bool FeatureCreatesThisFrame(const Settings& s, bool nrWanted, UINT nrInW, UINT nrInH, UINT nrOutW, UINT nrOutH,
+                                 bool dlaaWanted) const;
     void RunComposite(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const Settings& s, Tex& processed, Tex* neuralBase,
                       Tex* neuralInput, bool bypass);
     void EnqueueReadback(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, Tex& src, const std::wstring& path, bool keepAlpha);
@@ -295,6 +298,8 @@ private:
     int    m_nrOutState = 0;
     float  m_nrMaxStrength = 1.0f;    // highest strength handed to the runtime on the last evaluate
     bool   m_nrSkipped = false;       // fresh frames went by without the neural pass: reset its history next time
+    bool   m_featureCreated = false;  // an NGX feature was created on the frame being recorded
+    UINT64 m_featureCreateFence = 0;  // fence of the last frame that created one; the depth network waits for it
     float  m_costEma = 0.0f;          // running average of the matching cost (scene-cut reference)
     bool   m_lastWasBlockMode = false;
 

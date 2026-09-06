@@ -74,6 +74,9 @@ public:
     UINT64 EndFrame() { Execute(); return FinishFrame(); }
     UINT   FrameIndex() const { return m_frameIndex; }
     UINT64 FrameNumber() const { return m_frameNumber; }
+    // Binds this context's descriptor heap on the list again. Needed after every call into an NGX feature (create
+    // or evaluate): the runtime records with heaps of its own, and the next dispatch must find ours.
+    void   BindHeaps(ID3D12GraphicsCommandList* cmd) const;
 
     // Descriptors in this context's shader-visible heap.
     DescriptorPair AllocStatic();                              // persistent (thread-safe)

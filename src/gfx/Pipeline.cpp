@@ -713,7 +713,8 @@ void Pipeline::CopyStats(GpuContext& gpu, ID3D12GraphicsCommandList* cmd) {
 void Pipeline::UpdateNeuralCheck(float delta, float outLuma, float inLuma) {
     m_nrOutDelta = delta; m_nrOutLuma = outLuma; m_nrInLuma = inLuma;
     int state = 1;
-    if (outLuma < 0.002f && inLuma > 0.02f) state = 2;                  // black picture out of a lit one
+    if (inLuma < 0.002f) state = 1;                                     // black input: nothing to judge
+    else if (outLuma < 0.002f && inLuma > 0.02f) state = 2;             // black picture out of a lit one
     else if (delta < 0.0005f && m_nrMaxStrength > 0.05f) state = 3;     // nothing changed although strengths are set
     if (state == m_nrOutState) return;
     m_nrOutState = state;
@@ -836,12 +837,15 @@ bool Pipeline::RunDlaa(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const Se
     if (!m_dlaa.Created() || m_dlaa.Width() != m_inW || m_dlaa.Height() != m_inH || m_dlaaCreatedPreset != s.dlaaPreset) {
         if (m_dlaa.Created()) { gpu.WaitIdle(); m_dlaa.Release(m_ngx); }
         std::string err;
-        if (!m_dlaa.Create(m_ngx, cmd, m_inW, m_inH, s.dlaaPreset, err)) {
+        const bool created = m_dlaa.Create(m_ngx, cmd, m_inW, m_inH, s.dlaaPreset, err);
+        gpu.BindHeaps(cmd);   // the runtime records with its own heaps
+        if (!created) {
             m_dlaaFailed = true; m_dlaaError = err;
             Log::Error("DLAA: %s", err.c_str());
             return false;
         }
         m_dlaaCreatedPreset = s.dlaaPreset;
+        m_featureCreated = true;
         reset = true;
     }
     gpu.TimerBegin(cmd, GpuTimer::Dlaa);
@@ -853,6 +857,7 @@ bool Pipeline::RunDlaa(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const Se
     const bool ok = m_dlaa.Evaluate(cmd, m_color8.res.Get(), m_mv.res.Get(), m_depth.res.Get(), m_dlaaOut.res.Get(), reset,
                                     (float)m_frameIntervalMs, err);
     gpu.TimerEnd(cmd, GpuTimer::Dlaa);
+    gpu.BindHeaps(cmd);
     if (!ok) {
         m_dlaaFailed = true; m_dlaaError = err;
         Log::Error("DLAA: %s", err.c_str());
@@ -919,21 +924,45 @@ Pipeline::Tex& Pipeline::PrepareNeuralInput(GpuContext& gpu, ID3D12GraphicsComma
     return m_nrIn;
 }
 
+bool Pipeline::NeuralNeedsCreate(const Settings& s, UINT inW, UINT inH, UINT outW, UINT outH) const {
+    const bool useCore = s.nrRoute == RouteNgxCore;
+    return !m_nr.Created() || m_nr.InputWidth() != inW || m_nr.InputHeight() != inH || m_nr.OutputWidth() != outW ||
+           m_nr.OutputHeight() != outH || m_nrCreatedUseCore != useCore || m_nrCreatedPreset != s.nrPreset;
+}
+
+// True when this frame is going to create an NGX feature (the neural pass or DLAA). The depth network keeps quiet on
+// such a frame and until it has completed (see Render): an inference on its own queue alongside the creation and
+// first evaluation of the neural feature leaves some runtime builds with a black picture for good.
+bool Pipeline::FeatureCreatesThisFrame(const Settings& s, bool nrWanted, UINT nrInW, UINT nrInH, UINT nrOutW, UINT nrOutH,
+                                       bool dlaaWanted) const {
+    if (!m_ngx.Initialized()) return false;
+    if (nrWanted && !m_nrFailed) {
+        const bool useCore = s.nrRoute == RouteNgxCore;
+        if ((useCore || m_nr.RuntimeLoaded()) && NeuralNeedsCreate(s, nrInW, nrInH, nrOutW, nrOutH)) return true;
+    }
+    if (dlaaWanted && !m_dlaaFailed && m_ngx.DlssAvailable() &&
+        (!m_dlaa.Created() || m_dlaa.Width() != m_inW || m_dlaa.Height() != m_inH || m_dlaaCreatedPreset != s.dlaaPreset))
+        return true;
+    return false;
+}
+
 bool Pipeline::RunNeural(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const Settings& s, Tex& input, bool reset) {
     if (m_nrFailed || !m_ngx.Initialized()) return false;
     const bool useCore = s.nrRoute == RouteNgxCore;
     if (!useCore && !m_nr.RuntimeLoaded()) return false;
-    if (!m_nr.Created() || m_nr.InputWidth() != m_nrInW || m_nr.InputHeight() != m_nrInH || m_nr.OutputWidth() != m_nrOutW ||
-        m_nr.OutputHeight() != m_nrOutH || m_nrCreatedUseCore != useCore || m_nrCreatedPreset != s.nrPreset) {
+    if (NeuralNeedsCreate(s, m_nrInW, m_nrInH, m_nrOutW, m_nrOutH)) {
         if (m_nr.Created()) { gpu.WaitIdle(); m_nr.Release(m_ngx); }
         std::string err;
-        if (!m_nr.Create(m_ngx, cmd, m_nrInW, m_nrInH, m_nrOutW, m_nrOutH, s.nrPreset, useCore, err)) {
+        const bool created = m_nr.Create(m_ngx, cmd, m_nrInW, m_nrInH, m_nrOutW, m_nrOutH, s.nrPreset, useCore, err);
+        gpu.BindHeaps(cmd);   // the runtime records with its own heaps: back to ours before the next dispatch
+        if (!created) {
             m_nrFailed = true; m_nrError = err;
             Log::Error("DLSSNR: %s", err.c_str());
             LogRuntimeGenerationHint(gpu, m_nr.RuntimeVersion());
             return false;
         }
         m_nrCreatedUseCore = useCore;
+        m_featureCreated = true;
         m_nrCreatedPreset = s.nrPreset;
         m_nrOutState = 0; m_nrOutDelta = -1.0f;   // the output check reports again for the new instance
         reset = true;
@@ -960,6 +989,7 @@ bool Pipeline::RunNeural(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const 
     std::string err;
     const bool ok = m_nr.Evaluate(cmd, in, p, err);
     gpu.TimerEnd(cmd, GpuTimer::Neural);
+    gpu.BindHeaps(cmd);
     if (!ok) {
         m_nrFailed = true; m_nrError = err;
         Log::Error("DLSSNR: %s", err.c_str());
@@ -1228,14 +1258,22 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
 
         RunConvert(gpu, cmd, src, s, nvofBgra);
 
-        // Depth network input: every depthInterval processed frames, as soon as the worker is free.
+        // Depth network input: every depthInterval processed frames, as soon as the worker is free. Not on a frame that
+        // creates an NGX feature and not before that frame has completed, and a running inference is waited for
+        // before such a frame is recorded: the depth network (DirectML, on its own queue) working alongside the
+        // creation and first evaluation of the neural feature leaves some runtime builds with a black picture for
+        // good, which is what a resolution change with the estimator active used to do.
         const bool depthWanted = s.depthMode == DepthEstimated && m_depthInBuf;
+        const bool featureCreating = FeatureCreatesThisFrame(s, nrWanted, nrInW, nrInH, nrOutW, nrOutH, dlaaWanted);
+        if (depthWanted && featureCreating && !m_depthEst.WaitIdle(0.5))
+            Log::Warn("Depth estimator still busy while a neural feature is created");
+        const bool featureSettling = featureCreating || !gpu.IsFenceComplete(m_featureCreateFence);
         if (depthWanted) {
             ++m_depthFramesSinceCapture;
             // Live input refreshes the estimate every depthInterval frames. A still picture needs exactly one: the
             // network is deterministic, and repeating it would keep the GPU busy with identical inferences.
             const bool due = src.stillImage ? !m_depthStillCaptured : m_depthFramesSinceCapture >= s.depthInterval;
-            if (due && !m_depthInPending && m_depthEst.Idle()) {
+            if (due && !featureSettling && !m_depthInPending && m_depthEst.Idle()) {
                 RunDepthCapture(gpu, cmd);
                 m_depthStillCaptured = src.stillImage;
             }
@@ -1350,6 +1388,7 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
 void Pipeline::AfterSubmit(GpuContext& gpu, UINT64 fenceValue) {
     (void)gpu;
     const UINT64 fence = fenceValue;
+    if (m_featureCreated) { m_featureCreateFence = fence; m_featureCreated = false; }
     for (UINT i = 0; i < GpuContext::kFramesInFlight; ++i)
         if (m_statsPending[i] && m_statsFence[i] == 0) m_statsFence[i] = fence;
     for (auto& r : m_readbacks)
@@ -1362,7 +1401,9 @@ void Pipeline::AfterSubmit(GpuContext& gpu, UINT64 fenceValue) {
 }
 
 void Pipeline::Update(GpuContext& gpu, Capture& capture) {
-    if (m_depthInPending && m_depthInFence && gpu.IsFenceComplete(m_depthInFence)) {
+    // The captured network input goes to the estimator only once the frame that created an NGX feature has completed
+    // (see the depth capture in Render).
+    if (m_depthInPending && m_depthInFence && gpu.IsFenceComplete(m_depthInFence) && gpu.IsFenceComplete(m_featureCreateFence)) {
         m_depthInPending = false;
         const size_t count = (size_t)m_depthInferW * m_depthInferH * 3;
         D3D12_RANGE range{ 0, count * sizeof(float) };

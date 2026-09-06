@@ -245,8 +245,7 @@ ID3D12GraphicsCommandList* GpuContext::BeginFrame() {
     f.allocator->Reset();
     m_cmd->Reset(f.allocator.Get(), nullptr);
     m_cmdOpen = true;
-    ID3D12DescriptorHeap* heaps[] = { m_srvHeap.Get() };
-    m_cmd->SetDescriptorHeaps(1, heaps);
+    BindHeaps(m_cmd.Get());
     TimerBegin(m_cmd.Get(), GpuTimer::Frame);
     return m_cmd.Get();
 }
@@ -257,9 +256,14 @@ ID3D12GraphicsCommandList* GpuContext::SubmitAndContinue() {
     ID3D12CommandList* lists[] = { m_cmd.Get() };
     m_queue->ExecuteCommandLists(1, lists);
     m_cmd->Reset(m_frames[m_frameIndex].allocator.Get(), nullptr);
-    ID3D12DescriptorHeap* heaps[] = { m_srvHeap.Get() };
-    m_cmd->SetDescriptorHeaps(1, heaps);
+    BindHeaps(m_cmd.Get());
     return m_cmd.Get();
+}
+
+void GpuContext::BindHeaps(ID3D12GraphicsCommandList* cmd) const {
+    if (!cmd || !m_srvHeap) return;
+    ID3D12DescriptorHeap* heaps[] = { m_srvHeap.Get() };
+    cmd->SetDescriptorHeaps(1, heaps);
 }
 
 void GpuContext::Execute() {
