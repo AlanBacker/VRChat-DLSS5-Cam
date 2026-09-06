@@ -22,7 +22,7 @@ application: nothing is injected into VRChat and no mod is required.
 - **Live preview** of the VRChat camera after DLSS 5 processing, with side-by-side wipe, original, motion-vector and depth views.
 - **DLSS 5 Neural Rendering** hosted directly from `nvngx_dlssnr.dll`, with the same parameters exposed by RenoDX's
   DLSS 5 ReShade add-on: preset, style, intensity, global tone, local tone, local structure, skin structure,
-  auto mask and UI correction, plus an output blend (input exposure, tone transfer, colour strength). Parameters are applied instantly and can be tuned on a frozen frame.
+  auto mask and UI correction, plus an output blend (input exposure, tone transfer, colour strength, shadow and highlight strengths) and a reduced neural pass resolution for a lighter GPU load. Parameters are applied instantly and can be tuned on a frozen frame.
 - **Still images.** Open a photo or screenshot (PNG, JPEG, BMP, TIFF, GIF, WebP, HEIC…) or drop it onto the window;
   DLSS 5 refines it over several passes and *Process & save PNG* writes the result next to your captures.
 - **Frame guidance.** DLSSNR is a temporal model that expects motion vectors and depth. The app feeds it
@@ -78,6 +78,8 @@ Tips
 | DLSS 5 | Neural pass only for captures | For GPUs too slow for live use: the preview bypasses the neural pass, and a capture (button, hotkey, timelapse) first runs it for 16 fresh frames, then saves. Still images are not affected. |
 | DLSS 5 | Auto mask / UI correction | Automatic subject mask, UI-safe processing. |
 | DLSS 5 | Input exposure / Tone transfer / Colour strength | Output blend. Input exposure (0.25–4×) scales the picture the network sees, like a paper-white scale, and is undone afterwards. Tone transfer and colour strength (0–2) set how much of the neural pass's brightness and colour changes reach the output, in linear light; 1 / 1 reproduces the neural result exactly, 0 keeps the original, above 1 exaggerates. |
+| DLSS 5 | Shadow strength / Highlight & glow strength | Output blend, 0–2: how much of the neural pass's darkening (shadows, contour structure) and of its brightening (highlights, reflections, glow) reaches the output, applied before the tone transfer. 1 / 1 = as rendered. |
+| DLSS 5 | Neural pass resolution | Runs the neural pass on a smaller picture (25–100 % of the input) and adds its change, upsampled with a bicubic filter, to the full-resolution picture. Lower values cut the GPU load at the cost of the pass's finest detail. Not used while neural upscaling is on. |
 | DLSS 5 | Route | *Signed snippet*: host `nvngx_dlssnr.dll` directly. *NGX core*: create the feature through the NGX runtime. |
 | Frame guidance | Motion vectors | NVIDIA Optical Flow (driver `nvofapi64.dll`, with a bidirectional consistency check), GPU block matching, or none (zero). |
 | Frame guidance | Depth | AI estimated (Depth Anything V2 Small on DirectML; update interval and network resolution are adjustable), flat, gradient, or zero. |
@@ -85,6 +87,7 @@ Tips
 | DLAA | Enable / Preset | Optional DLSS anti-aliasing pass at native resolution before neural rendering. |
 | Capture | Keep alpha / Save original / Hotkey / Time-lapse | Capture options. |
 | Display | Compare / Fit / Zoom / VSync / Overlay | Preview options. The mouse wheel over the preview zooms around the cursor, dragging pans, a double-click returns to the fitted view. |
+| Display | Processing rate cap | Live source: processes at most this many source frames per second at a steady cadence and drops the frames in between, which caps the GPU load; the preview keeps the last processed frame meanwhile. 0 = every source frame. |
 
 Settings are stored in `%LOCALAPPDATA%\VRChatDLSS5Cam\settings.ini`; the log is `log.txt` in the same folder.
 

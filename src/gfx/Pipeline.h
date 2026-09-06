@@ -38,6 +38,7 @@ struct PipelineStatus {
     float       nrOutLuma = 0.0f, nrInLuma = 0.0f;
     int         nrOutState = 0;                 // 0 unknown, 1 ok, 2 output black, 3 output equals the input
     bool        nrUpscaling = false;
+    UINT        nrPassWidth = 0, nrPassHeight = 0;   // neural pass size (equals the input unless reduced)
     bool        dlaaActive = false;
     bool        dlaaFailed = false;
     std::string dlaaError;
@@ -171,6 +172,7 @@ private:
     bool RunDepthApply(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, bool reset);   // network output -> m_depth (temporally filtered)
     bool RunDlaa(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const Settings& s, bool reset);
     Tex& PrepareNeuralInput(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const Settings& s, Tex& base);
+    bool EnsureNeuralTextures(GpuContext& gpu, UINT inW, UINT inH, UINT outW, UINT outH, bool scaled);
     bool RunNeural(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const Settings& s, Tex& input, bool reset);
     void RunComposite(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const Settings& s, Tex& processed, Tex* neuralBase,
                       Tex* neuralInput, bool bypass);
@@ -202,6 +204,9 @@ private:
     Tex m_dlaaOut, m_nrOut;
     Tex m_nrIn;                 // exposed copy of the neural input (nrInputExposure != 1)
     bool m_nrInExposed = false; // the last neural pass read m_nrIn rather than its base picture
+    Tex  m_nrMv, m_nrDepth;                   // guidance resampled to a reduced pass size
+    bool m_nrScaled = false;                  // neural pass runs below the input resolution
+    UINT m_nrInW = 0, m_nrInH = 0, m_nrOutW = 0, m_nrOutH = 0;   // neural pass sizes
     Tex m_final;
     ComPtr<ID3D12Resource>      m_statsBuf;
     D3D12_CPU_DESCRIPTOR_HANDLE m_statsUav{};

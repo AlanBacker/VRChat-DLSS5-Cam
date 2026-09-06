@@ -84,6 +84,9 @@ bool Settings::Load(const std::wstring& path) {
     r.Get("nrInputExposure", nrInputExposure);
     r.Get("nrToneTransfer", nrToneTransfer);
     r.Get("nrColorStrength", nrColorStrength);
+    r.Get("nrShadowGain", nrShadowGain);
+    r.Get("nrHighlightGain", nrHighlightGain);
+    r.Get("nrInputScale", nrInputScale);
     r.Get("motionMode", motionMode);
     r.Get("depthMode", depthMode);
     r.Get("searchRadius", searchRadius);
@@ -113,6 +116,7 @@ bool Settings::Load(const std::wstring& path) {
     r.Get("checkerboard", checkerboard);
     r.Get("fitMode", fitMode);
     r.Get("vsync", vsync);
+    r.Get("processRateLimit", processRateLimit);
     r.Get("showOverlay", showOverlay);
     r.Get("captureFolder", captureFolder);
     r.Get("keepAlpha", keepAlpha);
@@ -163,6 +167,9 @@ bool Settings::Save(const std::wstring& path) const {
     w.Put("nrInputExposure", nrInputExposure);
     w.Put("nrToneTransfer", nrToneTransfer);
     w.Put("nrColorStrength", nrColorStrength);
+    w.Put("nrShadowGain", nrShadowGain);
+    w.Put("nrHighlightGain", nrHighlightGain);
+    w.Put("nrInputScale", nrInputScale);
     w.Put("settingsVersion", settingsVersion);
     w.Put("motionMode", motionMode);
     w.Put("depthMode", depthMode);
@@ -183,6 +190,7 @@ bool Settings::Save(const std::wstring& path) const {
     w.Put("checkerboard", checkerboard);
     w.Put("fitMode", fitMode);
     w.Put("vsync", vsync);
+    w.Put("processRateLimit", processRateLimit);
     w.Put("showOverlay", showOverlay);
     w.Put("captureFolder", captureFolder);
     w.Put("keepAlpha", keepAlpha);
@@ -219,6 +227,10 @@ void Settings::Clamp() {
     nrInputExposure = std::clamp(nrInputExposure, 0.25f, 4.0f);
     nrToneTransfer = std::clamp(nrToneTransfer, 0.0f, 2.0f);
     nrColorStrength = std::clamp(nrColorStrength, 0.0f, 2.0f);
+    nrShadowGain = std::clamp(nrShadowGain, 0.0f, 2.0f);
+    nrHighlightGain = std::clamp(nrHighlightGain, 0.0f, 2.0f);
+    nrInputScale = std::clamp(nrInputScale, 25, 100);
+    processRateLimit = std::clamp(processRateLimit, 0, 240);
     nrGlobalTone = std::clamp(nrGlobalTone, 0.0f, 2.0f);
     nrLocalTone = std::clamp(nrLocalTone, 0.0f, 2.0f);
     nrLocalStructure = std::clamp(nrLocalStructure, 0.0f, 2.0f);

@@ -197,6 +197,23 @@ bool SliderReset(const char* label, float* v, float minV, float maxV, float def,
     return changed;
 }
 
+bool SliderIntReset(const char* label, int* v, int minV, int maxV, int def, const char* fmt, const char* tooltip) {
+    ImGui::PushID(label);
+    const float resetW = ImGui::GetFrameHeight();
+    const ImGuiStyle& style = ImGui::GetStyle();
+    ImGui::SetNextItemWidth(ImGui::CalcItemWidth() - resetW - style.ItemInnerSpacing.x);
+    bool changed = ImGui::SliderInt("##s", v, minV, maxV, fmt, ImGuiSliderFlags_AlwaysClamp);
+    if (tooltip && ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip)) ImGui::SetTooltip("%s", tooltip);
+    ImGui::SameLine(0.0f, style.ItemInnerSpacing.x);
+    ImGui::BeginDisabled(*v == def);
+    if (ImGui::Button("R", ImVec2(resetW, resetW))) { *v = def; changed = true; }
+    ImGui::EndDisabled();
+    ImGui::SameLine(0.0f, style.ItemInnerSpacing.x);
+    ImGui::TextUnformatted(label);
+    ImGui::PopID();
+    return changed;
+}
+
 bool AccentButton(const char* label, const ImVec2& size) {
     const Palette& p = Colors();
     ImGui::PushStyleColor(ImGuiCol_Button, p.accent);

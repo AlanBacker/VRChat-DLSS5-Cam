@@ -458,6 +458,12 @@ void MainUI::SectionNeural(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         if (Toggle(TR(NrUpscale), &s.nrUpscale)) ch = true;
         Help(TR(TipUpscale));
     }
+    {
+        // Pass resolution: the neural pass runs on a smaller picture and its change is upsampled onto the full one.
+        ImGui::BeginDisabled(s.customResolution && s.nrUpscale);
+        ch |= SliderIntReset(TR(NrInputScale), &s.nrInputScale, 25, 100, 100, "%d%%", TR(TipNrInputScale));
+        ImGui::EndDisabled();
+    }
     ImGui::Spacing();
     ImGui::TextUnformatted(TR(OutputBlend));
     // The exposure changes what the network sees (neural pass re-run); the two strengths only change the composite.
@@ -465,6 +471,8 @@ void MainUI::SectionNeural(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
     bool blend = false;
     blend |= SliderReset(TR(ToneTransfer), &s.nrToneTransfer, 0.0f, 2.0f, 1.0f, "%.2f", TR(TipToneTransfer));
     blend |= SliderReset(TR(ColorStrength), &s.nrColorStrength, 0.0f, 2.0f, 1.0f, "%.2f", TR(TipColorStrength));
+    blend |= SliderReset(TR(ShadowGain), &s.nrShadowGain, 0.0f, 2.0f, 1.0f, "%.2f", TR(TipShadowGain));
+    blend |= SliderReset(TR(HighlightGain), &s.nrHighlightGain, 0.0f, 2.0f, 1.0f, "%.2f", TR(TipHighlightGain));
     ImGui::EndDisabled();
     if (blend) ev.settingsChanged = true;
     if (ch) { ev.nrChanged = true; ev.settingsChanged = true; }
@@ -475,11 +483,13 @@ void MainUI::SectionNeural(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         s.nrPreset = 0; s.nrStyle = 0; s.nrIntensity = 1.0f; s.nrGlobalTone = 1.0f; s.nrLocalTone = 1.0f;
         s.nrLocalStructure = 1.0f; s.nrSkinStructure = -1.0f; s.nrAutoMask = false; s.nrUiCorrection = false;
         s.nrInputExposure = 1.0f; s.nrToneTransfer = 1.0f; s.nrColorStrength = 1.0f;
+        s.nrShadowGain = 1.0f; s.nrHighlightGain = 1.0f; s.nrInputScale = 100;
         ev.nrChanged = true; ev.settingsChanged = true;
     }
     if (st) {
         Readout(m_fonts, TR(GpuTime), FormatMsFixed(m_shown.gpuMs[(UINT)GpuTimer::Neural]));
         Readout(m_fonts, TR(Frames), StrPrintf("%llu", m_shown.processedFrames));
+        Readout(m_fonts, TR(NrPassSize), st->nrActive && st->nrPassWidth ? StrPrintf("%ux%u", st->nrPassWidth, st->nrPassHeight) : std::string("-"));
         Readout(m_fonts, TR(NrOutputCheck), st->nrActive && m_shown.nrOutDelta >= 0.0f ? StrPrintf("%5.3f", m_shown.nrOutDelta) : std::string("    -"));
         Help(TR(TipNrOutputCheck));
     }
@@ -715,6 +725,8 @@ void MainUI::SectionDisplay(Settings& s, const UiFrameInfo& info, UiEvents& ev) 
         ImGui::PopID();
     }
     if (Toggle(TR(Vsync), &s.vsync)) ev.settingsChanged = true;
+    if (SliderIntReset(TR(RateLimit), &s.processRateLimit, 0, 240, 0, s.processRateLimit > 0 ? "%d fps" : TR(RateLimitOff), TR(TipRateLimit)))
+        ev.settingsChanged = true;
     if (Toggle(TR(Overlay), &s.showOverlay)) ev.settingsChanged = true;
     if (Toggle(TR(ShowLog), &s.showLog)) ev.settingsChanged = true;
     if (info.status) {

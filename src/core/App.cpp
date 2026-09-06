@@ -432,6 +432,7 @@ void App::WorkerMain() {
     double   lastSenderScan = 0.0;
     double   lastTimelapse = NowSeconds();
     double   lastRun = 0.0;
+    double   rateNext = 0.0;   // processing rate cap: start of the next processing slot
     double   lastPublish = 0.0;
     double   fpsWindowStart = NowSeconds();
     unsigned fpsWindowFrames = 0;
@@ -512,6 +513,18 @@ void App::WorkerMain() {
             receiveMs = (NowSeconds() - t0) * 1000.0;
             changed = changed || spoutChanged;
             src = m_spout.Frame();
+            // Processing rate cap: source frames that arrive before the next slot are dropped, so the pipeline runs at a
+            // steady cadence and the GPU load stays put; the preview keeps the last processed frame meanwhile.
+            if (fresh && settings.processRateLimit > 0) {
+                const double interval = 1.0 / (double)settings.processRateLimit;
+                if (rateNext > 0.0 && now < rateNext - 0.0005) {
+                    fresh = false;
+                } else {
+                    rateNext = (rateNext > 0.0 && now - rateNext < interval) ? rateNext + interval : now + interval;
+                }
+            } else if (settings.processRateLimit <= 0) {
+                rateNext = 0.0;
+            }
             // Timelapse (live source only).
             if (settings.timelapseSeconds > 0 && now - lastTimelapse >= (double)settings.timelapseSeconds) {
                 lastTimelapse = now;

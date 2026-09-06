@@ -50,6 +50,9 @@ struct Settings {
     float       nrInputExposure = 1.0f; // 0.25..4: gain on the picture the network sees (paper-white scale), undone afterwards
     float       nrToneTransfer = 1.0f;  // 0..2: share of the neural pass's brightness change that reaches the output
     float       nrColorStrength = 1.0f; // 0..2: share of the neural pass's colour change that reaches the output
+    float       nrShadowGain = 1.0f;    // 0..2: how much of the neural pass's darkening reaches the output (output blend)
+    float       nrHighlightGain = 1.0f; // 0..2: how much of its brightening (highlights, reflections, glow) reaches the output
+    int         nrInputScale = 100;     // 25..100 %: neural pass resolution; its change is upsampled onto the full picture
 
     // Frame guidance (motion vectors / depth)
     int   motionMode = MotionNvOpticalFlow;   // falls back to block matching when the hardware engine is unavailable
@@ -76,6 +79,7 @@ struct Settings {
     bool  checkerboard = true;
     int   fitMode = FitWindow;
     bool  vsync = true;
+    int   processRateLimit = 0;     // live source: at most this many processed frames per second (0 = every source frame)
     bool  showOverlay = true;
 
     // Capture

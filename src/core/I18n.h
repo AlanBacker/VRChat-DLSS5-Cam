@@ -22,6 +22,9 @@ enum class Lang { English = 0, Chinese = 1, Japanese = 2, Korean = 3, Count = 4 
     X(TmComposite,        "Composite", "合成", "合成", "합성") \
     X(TmUi,               "UI", "界面", "UI", "UI") \
     X(TipUpscale,         "Let DLSS 5 upscale from the sender resolution to the custom resolution instead of resampling first (experimental).", "让 DLSS 5 直接从发送端分辨率放大到自定义分辨率，而不是先重采样（实验性）。", "先にリサンプリングせず、送信側の解像度からカスタム解像度へ DLSS 5 でアップスケールします（実験的）。", "먼저 리샘플링하지 않고 DLSS 5가 송신 해상도에서 사용자 지정 해상도로 업스케일하도록 합니다(실험적).") \
+    X(NrInputScale, "Neural pass resolution", "神经渲染分辨率", "ニューラルパス解像度", "뉴럴 패스 해상도") \
+    X(TipNrInputScale, "Runs the neural pass on a smaller picture (25-100% of the input) and adds its change to the full-resolution picture. Lower = less GPU load, the finest detail of the pass is lost. Not used while neural upscaling is on.", "在缩小的画面（输入的 25-100%）上运行神经渲染，再把它带来的变化叠加到全分辨率画面。越低 GPU 占用越少，但会损失最细小的细节。开启神经上采样时不生效。", "縮小した画像（入力の 25-100%）でニューラルパスを実行し、その変化をフル解像度の画像に加えます。低いほど GPU 負荷は減りますが、最も細かいディテールは失われます。ニューラルアップスケール中は使われません。", "축소한 화면(입력의 25-100%)에서 뉴럴 패스를 실행하고 그 변화를 전체 해상도 화면에 더합니다. 낮을수록 GPU 부하가 줄지만 가장 미세한 디테일은 사라집니다. 뉴럴 업스케일 중에는 사용되지 않습니다.") \
+    X(NrPassSize, "Neural pass", "神经渲染尺寸", "ニューラルパス", "뉴럴 패스") \
     X(TipRoute,           "Signed snippet: talk to nvngx_dlssnr.dll directly (recommended). NGX core: ask the NVIDIA NGX runtime to create the feature.", "签名片段：直接调用 nvngx_dlssnr.dll（推荐）。NGX 核心：通过 NVIDIA NGX 运行时创建功能。", "Signed snippet：nvngx_dlssnr.dll を直接呼び出します（推奨）。NGX core：NVIDIA NGX ランタイムに機能の作成を依頼します。", "Signed snippet: nvngx_dlssnr.dll을 직접 호출합니다(권장). NGX core: NVIDIA NGX 런타임에 기능 생성을 요청합니다.") \
     X(TipNvof,            "Hardware optical flow (Turing or newer, nvofapi64.dll from the NVIDIA driver); falls back to block matching when unavailable. Grid = spacing of the hardware vectors in source pixels: 4 px is the fastest and is upsampled to per-pixel vectors, 2 px and 1 px are finer but much slower at 4K.", "硬件光流（Turing 及更新架构，使用 NVIDIA 驱动中的 nvofapi64.dll），不可用时回退到块匹配。网格 = 硬件矢量的间距（源像素）：4 px 最快，会上采样为逐像素矢量；2 px、1 px 更精细，但在 4K 下明显更慢。", "ハードウェアオプティカルフロー（Turing 以降、NVIDIA ドライバーの nvofapi64.dll）。利用できない場合はブロックマッチングにフォールバックします。グリッド = ハードウェアベクトルの間隔（ソースピクセル）：4 px が最速でピクセル単位に補間されます。2 px / 1 px はより精細ですが 4K では大幅に遅くなります。", "하드웨어 옵티컬 플로우(Turing 이상, NVIDIA 드라이버의 nvofapi64.dll). 사용할 수 없으면 블록 매칭으로 대체합니다. 그리드 = 하드웨어 벡터 간격(소스 픽셀): 4 px가 가장 빠르고 픽셀 단위로 보간됩니다. 2 px / 1 px는 더 세밀하지만 4K에서는 훨씬 느립니다.") \
     X(TipAutoReset,       "Clear the temporal history when the matching cost jumps sharply (scene cut). Off by default: DLSS 5 recovers on its own, and every reset causes a visible pop.", "匹配代价突然跳变（镜头切换）时清空时间历史。默认关闭：DLSS 5 会自行恢复，而每次重置都会造成明显的画面跳动。", "マッチングコストが急激に跳ね上がったとき（シーンカット）に時間履歴をクリアします。既定ではオフ：DLSS 5 は自力で回復し、リセットのたびに目に見えるポップが生じます。", "매칭 비용이 급격히 뛸 때(장면 전환) 시간 히스토리를 지웁니다. 기본값은 꺼짐: DLSS 5는 스스로 복구되며, 초기화할 때마다 눈에 띄는 튐이 생깁니다.") \
@@ -180,6 +183,9 @@ enum class Lang { English = 0, Chinese = 1, Japanese = 2, Korean = 3, Count = 4 
     X(FitWindowLabel,     "Fit to window", "适应窗口", "ウィンドウに合わせる", "창에 맞춤") \
     X(OneToOne,           "1:1 pixels", "1:1 像素", "1:1 ピクセル", "1:1 픽셀") \
     X(Vsync,              "V-Sync", "垂直同步", "垂直同期", "수직 동기화") \
+    X(RateLimit, "Processing rate cap", "处理帧率上限", "処理レート上限", "처리 속도 상한") \
+    X(TipRateLimit, "Live source: processes at most this many source frames per second, at a steady cadence, and drops the frames in between. Caps the GPU load; the preview keeps the last processed frame meanwhile. 0 = every source frame.", "实时来源：每秒最多按稳定节奏处理这么多来源帧，其余丢弃。用于限制 GPU 占用；期间预览保持上一处理帧。0 = 处理每一帧。", "ライブソース: 毎秒この数までのソースフレームを一定のリズムで処理し、間のフレームは捨てます。GPU 負荷を抑え、その間プレビューは最後に処理したフレームを保持します。0 = すべてのフレーム。", "라이브 소스: 초당 최대 이 수만큼의 소스 프레임을 일정한 리듬으로 처리하고 사이의 프레임은 버립니다. GPU 부하를 제한하며 그동안 미리보기는 마지막 처리 프레임을 유지합니다. 0 = 모든 프레임.") \
+    X(RateLimitOff, "Off (every frame)", "关（每一帧）", "オフ（すべてのフレーム）", "끄기(모든 프레임)") \
     X(Overlay,            "Show overlay info", "显示叠加信息", "オーバーレイ情報を表示", "오버레이 정보 표시") \
     X(ShowLog,            "Show log", "显示日志", "ログを表示", "로그 표시") \
     X(Sidebar,            "Sidebar", "侧边栏", "サイドバー", "사이드바") \
@@ -235,6 +241,10 @@ enum class Lang { English = 0, Chinese = 1, Japanese = 2, Korean = 3, Count = 4 
     X(TipToneTransfer,    "How much of the neural pass's brightness change reaches the output. 0 keeps the original tones, 1 = as rendered, up to 2 exaggerates the change.", "神经渲染带来的明暗变化有多少进入输出。0 = 保留原图明暗，1 = 按渲染结果，最高 2 为加倍夸张。", "ニューラルパスによる明るさの変化をどれだけ出力に反映するか。0 = 元のトーンを維持、1 = レンダリング結果どおり、最大 2 で変化を強調します。", "뉴럴 패스가 바꾼 밝기가 출력에 얼마나 반영되는지. 0 = 원본 톤 유지, 1 = 렌더링 결과 그대로, 최대 2는 변화를 과장합니다.") \
     X(ColorStrength,      "Colour strength", "色彩强度", "色の強度", "색 강도") \
     X(TipColorStrength,   "How much of the neural pass's colour change (hue and saturation) reaches the output. 0 keeps the original colours, 1 = as rendered, up to 2 exaggerates the change.", "神经渲染带来的色彩变化（色相与饱和度）有多少进入输出。0 = 保留原图色彩，1 = 按渲染结果，最高 2 为加倍夸张。", "ニューラルパスによる色の変化（色相と彩度）をどれだけ出力に反映するか。0 = 元の色を維持、1 = レンダリング結果どおり、最大 2 で変化を強調します。", "뉴럴 패스가 바꾼 색(색상과 채도)이 출력에 얼마나 반영되는지. 0 = 원본 색 유지, 1 = 렌더링 결과 그대로, 최대 2는 변화를 과장합니다.") \
+    X(ShadowGain, "Shadow strength", "阴影强度", "シャドウ強度", "그림자 강도") \
+    X(TipShadowGain, "How much of the neural pass's darkening (shadows, contour structure) reaches the output, 0..2. 1 = as rendered.", "神经渲染带来的变暗部分（阴影、轮廓结构）有多少进入输出，0..2。1 = 与渲染结果相同。", "ニューラルパスによる暗くなる変化（影、輪郭の構造）を出力にどれだけ反映するか（0..2）。1 でレンダリング通り。", "뉴럴 패스가 어둡게 만든 변화(그림자, 윤곽 구조)를 출력에 얼마나 반영할지(0..2). 1이면 렌더링 그대로.") \
+    X(HighlightGain, "Highlight & glow strength", "高光与辉光强度", "ハイライトとグロー強度", "하이라이트·글로우 강도") \
+    X(TipHighlightGain, "How much of the neural pass's brightening (highlights, reflections, glow) reaches the output, 0..2. 1 = as rendered.", "神经渲染带来的变亮部分（高光、反射、辉光）有多少进入输出，0..2。1 = 与渲染结果相同。", "ニューラルパスによる明るくなる変化（ハイライト、反射、グロー）を出力にどれだけ反映するか（0..2）。1 でレンダリング通り。", "뉴럴 패스가 밝게 만든 변화(하이라이트, 반사, 글로우)를 출력에 얼마나 반영할지(0..2). 1이면 렌더링 그대로.") \
     X(SourceMode,         "Input", "输入来源", "入力ソース", "입력 소스") \
     X(SourceSpout,        "VRChat camera (Spout)", "VRChat 相机（Spout）", "VRChat カメラ（Spout）", "VRChat 카메라(Spout)") \
     X(SourceImage,        "Image file", "图片文件", "画像ファイル", "이미지 파일") \

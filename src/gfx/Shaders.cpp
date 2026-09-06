@@ -612,10 +612,38 @@ float Luma(float3 c) { return dot(c, float3(0.2126, 0.7152, 0.0722)); }
 float3 Blend(float3 base, float3 seen, float3 neural) {
     float3 b = SrgbToLinear(base), i = SrgbToLinear(seen), n = SrgbToLinear(neural);
     float yb = Luma(b), yi = Luma(i), yn = Luma(n);
-    float y = max(yb + (yn - yi) * ParamE * ParamC, 0.0);
+    float dy = (yn - yi) * ParamE;
+    dy *= dy < 0.0 ? Extra1.x : Extra1.y;   // shadow strength / highlight & glow strength
+    float y = max(yb + dy * ParamC, 0.0);
     float3 rb = b / max(yb, 1e-4), ri = i / max(yi, 1e-4), rn = n / max(yn, 1e-4);
     float3 r = max(rb + (rn - ri) * ParamD, 0.0);
     return LinearToSrgb(r * y);
+}
+
+// 9-tap Catmull-Rom resampling for the neural textures when the pass ran at a reduced resolution (size = pass size).
+float4 CatmullRom(Texture2D<float4> tex, float2 uv, float2 size) {
+    float2 pos = uv * size;
+    float2 center = floor(pos - 0.5) + 0.5;
+    float2 f = pos - center;
+    float2 w0 = f * (-0.5 + f * (1.0 - 0.5 * f));
+    float2 w1 = 1.0 + f * f * (-2.5 + 1.5 * f);
+    float2 w2 = f * (0.5 + f * (2.0 - 1.5 * f));
+    float2 w3 = f * f * (-0.5 + 0.5 * f);
+    float2 w12 = w1 + w2;
+    float2 t0 = (center - 1.0) / size;
+    float2 t3 = (center + 2.0) / size;
+    float2 t12 = (center + w2 / w12) / size;
+    float4 r = 0.0;
+    r += tex.SampleLevel(LinearClamp, float2(t0.x, t0.y), 0) * w0.x * w0.y;
+    r += tex.SampleLevel(LinearClamp, float2(t12.x, t0.y), 0) * w12.x * w0.y;
+    r += tex.SampleLevel(LinearClamp, float2(t3.x, t0.y), 0) * w3.x * w0.y;
+    r += tex.SampleLevel(LinearClamp, float2(t0.x, t12.y), 0) * w0.x * w12.y;
+    r += tex.SampleLevel(LinearClamp, float2(t12.x, t12.y), 0) * w12.x * w12.y;
+    r += tex.SampleLevel(LinearClamp, float2(t3.x, t12.y), 0) * w3.x * w12.y;
+    r += tex.SampleLevel(LinearClamp, float2(t0.x, t3.y), 0) * w0.x * w3.y;
+    r += tex.SampleLevel(LinearClamp, float2(t12.x, t3.y), 0) * w12.x * w3.y;
+    r += tex.SampleLevel(LinearClamp, float2(t3.x, t3.y), 0) * w3.x * w3.y;
+    return r;
 }
 
 [numthreads(8, 8, 1)]
@@ -624,11 +652,13 @@ void main(uint3 id : SV_DispatchThreadID) {
     float2 uv = (float2(id.xy) + 0.5) / float2(DstWidth, DstHeight);
     bool scaled = (Flags & 32) != 0;
     float4 orig = scaled ? Original.SampleLevel(LinearClamp, uv, 0) : Original.Load(int3(id.xy, 0));
-    float4 proc = Processed.Load(int3(id.xy, 0));
+    bool passScaled = (Flags & 256) != 0;   // neural textures at the pass resolution (Extra0.xy), upsampled here
+    float4 proc = passScaled ? CatmullRom(Processed, uv, Extra0.xy) : Processed.Load(int3(id.xy, 0));
     float3 outRgb = (Flags & 4) ? orig.rgb : proc.rgb;
     if (Flags & 64) {
         float3 base = scaled ? NeuralBase.SampleLevel(LinearClamp, uv, 0).rgb : NeuralBase.Load(int3(id.xy, 0)).rgb;
-        float3 seen = scaled ? NeuralInput.SampleLevel(LinearClamp, uv, 0).rgb : NeuralInput.Load(int3(id.xy, 0)).rgb;
+        float3 seen = passScaled ? CatmullRom(NeuralInput, uv, Extra0.xy).rgb
+                : scaled ? NeuralInput.SampleLevel(LinearClamp, uv, 0).rgb : NeuralInput.Load(int3(id.xy, 0)).rgb;
         outRgb = Blend(base, seen, proc.rgb);
     }
     // Strengths above 1: the runtime caps its own strengths at 1, so the extra range amplifies the difference between
@@ -707,6 +737,57 @@ void main(uint tid : SV_GroupIndex) {
 }
 )HLSL";
 
+// Reduced neural pass resolution: box-filters the base picture down to the pass size (IntA bilinear taps per axis,
+// with the input exposure when Flags & 1) and resamples the motion vectors (scaled to the pass's pixels by ScaleX/Y)
+// and the depth, so the network sees a consistent small picture.
+const char* kNeuralPrep = R"HLSL(
+Texture2D<float4>   Src      : register(t0);
+Texture2D<float2>   Mv       : register(t1);
+Texture2D<float>    Depth    : register(t2);
+RWTexture2D<float4> OutColor : register(u0);
+RWTexture2D<float2> OutMv    : register(u1);
+RWTexture2D<float>  OutDepth : register(u2);
+
+float3 SrgbToLinear(float3 c) {
+    return c <= 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4);
+}
+float3 LinearToSrgb(float3 c) {
+    c = saturate(c);
+    return c <= 0.0031308 ? c * 12.92 : 1.055 * pow(c, 1.0 / 2.4) - 0.055;
+}
+float3 CompressHighlights(float3 c, float strength) {
+    // Soft shoulder above 1: keeps the picture in range after a gain without clipping the bright parts flat.
+    float m = max(c.r, max(c.g, c.b));
+    if (m <= 1.0) return c;
+    float t = 1.0 + (m - 1.0) / (m - 1.0 + strength);
+    return c * (t / m);
+}
+
+[numthreads(8, 8, 1)]
+void main(uint3 id : SV_DispatchThreadID) {
+    if (id.x >= DstWidth || id.y >= DstHeight) return;
+    float2 dst = float2(DstWidth, DstHeight);
+    float2 uv = (float2(id.xy) + 0.5) / dst;
+    uint n = max(IntA, 1u);
+    float4 sum = 0.0;
+    for (uint j = 0; j < n; ++j) {
+        for (uint i = 0; i < n; ++i) {
+            float2 o = (float2(i, j) + 0.5) / (float)n - 0.5;   // taps spread over this pixel's source footprint
+            sum += Src.SampleLevel(LinearClamp, uv + o / dst, 0);
+        }
+    }
+    float4 c = sum / (float)(n * n);
+    if (Flags & 1) {
+        float3 lin = SrgbToLinear(c.rgb) * ParamA;
+        if (ParamA > 1.0) lin = CompressHighlights(lin, 1.0);
+        c.rgb = LinearToSrgb(lin);
+    }
+    OutColor[id.xy] = c;
+    OutMv[id.xy] = Mv.SampleLevel(LinearClamp, uv, 0) * float2(ScaleX, ScaleY);
+    OutDepth[id.xy] = Depth.SampleLevel(LinearClamp, uv, 0);
+}
+)HLSL";
+
 struct ShaderSource { ShaderId id; const char* name; const char* body; };
 const ShaderSource kSources[] = {
     { ShaderId::Convert,    "Convert",    kConvert },
@@ -720,6 +801,7 @@ const ShaderSource kSources[] = {
     { ShaderId::DepthPost,  "DepthPost",  kDepthPost },
     { ShaderId::Expose,     "Expose",     kExpose },
     { ShaderId::NeuralCheck, "NeuralCheck", kNeuralCheck },
+    { ShaderId::NeuralPrep,  "NeuralPrep",  kNeuralPrep },
 };
 
 } // namespace

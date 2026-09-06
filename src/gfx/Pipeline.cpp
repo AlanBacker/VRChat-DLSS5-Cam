@@ -132,7 +132,9 @@ void Pipeline::ReleaseResources(GpuContext& gpu) {
     for (auto& t : m_bmMed) ReleaseTex(gpu, t);
     ReleaseTex(gpu, m_mv); ReleaseTex(gpu, m_conf); ReleaseTex(gpu, m_depth);
     ReleaseTex(gpu, m_dlaaOut); ReleaseTex(gpu, m_nrOut); ReleaseTex(gpu, m_nrIn);
-    m_nrInExposed = false;
+    ReleaseTex(gpu, m_nrMv); ReleaseTex(gpu, m_nrDepth);
+    m_nrInExposed = false; m_nrScaled = false;
+    m_nrInW = m_nrInH = m_nrOutW = m_nrOutH = 0;
     ReleaseTex(gpu, m_final);
     RetireDisplayBuffers(gpu);
     if (m_statsUav.ptr) { gpu.Dev().FreeStaging(m_statsUav); m_statsUav = {}; }
@@ -257,6 +259,7 @@ bool Pipeline::Rebuild(GpuContext& gpu, const Config& cfg) {
     ok &= CreateTex(gpu, m_dlaaOut, m_inW, m_inH, DXGI_FORMAT_R8G8B8A8_UNORM, true, L"dlaaOut");
     ok &= CreateTex(gpu, m_nrOut, m_outW, m_outH, DXGI_FORMAT_R8G8B8A8_UNORM, true, L"nrOut");
     ok &= CreateTex(gpu, m_nrIn, m_inW, m_inH, DXGI_FORMAT_R8G8B8A8_UNORM, true, L"nrIn");
+    m_nrInW = m_inW; m_nrInH = m_inH; m_nrOutW = m_outW; m_nrOutH = m_outH; m_nrScaled = false;
     ok &= CreateTex(gpu, m_final, m_outW, m_outH, DXGI_FORMAT_R8G8B8A8_UNORM, true, L"final");
     ok &= CreateDisplayBuffers(gpu, m_outW, m_outH);
     if (!ok) { ReleaseResources(gpu); return false; }
@@ -857,21 +860,60 @@ bool Pipeline::RunDlaa(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const Se
     return ok;
 }
 
+// The neural pass may run on a smaller picture than the input (nrInputScale below 100 %): its textures are then
+// re-created at the pass size and the feature is released, RunNeural creates it again at the new size. Nothing else
+// in the pipeline changes size, so the flow and depth chains keep their history.
+bool Pipeline::EnsureNeuralTextures(GpuContext& gpu, UINT inW, UINT inH, UINT outW, UINT outH, bool scaled) {
+    if (inW == m_nrInW && inH == m_nrInH && outW == m_nrOutW && outH == m_nrOutH && scaled == m_nrScaled) return true;
+    gpu.WaitIdle();
+    if (m_nr.Created()) { m_nr.Release(m_ngx); m_nrCreatedPreset = -1; }
+    bool ok = true;
+    ok &= CreateTex(gpu, m_nrIn, inW, inH, DXGI_FORMAT_R8G8B8A8_UNORM, true, L"nrIn");
+    ok &= CreateTex(gpu, m_nrOut, outW, outH, DXGI_FORMAT_R8G8B8A8_UNORM, true, L"nrOut");
+    if (scaled) {
+        ok &= CreateTex(gpu, m_nrMv, inW, inH, DXGI_FORMAT_R16G16_FLOAT, true, L"nrMv");
+        ok &= CreateTex(gpu, m_nrDepth, inW, inH, DXGI_FORMAT_R32_FLOAT, true, L"nrDepth");
+    } else {
+        ReleaseTex(gpu, m_nrMv); ReleaseTex(gpu, m_nrDepth);
+    }
+    m_nrInExposed = false;
+    m_nrInW = inW; m_nrInH = inH; m_nrOutW = outW; m_nrOutH = outH; m_nrScaled = scaled;
+    if (ok) Log::Info("Neural pass resolution: %ux%u -> %ux%u%s", inW, inH, outW, outH, scaled ? " (reduced)" : "");
+    else Log::Error("Neural pass textures could not be created (%ux%u)", inW, inH);
+    return ok;
+}
+
 // The network may look at an exposed copy of its input (a paper-white scale for the neural pass only); the composite
 // pass undoes the gain, so the output keeps the original brightness and only the character of the result changes.
+// With a reduced pass resolution the copy is also the box-filtered small picture, with the guidance resampled to it.
 Pipeline::Tex& Pipeline::PrepareNeuralInput(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const Settings& s, Tex& base) {
     m_nrInExposed = false;
-    if (std::fabs(s.nrInputExposure - 1.0f) < 1e-3f || !m_nrIn.Valid()) return base;
+    const bool exposed = std::fabs(s.nrInputExposure - 1.0f) >= 1e-3f;
+    if (!m_nrIn.Valid() || (!exposed && !m_nrScaled)) return base;
     Transition(cmd, base, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
     Transition(cmd, m_nrIn, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
     DispatchDesc d;
-    d.id = ShaderId::Expose;
     d.constants.srcWidth = m_inW; d.constants.srcHeight = m_inH;
-    d.constants.dstWidth = m_inW; d.constants.dstHeight = m_inH;
+    d.constants.dstWidth = m_nrInW; d.constants.dstHeight = m_nrInH;
     d.constants.paramA = s.nrInputExposure;
     d.srv[0] = base.srv;
     d.uav[0] = m_nrIn.uav;
-    d.groupsX = Shaders::Groups(m_inW, 8); d.groupsY = Shaders::Groups(m_inH, 8);
+    if (m_nrScaled) {
+        Transition(cmd, m_mv, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+        Transition(cmd, m_depth, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+        Transition(cmd, m_nrMv, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+        Transition(cmd, m_nrDepth, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+        d.id = ShaderId::NeuralPrep;
+        d.constants.flags = exposed ? 1u : 0u;
+        d.constants.intA = std::max(1u, (m_inW + m_nrInW - 1) / m_nrInW);   // taps per axis cover the source footprint
+        d.constants.scaleX = (float)m_nrInW / (float)m_inW;                 // motion vectors in the pass's pixels
+        d.constants.scaleY = (float)m_nrInH / (float)m_inH;
+        d.srv[1] = m_mv.srv; d.srv[2] = m_depth.srv;
+        d.uav[1] = m_nrMv.uav; d.uav[2] = m_nrDepth.uav;
+    } else {
+        d.id = ShaderId::Expose;
+    }
+    d.groupsX = Shaders::Groups(m_nrInW, 8); d.groupsY = Shaders::Groups(m_nrInH, 8);
     m_shaders.Dispatch(cmd, gpu, d);
     m_nrInExposed = true;
     return m_nrIn;
@@ -881,11 +923,11 @@ bool Pipeline::RunNeural(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const 
     if (m_nrFailed || !m_ngx.Initialized()) return false;
     const bool useCore = s.nrRoute == RouteNgxCore;
     if (!useCore && !m_nr.RuntimeLoaded()) return false;
-    if (!m_nr.Created() || m_nr.InputWidth() != m_inW || m_nr.InputHeight() != m_inH || m_nr.OutputWidth() != m_outW ||
-        m_nr.OutputHeight() != m_outH || m_nrCreatedUseCore != useCore || m_nrCreatedPreset != s.nrPreset) {
+    if (!m_nr.Created() || m_nr.InputWidth() != m_nrInW || m_nr.InputHeight() != m_nrInH || m_nr.OutputWidth() != m_nrOutW ||
+        m_nr.OutputHeight() != m_nrOutH || m_nrCreatedUseCore != useCore || m_nrCreatedPreset != s.nrPreset) {
         if (m_nr.Created()) { gpu.WaitIdle(); m_nr.Release(m_ngx); }
         std::string err;
-        if (!m_nr.Create(m_ngx, cmd, m_inW, m_inH, m_outW, m_outH, s.nrPreset, useCore, err)) {
+        if (!m_nr.Create(m_ngx, cmd, m_nrInW, m_nrInH, m_nrOutW, m_nrOutH, s.nrPreset, useCore, err)) {
             m_nrFailed = true; m_nrError = err;
             Log::Error("DLSSNR: %s", err.c_str());
             LogRuntimeGenerationHint(gpu, m_nr.RuntimeVersion());
@@ -898,12 +940,14 @@ bool Pipeline::RunNeural(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const 
     }
     if (m_nrSkipped) { reset = true; m_nrSkipped = false; }   // frames went by without the pass: its history is stale
     gpu.TimerBegin(cmd, GpuTimer::Neural);
+    Tex& mv = m_nrScaled ? m_nrMv : m_mv;         // guidance at the pass size when the pass is reduced
+    Tex& depth = m_nrScaled ? m_nrDepth : m_depth;
     Transition(cmd, input, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
-    Transition(cmd, m_mv, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
-    Transition(cmd, m_depth, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    Transition(cmd, mv, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    Transition(cmd, depth, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
     Transition(cmd, m_nrOut, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
     DlssnrFeature::Inputs in;
-    in.color = input.res.Get(); in.depth = m_depth.res.Get(); in.mvec = m_mv.res.Get(); in.output = m_nrOut.res.Get();
+    in.color = input.res.Get(); in.depth = depth.res.Get(); in.mvec = mv.res.Get(); in.output = m_nrOut.res.Get();
     in.reset = reset;
     DlssnrFeature::Params p;
     p.preset = s.nrPreset; p.style = s.nrStyle;
@@ -978,13 +1022,24 @@ void Pipeline::RunComposite(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, con
     if (bypass) flags |= 4;
     if (m_inW != m_outW || m_inH != m_outH) flags |= 32;
     if (!bypass && neuralBase && neuralInput &&
-        (neuralInput != neuralBase || std::fabs(s.nrToneTransfer - 1.0f) > 1e-3f || std::fabs(s.nrColorStrength - 1.0f) > 1e-3f)) {
-        // Output blend: the neural pass's brightness and colour changes reach the output with separate strengths, and
-        // the exposure the network saw is undone. All three at their defaults leave the neural result untouched.
+        (neuralInput != neuralBase || m_nrScaled || std::fabs(s.nrToneTransfer - 1.0f) > 1e-3f ||
+         std::fabs(s.nrColorStrength - 1.0f) > 1e-3f || std::fabs(s.nrShadowGain - 1.0f) > 1e-3f ||
+         std::fabs(s.nrHighlightGain - 1.0f) > 1e-3f)) {
+        // Output blend: the neural pass's brightness and colour changes reach the output with separate strengths
+        // (the darkening and the brightening each with their own), and the exposure the network saw is undone. All
+        // at their defaults leave the neural result untouched. A reduced pass always goes through here: the small
+        // neural picture and its input are upsampled and their difference is added to the full-resolution picture.
         flags |= 64;
         d.constants.paramC = s.nrToneTransfer;
         d.constants.paramD = s.nrColorStrength;
-        d.constants.paramE = neuralInput != neuralBase ? 1.0f / std::max(s.nrInputExposure, 0.01f) : 1.0f;
+        d.constants.paramE = (neuralInput != neuralBase && m_nrInExposed && std::fabs(s.nrInputExposure - 1.0f) >= 1e-3f)
+                                 ? 1.0f / std::max(s.nrInputExposure, 0.01f) : 1.0f;
+        d.constants.extra1[0] = s.nrShadowGain;
+        d.constants.extra1[1] = s.nrHighlightGain;
+        if (m_nrScaled) {
+            flags |= 256;
+            d.constants.extra0[0] = (float)m_nrOutW; d.constants.extra0[1] = (float)m_nrOutH;
+        }
     }
     // Strengths above 1: the runtime stops at 1, so the extra range amplifies the difference between the neural result
     // and the original picture. The highest of the five strengths sets the gain (1..2).
@@ -1139,6 +1194,12 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
     }
     const bool nrWanted = s.nrEnabled && (!captureOnly || m_nrBurst > 0);
     const bool dlaaWanted = s.dlaaEnabled;
+    // Neural pass size: below the input resolution when asked for, never while the pass itself upscales.
+    const bool nrScaled = !(m_inW != m_outW || m_inH != m_outH) && s.nrInputScale < 100;
+    const UINT nrInW = nrScaled ? std::max(64u, Even(m_inW * (UINT)s.nrInputScale / 100u)) : m_inW;
+    const UINT nrInH = nrScaled ? std::max(64u, Even(m_inH * (UINT)s.nrInputScale / 100u)) : m_inH;
+    const UINT nrOutW = nrScaled ? nrInW : m_outW;
+    const UINT nrOutH = nrScaled ? nrInH : m_outH;
 
     if (fresh || !m_hasDisplay) {
         const double now = NowSeconds();
@@ -1208,7 +1269,7 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
             dlaaOk = RunDlaa(gpu, cmd, s, reset);
             if (dlaaOk) processed = &m_dlaaOut;
         }
-        if (nrWanted) {
+        if (nrWanted && EnsureNeuralTextures(gpu, nrInW, nrInH, nrOutW, nrOutH, nrScaled)) {
             neuralBase = processed;
             neuralIn = &PrepareNeuralInput(gpu, cmd, s, *processed);
             nrOk = RunNeural(gpu, cmd, s, *neuralIn, reset);
@@ -1225,7 +1286,7 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
         // No new source frame: keep the last results; re-run the neural pass only if its parameters changed.
         dlaaOk = dlaaWanted && !m_dlaaFailed && m_dlaa.Created();
         if (dlaaOk) processed = &m_dlaaOut;
-        if (nrWanted && !m_nrFailed && m_nr.Created()) {
+        if (nrWanted && !m_nrFailed && m_nr.Created() && EnsureNeuralTextures(gpu, nrInW, nrInH, nrOutW, nrOutH, nrScaled)) {
             neuralBase = processed;
             if (m_nrDirty) {
                 neuralIn = &PrepareNeuralInput(gpu, cmd, s, *processed);
@@ -1273,6 +1334,7 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
     }
 
     m_status.nrActive = nrOk;
+    m_status.nrPassWidth = m_nrInW; m_status.nrPassHeight = m_nrInH;
     m_status.nrStandby = captureOnly && !nrOk && !m_nrFailed;
     m_status.nrFailed = m_nrFailed;
     m_status.nrError = m_nrError;
