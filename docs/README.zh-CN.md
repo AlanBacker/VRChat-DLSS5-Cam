@@ -11,7 +11,7 @@ VRChat DLSS5 Cam 会捕获 VRChat 相机的画面，在你的 GeForce RTX 显卡
 它是一个普通的 Windows 程序：不向 VRChat 注入任何东西，也不需要 Mod。
 
 <p align="center">
-  <img src="images/main-zh.png" width="900" alt="主窗口：一张 VRChat 照片的分割对比（左边原始画面，右边 DLSS 5 结果），下方是素材库，右侧是设置">
+  <img src="images/main.png" width="900" alt="主窗口：一张 VRChat 照片的分割对比（左边原始画面，右边 DLSS 5 结果），下方是素材库，右侧是设置">
 </p>
 
 [![Build](https://github.com/AlanBacker/VRChat-DLSS5-Cam/actions/workflows/build.yml/badge.svg)](https://github.com/AlanBacker/VRChat-DLSS5-Cam/actions/workflows/build.yml)
