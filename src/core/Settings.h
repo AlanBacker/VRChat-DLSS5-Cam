@@ -10,7 +10,7 @@ enum DepthMode   { DepthFlat = 0, DepthGradient = 1, DepthZero = 2, DepthEstimat
 enum CompareMode { CompareOutput = 0, CompareOriginal = 1, CompareWipe = 2, CompareMotion = 3, CompareDepth = 4 };
 enum FitMode     { FitWindow = 0, FitOneToOne = 1 };
 enum NrRoute     { RouteSignedSnippet = 0, RouteNgxCore = 1 };
-enum SourceMode  { SourceSpout = 0, SourceImage = 1 };
+enum SourceMode  { SourceSpout = 0, SourceImage = 1, SourceVideo = 2 };
 
 struct Settings {
     // General
@@ -18,6 +18,11 @@ struct Settings {
     std::string senderName;            // UTF-8, empty = automatic (prefers VRCSender1)
     int         sourceMode = SourceSpout;   // Spout stream or a still image file
     std::string imagePath;             // UTF-8, the picture opened in image mode (reopened at startup)
+    std::string videoPath;             // UTF-8, the video opened in video mode (reopened at startup)
+    int  videoOutput = 0;              // 0 = MP4 (H.264), 1 = MP4 (HEVC), 2 = PNG sequence
+    int  videoBitrateMbps = 40;        // MP4 video bitrate
+    bool videoKeepAudio = true;        // copy the sound track into the MP4 (AAC)
+    bool videoHardwareDecode = true;   // decode with the GPU when the driver offers it
 
     // Resolution
     bool customResolution = false;

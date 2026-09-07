@@ -61,6 +61,11 @@ bool Settings::Load(const std::wstring& path) {
     r.Get("senderName", senderName);
     r.Get("sourceMode", sourceMode);
     r.Get("imagePath", imagePath);
+    r.Get("videoPath", videoPath);
+    r.Get("videoOutput", videoOutput);
+    r.Get("videoBitrateMbps", videoBitrateMbps);
+    r.Get("videoKeepAudio", videoKeepAudio);
+    r.Get("videoHardwareDecode", videoHardwareDecode);
     r.Get("customResolution", customResolution);
     r.Get("customWidth", customWidth);
     r.Get("customHeight", customHeight);
@@ -144,6 +149,11 @@ bool Settings::Save(const std::wstring& path) const {
     w.Put("senderName", senderName);
     w.Put("sourceMode", sourceMode);
     w.Put("imagePath", imagePath);
+    w.Put("videoPath", videoPath);
+    w.Put("videoOutput", videoOutput);
+    w.Put("videoBitrateMbps", videoBitrateMbps);
+    w.Put("videoKeepAudio", videoKeepAudio);
+    w.Put("videoHardwareDecode", videoHardwareDecode);
     w.Put("customResolution", customResolution);
     w.Put("customWidth", customWidth);
     w.Put("customHeight", customHeight);
@@ -222,7 +232,9 @@ void Settings::Clamp() {
     nrRoute = std::clamp(nrRoute, 0, 1);
     nrPreset = std::clamp(nrPreset, 0, 3);
     nrStyle = std::clamp(nrStyle, 0, 2);
-    sourceMode = std::clamp(sourceMode, 0, 1);
+    sourceMode = std::clamp(sourceMode, 0, 2);
+    videoOutput = std::clamp(videoOutput, 0, 2);
+    videoBitrateMbps = std::clamp(videoBitrateMbps, 5, 200);
     nrIntensity = std::clamp(nrIntensity, 0.0f, 2.0f);
     nrInputExposure = std::clamp(nrInputExposure, 0.25f, 4.0f);
     nrToneTransfer = std::clamp(nrToneTransfer, 0.0f, 2.0f);

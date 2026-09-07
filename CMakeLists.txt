@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(VRChatDLSS5Cam VERSION 0.4.2 LANGUAGES CXX)
+project(VRChatDLSS5Cam VERSION 0.5.0 LANGUAGES CXX)
 
 if(NOT WIN32)
   message(FATAL_ERROR "VRChat DLSS5 Cam targets Windows only.")
@@ -60,6 +60,9 @@ set(APP_SOURCES
   src/core/Capture.cpp
   src/core/SpoutReceiver.cpp
   src/core/ImageSource.cpp
+  src/core/MediaFoundation.cpp
+  src/core/VideoSource.cpp
+  src/core/VideoWriter.cpp
   src/gfx/Device.cpp
   src/gfx/Shaders.cpp
   src/gfx/Pipeline.cpp
@@ -84,7 +87,7 @@ target_compile_definitions(VRChatDLSS5Cam PRIVATE
 target_compile_options(VRChatDLSS5Cam PRIVATE /W4 /MP /utf-8 /permissive- /EHsc /wd4100 /wd4201 /wd4324)
 target_link_libraries(VRChatDLSS5Cam PRIVATE
   imgui spout ${NGX_STATIC_LIB}
-  d3d12 d3d11 dxgi d3dcompiler dxguid windowscodecs
+  d3d12 d3d11 dxgi d3dcompiler dxguid windowscodecs mfuuid
   ole32 shell32 shlwapi user32 gdi32 dwmapi comctl32 advapi32 psapi version winmm)
 set_target_properties(VRChatDLSS5Cam PROPERTIES OUTPUT_NAME "VRChatDLSS5Cam")
 

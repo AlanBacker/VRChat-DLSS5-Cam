@@ -5,12 +5,15 @@
 #include "core/Capture.h"
 #include "core/SpoutReceiver.h"
 #include "core/ImageSource.h"
+#include "core/VideoSource.h"
+#include "core/VideoWriter.h"
 #include "gfx/Device.h"
 #include "gfx/Pipeline.h"
 #include "ui/Fonts.h"
 #include "ui/MainUI.h"
 #include <atomic>
 #include <deque>
+#include <map>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -41,16 +44,69 @@ private:
         UINT         imageWidth = 0, imageHeight = 0;           // as processed
         UINT         imageOrigWidth = 0, imageOrigHeight = 0;   // as stored in the file
         bool         imageLoaded = false;
-        bool         imageConverging = false;    // still-image passes are still running
+        bool         imageConverging = false;    // still-image / video-preview passes are still running
+        bool         videoLoaded = false;
+        std::wstring videoPath;
+        std::string  videoName;
+        std::string  videoCodec;
+        UINT         videoWidth = 0, videoHeight = 0;
+        double       videoFps = 0.0;
+        UINT64       videoFrames = 0;            // estimate from the file
+        double       videoDurationSeconds = 0.0;
+        bool         videoHasAudio = false;
+        bool         videoHardwareDecode = false;
+        bool         videoProcessing = false;    // the file is being run through the pipeline
+        bool         videoFinishing = false;     // the encoder writes the tail of the file
+        UINT64       videoFrame = 0;             // frames delivered to the output
+        double       videoElapsed = 0.0;
+        std::string  videoOutName;
+        bool         batchRunning = false;
+        int          batchIndex = 0, batchCount = 0, batchDone = 0, batchFailed = 0;
+        std::string  batchItemName;
     };
     struct Notice { std::string text; bool error = false; };
     struct Command {
-        enum Type { LoadRuntime, LoadImage, CaptureImage };
+        enum Type { LoadRuntime, LoadImage, CaptureImage, LoadVideo, ProcessVideo, CancelVideo, BatchStart, BatchCancel };
         Type         type = LoadRuntime;
-        std::wstring path;                       // runtime DLL / image file / capture folder
+        std::wstring path;                       // runtime DLL / image or video file / capture folder
         bool         announce = false;           // LoadRuntime: toast on success and on a missing file
-        bool         keepAlpha = true;           // CaptureImage
-        bool         saveOriginal = false;       // CaptureImage
+        bool         keepAlpha = true;           // CaptureImage, BatchStart
+        bool         saveOriginal = false;       // CaptureImage, BatchStart
+        std::vector<std::wstring> paths;         // BatchStart
+    };
+    // A video file being run through the pipeline (processing thread).
+    struct VideoRun {
+        bool         active = false;
+        bool         cancel = false;
+        bool         pngSequence = false;
+        bool         frameHeld = false;          // the last frame produced no output yet: it is run again
+        int          heldRetries = 0;
+        UINT64       handed = 0;                 // frames handed to the pipeline
+        UINT64       delivered = 0;              // frames that reached the output
+        UINT64       total = 0;                  // estimate from the file
+        double       startTime = 0.0;
+        std::wstring folder;                     // capture folder
+        std::wstring stem;
+        std::wstring outPath;                    // MP4 file or PNG folder (once known)
+        int          codec = 0;
+        UINT32       bitrateKbps = 40000;
+        bool         withAudio = false;
+        bool         writerPrepared = false;
+        std::map<UINT64, std::pair<LONGLONG, LONGLONG>> times;   // frame index -> (pts, duration)
+        std::string  error;
+    };
+    // A queue of images and videos processed one after the other (processing thread).
+    struct BatchRun {
+        std::vector<std::wstring> files;
+        size_t       index = 0;
+        bool         active = false;
+        bool         itemStarted = false;
+        bool         itemIsVideo = false;
+        int          done = 0, failed = 0;
+        bool         cancel = false;
+        std::wstring folder;
+        bool         keepAlpha = true, saveOriginal = false;
+        std::wstring restoreImage, restoreVideo; // the user's own files, reopened afterwards
     };
     struct Shared {
         std::mutex               mutex;
@@ -79,7 +135,10 @@ private:
     void RegisterHotkey();
     void RequestRuntimeLoad(bool announce);
     void OpenImageFile(const std::wstring& path);
+    void OpenVideoFile(const std::wstring& path);
     void OnFileDropped(const std::wstring& path);
+    void AddBatchFiles(const std::vector<std::wstring>& paths);
+    void StartBatch();
     void PostCommand(Command&& c);
     void PushSettings();
     void MarkSettingsDirty();
@@ -93,6 +152,9 @@ private:
     void BrowseDepthModel();
     void BrowseFolder();
     void BrowseImage();
+    void BrowseVideo();
+    void BrowseBatchFiles();
+    void BrowseBatchFolder();
     void OpenPath(const std::wstring& path);
 
     // Processing thread.
@@ -101,7 +163,11 @@ private:
     void WakeWorker();
     void WorkerMain();
     void WorkerLoadRuntime(GpuContext& gpu, const std::wstring& path, bool announce);
-    void WorkerLoadImage(GpuContext& gpu, const std::wstring& path);
+    void WorkerLoadImage(GpuContext& gpu, const std::wstring& path, bool announce);
+    void WorkerLoadVideo(GpuContext& gpu, const std::wstring& path, bool hardwareDecode, bool announce);
+    bool WorkerStartVideo(const Settings& settings, VideoRun& run, const std::wstring& folder, std::string& error);
+    bool WorkerEndVideo(GpuContext& gpu, VideoRun& run, FrameSink& sink, bool completed);
+    void WorkerVideoFrame(VideoRun& run, std::vector<uint8_t>&& rgba, UINT w, UINT h, UINT pitch, UINT64 index);
     void PostNotice(const std::string& text, bool error);
 
     HINSTANCE     m_hInstance = nullptr;
@@ -120,6 +186,9 @@ private:
     bool          m_pendingBrowseDepthModel = false;
     bool          m_pendingBrowseFolder = false;
     bool          m_pendingBrowseImage = false;
+    bool          m_pendingBrowseVideo = false;
+    bool          m_pendingBrowseBatchFiles = false;
+    bool          m_pendingBrowseBatchFolder = false;
     float         m_dpiScale = 1.0f;
 
     std::wstring  m_exeDir;
@@ -131,6 +200,8 @@ private:
     Pipeline      m_pipeline;
     SpoutReceiver m_spout;                 // processing thread (SetRequestedSender is thread-safe)
     ImageSource   m_image;                 // processing thread
+    VideoSource   m_video;                 // processing thread
+    VideoWriter   m_videoWriter;           // processing thread
     Capture       m_capture;
     ui::Fonts     m_fonts;
     ui::MainUI    m_ui;
@@ -154,6 +225,8 @@ private:
     double         m_cpuMs = 0.0;
     std::string    m_lastCapture;
     bool           m_lastCaptureOk = true;
+    std::vector<std::wstring> m_batchFiles;   // interface thread: the batch queue as shown
+    std::vector<std::string>  m_batchNames;
 };
 
 } // namespace vdc

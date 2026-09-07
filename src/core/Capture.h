@@ -16,12 +16,14 @@ struct CaptureJob {
     UINT         height = 0;
     UINT         rowPitch = 0;
     bool         keepAlpha = false;
+    bool         quiet = false;     // a frame of a video sequence: no per-file log line or toast
     std::wstring path;
 };
 
 struct CaptureResult {
     std::wstring path;
     bool         ok = false;
+    bool         quiet = false;
     std::string  error;
     double       seconds = 0.0;
     uint64_t     bytes = 0;
@@ -40,6 +42,9 @@ public:
     static std::wstring MakeFileName(const std::wstring& folder, UINT width, UINT height, const wchar_t* suffix);
     // Builds "<folder>\<stem>_DLSS5_<w>x<h>[suffix].png" for a processed still image, appending _2, _3, ... while the
     // name is taken.
+    // Builds "<folder>\<stem>_DLSS5_<w>x<h>.<ext>" for a processed video, appending _2, _3, ... while the name is taken.
+    static std::wstring MakeVideoFileName(const std::wstring& folder, const std::wstring& stem, UINT width, UINT height,
+                                          const wchar_t* ext);
     static std::wstring MakeImageFileName(const std::wstring& folder, const std::wstring& stem, UINT width, UINT height,
                                           const wchar_t* suffix);
 

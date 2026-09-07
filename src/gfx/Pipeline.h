@@ -17,6 +17,12 @@
 
 namespace vdc {
 
+// Receives the processed frames of a video file (RGBA8 rows of pitch bytes) in frame order, on the processing thread.
+struct FrameSink {
+    virtual ~FrameSink() = default;
+    virtual void OnFrame(std::vector<uint8_t>&& rgba, UINT w, UINT h, UINT pitch, UINT64 index) = 0;
+};
+
 struct PipelineStatus {
     bool        sourceConnected = false;
     UINT        srcWidth = 0, srcHeight = 0;     // source picture (Spout sender or still image)
@@ -92,7 +98,12 @@ public:
     // sourceChanged = the source texture was recreated.
     void Render(GpuContext& gpu, const SourceFrame& src, const Settings& s, ID3D12GraphicsCommandList* cmd, bool fresh, bool sourceChanged);
     void AfterSubmit(GpuContext& gpu, UINT64 fenceValue);   // right after GpuContext::EndFrame: publishes the display, tags readbacks
-    void Update(GpuContext& gpu, Capture& capture);         // completes readbacks, feeds the PNG worker and the depth network
+    // Completes readbacks (PNG jobs go to capture, video frames to sink in frame order) and feeds the depth network.
+    void Update(GpuContext& gpu, Capture& capture, FrameSink* sink = nullptr);
+    // Video files: the next Render reads the processed frame back for the FrameSink, tagged with index.
+    void RequestFrameReadback(UINT64 index) { m_frameReadbackReq = true; m_frameReadbackIndex = index; }
+    bool FrameReadbackPending() const { return m_frameReadbackReq; }   // still waiting for a frame that produced output
+    void CancelFrameReadback() { m_frameReadbackReq = false; }
     void PublishStatus(GpuContext& gpu);                    // copies the status (plus GPU timers) for StatusSnapshot
     const PipelineStatus& Status() const { return m_status; }
     bool NeedsFrame() const;                                // pending requests that want a frame even without new input
@@ -131,6 +142,8 @@ private:
         UINT64       fence = 0;
         bool         inUse = false;
         bool         keepAlpha = false;
+        bool         toSink = false;     // a video frame for the FrameSink instead of a PNG job
+        UINT64       index = 0;          // frame number of a sink readback
         std::wstring path;
     };
     struct Config {
@@ -179,7 +192,8 @@ private:
                                  bool dlaaWanted) const;
     void RunComposite(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const Settings& s, Tex& processed, Tex* neuralBase,
                       Tex* neuralInput, bool bypass);
-    void EnqueueReadback(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, Tex& src, const std::wstring& path, bool keepAlpha);
+    void EnqueueReadback(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, Tex& src, const std::wstring& path, bool keepAlpha,
+                         bool toSink = false, UINT64 index = 0);
 
     Shaders        m_shaders;
     NgxCore        m_ngx;
@@ -305,6 +319,8 @@ private:
 
     mutable std::mutex m_captureMutex;
     bool         m_captureRequested = false;
+    bool         m_frameReadbackReq = false;      // processing thread only
+    UINT64       m_frameReadbackIndex = 0;
     // "Neural pass only for captures": a request arms the capture and starts a warm-up burst of fresh frames.
     bool         m_captureArmed = false;
     double       m_captureArmedTime = 0.0;

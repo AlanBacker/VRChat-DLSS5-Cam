@@ -54,6 +54,19 @@ std::wstring Capture::MakeFileName(const std::wstring& folder, UINT width, UINT 
     return JoinPath(folder, buf);
 }
 
+std::wstring Capture::MakeVideoFileName(const std::wstring& folder, const std::wstring& stem, UINT width, UINT height,
+                                        const wchar_t* ext) {
+    const std::wstring base = stem.empty() ? L"video" : stem;
+    for (int n = 1; n < 10000; ++n) {
+        wchar_t buf[256];
+        if (n == 1) swprintf_s(buf, L"_DLSS5_%ux%u.%s", width, height, ext);
+        else        swprintf_s(buf, L"_DLSS5_%ux%u_%d.%s", width, height, n, ext);
+        const std::wstring path = JoinPath(folder, base + buf);
+        if (!FileExists(path)) return path;
+    }
+    return JoinPath(folder, base + L"_DLSS5_" + TimestampForFileName() + L"." + ext);
+}
+
 std::wstring Capture::MakeImageFileName(const std::wstring& folder, const std::wstring& stem, UINT width, UINT height,
                                         const wchar_t* suffix) {
     std::wstring base = stem.empty() ? L"image" : stem;
@@ -83,10 +96,11 @@ void Capture::WorkerMain() {
         }
         CaptureResult result;
         result.path = job.path;
+        result.quiet = job.quiet;
         const double t0 = NowSeconds();
         result.ok = EncodePng(job, result.error, result.bytes);
         result.seconds = NowSeconds() - t0;
-        if (result.ok) Log::Info("Saved %s (%ux%u, %.0f KB, %.2f s)", WideToUtf8(job.path).c_str(), job.width, job.height,
+        if (result.ok && !result.quiet) Log::Info("Saved %s (%ux%u, %.0f KB, %.2f s)", WideToUtf8(job.path).c_str(), job.width, job.height,
                                  result.bytes / 1024.0, result.seconds);
         else Log::Error("Capture failed for %s: %s", WideToUtf8(job.path).c_str(), result.error.c_str());
         {

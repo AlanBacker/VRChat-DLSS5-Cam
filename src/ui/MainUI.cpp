@@ -3,6 +3,7 @@
 #include "core/I18n.h"
 #include "core/Log.h"
 #include "core/Util.h"
+#include "core/VideoSource.h"
 #include "imgui_internal.h"
 #include <algorithm>
 #include <cmath>
@@ -30,6 +31,12 @@ const char* HotkeyKeyName(unsigned vk) {
 }
 
 std::string FormatMs(double ms) { return StrPrintf("%.2f ms", ms); }
+std::string FormatDuration(double seconds) {   // m:ss, h:mm:ss above an hour
+    const int t = (int)(std::max(0.0, seconds) + 0.5);
+    if (t >= 3600) return StrPrintf("%d:%02d:%02d", t / 3600, (t / 60) % 60, t % 60);
+    return StrPrintf("%d:%02d", t / 60, t % 60);
+}
+bool IsVideoName(const std::string& name) { return VideoSource::IsSupportedExtension(Utf8ToWide(name)); }
 std::string FormatMsFixed(double ms) { return StrPrintf("%6.2f ms", ms); }   // for the monospace font: constant width
 constexpr float kZoomMin = 0.1f, kZoomMax = 8.0f;   // preview magnification limits, relative to the picture's pixels
 
@@ -149,12 +156,20 @@ void MainUI::DrawTopBar(Settings& s, const UiFrameInfo& info, UiEvents& ev, cons
     const float top = style.WindowPadding.y;
     auto centred = [&](float itemH) { return top + (rowH - itemH) * 0.5f; };
     const bool imageMode = s.sourceMode == SourceImage;
+    const bool videoMode = s.sourceMode == SourceVideo;
+    const bool busy = info.videoProcessing || info.batchRunning;   // the main button cancels the run
+    const bool uiRateOnly = (imageMode || videoMode) && !info.videoProcessing;
 
     // Left part: title and badges.
     const bool haveSenders = info.senders && !info.senders->empty();
-    const char* badge = imageMode ? (info.imageLoaded ? TR(ImageLabel) : TR(NoImage))
+    const std::string batchBadge = info.batchRunning ? StrPrintf(TR(BatchRunning), std::min(info.batchIndex + 1, info.batchCount), info.batchCount) : std::string();
+    const char* badge = info.batchRunning ? batchBadge.c_str()
+                      : videoMode ? (info.videoProcessing ? TR(VideoProcessing) : info.videoLoaded ? TR(VideoLabel) : TR(NoVideo))
+                      : imageMode ? (info.imageLoaded ? TR(ImageLabel) : TR(NoImage))
                       : info.sourceConnected ? TR(StatusConnected) : haveSenders ? TR(StatusWaiting) : TR(StatusNoSpout);
-    const ImU32 badgeFg = imageMode ? (info.imageLoaded ? p.good : p.muted)
+    const ImU32 badgeFg = info.batchRunning ? p.accentHover
+                        : videoMode ? (info.videoProcessing ? p.warn : info.videoLoaded ? p.good : p.muted)
+                        : imageMode ? (info.imageLoaded ? p.good : p.muted)
                         : info.sourceConnected ? p.good : haveSenders ? p.warn : p.muted;
     const ImU32 badgeBg = WithAlpha(badgeFg, badgeFg == p.muted ? 0.2f : 0.18f);
     const bool nrBadge = info.status && info.status->nrActive;
@@ -169,13 +184,13 @@ void MainUI::DrawTopBar(Settings& s, const UiFrameInfo& info, UiEvents& ev, cons
     // Right part: processing / interface rates, language, sidebar toggle, capture. Rates are padded to three digits
     // in the monospace font and their reserved width comes from a template, so a changing number never moves the
     // controls to its right.
-    const char* captureText = imageMode ? TR(ProcessAndSave) : TR(Capture);
+    const char* captureText = busy ? TR(Cancel) : videoMode ? TR(ProcessVideo) : imageMode ? TR(ProcessAndSave) : TR(Capture);
     const float captureW = ImGui::CalcTextSize(captureText).x + style.FramePadding.x * 2.0f + 24.0f;
     const float sidebarBtnW = frameH + 6.0f;
-    const std::string fpsText = imageMode
+    const std::string fpsText = uiRateOnly
         ? StrPrintf("%s %3.0f %s", TR(UiFps), m_shown.fps, TR(Fps))
         : StrPrintf("%s %3.0f %s  \xC2\xB7  %s %3.0f %s", TR(ProcessingFps), m_shown.processingFps, TR(Fps), TR(UiFps), m_shown.fps, TR(Fps));
-    const std::string fpsTemplate = imageMode
+    const std::string fpsTemplate = uiRateOnly
         ? StrPrintf("%s 000 %s", TR(UiFps), TR(Fps))
         : StrPrintf("%s 000 %s  \xC2\xB7  %s 000 %s", TR(ProcessingFps), TR(Fps), TR(UiFps), TR(Fps));
     ImGui::PushFont(fonts.Mono(), 0.0f);
@@ -232,8 +247,13 @@ void MainUI::DrawTopBar(Settings& s, const UiFrameInfo& info, UiEvents& ev, cons
     ImGui::SameLine();
     ImGui::SetCursorPosY(centred(frameH));
     const std::string captureLabel = std::string("\xE2\x97\x8F ") + captureText;
-    if (AccentButton(captureLabel.c_str(), ImVec2(captureW, 0))) ev.captureNow = true;
-    if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip)) ImGui::SetTooltip("%s (%s)", imageMode ? TR(ImageHint) : TR(CaptureHint), info.hotkeyText.c_str());
+    if (AccentButton(captureLabel.c_str(), ImVec2(captureW, 0))) {
+        if (info.batchRunning) ev.batchCancel = true;
+        else if (info.videoProcessing) ev.cancelVideo = true;
+        else ev.captureNow = true;
+    }
+    if (!busy && ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip))
+        ImGui::SetTooltip("%s (%s)", videoMode ? TR(VideoHint) : imageMode ? TR(ImageHint) : TR(CaptureHint), info.hotkeyText.c_str());
     ImGui::EndChild();
 }
 
@@ -246,6 +266,7 @@ void MainUI::DrawSidebar(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
     if (SectionHeader(TR(SecGuidance), "guidance", false)) SectionGuidance(s, info, ev);
     if (SectionHeader(TR(SecDlaa), "dlaa", false)) SectionDlaa(s, info, ev);
     if (SectionHeader(TR(SecCapture), "capture")) SectionCapture(s, info, ev);
+    if (SectionHeader(TR(SecBatch), "batch", false)) SectionBatch(s, info, ev);
     if (SectionHeader(TR(SecDisplay), "display", false)) SectionDisplay(s, info, ev);
     if (SectionHeader(TR(SecAbout), "about", false)) SectionAbout(s, info, ev, fonts);
     ImGui::PopItemWidth();
@@ -253,12 +274,63 @@ void MainUI::DrawSidebar(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
 
 void MainUI::SectionSource(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
     const Palette& p = Colors();
-    // Live camera stream or a picture from disk.
+    // Live camera stream, a picture or a video from disk.
+    const bool busy = info.videoProcessing || info.batchRunning;
     {
-        const char* modes[] = { TR(SourceSpout), TR(SourceImage) };
-        if (ComboIds(TR(SourceMode), &s.sourceMode, modes, 2, TR(SourceModeHint))) { ev.sourceModeChanged = true; ev.settingsChanged = true; }
+        const char* modes[] = { TR(SourceSpout), TR(SourceImage), TR(SourceVideo) };
+        ImGui::BeginDisabled(busy);
+        if (ComboIds(TR(SourceMode), &s.sourceMode, modes, 3, TR(SourceModeHint))) { ev.sourceModeChanged = true; ev.settingsChanged = true; }
+        ImGui::EndDisabled();
     }
-    if (s.sourceMode == SourceImage) {
+    if (s.sourceMode == SourceVideo) {
+        ImGui::BeginDisabled(busy);
+        if (ImGui::Button(TR(OpenVideo), ImVec2(-FLT_MIN, 0))) ev.openVideo = true;
+        ImGui::EndDisabled();
+        if (info.videoLoaded) {
+            StatusDot(p.good, StrPrintf("%s  %ux%u  %.3g %s  %s", info.videoName.c_str(), info.videoWidth, info.videoHeight, info.videoFps, TR(Fps),
+                                        FormatDuration(info.videoDurationSeconds).c_str()).c_str());
+            ImGui::TextDisabled("%s: %s (%s)  \xC2\xB7  %s", TR(VideoDecoder), info.videoCodec.c_str(),
+                                info.videoHardwareDecode ? TR(HwLabel) : TR(SwLabel), info.videoHasAudio ? TR(Audio) : TR(NoAudio));
+            if (info.videoProcessing) {
+                const unsigned long long total = std::max(info.videoFrames, info.videoFrame);
+                const float frac = total ? (float)((double)info.videoFrame / (double)total) : 0.0f;
+                const std::string label = StrPrintf(TR(FrameOf), (unsigned long long)info.videoFrame, total);
+                ImGui::ProgressBar(frac, ImVec2(-FLT_MIN, 0), label.c_str());
+                const double rate = info.videoElapsed > 0.5 ? (double)info.videoFrame / info.videoElapsed : 0.0;
+                const double remaining = (rate > 0.0 && total > info.videoFrame) ? (double)(total - info.videoFrame) / rate : 0.0;
+                if (info.videoFinishing) ImGui::TextDisabled("%s", TR(VideoFinishing));
+                else ImGui::TextDisabled("%5.1f %s  \xC2\xB7  %s %s", rate, TR(Fps), FormatDuration(remaining).c_str(), TR(Remaining));
+                if (!info.batchRunning && AccentButton(TR(Cancel), ImVec2(-FLT_MIN, 0))) ev.cancelVideo = true;
+            } else {
+                ImGui::TextDisabled("%s", info.imageConverging ? TR(Processing) : TR(Converged));
+                ImGui::BeginDisabled(info.batchRunning);
+                if (AccentButton(TR(ProcessVideo), ImVec2(-FLT_MIN, 0))) ev.captureNow = true;
+                ImGui::EndDisabled();
+            }
+        } else {
+            StatusDot(p.muted, TR(NoVideo));
+            ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(ImGuiCol_TextDisabled));
+            ImGui::TextWrapped("%s", TR(VideoHint));
+            ImGui::PopStyleColor();
+        }
+        ImGui::Spacing();
+        {
+            const char* outputs[] = { TR(VideoOutputH264), TR(VideoOutputHevc), TR(VideoOutputPng) };
+            ImGui::BeginDisabled(busy);
+            if (ComboIds(TR(VideoOutput), &s.videoOutput, outputs, 3, TR(TipVideoOutput))) ev.settingsChanged = true;
+            if (s.videoOutput != 2) {
+                if (SliderIntReset(TR(Bitrate), &s.videoBitrateMbps, 5, 200, 40, "%d Mbit/s", TR(TipBitrate))) ev.settingsChanged = true;
+                if (Toggle(TR(KeepAudio), &s.videoKeepAudio)) ev.settingsChanged = true;
+                Help(TR(TipKeepAudio));
+            }
+            if (Toggle(TR(HardwareDecode), &s.videoHardwareDecode)) ev.settingsChanged = true;
+            Help(TR(TipHardwareDecode));
+            ImGui::EndDisabled();
+        }
+        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(ImGuiCol_TextDisabled));
+        ImGui::TextWrapped("%s", TR(DropHint));
+        ImGui::PopStyleColor();
+    } else if (s.sourceMode == SourceImage) {
         if (ImGui::Button(TR(OpenImage), ImVec2(-FLT_MIN, 0))) ev.openImage = true;
         if (info.imageLoaded) {
             StatusDot(p.good, StrPrintf("%s  %ux%u", info.imageName.c_str(), info.imageOrigWidth, info.imageOrigHeight).c_str());
@@ -331,13 +403,13 @@ void MainUI::SectionSource(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         ImGui::NewLine();
         ImGui::Unindent(6.0f);
     }
-    if (s.sourceMode != SourceImage) {
+    if (s.sourceMode == SourceSpout) {
         ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(ImGuiCol_TextDisabled));
         ImGui::TextWrapped("%s", TR(VrchatResHint));
         ImGui::PopStyleColor();
     }
     // HDR source controls: only meaningful for floating-point (scene-linear) Spout textures.
-    if (info.sourceIsHdr && s.sourceMode != SourceImage) {
+    if (info.sourceIsHdr && s.sourceMode == SourceSpout) {
         ImGui::Spacing();
         ImGui::TextUnformatted(TR(HdrSource));
         ImGui::Indent(6.0f);
@@ -367,7 +439,7 @@ void MainUI::SectionNeural(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
     ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(ImGuiCol_TextDisabled));
     ImGui::TextWrapped("%s", TR(NrHint));
     ImGui::PopStyleColor();
-    if (s.sourceMode != SourceImage) {
+    if (s.sourceMode == SourceSpout) {
         if (Toggle(TR(NrCaptureOnly), &s.nrCaptureOnly)) ev.settingsChanged = true;
         Help(TR(TipNrCaptureOnly));
     }
@@ -625,7 +697,8 @@ void MainUI::SectionDlaa(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
 
 void MainUI::SectionCapture(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
     const Palette& p = Colors();
-    if (AccentButton(s.sourceMode == SourceImage ? TR(ProcessAndSave) : TR(Capture), ImVec2(-FLT_MIN, 0))) ev.captureNow = true;
+    if (AccentButton(s.sourceMode == SourceVideo ? TR(ProcessVideo) : s.sourceMode == SourceImage ? TR(ProcessAndSave) : TR(Capture), ImVec2(-FLT_MIN, 0)))
+        ev.captureNow = true;
     if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip)) ImGui::SetTooltip("%s", TR(CaptureHint));
     {
         SyncBuffer(m_folderBuf, sizeof(m_folderBuf), s.captureFolder, m_folderEditing);
@@ -690,6 +763,74 @@ void MainUI::SectionCapture(Settings& s, const UiFrameInfo& info, UiEvents& ev) 
     // Always one line: a count that only appears during a capture would shift the sections below it.
     if (info.capturePending) ImGui::TextDisabled("%zu %s", info.capturePending, TR(Pending));
     else ImGui::TextDisabled(" ");
+    ImGui::Spacing();
+}
+
+void MainUI::SectionBatch(Settings& /*s*/, const UiFrameInfo& info, UiEvents& ev) {
+    const Palette& p = Colors();
+    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(ImGuiCol_TextDisabled));
+    ImGui::TextWrapped("%s", TR(BatchHint));
+    ImGui::PopStyleColor();
+    const bool running = info.batchRunning;
+    const float half = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
+    ImGui::BeginDisabled(running);
+    if (ImGui::Button(TR(AddFiles), ImVec2(half, 0))) ev.batchAddFiles = true;
+    ImGui::SameLine();
+    if (ImGui::Button(TR(AddFolder), ImVec2(-FLT_MIN, 0))) ev.batchAddFolder = true;
+    ImGui::EndDisabled();
+    const std::vector<std::string>* files = info.batchFiles;
+    const int count = files ? (int)files->size() : 0;
+    if (count == 0) {
+        ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(ImGuiCol_TextDisabled));
+        ImGui::TextWrapped("%s", TR(BatchEmpty));
+        ImGui::PopStyleColor();
+    } else {
+        int images = 0, videos = 0;
+        for (const std::string& f : *files) { if (IsVideoName(f)) ++videos; else ++images; }
+        ImGui::TextDisabled(TR(BatchFiles), count, images, videos);
+        const float rowH = ImGui::GetTextLineHeightWithSpacing();
+        const float listH = rowH * (float)std::min(count, 6) + ImGui::GetStyle().WindowPadding.y * 2.0f;
+        ImGui::BeginChild("##batchlist", ImVec2(-FLT_MIN, listH), ImGuiChildFlags_Borders | ImGuiChildFlags_AlwaysUseWindowPadding);
+        const float removeW = ImGui::GetFrameHeight();
+        for (int i = 0; i < count; ++i) {
+            ImGui::PushID(i);
+            const bool current = running && i == info.batchIndex;
+            const bool done = running && i < info.batchIndex;
+            ImGui::PushStyleColor(ImGuiCol_Text, current ? p.accentHover : done ? p.good : ImGui::GetColorU32(ImGuiCol_Text));
+            const float rowX = ImGui::GetCursorPosX();
+            const float rightX = rowX + ImGui::GetContentRegionAvail().x - removeW;   // remove button column
+            const float textW = ImGui::GetContentRegionAvail().x - (running ? 0.0f : removeW + ImGui::GetStyle().ItemSpacing.x);
+            ImGui::PushTextWrapPos(rowX + std::max(textW, 40.0f));
+            ImGui::TextUnformatted((*files)[i].c_str());
+            ImGui::PopTextWrapPos();
+            ImGui::PopStyleColor();
+            if (!running) {
+                ImGui::SameLine(rightX);
+                if (ImGui::SmallButton("\xC3\x97")) ev.batchRemove = i;
+                if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip)) ImGui::SetTooltip("%s", TR(Remove));
+            }
+            ImGui::PopID();
+        }
+        ImGui::EndChild();
+    }
+    if (running) {
+        const int total = std::max(info.batchCount, 1);
+        const float frac = (float)std::min(info.batchIndex, info.batchCount) / (float)total;
+        const std::string label = StrPrintf(TR(BatchRunning), std::min(info.batchIndex + 1, info.batchCount), info.batchCount);
+        ImGui::ProgressBar(frac, ImVec2(-FLT_MIN, 0), label.c_str());
+        if (!info.batchItemName.empty()) ImGui::TextDisabled("%s", info.batchItemName.c_str());
+        if (info.videoProcessing)
+            ImGui::TextDisabled(TR(FrameOf), (unsigned long long)info.videoFrame, (unsigned long long)std::max(info.videoFrames, info.videoFrame));
+        if (AccentButton(TR(Cancel), ImVec2(-FLT_MIN, 0))) ev.batchCancel = true;
+    } else {
+        ImGui::BeginDisabled(count == 0 || info.videoProcessing);
+        if (AccentButton(TR(BatchStart), ImVec2(half, 0))) ev.batchStart = true;
+        ImGui::EndDisabled();
+        ImGui::SameLine();
+        ImGui::BeginDisabled(count == 0);
+        if (ImGui::Button(TR(Clear), ImVec2(-FLT_MIN, 0))) ev.batchClear = true;
+        ImGui::EndDisabled();
+    }
     ImGui::Spacing();
 }
 
@@ -805,7 +946,8 @@ void MainUI::DrawPreview(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
     ImDrawList* dl = ImGui::GetWindowDrawList();
 
     if (!info.hasDisplay || !info.displayTexture || !info.displayWidth || !info.displayHeight) {
-        const char* text = (s.sourceMode == SourceImage) ? (info.imageLoaded ? TR(NoDisplay) : TR(ImageHint))
+        const char* text = (s.sourceMode == SourceVideo) ? (info.videoLoaded ? TR(NoDisplay) : TR(VideoHint))
+                         : (s.sourceMode == SourceImage) ? (info.imageLoaded ? TR(NoDisplay) : TR(ImageHint))
                                                          : (info.sourceConnected ? TR(NoDisplay) : TR(PreviewHint));
         ImGui::PushFont(fonts.Ui(), ImGui::GetStyle().FontSizeBase * 1.1f);
         const float wrap = std::min(region.x * 0.8f, ImGui::GetFontSize() * 30.0f);
@@ -905,6 +1047,9 @@ void MainUI::DrawPreview(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
                              st.sceneCut ? StrPrintf("  [%s]", TR(SceneCut)).c_str() : "");
         lines[3] = (s.sourceMode == SourceImage)
             ? StrPrintf("GPU %s   %s %3.0f %s   %s", FormatMsFixed(m_shown.gpuMs[(UINT)GpuTimer::Frame]).c_str(), TR(UiFps), m_shown.fps, TR(Fps), info.imageName.c_str())
+            : (s.sourceMode == SourceVideo)
+            ? StrPrintf("GPU %s   %s %3.0f %s   %s %3.0f %s   %s", FormatMsFixed(m_shown.gpuMs[(UINT)GpuTimer::Frame]).c_str(),
+                        TR(ProcessingFps), m_shown.processingFps, TR(Fps), TR(UiFps), m_shown.fps, TR(Fps), info.videoName.c_str())
             : StrPrintf("GPU %s   %s %3.0f %s   %s %3.0f %s   %s %3.0f %s", FormatMsFixed(m_shown.gpuMs[(UINT)GpuTimer::Frame]).c_str(),
                         TR(ProcessingFps), m_shown.processingFps, TR(Fps), TR(UiFps), m_shown.fps, TR(Fps), TR(SenderFps), m_shown.senderFps, TR(Fps));
         ImGui::PushFont(fonts.Mono(), ImGui::GetStyle().FontSizeBase * 0.92f);
@@ -938,7 +1083,19 @@ void MainUI::DrawStatusBar(Settings& s, const UiFrameInfo& info, UiEvents& /*ev*
     ImGui::SetCursorPosY(ImGui::GetStyle().ItemSpacing.y);
     // Monospace, padded figures throughout: nothing here may shift when a number changes.
     ImGui::PushFont(fonts.Mono(), 0.0f);
-    if (s.sourceMode == SourceImage) {
+    if (info.batchRunning) {
+        const std::string progress = StrPrintf(TR(BatchRunning), std::min(info.batchIndex + 1, info.batchCount), info.batchCount);
+        StatusDot(p.accentHover, StrPrintf("%s  %s", progress.c_str(), info.batchItemName.c_str()).c_str());
+    } else if (s.sourceMode == SourceVideo) {
+        if (info.videoProcessing) {
+            const std::string frame = StrPrintf(TR(FrameOf), (unsigned long long)info.videoFrame, (unsigned long long)std::max(info.videoFrames, info.videoFrame));
+            StatusDot(p.warn, StrPrintf("%s  %s", info.videoName.c_str(), frame.c_str()).c_str());
+        } else if (info.videoLoaded) {
+            StatusDot(p.good, StrPrintf("%s  %ux%u @ %3.0f", info.videoName.c_str(), info.videoWidth, info.videoHeight, info.videoFps).c_str());
+        } else {
+            StatusDot(p.muted, TR(NoVideo));
+        }
+    } else if (s.sourceMode == SourceImage) {
         if (info.imageLoaded) StatusDot(p.good, StrPrintf("%s  %ux%u", info.imageName.c_str(), info.imageWidth, info.imageHeight).c_str());
         else StatusDot(p.muted, TR(NoImage));
     } else if (info.sourceConnected && info.status) {

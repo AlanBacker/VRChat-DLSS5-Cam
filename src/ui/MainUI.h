@@ -29,7 +29,25 @@ struct UiFrameInfo {
     UINT                  imageWidth = 0, imageHeight = 0;           // as processed
     UINT                  imageOrigWidth = 0, imageOrigHeight = 0;   // as stored in the file
     bool                  imageLoaded = false;
-    bool                  imageConverging = false;  // still-image passes still running
+    bool                  imageConverging = false;  // still-image / video-preview passes still running
+    bool                  videoLoaded = false;
+    std::string           videoName;                // file name of the opened video (UTF-8)
+    std::string           videoCodec;
+    UINT                  videoWidth = 0, videoHeight = 0;
+    double                videoFps = 0.0;
+    UINT64                videoFrames = 0;          // estimate from the file
+    double                videoDurationSeconds = 0.0;
+    bool                  videoHasAudio = false;
+    bool                  videoHardwareDecode = false;
+    bool                  videoProcessing = false;  // the file is being run through the pipeline
+    bool                  videoFinishing = false;
+    UINT64                videoFrame = 0;           // frames delivered to the output
+    double                videoElapsed = 0.0;
+    std::string           videoOutName;
+    bool                  batchRunning = false;
+    int                   batchIndex = 0, batchCount = 0, batchDone = 0, batchFailed = 0;
+    std::string           batchItemName;
+    const std::vector<std::string>* batchFiles = nullptr;   // names in the batch queue
     std::wstring          nrRuntimePath;      // effective path
     bool                  nrRuntimeExists = false;
     std::wstring          captureFolder;      // effective folder
@@ -65,7 +83,15 @@ struct UiEvents {
     bool resetDefaults = false;
     bool reloadRuntime = false;
     bool openImage = false;          // browse for a picture
-    bool sourceModeChanged = false;  // s.sourceMode switched between Spout and image
+    bool openVideo = false;          // browse for a video
+    bool cancelVideo = false;        // stop the running video
+    bool batchAddFiles = false;
+    bool batchAddFolder = false;
+    bool batchClear = false;
+    bool batchStart = false;
+    bool batchCancel = false;
+    int  batchRemove = -1;           // index of the queued file to drop
+    bool sourceModeChanged = false;  // s.sourceMode switched between Spout, image and video
 };
 
 class MainUI {
@@ -88,6 +114,7 @@ private:
     void SectionGuidance(Settings& s, const UiFrameInfo& info, UiEvents& ev);
     void SectionDlaa(Settings& s, const UiFrameInfo& info, UiEvents& ev);
     void SectionCapture(Settings& s, const UiFrameInfo& info, UiEvents& ev);
+    void SectionBatch(Settings& s, const UiFrameInfo& info, UiEvents& ev);
     void SectionDisplay(Settings& s, const UiFrameInfo& info, UiEvents& ev);
     void SectionAbout(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts);
 

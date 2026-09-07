@@ -29,6 +29,9 @@ constexpr const wchar_t* kWindowClass = L"VRChatDLSS5CamWindow";
 constexpr const wchar_t* kProjectUrl = L"https://github.com/AlanBacker/VRChat-DLSS5-Cam";
 constexpr const wchar_t* kImagePatterns =
     L"*.png;*.jpg;*.jpeg;*.jpe;*.jfif;*.bmp;*.dib;*.tif;*.tiff;*.gif;*.webp;*.heic;*.heif;*.avif;*.jxr;*.wdp;*.hdp;*.ico;*.dds";
+constexpr const wchar_t* kVideoPatterns =
+    L"*.mp4;*.m4v;*.mov;*.mkv;*.webm;*.avi;*.wmv;*.mpg;*.mpeg;*.ts;*.m2ts;*.mts;*.3gp;*.3g2;*.flv;*.asf";
+constexpr int kVideoHeldRetries = 10;   // passes a video frame gets to produce output before it is skipped
 
 // Still images: the neural network is temporal, so a picture is run through it several times until the result
 // settles. Opening a picture (or loading the runtime) starts a longer run, a slider change a shorter one.
@@ -84,6 +87,21 @@ std::wstring LowerExtension(const std::wstring& path) {
     std::wstring ext = name.substr(dot + 1);
     for (wchar_t& c : ext) c = (wchar_t)std::towlower(c);
     return ext;
+}
+
+// Files of a folder (not its subfolders), sorted by name.
+std::vector<std::wstring> ListFolderFiles(const std::wstring& dir) {
+    std::vector<std::wstring> out;
+    WIN32_FIND_DATAW fd{};
+    HANDLE h = FindFirstFileExW(JoinPath(dir, L"*").c_str(), FindExInfoBasic, &fd, FindExSearchNameMatch, nullptr, 0);
+    if (h == INVALID_HANDLE_VALUE) return out;
+    do {
+        if (fd.dwFileAttributes & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_HIDDEN)) continue;
+        out.push_back(JoinPath(dir, fd.cFileName));
+    } while (FindNextFileW(h, &fd));
+    FindClose(h);
+    std::sort(out.begin(), out.end(), [](const std::wstring& a, const std::wstring& b) { return _wcsicmp(a.c_str(), b.c_str()) < 0; });
+    return out;
 }
 
 void NameCurrentThread(const wchar_t* name) {
@@ -193,6 +211,15 @@ bool App::Init(HINSTANCE hInstance, int nCmdShow) {
             PostCommand(std::move(c));
         } else {
             Log::Warn("Image from the previous session not found: %s", m_settings.imagePath.c_str());
+        }
+    }
+    if (m_settings.sourceMode == SourceVideo && !m_settings.videoPath.empty()) {
+        const std::wstring path = Utf8ToWide(m_settings.videoPath);
+        if (FileExists(path)) {
+            Command c; c.type = Command::LoadVideo; c.path = path;
+            PostCommand(std::move(c));
+        } else {
+            Log::Warn("Video from the previous session not found: %s", m_settings.videoPath.c_str());
         }
     }
     StartWorker();
@@ -332,8 +359,10 @@ void App::Shutdown() {
         m_pipeline.Shutdown(m_device);
         m_spout.Shutdown(m_device.Proc());
         m_image.Release(m_device.Proc());
+        m_video.Close(m_device.Proc());
     }
     m_capture.Shutdown();
+    mf::Shutdown();
     if (m_deviceReady) { m_device.Shutdown(); m_deviceReady = false; }
     if (!m_settingsPath.empty()) m_settings.Save(m_settingsPath);
     Log::Info("Shutdown complete");
@@ -403,10 +432,11 @@ void App::WorkerLoadRuntime(GpuContext& gpu, const std::wstring& path, bool anno
     m_pipeline.MarkNrDirty();
 }
 
-void App::WorkerLoadImage(GpuContext& gpu, const std::wstring& path) {
+void App::WorkerLoadImage(GpuContext& gpu, const std::wstring& path, bool announce) {
     std::string err;
     const std::string name = WideToUtf8(FileNameOf(path));
     if (m_image.Load(gpu, path, err)) {
+        if (!announce) return;
         PostNotice(StrPrintf("%s: %s (%ux%u)", TR(ImageLoaded), name.c_str(), m_image.OriginalWidth(), m_image.OriginalHeight()), false);
         if (m_image.Width() != m_image.OriginalWidth() || m_image.Height() != m_image.OriginalHeight())
             PostNotice(StrPrintf("%s: %ux%u", TR(ImageDownscaled), m_image.Width(), m_image.Height()), false);
@@ -414,6 +444,134 @@ void App::WorkerLoadImage(GpuContext& gpu, const std::wstring& path) {
         Log::Error("Image load failed for %s: %s", WideToUtf8(path).c_str(), err.c_str());
         PostNotice(StrPrintf("%s: %s (%s)", TR(ImageLoadFailed), name.c_str(), err.c_str()), true);
     }
+}
+
+void App::WorkerLoadVideo(GpuContext& gpu, const std::wstring& path, bool hardwareDecode, bool announce) {
+    std::string err;
+    const std::string name = WideToUtf8(FileNameOf(path));
+    if (m_video.Open(gpu, path, hardwareDecode, err)) {
+        const VideoInfo& vi = m_video.Info();
+        if (announce)
+            PostNotice(StrPrintf("%s: %s (%ux%u, %.3g fps, %.1f s)", TR(VideoLoaded), name.c_str(), vi.width, vi.height,
+                                 vi.fpsDen ? (double)vi.fpsNum / (double)vi.fpsDen : 0.0, vi.durationSeconds), false);
+    } else {
+        Log::Error("Video open failed for %s: %s", WideToUtf8(path).c_str(), err.c_str());
+        PostNotice(StrPrintf("%s: %s (%s)", TR(VideoLoadFailed), name.c_str(), err.c_str()), true);
+    }
+}
+
+// Starts feeding the opened video through the pipeline. The output file is created when the first processed frame
+// arrives (its size is only known then); frames go to an MP4 (VideoWriter) or a PNG sequence (Capture).
+bool App::WorkerStartVideo(const Settings& settings, VideoRun& run, const std::wstring& folder, std::string& error) {
+    run = VideoRun{};
+    if (!m_video.Loaded()) { error = "no video is open"; return false; }
+    run.pngSequence = settings.videoOutput == 2;
+    run.codec = settings.videoOutput == 1 ? 1 : 0;
+    run.bitrateKbps = (UINT32)std::clamp(settings.videoBitrateMbps, 5, 200) * 1000u;
+    run.withAudio = settings.videoKeepAudio && !run.pngSequence && m_video.Info().hasAudio;
+    run.folder = folder;
+    run.stem = m_video.Stem();
+    if (!CreateDirectories(folder)) { error = "cannot create the capture folder"; return false; }
+    if (run.pngSequence) {
+        std::wstring dir;
+        for (int n = 1; n < 10000; ++n) {
+            dir = JoinPath(folder, run.stem + L"_DLSS5" + (n == 1 ? std::wstring() : L"_" + std::to_wstring(n)));
+            if (!DirectoryExists(dir) && !FileExists(dir)) break;
+        }
+        if (!CreateDirectories(dir)) { error = "cannot create the output folder"; return false; }
+        run.outPath = dir;
+    }
+    if (!m_video.StartSequence(run.withAudio, error)) return false;
+    run.total = m_video.Info().frameEstimate;
+    run.startTime = NowSeconds();
+    run.active = true;
+    m_pipeline.RequestReset();
+    Log::Info("Video: processing %s (%llu frames expected) -> %s", WideToUtf8(m_video.Path()).c_str(), (unsigned long long)run.total,
+              run.pngSequence ? WideToUtf8(run.outPath).c_str() : run.codec == 1 ? "MP4 (HEVC)" : "MP4 (H.264)");
+    return true;
+}
+
+// A processed frame from the pipeline (in frame order).
+void App::WorkerVideoFrame(VideoRun& run, std::vector<uint8_t>&& rgba, UINT w, UINT h, UINT pitch, UINT64 index) {
+    if (!run.active) return;
+    LONGLONG pts = 0, duration = 0;
+    auto it = run.times.find(index);
+    if (it != run.times.end()) { pts = it->second.first; duration = it->second.second; run.times.erase(it); }
+    else {
+        const VideoInfo& vi = m_video.Info();
+        pts = (LONGLONG)((double)index * 10000000.0 * (double)vi.fpsDen / (double)std::max(1u, vi.fpsNum));
+    }
+    ++run.delivered;
+    if (run.pngSequence) {
+        while (m_capture.Pending() > 4 && !run.cancel) Sleep(1);   // the PNG encoder is slower than the pipeline
+        wchar_t name[64];
+        swprintf_s(name, L"_%06llu.png", (unsigned long long)index);
+        CaptureJob job;
+        job.width = w; job.height = h; job.rowPitch = pitch; job.keepAlpha = false; job.quiet = true;
+        job.path = JoinPath(run.outPath, run.stem + name);
+        job.pixels = std::move(rgba);
+        m_capture.Enqueue(std::move(job));
+        return;
+    }
+    if (!run.writerPrepared) {
+        run.writerPrepared = true;
+        run.outPath = Capture::MakeVideoFileName(run.folder, run.stem, w, h, L"mp4");
+        VideoWriterConfig cfg;
+        cfg.path = run.outPath;
+        cfg.fpsNum = m_video.Info().fpsNum; cfg.fpsDen = m_video.Info().fpsDen;
+        cfg.codec = run.codec;
+        cfg.bitrateKbps = run.bitrateKbps;
+        cfg.audio = run.withAudio ? m_video.AudioType() : nullptr;
+        m_videoWriter.Prepare(cfg);
+    }
+    m_videoWriter.PushFrame(index, pts, duration, std::move(rgba), pitch, w, h);
+}
+
+// Ends a run: frames still on the GPU reach the output, the file is closed (finished, or cut short on a cancel or
+// failure) and the result is announced. Not while a command list is being recorded.
+bool App::WorkerEndVideo(GpuContext& gpu, VideoRun& run, FrameSink& sink, bool completed) {
+    m_video.StopSequence();
+    gpu.WaitIdle();
+    m_pipeline.Update(gpu, m_capture, &sink);
+    m_pipeline.CancelFrameReadback();
+    {
+        std::lock_guard<std::mutex> lock(m_shared.mutex);
+        m_shared.source.videoFinishing = true;
+    }
+    bool ok = completed;
+    std::string error = run.error;
+    if (run.pngSequence) {
+        while (m_capture.Pending() > 0) Sleep(5);
+    } else if (run.writerPrepared) {
+        ComPtr<IMFSample> a;
+        while (m_video.PopAudio(a)) m_videoWriter.PushAudio(a);
+        if (completed) {
+            std::string err;
+            if (!m_videoWriter.Finish(err)) { ok = false; if (error.empty()) error = err; }
+        } else {
+            m_videoWriter.Abort();
+        }
+    } else if (completed) {
+        ok = false;
+        if (error.empty()) error = "no frame was processed";
+    }
+    const double seconds = std::max(NowSeconds() - run.startTime, 1e-3);
+    const std::string outName = WideToUtf8(FileNameOf(run.outPath));
+    if (ok) {
+        Log::Info("Video: %llu frames processed in %.1f s (%.1f fps) -> %s", (unsigned long long)run.delivered, seconds,
+                  (double)run.delivered / seconds, WideToUtf8(run.outPath).c_str());
+        PostNotice(StrPrintf("%s: %s (%llu %s, %.0f s)", TR(VideoSaved), outName.c_str(), (unsigned long long)run.delivered,
+                             "frames", seconds), false);
+    } else if (run.cancel) {
+        Log::Info("Video: cancelled after %llu frames (%s)", (unsigned long long)run.delivered, WideToUtf8(run.outPath).c_str());
+        PostNotice(TR(VideoCancelled), false);
+    } else {
+        Log::Error("Video: %s (%s)", error.c_str(), WideToUtf8(run.outPath).c_str());
+        PostNotice(StrPrintf("%s: %s", TR(VideoFailed), error.c_str()), true);
+    }
+    run = VideoRun{};
+    m_pipeline.RequestReset();
+    return ok;
 }
 
 void App::WorkerMain() {
@@ -429,6 +587,17 @@ void App::WorkerMain() {
     bool     imageChanged = false;           // image texture recreated since the last processed frame
     bool     imageCapturePending = false;
     Command  imageCapture;
+    bool     videoChanged = false;           // video texture recreated since the last processed frame
+    int      userMode = SourceSpout;         // the source mode chosen in the interface (a batch overrides it)
+    VideoRun videoRun;
+    BatchRun batch;
+    struct VideoSink final : FrameSink {
+        App* app = nullptr; VideoRun* run = nullptr;
+        void OnFrame(std::vector<uint8_t>&& rgba, UINT w, UINT h, UINT pitch, UINT64 index) override {
+            app->WorkerVideoFrame(*run, std::move(rgba), w, h, pitch, index);
+        }
+    } sink;
+    sink.app = this; sink.run = &videoRun;
     double   lastSenderScan = 0.0;
     double   lastTimelapse = NowSeconds();
     double   lastRun = 0.0;
@@ -463,12 +632,10 @@ void App::WorkerMain() {
             if (m_shared.settingsGeneration != settingsGen) {
                 settingsGen = m_shared.settingsGeneration;
                 settings = m_shared.settings;
+                userMode = settings.sourceMode;
                 settingsChanged = true;
             }
         }
-        const bool imageMode = settings.sourceMode == SourceImage;
-        const bool modeChanged = settings.sourceMode != activeMode;
-        activeMode = settings.sourceMode;
         bool commandRan = false;
         for (Command& c : commands) {
             commandRan = true;
@@ -478,16 +645,117 @@ void App::WorkerMain() {
                 passesLeft = std::max(passesLeft, kImageConvergePasses);
                 break;
             case Command::LoadImage:
-                WorkerLoadImage(gpu, c.path);
+                if (batch.active) break;
+                WorkerLoadImage(gpu, c.path, true);
                 imageChanged = true;
                 passesLeft = kImageConvergePasses;
                 break;
             case Command::CaptureImage:
+                if (batch.active) break;
                 imageCapturePending = true;
                 imageCapture = c;
                 break;
+            case Command::LoadVideo:
+                if (batch.active || videoRun.active) break;
+                WorkerLoadVideo(gpu, c.path, settings.videoHardwareDecode, true);
+                videoChanged = true;
+                passesLeft = kImageConvergePasses;
+                break;
+            case Command::ProcessVideo: {
+                if (batch.active || videoRun.active) break;
+                std::string err;
+                if (!WorkerStartVideo(settings, videoRun, c.path, err)) {
+                    Log::Error("Video: cannot start: %s", err.c_str());
+                    PostNotice(StrPrintf("%s: %s", TR(VideoFailed), err.c_str()), true);
+                }
+                break;
+            }
+            case Command::CancelVideo:
+                if (videoRun.active) videoRun.cancel = true;
+                break;
+            case Command::BatchStart:
+                if (batch.active || videoRun.active || c.paths.empty()) break;
+                batch = BatchRun{};
+                batch.files = std::move(c.paths);
+                batch.folder = c.path;
+                batch.keepAlpha = c.keepAlpha;
+                batch.saveOriginal = c.saveOriginal;
+                batch.restoreImage = m_image.Path();
+                batch.restoreVideo = m_video.Path();
+                batch.active = true;
+                imageCapturePending = false;
+                Log::Info("Batch: %zu files -> %s", batch.files.size(), WideToUtf8(batch.folder).c_str());
+                break;
+            case Command::BatchCancel:
+                if (!batch.active) break;
+                batch.cancel = true;
+                if (videoRun.active) videoRun.cancel = true;
+                if (batch.itemStarted && !batch.itemIsVideo) { imageCapturePending = false; batch.itemStarted = false; ++batch.failed; ++batch.index; }
+                break;
             }
         }
+
+        // Batch: the next file starts once the previous one is finished; the batch ends after the last one.
+        bool batchStep = false;
+        while (batch.active && !batch.itemStarted && !videoRun.active) {
+            batchStep = true;
+            if (batch.cancel || batch.index >= batch.files.size()) {
+                if (batch.cancel) {
+                    Log::Info("Batch: cancelled after %d of %zu files", batch.done, batch.files.size());
+                    PostNotice(StrPrintf(TR(BatchCancelled), batch.done, (int)batch.files.size()), false);
+                } else {
+                    Log::Info("Batch: finished, %d files processed, %d failed", batch.done, batch.failed);
+                    PostNotice(StrPrintf(TR(BatchFinished), batch.done, batch.failed), batch.failed > 0);
+                }
+                const BatchRun ended = std::move(batch);
+                batch = BatchRun{};
+                imageCapturePending = false;
+                // The user's own files come back (or go away, when there were none).
+                if (!ended.restoreImage.empty()) { if (m_image.Path() != ended.restoreImage) WorkerLoadImage(gpu, ended.restoreImage, false); }
+                else if (m_image.Loaded()) m_image.Release(gpu);
+                if (!ended.restoreVideo.empty()) { if (m_video.Path() != ended.restoreVideo) WorkerLoadVideo(gpu, ended.restoreVideo, settings.videoHardwareDecode, false); }
+                else if (m_video.Loaded()) m_video.Close(gpu);
+                imageChanged = videoChanged = true;
+                passesLeft = kImageConvergePasses;
+                break;
+            }
+            const std::wstring& file = batch.files[batch.index];
+            batch.itemIsVideo = VideoSource::IsSupportedExtension(file);
+            Log::Info("Batch: %zu/%zu %s", batch.index + 1, batch.files.size(), WideToUtf8(file).c_str());
+            if (batch.itemIsVideo) {
+                WorkerLoadVideo(gpu, file, settings.videoHardwareDecode, false);
+                std::string err;
+                if (!m_video.Loaded() || m_video.Path() != file || !WorkerStartVideo(settings, videoRun, batch.folder, err)) {
+                    if (!err.empty()) { Log::Error("Video: cannot start: %s", err.c_str()); PostNotice(StrPrintf("%s: %s", TR(VideoFailed), err.c_str()), true); }
+                    ++batch.failed; ++batch.index;
+                    continue;
+                }
+                videoChanged = true;
+                passesLeft = 0;
+            } else {
+                WorkerLoadImage(gpu, file, false);
+                if (!m_image.Loaded() || m_image.Path() != file) { ++batch.failed; ++batch.index; continue; }
+                imageChanged = true;
+                passesLeft = kImageConvergePasses;
+                imageCapturePending = true;
+                imageCapture = Command{};
+                imageCapture.type = Command::CaptureImage;
+                imageCapture.path = batch.folder;
+                imageCapture.keepAlpha = batch.keepAlpha;
+                imageCapture.saveOriginal = batch.saveOriginal;
+            }
+            batch.itemStarted = true;
+        }
+
+        // The mode the pipeline runs in: a batch item overrides the interface's choice.
+        const int mode = batch.active && batch.itemStarted ? (batch.itemIsVideo ? SourceVideo : SourceImage) : userMode;
+        settings.sourceMode = mode;
+        const bool imageMode = mode == SourceImage;
+        const bool videoMode = mode == SourceVideo;
+        const bool modeChanged = mode != activeMode;
+        activeMode = mode;
+        if (videoRun.active && !videoMode) videoRun.cancel = true;   // switched away while a video was running
+        const bool stillMode = imageMode || (videoMode && !videoRun.active);   // convergence passes on one picture
         if (settingsChanged && !modeChanged) passesLeft = std::max(passesLeft, kImageSettingsPasses);
         if (modeChanged) passesLeft = kImageConvergePasses;
 
@@ -504,6 +772,64 @@ void App::WorkerMain() {
                 // Save once the passes have settled: the capture rides on the next processed frame.
                 imageCapturePending = false;
                 m_pipeline.RequestCapture(imageCapture.path, imageCapture.keepAlpha, imageCapture.saveOriginal, m_image.Stem());
+            }
+            // A batch item is done once its picture has been written.
+            if (batch.active && batch.itemStarted && !batch.itemIsVideo && !imageCapturePending && !m_pipeline.CapturePending() &&
+                m_pipeline.Status().capturesInFlight == 0 && m_capture.Pending() == 0) {
+                batch.itemStarted = false; ++batch.done; ++batch.index;
+            }
+        } else if (videoMode) {
+            imageCapturePending = false;
+            src = m_video.Frame(!videoRun.active);
+            if (videoChanged) changed = true;
+            if (!videoRun.active) {
+                fresh = m_video.Loaded() && passesLeft > 0;
+            } else {
+                // Sound goes to the output as it is decoded, so the decoder never waits on a full audio queue.
+                if (!videoRun.pngSequence && m_videoWriter.Running()) { ComPtr<IMFSample> a; while (m_video.PopAudio(a)) m_videoWriter.PushAudio(a); }
+                bool ended = false, completed = false;
+                if (videoRun.cancel) {
+                    ended = true;
+                } else if (!videoRun.pngSequence && m_videoWriter.Failed()) {
+                    videoRun.error = m_videoWriter.Error(); ended = true;
+                } else if (videoRun.frameHeld) {
+                    // The last frame produced no output (a feature was created on it): run it through again.
+                    if (++videoRun.heldRetries > kVideoHeldRetries) {
+                        Log::Warn("Video: frame %llu produced no output after %d passes; skipped", (unsigned long long)(videoRun.handed - 1), kVideoHeldRetries);
+                        m_pipeline.CancelFrameReadback();
+                        videoRun.frameHeld = false; videoRun.heldRetries = 0;
+                    } else {
+                        fresh = true;
+                    }
+                } else {
+                    VideoFrameData t;
+                    switch (m_video.NextFrame(0.05, t)) {
+                    case VideoSource::Next::Frame:
+                        videoRun.times[t.index] = { t.pts, t.duration };
+                        ++videoRun.handed;
+                        videoRun.heldRetries = 0;
+                        m_pipeline.RequestFrameReadback(t.index);
+                        fresh = true;
+                        break;
+                    case VideoSource::Next::Wait: break;
+                    case VideoSource::Next::End: ended = true; completed = true; break;
+                    case VideoSource::Next::Error: videoRun.error = m_video.SequenceError(); ended = true; break;
+                    }
+                }
+                if (ended) {
+                    const bool ok = WorkerEndVideo(gpu, videoRun, sink, completed);
+                    if (batch.active && batch.itemStarted && batch.itemIsVideo) {
+                        batch.itemStarted = false; ++batch.index;
+                        if (ok) ++batch.done; else ++batch.failed;
+                    } else {
+                        std::string err;
+                        if (m_video.Loaded() && !m_video.ReloadPreview(err)) Log::Warn("Video: preview reload failed: %s", err.c_str());
+                        passesLeft = kImageConvergePasses;
+                    }
+                    src = m_video.Frame(true);
+                    changed = true;
+                    fresh = false;
+                }
             }
         } else {
             imageCapturePending = false;
@@ -544,30 +870,33 @@ void App::WorkerMain() {
         const bool deviceLost = m_device.DeviceRemoved();
         // A frame without new input still runs for pending requests, and about twice a second so the status
         // (runtime, NGX, depth estimator) stays current while nothing is connected.
-        const bool run = !deviceLost && (fresh || changed || commandRan || settingsChanged || m_pipeline.NeedsFrame() || now - lastRun >= 0.5);
+        const bool run = !deviceLost && (fresh || changed || commandRan || settingsChanged || batchStep || m_pipeline.NeedsFrame() ||
+                                         now - lastRun >= 0.5);
         if (run) {
             const double tBegin = NowSeconds();
             ID3D12GraphicsCommandList* cmd = gpu.BeginFrame();
             const double tRecord = NowSeconds();
             if (imageMode) { m_image.Upload(cmd, gpu); src = m_image.Frame(); imageChanged = false; }
+            else if (videoMode) { m_video.Upload(cmd, gpu); src = m_video.Frame(!videoRun.active); videoChanged = false; }
             m_pipeline.Render(gpu, src, settings, cmd, fresh, changed);
             const double tSubmit = NowSeconds();
             const UINT64 fence = gpu.EndFrame();
             m_pipeline.AfterSubmit(gpu, fence);
             const double tUpdate = NowSeconds();
-            m_pipeline.Update(gpu, m_capture);
+            m_pipeline.Update(gpu, m_capture, videoRun.active ? &sink : nullptr);
             m_pipeline.PublishStatus(gpu);
             const double tEnd = NowSeconds();
             lastRun = tEnd;
+            if (videoRun.active) videoRun.frameHeld = m_pipeline.FrameReadbackPending();
             // A still picture gets one depth estimate, which may land after the passes ran out: converge again with it.
-            if (imageMode) {
+            if (stillMode) {
                 const UINT64 inferences = m_pipeline.Status().depthInferences;
                 if (inferences != imageDepthSeen) { imageDepthSeen = inferences; passesLeft = std::max(passesLeft, kImageSettingsPasses); }
             }
 
             const bool processed = fresh && src.Connected() && src.hasFrame;
             if (processed) {
-                if (imageMode && passesLeft > 0) --passesLeft;
+                if (stillMode && passesLeft > 0) --passesLeft;
                 ++fpsWindowFrames;
                 const PipelineStatus& st = m_pipeline.Status();
                 ++perf.frames;
@@ -596,8 +925,29 @@ void App::WorkerMain() {
         if (run || now - lastPublish >= 0.25) {
             lastPublish = now;
             SourceInfo info;
-            info.mode = settings.sourceMode;
+            info.mode = mode;
             info.processingFps = processingFps;
+            {
+                const VideoInfo& vi = m_video.Info();
+                info.videoLoaded = m_video.Loaded();
+                info.videoPath = m_video.Path();
+                info.videoName = WideToUtf8(FileNameOf(m_video.Path()));
+                info.videoCodec = vi.codec;
+                info.videoWidth = vi.width; info.videoHeight = vi.height;
+                info.videoFps = vi.fpsDen ? (double)vi.fpsNum / (double)vi.fpsDen : 0.0;
+                info.videoFrames = vi.frameEstimate;
+                info.videoDurationSeconds = vi.durationSeconds;
+                info.videoHasAudio = vi.hasAudio;
+                info.videoHardwareDecode = vi.hardwareDecode;
+                info.videoProcessing = videoRun.active;
+                info.videoFrame = videoRun.delivered;
+                info.videoElapsed = videoRun.active ? now - videoRun.startTime : 0.0;
+                info.videoOutName = WideToUtf8(FileNameOf(videoRun.outPath));
+                info.batchRunning = batch.active;
+                info.batchIndex = (int)batch.index; info.batchCount = (int)batch.files.size();
+                info.batchDone = batch.done; info.batchFailed = batch.failed;
+                if (batch.active && batch.index < batch.files.size()) info.batchItemName = WideToUtf8(FileNameOf(batch.files[batch.index]));
+            }
             if (imageMode) {
                 info.connected = m_image.Loaded();
                 info.hasFrame = m_pipeline.HasDisplay();
@@ -608,6 +958,14 @@ void App::WorkerMain() {
                 info.imageWidth = m_image.Width(); info.imageHeight = m_image.Height();
                 info.imageOrigWidth = m_image.OriginalWidth(); info.imageOrigHeight = m_image.OriginalHeight();
                 info.format = m_image.Loaded() ? "BGRA8" : "";
+            } else if (videoMode) {
+                info.connected = m_video.Loaded();
+                info.hasFrame = m_pipeline.HasDisplay();
+                info.imageConverging = m_video.Loaded() && !videoRun.active && passesLeft > 0;
+                info.imageLoaded = m_image.Loaded();
+                info.imagePath = m_image.Path();
+                info.imageName = WideToUtf8(FileNameOf(m_image.Path()));
+                info.format = m_video.Loaded() ? "BGRA8" : "";
             } else {
                 info.connected = m_spout.Connected();
                 info.hasFrame = m_spout.HasFrame();
@@ -638,7 +996,8 @@ void App::WorkerMain() {
                 const double other = std::max(0.0, g(GpuTimer::Frame) - stages);
                 Log::Info("Perf: %s %.1f fps (sender %.1f, ui %.0f fps / %.2f ms gpu), cpu %.2f ms/frame (receive %.2f, wait %.2f, record %.2f, submit %.2f, update %.2f), "
                           "gpu %.2f ms (convert %.2f, guidance %.2f, flow %.2f, dlaa %.2f, neural %.2f, composite %.2f, other %.2f), depth net %.1f ms x %u, frames %u",
-                          imageMode ? "image passes" : "processing", perf.frames / (now - perf.logTime), m_spout.SenderFps(),
+                          videoRun.active ? "video" : imageMode ? "image passes" : videoMode ? "video preview" : "processing",
+                          perf.frames / (now - perf.logTime), m_spout.SenderFps(),
                           m_uiFpsShared.load(), m_uiGpuMsShared.load(), cpu, perf.receive / n, perf.wait / n, perf.record / n, perf.submit / n, perf.update / n,
                           g(GpuTimer::Frame), g(GpuTimer::Convert), g(GpuTimer::Guidance), g(GpuTimer::OpticalFlow), g(GpuTimer::Dlaa),
                           g(GpuTimer::Neural), g(GpuTimer::Composite), other, perf.depthRuns ? perf.depthMs / perf.depthRuns : 0.0, perf.depthRuns, perf.frames);
@@ -649,11 +1008,12 @@ void App::WorkerMain() {
         if (!run || !fresh) {
             // Idle: poll the live source about every millisecond (new Spout frames are picked up within ~1 ms),
             // more lazily when nothing is connected; commands and settings wake the thread immediately.
-            const DWORD ms = deviceLost ? 50 : (!imageMode && m_spout.Connected()) ? 1 : 4;
+            const DWORD ms = deviceLost ? 50 : (!imageMode && !videoMode && m_spout.Connected()) ? 1 : 4;
             WaitForSingleObject(m_wake, ms);
         }
     }
 
+    if (videoRun.active) { videoRun.cancel = true; WorkerEndVideo(gpu, videoRun, sink, false); }
     timeEndPeriod(1);
     if (SUCCEEDED(coHr)) CoUninitialize();
 }
@@ -664,6 +1024,7 @@ void App::DrainNotices() {
     CaptureResult cr;
     while (m_capture.PollResult(cr)) {
         const std::wstring name = FileNameOf(cr.path);
+        if (cr.ok && cr.quiet) continue;   // a frame of a video sequence
         if (cr.ok) {
             m_lastCapture = WideToUtf8(name);
             m_lastCaptureOk = true;
@@ -743,6 +1104,25 @@ void App::Frame() {
     info.imageOrigWidth = m_source.imageOrigWidth; info.imageOrigHeight = m_source.imageOrigHeight;
     info.imageLoaded = m_source.imageLoaded;
     info.imageConverging = m_source.imageConverging;
+    info.videoLoaded = m_source.videoLoaded;
+    info.videoName = m_source.videoName;
+    info.videoCodec = m_source.videoCodec;
+    info.videoWidth = m_source.videoWidth; info.videoHeight = m_source.videoHeight;
+    info.videoFps = m_source.videoFps;
+    info.videoFrames = m_source.videoFrames;
+    info.videoDurationSeconds = m_source.videoDurationSeconds;
+    info.videoHasAudio = m_source.videoHasAudio;
+    info.videoHardwareDecode = m_source.videoHardwareDecode;
+    info.videoProcessing = m_source.videoProcessing;
+    info.videoFinishing = m_source.videoFinishing;
+    info.videoFrame = m_source.videoFrame;
+    info.videoElapsed = m_source.videoElapsed;
+    info.videoOutName = m_source.videoOutName;
+    info.batchRunning = m_source.batchRunning;
+    info.batchIndex = m_source.batchIndex; info.batchCount = m_source.batchCount;
+    info.batchDone = m_source.batchDone; info.batchFailed = m_source.batchFailed;
+    info.batchItemName = m_source.batchItemName;
+    info.batchFiles = &m_batchNames;
     info.nrRuntimePath = EffectiveRuntimePath();
     info.nrRuntimeExists = FileExists(info.nrRuntimePath);
     info.captureFolder = EffectiveCaptureFolder();
@@ -792,6 +1172,9 @@ void App::Frame() {
     if (m_pendingBrowseDepthModel) { m_pendingBrowseDepthModel = false; BrowseDepthModel(); }
     if (m_pendingBrowseFolder) { m_pendingBrowseFolder = false; BrowseFolder(); }
     if (m_pendingBrowseImage) { m_pendingBrowseImage = false; BrowseImage(); }
+    if (m_pendingBrowseVideo) { m_pendingBrowseVideo = false; BrowseVideo(); }
+    if (m_pendingBrowseBatchFiles) { m_pendingBrowseBatchFiles = false; BrowseBatchFiles(); }
+    if (m_pendingBrowseBatchFolder) { m_pendingBrowseBatchFolder = false; BrowseBatchFolder(); }
 
     // Without vsync the interface would otherwise spin at thousands of frames per second and take GPU time away
     // from the processing queue; ~300 fps is plenty for a preview.
@@ -805,6 +1188,17 @@ void App::HandleEvents(ui::UiEvents& ev) {
     if (ev.browseRuntime) m_pendingBrowseRuntime = true;
     if (ev.browseDepthModel) m_pendingBrowseDepthModel = true;
     if (ev.openImage) m_pendingBrowseImage = true;
+    if (ev.openVideo) m_pendingBrowseVideo = true;
+    if (ev.cancelVideo) { Command c; c.type = Command::CancelVideo; PostCommand(std::move(c)); }
+    if (ev.batchAddFiles) m_pendingBrowseBatchFiles = true;
+    if (ev.batchAddFolder) m_pendingBrowseBatchFolder = true;
+    if (ev.batchClear) { m_batchFiles.clear(); m_batchNames.clear(); }
+    if (ev.batchRemove >= 0 && (size_t)ev.batchRemove < m_batchFiles.size()) {
+        m_batchFiles.erase(m_batchFiles.begin() + ev.batchRemove);
+        m_batchNames.erase(m_batchNames.begin() + ev.batchRemove);
+    }
+    if (ev.batchStart) StartBatch();
+    if (ev.batchCancel) { Command c; c.type = Command::BatchCancel; PostCommand(std::move(c)); }
     if (ev.reloadDepth) { m_pipeline.RestartDepthEstimator(); WakeWorker(); }
     if (ev.browseFolder) m_pendingBrowseFolder = true;
     if (ev.openCaptureFolder) {
@@ -840,7 +1234,7 @@ void App::HandleEvents(ui::UiEvents& ev) {
         ev.settingsChanged = true;
     }
     if (ev.sourceModeChanged) {
-        Log::Info("Source: %s", m_settings.sourceMode == SourceImage ? "image file" : "Spout");
+        Log::Info("Source: %s", m_settings.sourceMode == SourceImage ? "image file" : m_settings.sourceMode == SourceVideo ? "video file" : "Spout");
         ev.settingsChanged = true;
     }
     // The settings snapshot goes to the processing thread before the request flags so that a flag is never
@@ -859,6 +1253,17 @@ void App::HandleEvents(ui::UiEvents& ev) {
 }
 
 void App::CaptureNow() {
+    if (m_source.batchRunning) { m_ui.Toast(TR(BatchBusy), true); return; }
+    if (m_settings.sourceMode == SourceVideo) {
+        if (m_source.videoProcessing) { m_ui.Toast(TR(VideoBusy), true); return; }
+        if (!m_source.videoLoaded) { m_ui.Toast(TR(CaptureNoVideo), true); return; }
+        Command c;
+        c.type = Command::ProcessVideo;
+        c.path = EffectiveCaptureFolder();
+        PostCommand(std::move(c));
+        m_ui.Toast(TR(VideoProcessing));
+        return;
+    }
     if (m_settings.sourceMode == SourceImage) {
         if (!m_source.imageLoaded) {
             m_ui.Toast(TR(CaptureNoImage), true);
@@ -904,6 +1309,8 @@ void App::RequestRuntimeLoad(bool announce) {
 
 void App::OpenImageFile(const std::wstring& path) {
     if (path.empty()) return;
+    if (m_source.batchRunning) { m_ui.Toast(TR(BatchBusy), true); return; }
+    if (m_source.videoProcessing) { m_ui.Toast(TR(VideoBusy), true); return; }
     Log::Info("Opening image %s", WideToUtf8(path).c_str());
     m_settings.sourceMode = SourceImage;
     m_settings.imagePath = WideToUtf8(path);
@@ -914,8 +1321,22 @@ void App::OpenImageFile(const std::wstring& path) {
     PostCommand(std::move(c));
 }
 
+void App::OpenVideoFile(const std::wstring& path) {
+    if (path.empty()) return;
+    if (m_source.batchRunning) { m_ui.Toast(TR(BatchBusy), true); return; }
+    if (m_source.videoProcessing) { m_ui.Toast(TR(VideoBusy), true); return; }
+    Log::Info("Opening video %s", WideToUtf8(path).c_str());
+    m_settings.sourceMode = SourceVideo;
+    m_settings.videoPath = WideToUtf8(path);
+    MarkSettingsDirty();
+    Command c;
+    c.type = Command::LoadVideo;
+    c.path = path;
+    PostCommand(std::move(c));
+}
+
 void App::OnFileDropped(const std::wstring& path) {
-    if (DirectoryExists(path)) return;
+    if (DirectoryExists(path)) { AddBatchFiles({ path }); return; }
     if (LowerExtension(path) == L"dll") {
         // The runtime itself was dropped: use it.
         m_settings.nrDllPath = WideToUtf8(path);
@@ -923,7 +1344,41 @@ void App::OnFileDropped(const std::wstring& path) {
         RequestRuntimeLoad(true);
         return;
     }
+    if (VideoSource::IsSupportedExtension(path)) { OpenVideoFile(path); return; }
     OpenImageFile(path);
+}
+
+// Adds pictures and videos (and the files of folders) to the batch queue, skipping duplicates and other files.
+void App::AddBatchFiles(const std::vector<std::wstring>& paths) {
+    int added = 0;
+    std::vector<std::wstring> files;
+    for (const std::wstring& p : paths) {
+        if (DirectoryExists(p)) { const std::vector<std::wstring> inside = ListFolderFiles(p); files.insert(files.end(), inside.begin(), inside.end()); }
+        else files.push_back(p);
+    }
+    for (const std::wstring& f : files) {
+        if (!ImageSource::IsSupportedExtension(f) && !VideoSource::IsSupportedExtension(f)) continue;
+        if (std::find(m_batchFiles.begin(), m_batchFiles.end(), f) != m_batchFiles.end()) continue;
+        m_batchFiles.push_back(f);
+        m_batchNames.push_back(WideToUtf8(FileNameOf(f)));
+        ++added;
+    }
+    if (added > 0) m_ui.Toast(StrPrintf(TR(BatchAdded), added));
+    else m_ui.Toast(TR(BatchNoFiles), true);
+}
+
+void App::StartBatch() {
+    if (m_batchFiles.empty()) { m_ui.Toast(TR(BatchEmpty), true); return; }
+    if (m_source.batchRunning) { m_ui.Toast(TR(BatchBusy), true); return; }
+    if (m_source.videoProcessing) { m_ui.Toast(TR(VideoBusy), true); return; }
+    Command c;
+    c.type = Command::BatchStart;
+    c.paths = m_batchFiles;
+    c.path = EffectiveCaptureFolder();
+    c.keepAlpha = m_settings.keepAlpha;
+    c.saveOriginal = m_settings.saveOriginal;
+    PostCommand(std::move(c));
+    m_ui.Toast(StrPrintf(TR(BatchRunning), 1, (int)m_batchFiles.size()));
 }
 
 void App::MarkSettingsDirty() {
@@ -1047,6 +1502,85 @@ void App::BrowseImage() {
     }
 }
 
+void App::BrowseVideo() {
+    ComPtr<IFileOpenDialog> dlg;
+    if (FAILED(CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&dlg)))) return;
+    DWORD opts = 0;
+    dlg->GetOptions(&opts);
+    dlg->SetOptions(opts | FOS_FORCEFILESYSTEM | FOS_FILEMUSTEXIST);
+    const std::wstring videosLabel = Utf8ToWide(TR(VideoFilter));
+    const std::wstring title = Utf8ToWide(TR(OpenVideo));
+    const COMDLG_FILTERSPEC filters[] = { { videosLabel.c_str(), kVideoPatterns }, { L"All files", L"*.*" } };
+    dlg->SetFileTypes(2, filters);
+    dlg->SetTitle(title.c_str());
+    if (!m_settings.videoPath.empty()) {
+        const std::wstring prev = Utf8ToWide(m_settings.videoPath);
+        const size_t slash = prev.find_last_of(L"\\/");
+        if (slash != std::wstring::npos) {
+            ComPtr<IShellItem> folder;
+            if (SUCCEEDED(SHCreateItemFromParsingName(prev.substr(0, slash).c_str(), nullptr, IID_PPV_ARGS(&folder)))) dlg->SetFolder(folder.Get());
+        }
+    }
+    if (FAILED(dlg->Show(m_hwnd))) return;
+    ComPtr<IShellItem> item;
+    if (FAILED(dlg->GetResult(&item))) return;
+    PWSTR psz = nullptr;
+    if (SUCCEEDED(item->GetDisplayName(SIGDN_FILESYSPATH, &psz)) && psz) {
+        const std::wstring path = psz;
+        CoTaskMemFree(psz);
+        OpenVideoFile(path);
+    }
+}
+
+void App::BrowseBatchFiles() {
+    ComPtr<IFileOpenDialog> dlg;
+    if (FAILED(CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&dlg)))) return;
+    DWORD opts = 0;
+    dlg->GetOptions(&opts);
+    dlg->SetOptions(opts | FOS_FORCEFILESYSTEM | FOS_FILEMUSTEXIST | FOS_ALLOWMULTISELECT);
+    const std::wstring mediaLabel = Utf8ToWide(TR(MediaFilter));
+    const std::wstring imagesLabel = Utf8ToWide(TR(ImageFilter));
+    const std::wstring videosLabel = Utf8ToWide(TR(VideoFilter));
+    const std::wstring mediaPatterns = std::wstring(kImagePatterns) + L";" + kVideoPatterns;
+    const std::wstring title = Utf8ToWide(TR(AddFiles));
+    const COMDLG_FILTERSPEC filters[] = { { mediaLabel.c_str(), mediaPatterns.c_str() }, { imagesLabel.c_str(), kImagePatterns },
+                                          { videosLabel.c_str(), kVideoPatterns }, { L"All files", L"*.*" } };
+    dlg->SetFileTypes(4, filters);
+    dlg->SetTitle(title.c_str());
+    if (FAILED(dlg->Show(m_hwnd))) return;
+    ComPtr<IShellItemArray> items;
+    if (FAILED(dlg->GetResults(&items)) || !items) return;
+    DWORD count = 0;
+    items->GetCount(&count);
+    std::vector<std::wstring> paths;
+    for (DWORD i = 0; i < count; ++i) {
+        ComPtr<IShellItem> item;
+        if (FAILED(items->GetItemAt(i, &item)) || !item) continue;
+        PWSTR psz = nullptr;
+        if (SUCCEEDED(item->GetDisplayName(SIGDN_FILESYSPATH, &psz)) && psz) { paths.emplace_back(psz); CoTaskMemFree(psz); }
+    }
+    if (!paths.empty()) AddBatchFiles(paths);
+}
+
+void App::BrowseBatchFolder() {
+    ComPtr<IFileOpenDialog> dlg;
+    if (FAILED(CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&dlg)))) return;
+    DWORD opts = 0;
+    dlg->GetOptions(&opts);
+    dlg->SetOptions(opts | FOS_FORCEFILESYSTEM | FOS_PICKFOLDERS);
+    const std::wstring title = Utf8ToWide(TR(AddFolder));
+    dlg->SetTitle(title.c_str());
+    if (FAILED(dlg->Show(m_hwnd))) return;
+    ComPtr<IShellItem> item;
+    if (FAILED(dlg->GetResult(&item))) return;
+    PWSTR psz = nullptr;
+    if (SUCCEEDED(item->GetDisplayName(SIGDN_FILESYSPATH, &psz)) && psz) {
+        const std::wstring folder = psz;
+        CoTaskMemFree(psz);
+        AddBatchFiles({ folder });
+    }
+}
+
 void App::OpenPath(const std::wstring& path) {
     if (path.empty()) return;
     const HINSTANCE r = ShellExecuteW(m_hwnd, L"open", path.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
@@ -1100,13 +1634,18 @@ LRESULT App::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         return 0;
     case WM_DROPFILES: {
         HDROP drop = reinterpret_cast<HDROP>(wParam);
-        wchar_t path[MAX_PATH * 4] = {};
         const UINT count = DragQueryFileW(drop, 0xFFFFFFFF, nullptr, 0);
-        if (count > 0 && DragQueryFileW(drop, 0, path, (UINT)(sizeof(path) / sizeof(path[0]))) > 0) {
-            SetForegroundWindow(hwnd);
-            OnFileDropped(path);
+        std::vector<std::wstring> paths;
+        for (UINT i = 0; i < count; ++i) {
+            wchar_t path[MAX_PATH * 4] = {};
+            if (DragQueryFileW(drop, i, path, (UINT)(sizeof(path) / sizeof(path[0]))) > 0) paths.emplace_back(path);
         }
         DragFinish(drop);
+        if (!paths.empty()) {
+            SetForegroundWindow(hwnd);
+            if (paths.size() == 1) OnFileDropped(paths[0]);   // one file opens; several (or a folder) queue up for the batch
+            else AddBatchFiles(paths);
+        }
         return 0;
     }
     case WM_DPICHANGED: {

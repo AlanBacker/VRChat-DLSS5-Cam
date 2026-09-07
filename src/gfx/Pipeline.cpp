@@ -1090,7 +1090,8 @@ void Pipeline::RunComposite(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, con
     gpu.TimerEnd(cmd, GpuTimer::Composite);
 }
 
-void Pipeline::EnqueueReadback(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, Tex& src, const std::wstring& path, bool keepAlpha) {
+void Pipeline::EnqueueReadback(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, Tex& src, const std::wstring& path, bool keepAlpha,
+                               bool toSink, UINT64 index) {
     const UINT pitch = (src.w * 4 + D3D12_TEXTURE_DATA_PITCH_ALIGNMENT - 1) & ~(D3D12_TEXTURE_DATA_PITCH_ALIGNMENT - 1);
     Readback* rb = nullptr;
     for (auto& r : m_readbacks) if (!r.inUse && r.w == src.w && r.h == src.h) { rb = &r; break; }
@@ -1126,7 +1127,7 @@ void Pipeline::EnqueueReadback(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, 
     from.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
     from.SubresourceIndex = 0;
     cmd->CopyTextureRegion(&dst, 0, 0, 0, &from, nullptr);
-    rb->inUse = true; rb->fence = 0; rb->keepAlpha = keepAlpha; rb->path = path;
+    rb->inUse = true; rb->fence = 0; rb->keepAlpha = keepAlpha; rb->path = path; rb->toSink = toSink; rb->index = index;
 }
 
 // --- frame --------------------------------------------------------------------------------
@@ -1149,7 +1150,7 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
     m_status.nrRuntimePath = m_nr.RuntimePath();
     m_status.sourceConnected = src.Connected() && src.hasFrame;
     m_status.capturesInFlight = 0;
-    for (auto& r : m_readbacks) if (r.inUse) ++m_status.capturesInFlight;
+    for (auto& r : m_readbacks) if (r.inUse && !r.toSink) ++m_status.capturesInFlight;
 
     if (!src.Connected()) {
         if (m_built) ReleaseResources(gpu);
@@ -1224,6 +1225,7 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
     const UINT nrOutW = nrScaled ? nrInW : m_outW;
     const UINT nrOutH = nrScaled ? nrInH : m_outH;
 
+    bool featureCreatedNow = false;   // a video frame that creates a feature is run again before it is read back
     if (fresh || !m_hasDisplay) {
         const double now = NowSeconds();
         if (m_lastFreshTime > 0.0) m_frameIntervalMs = std::clamp((now - m_lastFreshTime) * 1000.0, 1.0, 100.0);
@@ -1258,6 +1260,7 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
         // good, which is what a resolution change with the estimator active used to do.
         const bool depthWanted = s.depthMode == DepthEstimated && m_depthInBuf;
         const bool featureCreating = FeatureCreatesThisFrame(s, nrWanted, nrInW, nrInH, nrOutW, nrOutH, dlaaWanted);
+        featureCreatedNow = featureCreating;
         if (depthWanted && featureCreating && !m_depthEst.WaitIdle(2.0))
             Log::Warn("Depth estimator still busy while a neural feature is created");
         const bool featureSettling = featureCreating || !gpu.IsFenceComplete(m_featureCreateFence);
@@ -1370,6 +1373,10 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
             EnqueueReadback(gpu, cmd, m_color8, origPath, captureKeepAlpha);
         }
     }
+    if (m_frameReadbackReq && m_final.Valid() && !featureCreatedNow) {
+        m_frameReadbackReq = false;
+        EnqueueReadback(gpu, cmd, m_final, L"", false, true, m_frameReadbackIndex);
+    }
 
     m_status.nrActive = nrOk;
     m_status.nrPassWidth = m_nrInW; m_status.nrPassHeight = m_nrInH;
@@ -1400,7 +1407,7 @@ void Pipeline::AfterSubmit(GpuContext& gpu, UINT64 fenceValue) {
     }
 }
 
-void Pipeline::Update(GpuContext& gpu, Capture& capture) {
+void Pipeline::Update(GpuContext& gpu, Capture& capture, FrameSink* sink) {
     // The captured network input goes to the estimator only once the frame that created an NGX feature has completed
     // (see the depth capture in Render).
     if (m_depthInPending && m_depthInFence && gpu.IsFenceComplete(m_depthInFence) && gpu.IsFenceComplete(m_featureCreateFence)) {
@@ -1417,23 +1424,44 @@ void Pipeline::Update(GpuContext& gpu, Capture& capture) {
             m_depthInReadback->Unmap(0, &none);
         }
     }
+    // Video frames are delivered in frame order, so a sink readback waits for every earlier one.
+    std::vector<Readback*> done;
     for (auto& r : m_readbacks) {
         if (!r.inUse || r.fence == 0 || !gpu.IsFenceComplete(r.fence)) continue;
-        CaptureJob job;
-        job.width = r.w; job.height = r.h; job.rowPitch = r.pitch; job.keepAlpha = r.keepAlpha; job.path = r.path;
+        done.push_back(&r);
+    }
+    std::sort(done.begin(), done.end(), [](const Readback* a, const Readback* b) {
+        if (a->toSink != b->toSink) return !a->toSink;
+        return a->index < b->index;
+    });
+    for (Readback* rp : done) {
+        Readback& r = *rp;
+        if (r.toSink) {
+            bool earlierPending = false;
+            for (auto& o : m_readbacks) if (&o != &r && o.inUse && o.toSink && o.index < r.index) earlierPending = true;
+            if (earlierPending) break;
+        }
         const size_t bytes = (size_t)r.pitch * r.h;
         D3D12_RANGE range{ 0, bytes };
         void* p = nullptr;
         if (SUCCEEDED(r.buffer->Map(0, &range, &p)) && p) {
-            job.pixels.resize(bytes);
-            std::memcpy(job.pixels.data(), p, bytes);
+            std::vector<uint8_t> pixels(bytes);
+            std::memcpy(pixels.data(), p, bytes);
             D3D12_RANGE none{ 0, 0 };
             r.buffer->Unmap(0, &none);
-            capture.Enqueue(std::move(job));
+            if (r.toSink) {
+                if (sink) sink->OnFrame(std::move(pixels), r.w, r.h, r.pitch, r.index);
+                else Log::Warn("Video frame %llu dropped: no sink", (unsigned long long)r.index);
+            } else {
+                CaptureJob job;
+                job.width = r.w; job.height = r.h; job.rowPitch = r.pitch; job.keepAlpha = r.keepAlpha; job.path = r.path;
+                job.pixels = std::move(pixels);
+                capture.Enqueue(std::move(job));
+            }
         } else {
             Log::Error("Capture readback map failed");
         }
-        r.inUse = false; r.fence = 0;
+        r.inUse = false; r.fence = 0; r.toSink = false;
     }
 }
 

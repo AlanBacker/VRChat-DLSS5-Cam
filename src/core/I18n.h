@@ -252,7 +252,7 @@ enum class Lang { English = 0, Chinese = 1, Japanese = 2, Korean = 3, Count = 4 
     X(ProcessAndSave,     "Process & save PNG", "处理并保存 PNG", "処理して PNG を保存", "처리 후 PNG 저장") \
     X(NoImage,            "No image opened", "尚未打开图片", "画像が開かれていません", "열린 이미지가 없습니다") \
     X(ImageHint,          "Open a picture (PNG, JPEG, BMP, TIFF, WebP, HEIC...) or drop it onto this window. DLSS 5 refines a still image over several passes; adjust the sliders, then save the result as a lossless PNG.", "打开一张图片（PNG、JPEG、BMP、TIFF、WebP、HEIC…）或直接拖进窗口。DLSS 5 会对静态图片进行多遍收敛处理；调整滑块后，可将结果保存为无损 PNG。", "画像（PNG、JPEG、BMP、TIFF、WebP、HEIC…）を開くか、このウィンドウにドロップしてください。DLSS 5 は静止画を数パスかけて仕上げます。スライダーを調整し、結果をロスレス PNG として保存できます。", "이미지(PNG, JPEG, BMP, TIFF, WebP, HEIC…)를 열거나 이 창에 끌어다 놓으세요. DLSS 5는 정지 이미지를 여러 패스에 걸쳐 다듬습니다. 슬라이더를 조정한 뒤 결과를 무손실 PNG로 저장할 수 있습니다.") \
-    X(DropHint,           "Tip: you can also drag & drop an image onto the window.", "提示：也可以把图片直接拖进窗口。", "ヒント：画像をウィンドウにドラッグ＆ドロップすることもできます。", "팁: 이미지를 창에 끌어다 놓아도 됩니다.") \
+    X(DropHint,           "Tip: you can also drag & drop images or videos onto the window; several files at once go to the batch.", "提示：也可以把图片或视频直接拖进窗口；一次拖入多个文件会加入批量处理。", "ヒント：画像や動画をウィンドウにドラッグ＆ドロップすることもできます。複数のファイルを一度にドロップするとバッチ処理に追加されます。", "팁: 이미지나 동영상을 창에 끌어다 놓아도 됩니다. 여러 파일을 한 번에 놓으면 일괄 처리에 추가됩니다.") \
     X(ImageLoaded,        "Image opened", "图片已打开", "画像を開きました", "이미지를 열었습니다") \
     X(ImageLoadFailed,    "Could not open the image", "无法打开图片", "画像を開けませんでした", "이미지를 열 수 없습니다") \
     X(ImageLabel,         "Image", "图片", "画像", "이미지") \
@@ -262,7 +262,56 @@ enum class Lang { English = 0, Chinese = 1, Japanese = 2, Korean = 3, Count = 4 
     X(UiFps,              "UI", "界面", "UI", "UI") \
     X(ProcessingFps,      "processing", "处理", "処理", "처리") \
     X(TipUiFps,           "Interface refresh rate. The interface runs on its own queue and thread, so it stays smooth even when processing is slow.", "界面刷新率。界面在独立的队列和线程上运行，即使处理很慢也能保持流畅。", "インターフェースの更新レート。UI は独自のキューとスレッドで動作するため、処理が遅くても滑らかなままです。", "인터페이스 갱신률. UI는 별도의 큐와 스레드에서 실행되므로 처리가 느려도 부드럽게 유지됩니다.") \
-    X(SourceModeHint,     "Process the VRChat camera stream live, or open a picture from disk and run it through DLSS 5.", "实时处理 VRChat 相机串流，或打开磁盘上的图片交给 DLSS 5 处理。", "VRChat のカメラストリームをリアルタイムで処理するか、ディスク上の画像を開いて DLSS 5 で処理します。", "VRChat 카메라 스트림을 실시간으로 처리하거나, 디스크의 이미지를 열어 DLSS 5로 처리합니다.")
+    X(SourceVideo,        "Video file", "视频文件", "動画ファイル", "동영상 파일") \
+    X(OpenVideo,          "Open video...", "打开视频…", "動画を開く…", "동영상 열기…") \
+    X(ProcessVideo,       "Process & save video", "处理并保存视频", "処理して動画を保存", "처리 후 동영상 저장") \
+    X(NoVideo,            "No video opened", "尚未打开视频", "動画が開かれていません", "열린 동영상이 없습니다") \
+    X(VideoHint,          "Open a video (MP4, MOV, MKV, WebM, AVI...) or drop it onto this window. The first frame is shown as a preview; adjust the sliders, then process the whole file into an MP4 or a PNG sequence.", "打开一个视频（MP4、MOV、MKV、WebM、AVI…）或直接拖进窗口。先以第一帧作为预览；调整滑块后，即可把整个文件处理成 MP4 或 PNG 序列。", "動画（MP4、MOV、MKV、WebM、AVI…）を開くか、このウィンドウにドロップしてください。最初のフレームがプレビューとして表示されます。スライダーを調整してから、ファイル全体を MP4 または PNG 連番として処理できます。", "동영상(MP4, MOV, MKV, WebM, AVI…)을 열거나 이 창에 끌어다 놓으세요. 첫 프레임이 미리보기로 표시됩니다. 슬라이더를 조정한 뒤 파일 전체를 MP4 또는 PNG 시퀀스로 처리할 수 있습니다.") \
+    X(VideoLoaded,        "Video opened", "视频已打开", "動画を開きました", "동영상을 열었습니다") \
+    X(VideoLoadFailed,    "Could not open the video", "无法打开视频", "動画を開けませんでした", "동영상을 열 수 없습니다") \
+    X(VideoLabel,         "Video", "视频", "動画", "동영상") \
+    X(VideoFilter,        "Videos", "视频", "動画", "동영상") \
+    X(MediaFilter,        "Images and videos", "图片和视频", "画像と動画", "이미지 및 동영상") \
+    X(CaptureNoVideo,     "Open a video first", "请先打开一个视频", "先に動画を開いてください", "먼저 동영상을 여세요") \
+    X(VideoOutput,        "Save as", "保存为", "保存形式", "저장 형식") \
+    X(VideoOutputH264,    "MP4 (H.264)", "MP4 (H.264)", "MP4 (H.264)", "MP4 (H.264)") \
+    X(VideoOutputHevc,    "MP4 (HEVC)", "MP4 (HEVC)", "MP4 (HEVC)", "MP4 (HEVC)") \
+    X(VideoOutputPng,     "PNG sequence", "PNG 序列", "PNG 連番", "PNG 시퀀스") \
+    X(TipVideoOutput,     "MP4 files are encoded by Windows Media Foundation (with the GPU encoder when the driver offers one). A PNG sequence writes every processed frame losslessly into its own folder: large, but nothing is lost.", "MP4 由 Windows Media Foundation 编码（驱动提供时使用 GPU 编码器）。PNG 序列会把每一帧无损地写入单独的文件夹，体积很大，但不丢失任何细节。", "MP4 は Windows Media Foundation でエンコードされます（ドライバーが対応していれば GPU エンコーダーを使用）。PNG 連番は処理した各フレームを専用フォルダーにロスレスで書き出します。サイズは大きくなりますが、劣化はありません。", "MP4는 Windows Media Foundation으로 인코딩됩니다(드라이버가 지원하면 GPU 인코더 사용). PNG 시퀀스는 처리된 모든 프레임을 별도 폴더에 무손실로 저장합니다. 용량은 크지만 손실이 없습니다.") \
+    X(Bitrate,            "Bitrate", "码率", "ビットレート", "비트레이트") \
+    X(TipBitrate,         "Average video bitrate of the MP4. 40 Mbit/s keeps 4K footage nearly free of compression artefacts; lower values give smaller files.", "MP4 的平均视频码率。40 Mbit/s 可让 4K 画面几乎没有压缩痕迹；数值越低文件越小。", "MP4 の平均ビデオビットレート。40 Mbit/s なら 4K 映像でも圧縮ノイズがほとんど出ません。値を下げるとファイルが小さくなります。", "MP4의 평균 비디오 비트레이트. 40 Mbit/s면 4K 영상에서도 압축 흔적이 거의 없습니다. 값을 낮추면 파일이 작아집니다.") \
+    X(KeepAudio,          "Keep audio", "保留音频", "音声を保持", "오디오 유지") \
+    X(TipKeepAudio,       "Copy the sound track into the MP4 (re-encoded as AAC).", "把原视频的声音一并写入 MP4（重新编码为 AAC）。", "元の音声トラックを MP4 に含めます（AAC に再エンコード）。", "원본 사운드 트랙을 MP4에 포함합니다(AAC로 다시 인코딩).") \
+    X(HardwareDecode,     "Hardware decoding", "硬件解码", "ハードウェアデコード", "하드웨어 디코딩") \
+    X(TipHardwareDecode,  "Decode the video with the GPU. Turn it off if a file does not open or shows wrong colours; the software decoder is slower but handles every file Windows can play.", "使用 GPU 解码视频。若某个文件打不开或颜色不对，可关闭此项；软件解码较慢，但兼容所有 Windows 能播放的文件。", "GPU で動画をデコードします。ファイルが開けない、色がおかしい場合はオフにしてください。ソフトウェアデコードは遅いものの、Windows で再生できるすべてのファイルに対応します。", "GPU로 동영상을 디코딩합니다. 파일이 열리지 않거나 색이 잘못 나오면 끄세요. 소프트웨어 디코딩은 느리지만 Windows에서 재생 가능한 모든 파일에 대응합니다.") \
+    X(VideoProcessing,    "Processing video", "正在处理视频", "動画を処理中", "동영상 처리 중") \
+    X(VideoFinishing,     "Finishing the file...", "正在完成文件…", "ファイルを完成しています…", "파일을 마무리하는 중…") \
+    X(VideoSaved,         "Video saved", "视频已保存", "動画を保存しました", "동영상 저장됨") \
+    X(VideoFailed,        "Video processing failed", "视频处理失败", "動画の処理に失敗しました", "동영상 처리 실패") \
+    X(VideoCancelled,     "Video processing cancelled", "已取消视频处理", "動画の処理をキャンセルしました", "동영상 처리를 취소했습니다") \
+    X(VideoBusy,          "A video is being processed", "正在处理视频，请稍候", "動画を処理中です", "동영상을 처리하는 중입니다") \
+    X(FrameOf,            "Frame %llu / %llu", "第 %llu / %llu 帧", "フレーム %llu / %llu", "프레임 %llu / %llu") \
+    X(Remaining,          "remaining", "剩余", "残り", "남음") \
+    X(Audio,              "audio", "音频", "音声", "오디오") \
+    X(NoAudio,            "no audio", "无音频", "音声なし", "오디오 없음") \
+    X(VideoDecoder,       "Decoder", "解码器", "デコーダー", "디코더") \
+    X(HwLabel,            "hardware", "硬件", "ハードウェア", "하드웨어") \
+    X(SwLabel,            "software", "软件", "ソフトウェア", "소프트웨어") \
+    X(SecBatch,           "Batch", "批量处理", "バッチ処理", "일괄 처리") \
+    X(BatchHint,          "Process several images or videos in one go with the current settings. Images are saved as PNG, videos as chosen under Source; everything goes to the capture folder.", "使用当前设置一次处理多张图片或多个视频。图片保存为 PNG，视频按“输入源”中的设置保存；全部写入拍照文件夹。", "現在の設定で複数の画像や動画をまとめて処理します。画像は PNG として、動画は「入力ソース」の設定に従って保存され、すべて撮影フォルダーに書き出されます。", "현재 설정으로 여러 이미지나 동영상을 한 번에 처리합니다. 이미지는 PNG로, 동영상은 입력 소스의 설정대로 저장되며 모두 촬영 폴더에 기록됩니다.") \
+    X(AddFiles,           "Add files...", "添加文件…", "ファイルを追加…", "파일 추가…") \
+    X(AddFolder,          "Add folder...", "添加文件夹…", "フォルダーを追加…", "폴더 추가…") \
+    X(BatchEmpty,         "No files queued. Add files or a folder, or drop several files onto the window.", "队列为空。请添加文件或文件夹，或一次把多个文件拖进窗口。", "キューにファイルがありません。ファイルやフォルダーを追加するか、複数のファイルをウィンドウにドロップしてください。", "대기 중인 파일이 없습니다. 파일이나 폴더를 추가하거나, 여러 파일을 창에 끌어다 놓으세요.") \
+    X(BatchFiles,         "%d files (%d images, %d videos)", "%d 个文件（%d 张图片，%d 个视频）", "%d 個のファイル（画像 %d、動画 %d）", "파일 %d개(이미지 %d, 동영상 %d)") \
+    X(BatchStart,         "Process all", "全部处理", "すべて処理", "모두 처리") \
+    X(BatchRunning,       "Processing %d / %d", "正在处理 %d / %d", "処理中 %d / %d", "처리 중 %d / %d") \
+    X(BatchFinished,      "Batch finished: %d files processed, %d failed", "批量处理完成：已处理 %d 个文件，%d 个失败", "バッチ処理が完了しました：%d 個処理、%d 個失敗", "일괄 처리 완료: %d개 처리, %d개 실패") \
+    X(BatchCancelled,     "Batch cancelled after %d of %d files", "批量处理已取消（已完成 %d / %d 个文件）", "バッチ処理をキャンセルしました（%d / %d 個完了）", "일괄 처리 취소됨(%d / %d개 완료)") \
+    X(BatchAdded,         "%d files added", "已添加 %d 个文件", "%d 個のファイルを追加しました", "파일 %d개 추가됨") \
+    X(BatchNoFiles,       "No supported files found", "未找到支持的文件", "対応するファイルが見つかりません", "지원되는 파일이 없습니다") \
+    X(BatchBusy,          "Finish or cancel the batch first", "请先完成或取消批量处理", "先にバッチ処理を完了またはキャンセルしてください", "먼저 일괄 처리를 완료하거나 취소하세요") \
+    X(Remove,             "Remove", "移除", "削除", "제거") \
+    X(SourceModeHint,     "Process the VRChat camera stream live, or open a picture or a video from disk and run it through DLSS 5.", "实时处理 VRChat 相机串流，或打开磁盘上的图片或视频交给 DLSS 5 处理。", "VRChat のカメラストリームをリアルタイムで処理するか、ディスク上の画像や動画を開いて DLSS 5 で処理します。", "VRChat 카메라 스트림을 실시간으로 처리하거나, 디스크의 이미지나 동영상을 열어 DLSS 5로 처리합니다.")
 
 enum class Str {
 #define VDC_STR_ENUM(id, en, zh, ja, ko) id,

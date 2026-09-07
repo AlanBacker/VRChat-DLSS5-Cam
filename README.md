@@ -8,8 +8,8 @@
 
 VRChat DLSS5 Cam grabs the picture of VRChat's built-in camera (Stream Camera with *Spout Stream* enabled),
 runs it through **DLSS 5 Neural Rendering (DLSSNR)** in real time, shows the result live and saves
-lossless PNG photos. It can also open a picture from disk and run it through DLSS 5. It is a stand-alone Windows
-application: nothing is injected into VRChat and no mod is required.
+lossless PNG photos. It can also open pictures and video files from disk and run them through DLSS 5, one at a time
+or as a batch. It is a stand-alone Windows application: nothing is injected into VRChat and no mod is required.
 
 [![Build](https://github.com/AlanBacker/VRChat-DLSS5-Cam/actions/workflows/build.yml/badge.svg)](https://github.com/AlanBacker/VRChat-DLSS5-Cam/actions/workflows/build.yml)
 
@@ -25,6 +25,12 @@ application: nothing is injected into VRChat and no mod is required.
   auto mask and UI correction, plus an output blend (input exposure, tone transfer, colour strength, shadow and highlight strengths) and a reduced neural pass resolution for a lighter GPU load. Parameters are applied instantly and can be tuned on a frozen frame.
 - **Still images.** Open a photo or screenshot (PNG, JPEG, BMP, TIFF, GIF, WebP, HEIC…) or drop it onto the window;
   DLSS 5 refines it over several passes and *Process & save PNG* writes the result next to your captures.
+- **Video files.** Open a recording (MP4, MOV, MKV, WebM, AVI, M4V, WMV…) and *Process & save video* runs every frame
+  through DLSS 5 with real motion vectors and depth, exactly like the live camera, and writes an MP4 (H.264 or HEVC,
+  audio kept) or a PNG sequence next to your captures. Decoding and encoding use Windows Media Foundation, on the GPU
+  where available.
+- **Batch processing.** Queue any number of pictures and videos (or a whole folder), press *Process all* and every file
+  is processed with the current settings and saved into the capture folder.
 - **Frame guidance.** DLSSNR is a temporal model that expects motion vectors and depth. The app feeds it
   **NVIDIA Optical Flow** motion vectors with a forward/backward consistency check and a depth map estimated on the
   GPU by **Depth Anything V2** (ONNX Runtime + DirectML). GPU block matching and placeholder depth remain available
@@ -46,6 +52,7 @@ application: nothing is injected into VRChat and no mod is required.
 | GPU | NVIDIA GeForce RTX. The DLSS 5 runtime build decides which generation can run the neural pass: the 310.8 build only contains code for RTX 50 (Blackwell); on RTX 40/30/20 the app reports the failure and keeps working with DLAA and the original picture. Nothing in the app itself is generation-specific. |
 | VRChat | Any build with the Stream Camera *Spout Stream* option (desktop or VR) |
 | DLSS 5 runtime | Your own copy of `nvngx_dlssnr.dll`. **It is not included and never downloaded by this project.** |
+| Video files | Windows Media Foundation (part of Windows). The N / KN editions need the *Media Feature Pack*; HEVC files may need the *HEVC Video Extensions* from the Microsoft Store. |
 
 ## Setup
 
@@ -63,12 +70,24 @@ Tips
   (or simply drop the file onto the window). Adjust the sliders, then press *Process & save PNG* (or the hotkey); the
   result is written as `<name>_DLSS5_<w>x<h>.png` into the capture folder. Pictures larger than 8192 px on the long side
   are processed at a reduced size.
+- To process a video, switch *Input* to *Video file* and open it (or drop it onto the window). The first frame is shown
+  in the preview so the sliders can be tuned; *Process & save video* (or the hotkey) then runs the whole file and writes
+  `<name>_DLSS5_<w>x<h>.mp4` (or a folder `<name>_DLSS5` of PNG frames) into the capture folder. Processing runs as
+  fast as the GPU allows, never faster than the neural pass; a progress bar shows the frame count and the remaining time,
+  and *Cancel* keeps what has been written so far.
+- To process many files, open the *Batch* section, add files or a folder (or drop several files onto the window) and
+  press *Process all*. Pictures and videos can be mixed; each is saved like a single file would be. Batch items are
+  processed one after another with the settings in effect when the batch starts.
 
 ## Parameters
 
 | Section | Setting | Meaning |
 |---|---|---|
-| Source | Input | *VRChat camera (Spout)* or *Image file*. |
+| Source | Input | *VRChat camera (Spout)*, *Image file* or *Video file*. |
+| Source | Save as | Video files only: *MP4 (H.264)*, *MP4 (HEVC)* or *PNG sequence*. The MP4 keeps the source frame rate and, when present, the audio track (AAC). |
+| Source | Bitrate | Target bitrate of the MP4 encoder, 5–200 Mbit/s. |
+| Source | Keep audio | Copies the audio track of the source into the MP4. |
+| Source | Hardware decoding | Decodes the video on the GPU (DXVA). Switch it off if a file decodes with wrong colours or fails to open. |
 | Source | Paper white / Highlight compression | Shown only for floating-point (linear HDR) Spout textures: exposure reference and soft highlight roll-off applied before the SDR neural pass. |
 | DLSS 5 | Preset | Hint render preset passed to DLSSNR (0–3). |
 | DLSS 5 | Style | `DLSSNR.Style`: default / natural / cinematic. |
@@ -86,6 +105,7 @@ Tips
 | Frame guidance | Auto reset | Clears the temporal history on sharp matching-cost jumps (scene cuts). Off by default. |
 | DLAA | Enable / Preset | Optional DLSS anti-aliasing pass at native resolution before neural rendering. |
 | Capture | Keep alpha / Save original / Hotkey / Time-lapse | Capture options. |
+| Batch | Add files / Add folder / Process all | Queue of pictures and videos processed one after another with the current settings; a folder adds every supported file it contains. |
 | Display | Compare / Fit / Zoom / VSync / Overlay | Preview options. The mouse wheel over the preview zooms around the cursor, dragging pans, a double-click returns to the fitted view. |
 | Display | Processing rate cap | Live source: processes at most this many source frames per second at a steady cadence and drops the frames in between, which caps the GPU load; the preview keeps the last processed frame meanwhile. 0 = every source frame. |
 
@@ -101,6 +121,7 @@ Settings are stored in `%LOCALAPPDATA%\VRChatDLSS5Cam\settings.ini`; the log is 
 - **Neural pass active, but the picture is black or unchanged** – the app compares every neural frame with its input; the Neural section shows *Output change* and warns when the runtime reports success but delivers a black or unchanged picture (`log.txt`: "DLSSNR output check"). Switch DLSS 5 off and on: off releases the feature and unloads the runtime, on loads it from the file again, the same fresh start as launching the app. If it persists, that runtime build does not produce a picture on this GPU.
 - **Depth estimator unavailable** – `onnxruntime.dll`, `onnxruntime_providers_shared.dll`, `DirectML.dll` and `models\depth_anything_v2_small_fp16.onnx` must sit next to the executable (all are part of the release package). Until the estimator is ready the app falls back to zero depth; its state is shown under *Frame guidance*.
 - **Optical flow unavailable** – NVIDIA Optical Flow runs on a private native D3D11 device (the driver rejects the D3D11On12 layer, which was the cause of the "UNSUPPORTED_DEVICE" error in 0.2.0). If `log.txt` says "NVOF unavailable, falling back to block matching", update the GeForce driver; block matching is used automatically until then. The status dot under *Frame guidance* shows which source is active.
+- **Video file does not open / no encoder available** – the file formats depend on the codecs installed in Windows. Install the *HEVC Video Extensions* (Microsoft Store) for HEVC files, or the *Media Feature Pack* on Windows N/KN. If the H.264 encoder is missing, choose *PNG sequence* as the output. Switching *Hardware decoding* off helps with files the GPU decoder rejects.
 - **Low frame rate** – disable DLAA, raise the depth update interval or lower the depth network resolution, lower the search radius, or choose NVIDIA Optical Flow for motion vectors. With NVIDIA Optical Flow keep the flow grid at 4 px (the fastest setting; 2 px and 1 px cost far more at 4K). The log prints a `Perf:` line every 15 s with the processing rate, the CPU cost per frame (receive / wait / record / submit), the GPU time of each stage and the depth network cost; only frames that were actually processed count. The interface has its own thread, so a low processing rate no longer slows down the window.
 
 ## Building from source
@@ -126,6 +147,7 @@ VRChat Stream Camera ──Spout──▶ D3D11on12 receive ──▶ convert (s
       ▶ NVIDIA Optical Flow (forward + backward) / block matching ──▶ motion vectors + confidence
       ▶ Depth Anything V2 (ONNX Runtime DirectML, every N frames) ──▶ normalized depth, reprojected in between
       ▶ [DLAA] ──▶ DLSSNR (nvngx_dlssnr.dll) ──▶ composite / compare ──▶ preview + PNG capture
+Video file ──Media Foundation──▶ decode (GPU) ──▶ same pipeline, one frame at a time ──▶ MP4 (H.264 / HEVC + AAC) or PNG sequence
 ```
 
 The application hosts the DLSS 5 neural-rendering snippet outside the NGX runtime: the DLL is loaded directly, its
@@ -145,6 +167,14 @@ pictures are handed over through four display buffers with cross-queue fence wai
 newest completed frame and the window never waits for the neural pass (`src/core/App.cpp`, `src/gfx/Device.cpp`).
 A still image is decoded with WIC (EXIF orientation applied), uploaded once and run through the same pipeline with zero
 motion for a number of passes until the temporal network settles.
+
+A video file is decoded by a Media Foundation source reader on its own thread (hardware decoder through a DXGI device
+manager, software fallback) into a short frame queue. The processing thread hands the pipeline one frame at a time and
+asks for a readback of that frame's result; readbacks are collected in frame order and passed to the writer, so no frame
+is skipped or duplicated even when the neural pass takes longer than the frame interval. The writer converts each frame to
+NV12 on a thread of its own and feeds a Media Foundation sink writer (hardware encoder where available) together with the
+decoded audio samples, so the output keeps the source timing (`src/core/VideoSource.cpp`, `src/core/VideoWriter.cpp`).
+Frames on which the neural feature is being (re)created are run again rather than written unprocessed.
 
 ## License
 
