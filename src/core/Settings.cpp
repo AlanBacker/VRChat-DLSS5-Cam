@@ -73,6 +73,7 @@ bool Settings::ApplyText(const std::string& data) {
     r.Get("sourceMode", sourceMode);
     r.Get("imagePath", imagePath);
     r.Get("videoPath", videoPath);
+    r.Get("videoMatchSource", videoMatchSource);
     r.Get("videoOutput", videoOutput);
     r.Get("videoBitrateMbps", videoBitrateMbps);
     r.Get("videoKeepAudio", videoKeepAudio);
@@ -148,7 +149,7 @@ bool Settings::ApplyText(const std::string& data) {
     r.Get("windowMaximized", windowMaximized);
     r.Get("sidebarVisible", sidebarVisible);
     r.Get("libraryVisible", libraryVisible);
-    r.Get("showAdvanced", showAdvanced);
+    r.Get("advancedControls", showAdvanced);
     r.Get("showLog", showLog);
     r.Get("debugLayer", debugLayer);
     Clamp();
@@ -163,6 +164,7 @@ bool Settings::Save(const std::wstring& path) const {
     w.Put("sourceMode", sourceMode);
     w.Put("imagePath", imagePath);
     w.Put("videoPath", videoPath);
+    w.Put("videoMatchSource", videoMatchSource);
     w.Put("videoOutput", videoOutput);
     w.Put("videoBitrateMbps", videoBitrateMbps);
     w.Put("videoKeepAudio", videoKeepAudio);
@@ -229,7 +231,7 @@ bool Settings::Save(const std::wstring& path) const {
     w.Put("windowMaximized", windowMaximized);
     w.Put("sidebarVisible", sidebarVisible);
     w.Put("libraryVisible", libraryVisible);
-    w.Put("showAdvanced", showAdvanced);
+    w.Put("advancedControls", showAdvanced);
     w.Put("showLog", showLog);
     w.Put("debugLayer", debugLayer);
 
@@ -281,6 +283,15 @@ void Settings::Clamp() {
     windowWidth = std::clamp(windowWidth, 800, 10000);
     windowHeight = std::clamp(windowHeight, 500, 10000);
     hotkeyModifiers &= 0x000F;
+}
+
+void Settings::CopyEffects(const Settings& from) {
+    nrPreset = from.nrPreset; nrStyle = from.nrStyle;
+    nrIntensity = from.nrIntensity; nrGlobalTone = from.nrGlobalTone; nrLocalTone = from.nrLocalTone;
+    nrLocalStructure = from.nrLocalStructure; nrSkinStructure = from.nrSkinStructure;
+    nrAutoMask = from.nrAutoMask; nrUiCorrection = from.nrUiCorrection;
+    nrInputExposure = from.nrInputExposure; nrToneTransfer = from.nrToneTransfer; nrColorStrength = from.nrColorStrength;
+    nrShadowGain = from.nrShadowGain; nrHighlightGain = from.nrHighlightGain; nrInputScale = from.nrInputScale;
 }
 
 } // namespace vdc

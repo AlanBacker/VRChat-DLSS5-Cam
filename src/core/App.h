@@ -80,6 +80,7 @@ private:
         double       videoDurationSeconds = 0.0;
         bool         videoHasAudio = false;
         bool         videoHardwareDecode = false;
+        UINT32       videoBitrateKbps = 0;       // average video bitrate of the file (0 = unknown)
         bool         videoProcessing = false;    // the file is being run through the pipeline
         bool         videoFinishing = false;     // the encoder writes the tail of the file
         UINT64       videoFrame = 0;             // frames delivered to the output
@@ -94,6 +95,9 @@ private:
         int          batchIndex = 0, batchCount = 0, batchDone = 0, batchFailed = 0;
         unsigned     batchItemId = 0;
         std::string  batchItemName;
+        double       costSecPerFrame = 0.0;      // processing time per frame at costPixels pixels (0 = unknown yet)
+        double       costPixels = 0.0;
+        bool         costMeasured = false;       // from a file run (frames over wall time) rather than the preview passes
     };
     struct Notice { std::string text; bool error = false; };
     struct BatchItem {
@@ -101,6 +105,7 @@ private:
         std::wstring path;
         bool         isVideo = false;
         double       inSec = 0.0, outSec = 0.0;
+        std::shared_ptr<Settings> own;           // the item's own effect values (a copy), or null
     };
     struct BatchEvent {
         unsigned    id = 0;
@@ -224,6 +229,9 @@ private:
     // Media library (interface thread).
     void AddLibraryFiles(const std::vector<std::wstring>& paths, bool announce);
     void RemoveLibraryItem(unsigned id);
+    void RemoveSelectedLibraryItems();
+    void LocateLibraryItem(unsigned id);         // Explorer with the file selected
+    const LibraryItem* OverrideItem() const;    // the library item whose own effect values apply to the shown file
     void ClearLibrary();
     void PreviewLibraryItem(unsigned id);
     void StartLibraryProcessing(bool selectedOnly);
@@ -329,6 +337,7 @@ private:
     double         m_cpuMs = 0.0;
     std::string    m_lastCapture;
     bool           m_lastCaptureOk = true;
+    double         m_pngSecPerMegapixel = 0.12;   // PNG encoding time, refined from each saved picture
 
     // Media library and the video storyboard (interface thread).
     std::vector<LibraryItem> m_library;
@@ -344,6 +353,7 @@ private:
     double         m_hoverRequested = -1.0;
     double         m_hoverRequestTime = 0.0;
     bool           m_libraryBatchRunning = false;
+    std::wstring   m_overridePath;                // file whose own effect values are merged into the pushed settings
 };
 
 } // namespace vdc

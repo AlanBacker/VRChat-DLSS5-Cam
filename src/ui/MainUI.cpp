@@ -11,6 +11,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <memory>
 
 namespace vdc::ui {
 
@@ -80,15 +81,15 @@ bool ComboIds(const char* label, int* value, const char* const* items, int count
 
 void Tip(const char* text) { if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip)) ImGui::SetTooltip("%s", text); }
 
-// A flat button with a glyph (transport controls, small tools).
-bool GlyphButton(const char* id, const char* glyph, const char* tooltip, float width = 0.0f, bool accent = false) {
-    const float w = width > 0.0f ? width : ImGui::GetFrameHeight() * 1.4f;
-    ImGui::PushID(id);
-    const bool pressed = accent ? AccentButton(glyph, ImVec2(w, ImGui::GetFrameHeight())) : ImGui::Button(glyph, ImVec2(w, ImGui::GetFrameHeight()));
-    ImGui::PopID();
-    if (tooltip) Tip(tooltip);
-    return pressed;
+// "2 min 05 s" style text of a duration estimate.
+std::string FormatEstimate(double seconds) {
+    const int t = (int)(std::max(0.0, seconds) + 0.5);
+    if (t >= 3600) return StrPrintf(TR(EstHours), t / 3600, (t / 60) % 60);
+    if (t >= 60) return StrPrintf(TR(EstMinutes), t / 60, t % 60);
+    return StrPrintf(TR(EstSeconds), std::max(1, t));
 }
+
+bool IsHevc(const std::string& codec) { return codec.find("HEV") != std::string::npos || codec == "H265"; }
 
 // The text of a library item's state badge (null: none).
 const char* StateText(const LibraryItem& it) {
@@ -149,7 +150,13 @@ void MainUI::Draw(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Font
     const ImVec2 avail = ImGui::GetContentRegionAvail();
     const float bodyH = std::max(50.0f, avail.y - statusH - style.ItemSpacing.y);
     const float sidebarW = std::min(ImGui::GetFontSize() * 24.0f, avail.x * 0.5f);
-    const float previewW = s.sidebarVisible ? std::max(50.0f, avail.x - sidebarW - style.ItemSpacing.x) : avail.x;
+    // The sidebar slides in and out behind a slim handle on the edge of the preview; the preview takes the room it
+    // frees while it moves.
+    const float handleW = 14.0f;
+    const float sideT = Ease(AnimateLinear(ImGui::GetID("##sidebarSlide"), s.sidebarVisible ? 1.0f : 0.0f, 0.22f));
+    const float shownW = sidebarW * sideT;
+    const float previewW = std::max(50.0f, avail.x - shownW - handleW - style.ItemSpacing.x * sideT);
+    const ImVec2 bodyOrigin = ImGui::GetCursorScreenPos();
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
     ImGui::PushStyleColor(ImGuiCol_ChildBg, Colors().surface);
@@ -159,18 +166,34 @@ void MainUI::Draw(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Font
     DrawPreview(s, info, ev, fonts);
     ImGui::EndChild();
 
-    if (s.sidebarVisible) {
-        ImGui::SameLine();
+    ImGui::SameLine(0.0f, 0.0f);
+    {
+        const Palette& p = Colors();
+        const ImVec2 hpos = ImGui::GetCursorScreenPos();
+        ImGui::InvisibleButton("##sidebarHandle", ImVec2(handleW, bodyH));
+        if (ImGui::IsItemClicked(ImGuiMouseButton_Left)) { s.sidebarVisible = !s.sidebarVisible; ev.settingsChanged = true; }
+        Tip(s.sidebarVisible ? TR(SidebarHide) : TR(SidebarShow));
+        const float hov = Animate(ImGui::GetID("##sidebarHandleHover"), ImGui::IsItemHovered() ? 1.0f : 0.0f, 16.0f);
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        dl->AddRectFilled(hpos, ImVec2(hpos.x + handleW, hpos.y + bodyH), Mix(p.panel, p.controlHover, hov), 3.0f);
+        DrawChevron(dl, ImVec2(hpos.x + handleW * 0.5f, hpos.y + bodyH * 0.5f), 8.0f, IM_PI * 0.5f - IM_PI * sideT, Mix(p.textDim, p.text, hov));
+    }
+
+    if (shownW > 0.5f) {
+        ImGui::SameLine(0.0f, style.ItemSpacing.x * sideT);
+        ImGui::PushClipRect(bodyOrigin, ImVec2(bodyOrigin.x + avail.x, bodyOrigin.y + bodyH), true);
         ImGui::BeginChild("##sidebar", ImVec2(sidebarW, bodyH), ImGuiChildFlags_AlwaysUseWindowPadding);
         ImGui::SetScrollX(0.0f);   // the sidebar only ever scrolls vertically
         DrawSidebar(s, info, ev, fonts);
         ImGui::EndChild();
+        ImGui::PopClipRect();
     }
 
     DrawStatusBar(s, info, ev, fonts);
     ImGui::End();
 
     if (s.showLog) DrawLogWindow(s, ev, fonts);
+    DrawItemParams(s, info, ev, fonts);
     DrawToasts(fonts);
 }
 
@@ -222,13 +245,11 @@ void MainUI::DrawTopBar(Settings& s, const UiFrameInfo& info, UiEvents& ev, cons
     const float pillH = textH + 6.0f;
     const float badgesW = ImGui::CalcTextSize(badge).x + pillPad + (nrBadge ? ImGui::CalcTextSize("DLSS 5").x + pillPad + 6.0f : 0.0f);
 
-    // Right part: rates, the advanced switch, language, sidebar toggle, the main action. Rates are padded to three
-    // digits in the monospace font and their reserved width comes from a template, so a changing number never moves
-    // the controls to its right.
+    // Right part: rates, language, the main action. Rates are padded to three digits in the monospace font and
+    // their reserved width comes from a template, so a changing number never moves the controls to its right.
     const bool uiRateOnly = (imageMode || videoMode) && !info.videoProcessing && !info.videoPlaying;
     const char* actionText = busy ? TR(Cancel) : videoMode ? TR(ProcessVideo) : imageMode ? TR(ProcessAndSave) : TR(Capture);
     const float actionW = ImGui::CalcTextSize(actionText).x + style.FramePadding.x * 2.0f + 24.0f;
-    const float sidebarBtnW = frameH + 6.0f;
     const std::string fpsText = uiRateOnly
         ? StrPrintf("%s %3.0f %s", TR(UiFps), m_shown.fps, TR(Fps))
         : StrPrintf("%s %3.0f %s  \xC2\xB7  %s %3.0f %s", TR(ProcessingFps), m_shown.processingFps, TR(Fps), TR(UiFps), m_shown.fps, TR(Fps));
@@ -238,21 +259,16 @@ void MainUI::DrawTopBar(Settings& s, const UiFrameInfo& info, UiEvents& ev, cons
     ImGui::PushFont(fonts.Mono(), 0.0f);
     const float fpsW = ImGui::CalcTextSize(fpsTemplate.c_str()).x;
     ImGui::PopFont();
-    const float advW = frameH * 0.86f * 1.8f + style.ItemInnerSpacing.x + ImGui::CalcTextSize(TR(Advanced)).x;
 
     const float availW = ImGui::GetWindowWidth() - style.WindowPadding.x * 2.0f;
     const float gap = 20.0f;
     float langW = ImGui::GetFontSize() * 8.0f;
-    bool showFps = true, showBadges = true, showAdvanced = true, showTitle = true;
-    auto rightW = [&]() {
-        return actionW + sidebarBtnW + langW + style.ItemSpacing.x * 2.0f + (showFps ? fpsW + style.ItemSpacing.x : 0.0f)
-             + (showAdvanced ? advW + style.ItemSpacing.x : 0.0f);
-    };
+    bool showFps = true, showBadges = true, showTitle = true;
+    auto rightW = [&]() { return actionW + langW + style.ItemSpacing.x + (showFps ? fpsW + style.ItemSpacing.x : 0.0f); };
     auto leftW = [&]() { return (showTitle ? titleSize.x + 16.0f : 0.0f) + switchW + (showBadges ? 14.0f + badgesW : 0.0f); };
     if (leftW() + gap + rightW() > availW) showFps = false;
     if (leftW() + gap + rightW() > availW) langW = ImGui::GetFontSize() * 4.5f;
     if (leftW() + gap + rightW() > availW) showBadges = false;
-    if (leftW() + gap + rightW() > availW) showAdvanced = false;
     if (leftW() + gap + rightW() > availW) showTitle = false;
 
     if (showTitle) {
@@ -288,22 +304,12 @@ void MainUI::DrawTopBar(Settings& s, const UiFrameInfo& info, UiEvents& ev, cons
         Tip(TR(TipUiFps));
         ImGui::SameLine();
     }
-    if (showAdvanced) {
-        ImGui::SetCursorPosY(centred(frameH));
-        if (Toggle(TR(Advanced), &s.showAdvanced)) ev.settingsChanged = true;
-        Tip(TR(TipAdvanced));
-        ImGui::SameLine();
-    }
     ImGui::SetCursorPosY(centred(frameH));
     ImGui::SetNextItemWidth(langW);
     {
         const char* items[] = { TR(LangAuto), "English", "简体中文", "日本語", "한국어" };
         if (ComboIds("##lang", &s.language, items, 5)) { ev.languageChanged = true; ev.settingsChanged = true; }
     }
-    ImGui::SameLine();
-    ImGui::SetCursorPosY(centred(frameH));
-    if (ImGui::Button(s.sidebarVisible ? "\xE2\x96\xB8" : "\xE2\x97\x82", ImVec2(sidebarBtnW, 0))) { s.sidebarVisible = !s.sidebarVisible; ev.settingsChanged = true; }
-    Tip(TR(Sidebar));
     ImGui::SameLine();
     ImGui::SetCursorPosY(centred(frameH));
     const std::string actionLabel = std::string(busy ? "\xE2\x96\xA0 " : "\xE2\x97\x8F ") + actionText;
@@ -320,18 +326,103 @@ void MainUI::DrawTopBar(Settings& s, const UiFrameInfo& info, UiEvents& ev, cons
 // ------------------------------------------------------------------------------------------
 
 void MainUI::DrawSidebar(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts) {
-    ImGui::PushItemWidth(-ImGui::GetFontSize() * 7.5f);
-    if (SectionHeader(TR(SecSource), "source")) BlockSource(s, info, ev);
-    if (SectionHeader(TR(SecNeural), "neural")) BlockNeural(s, info, ev);
-    if (SectionHeader(TR(SecCapture), "save")) BlockSave(s, info, ev);
-    if (SectionHeader(TR(SecDisplay), "view", false)) BlockView(s, info, ev);
-    if (s.showAdvanced) {
-        if (SectionHeader(TR(SecGuidance), "guidance", false)) BlockGuidance(s, info, ev);
-        if (SectionHeader(TR(SecDlaa), "dlaa", false)) BlockDlaa(s, info, ev);
-        if (SectionHeader(TR(SecInternals), "internals", false)) BlockInternals(s, info, ev);
+    const Palette& p = Colors();
+    const ImGuiStyle& style = ImGui::GetStyle();
+    // While a file is processed the settings are locked: a change half-way through would make a result that mixes
+    // two looks, and a still image being saved must not restart its passes.
+    const bool locked = info.videoProcessing || info.videoFinishing || info.batchRunning || info.capturePending > 0
+                     || (info.status && info.status->capturesInFlight > 0);
+    const float lockT = Animate(ImGui::GetID("##lock"), locked ? 1.0f : 0.0f, 12.0f);
+    if (lockT > 0.001f) {
+        const float frameH = ImGui::GetFrameHeight();
+        const float bannerH = frameH + 10.0f;
+        const ImVec2 b0 = ImGui::GetCursorScreenPos();
+        const float w = ImGui::GetContentRegionAvail().x;
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        dl->AddRectFilled(b0, ImVec2(b0.x + w, b0.y + bannerH), WithAlpha(p.warn, 0.14f * lockT), style.FrameRounding);
+        DrawIcon(dl, Icon::Lock, ImVec2(b0.x + 8.0f + frameH * 0.4f, b0.y + bannerH * 0.5f), frameH * 0.62f, WithAlpha(p.warn, lockT));
+        const bool cancellable = info.batchRunning || info.videoProcessing;
+        const float cancelW = cancellable ? ImGui::CalcTextSize(TR(Cancel)).x + style.FramePadding.x * 2.0f + 8.0f : 0.0f;
+        ImGui::PushStyleColor(ImGuiCol_Text, WithAlpha(p.warn, lockT));
+        ImGui::PushClipRect(b0, ImVec2(b0.x + w - cancelW - 4.0f, b0.y + bannerH), true);
+        ImGui::SetCursorScreenPos(ImVec2(b0.x + 12.0f + frameH * 0.8f, b0.y + (bannerH - ImGui::GetTextLineHeight()) * 0.5f));
+        ImGui::TextUnformatted(TR(LockedWhileBusy));
+        ImGui::PopClipRect();
+        ImGui::PopStyleColor();
+        if (cancellable) {
+            ImGui::SameLine();
+            ImGui::SetCursorScreenPos(ImVec2(b0.x + w - cancelW + 4.0f, b0.y + 5.0f));
+            ImGui::PushStyleVar(ImGuiStyleVar_Alpha, style.Alpha * lockT);
+            if (AccentButton(TR(Cancel), ImVec2(cancelW - 8.0f, frameH))) { if (info.batchRunning) ev.batchCancel = true; else ev.cancelVideo = true; }
+            ImGui::PopStyleVar();
+        }
+        ImGui::SetCursorScreenPos(ImVec2(b0.x, b0.y + bannerH * lockT));
+        ImGui::Spacing();
     }
-    if (SectionHeader(TR(SecAbout), "about", false)) BlockAbout(s, info, ev, fonts);
+    ImGui::BeginDisabled(locked);
+    ImGui::PushItemWidth(-ImGui::GetFontSize() * 7.5f);
+    if (SectionHeader(TR(SecSource), "source")) { BlockSource(s, info, ev); SectionEnd(); }
+    if (SectionHeader(TR(SecNeural), "neural")) { BlockNeural(s, info, ev); SectionEnd(); }
+    if (SectionHeader(TR(SecCapture), "save")) { BlockSave(s, info, ev); SectionEnd(); }
+    if (SectionHeader(TR(SecDisplay), "view", false)) { BlockView(s, info, ev); SectionEnd(); }
+    // The expert sections fade in and out with the Advanced switch.
+    const float adv = Animate(ImGui::GetID("##advanced"), s.showAdvanced ? 1.0f : 0.0f, 12.0f);
+    if (adv > 0.001f) {
+        ImGui::PushStyleVar(ImGuiStyleVar_Alpha, style.Alpha * adv);
+        if (SectionHeader(TR(SecGuidance), "guidance", false)) { BlockGuidance(s, info, ev); SectionEnd(); }
+        if (SectionHeader(TR(SecDlaa), "dlaa", false)) { BlockDlaa(s, info, ev); SectionEnd(); }
+        if (SectionHeader(TR(SecInternals), "internals", false)) { BlockInternals(s, info, ev); SectionEnd(); }
+        ImGui::PopStyleVar();
+    }
+    if (SectionHeader(TR(SecAbout), "about", false)) { BlockAbout(s, info, ev, fonts); SectionEnd(); }
     ImGui::PopItemWidth();
+    ImGui::EndDisabled();
+}
+
+// How long the current file would take with the settings as they are, from the measured cost of a frame.
+std::string MainUI::EstimateText(const Settings& s, const UiFrameInfo& info) const {
+    if (info.costSecPerFrame <= 0.0 || info.costPixels <= 0.0) return TR(EstimateNone);
+    auto frameCost = [&](double pixels) { return info.costSecPerFrame * std::max(pixels, 1.0) / info.costPixels; };
+    double seconds = -1.0;
+    if (s.sourceMode == SourceVideo && info.videoLoaded) {
+        const double in = std::max(0.0, info.videoIn);
+        const double out = info.videoOut > in ? info.videoOut : info.videoDurationSeconds;
+        const double frames = std::max(0.0, out - in) * (info.videoFps > 0.0 ? info.videoFps : 30.0);
+        seconds = frames * frameCost((double)info.videoWidth * info.videoHeight) * 1.05 + 0.5;
+    } else if (s.sourceMode == SourceImage && info.imageLoaded) {
+        const double pixels = (double)info.imageWidth * info.imageHeight;
+        seconds = 32.0 * frameCost(pixels) + pixels / 1e6 * info.pngSecPerMegapixel + 0.2;
+    }
+    if (seconds < 0.0) return TR(EstimateNone);
+    return "\xE2\x89\x88 " + FormatEstimate(seconds);
+}
+
+// Seconds left in the running batch: the rest of the current file at its measured rate plus the queued files at
+// the estimated cost of a frame.
+double MainUI::BatchRemaining(const UiFrameInfo& info) const {
+    if (!info.batchRunning || !info.library) return -1.0;
+    double total = 0.0;
+    bool known = false;
+    if (info.videoProcessing && info.videoFrame >= 5 && info.videoElapsed > 0.5) {
+        const double perFrame = info.videoElapsed / (double)info.videoFrame;
+        total += (double)(std::max(info.videoFrames, info.videoFrame) - info.videoFrame) * perFrame;
+        known = true;
+    }
+    if (info.costSecPerFrame > 0.0 && info.costPixels > 0.0) {
+        for (const auto& it : *info.library) {
+            if (it.state != LibraryItem::Queued || it.probe != 1) continue;
+            const double cost = info.costSecPerFrame * std::max(1.0, (double)it.width * it.height) / info.costPixels;
+            if (it.isVideo) {
+                const double in = std::max(0.0, it.inSec);
+                const double out = it.outSec > in ? it.outSec : it.duration;
+                total += std::max(0.0, out - in) * (it.fps > 0.0 ? it.fps : 30.0) * cost * 1.05 + 0.5;
+            } else {
+                total += 32.0 * cost + (double)it.width * it.height / 1e6 * info.pngSecPerMegapixel + 0.2;
+            }
+            known = true;
+        }
+    }
+    return known ? total : -1.0;
 }
 
 void MainUI::BlockSource(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
@@ -339,7 +430,7 @@ void MainUI::BlockSource(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
     const bool busy = info.videoProcessing || info.batchRunning;
     if (s.sourceMode == SourceVideo) {
         ImGui::BeginDisabled(busy);
-        if (ImGui::Button(TR(OpenVideo), ImVec2(-FLT_MIN, 0))) ev.openVideo = true;
+        if (FlatButton(TR(OpenVideo), ImVec2(-FLT_MIN, 0))) ev.openVideo = true;
         ImGui::EndDisabled();
         if (info.videoLoaded) {
             StatusDot(p.good, StrPrintf("%s  %ux%u  %.3g %s  %s", info.videoName.c_str(), info.videoWidth, info.videoHeight, info.videoFps, TR(Fps),
@@ -355,7 +446,6 @@ void MainUI::BlockSource(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
                 const double remaining = (rate > 0.0 && total > info.videoFrame) ? (double)(total - info.videoFrame) / rate : 0.0;
                 if (info.videoFinishing) ImGui::TextDisabled("%s", TR(VideoFinishing));
                 else ImGui::TextDisabled("%5.1f %s  \xC2\xB7  %s %s", rate, TR(Fps), FormatDuration(remaining).c_str(), TR(Remaining));
-                if (!info.batchRunning && AccentButton(TR(Cancel), ImVec2(-FLT_MIN, 0))) ev.cancelVideo = true;
             } else {
                 ImGui::TextDisabled("%s", info.videoPlaying ? TR(Play) : info.imageConverging ? TR(Processing) : TR(Converged));
             }
@@ -365,13 +455,27 @@ void MainUI::BlockSource(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         }
         ImGui::Spacing();
         {
-            const char* outputs[] = { TR(VideoOutputH264), TR(VideoOutputHevc), TR(VideoOutputPng) };
             ImGui::BeginDisabled(busy);
-            if (ComboIds(TR(VideoOutput), &s.videoOutput, outputs, 3, TR(TipVideoOutput))) ev.settingsChanged = true;
-            if (s.videoOutput != 2) {
-                if (SliderIntReset(TR(Bitrate), &s.videoBitrateMbps, 5, 200, 40, "%d Mbit/s", TR(TipBitrate))) ev.settingsChanged = true;
+            // The output follows the opened file by default: same codec, average bitrate and frame rate.
+            if (Toggle(TR(MatchSource), &s.videoMatchSource)) ev.settingsChanged = true;
+            Help(TR(TipMatchSource));
+            if (s.videoMatchSource) {
+                if (info.videoLoaded) {
+                    const std::string rate = info.videoBitrateKbps > 0 ? StrPrintf("%.1f Mbit/s", info.videoBitrateKbps / 1000.0) : std::string(TR(BitrateUnknown));
+                    ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x);
+                    ImGui::TextDisabled(TR(MatchedSpecs), IsHevc(info.videoCodec) ? TR(VideoOutputHevc) : TR(VideoOutputH264), rate.c_str(), info.videoFps);
+                    ImGui::PopTextWrapPos();
+                }
                 if (Toggle(TR(KeepAudio), &s.videoKeepAudio)) ev.settingsChanged = true;
                 Help(TR(TipKeepAudio));
+            } else {
+                const char* outputs[] = { TR(VideoOutputH264), TR(VideoOutputHevc), TR(VideoOutputPng) };
+                if (ComboIds(TR(VideoOutput), &s.videoOutput, outputs, 3, TR(TipVideoOutput))) ev.settingsChanged = true;
+                if (s.videoOutput != 2) {
+                    if (SliderIntReset(TR(Bitrate), &s.videoBitrateMbps, 5, 200, 40, "%d Mbit/s", TR(TipBitrate))) ev.settingsChanged = true;
+                    if (Toggle(TR(KeepAudio), &s.videoKeepAudio)) ev.settingsChanged = true;
+                    Help(TR(TipKeepAudio));
+                }
             }
             if (s.showAdvanced) {
                 if (Toggle(TR(HardwareDecode), &s.videoHardwareDecode)) ev.settingsChanged = true;
@@ -380,7 +484,7 @@ void MainUI::BlockSource(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
             ImGui::EndDisabled();
         }
     } else if (s.sourceMode == SourceImage) {
-        if (ImGui::Button(TR(OpenImage), ImVec2(-FLT_MIN, 0))) ev.openImage = true;
+        if (FlatButton(TR(OpenImage), ImVec2(-FLT_MIN, 0))) ev.openImage = true;
         if (info.imageLoaded) {
             StatusDot(p.good, StrPrintf("%s  %ux%u", info.imageName.c_str(), info.imageOrigWidth, info.imageOrigHeight).c_str());
             if (info.imageWidth != info.imageOrigWidth || info.imageHeight != info.imageOrigHeight)
@@ -408,8 +512,7 @@ void MainUI::BlockSource(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
                 ImGui::EndCombo();
             }
             ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
-            if (ImGui::Button("\xE2\x86\xBB", ImVec2(ImGui::GetFrameHeight(), 0))) ev.refreshSenders = true;
-            Tip(TR(Refresh));
+            if (IconButton("##refresh", Icon::Refresh, ImVec2(ImGui::GetFrameHeight(), 0), TR(Refresh))) ev.refreshSenders = true;
             ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
             ImGui::TextUnformatted(TR(Sender));
         }
@@ -461,6 +564,7 @@ void MainUI::BlockSource(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
 void MainUI::BlockNeural(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
     const Palette& p = Colors();
     const PipelineStatus* st = info.status;
+    const ImGuiStyle& style = ImGui::GetStyle();
     if (Toggle(TR(NrEnable), &s.nrEnabled)) { ev.nrChanged = true; ev.settingsChanged = true; }
     ImGui::SameLine(0.0f, 12.0f);
     if (st) {
@@ -468,6 +572,16 @@ void MainUI::BlockNeural(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         else if (st->nrFailed) Pill(TR(Failed), WithAlpha(p.bad, 0.18f), p.bad);
         else if (st->nrStandby) Pill(TR(Standby), WithAlpha(p.warn, 0.18f), p.warn);
         else Pill(TR(Inactive), WithAlpha(p.muted, 0.2f), p.muted);
+    }
+    // The Advanced switch sits at the right end of this row: it decides how much of this section (and of the
+    // others) is shown.
+    {
+        const float toggleW = ImGui::GetFrameHeight() * 0.86f * 1.8f + style.ItemInnerSpacing.x + ImGui::CalcTextSize(TR(Advanced)).x;
+        ImGui::SameLine();
+        const float rightEdge = ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x;
+        ImGui::SameLine(std::max(ImGui::GetCursorPosX(), rightEdge - toggleW));
+        if (Toggle(TR(Advanced), &s.showAdvanced)) ev.settingsChanged = true;
+        Tip(TR(TipAdvanced));
     }
     Hint(TR(NrHint));
     if (s.sourceMode == SourceSpout && s.showAdvanced) {
@@ -518,7 +632,7 @@ void MainUI::BlockNeural(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         m_runtimeEditing = ImGui::IsItemActive();
         if (ImGui::IsItemDeactivatedAfterEdit()) { s.nrDllPath = m_runtimeBuf; ev.reloadRuntime = true; ev.settingsChanged = true; }
         ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
-        if (ImGui::Button("...##runtime", ImVec2(btnW, 0))) ev.browseRuntime = true;
+        if (FlatButton("...##runtime", ImVec2(btnW, 0))) ev.browseRuntime = true;
         Tip(TR(Browse));
         ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
         ImGui::TextUnformatted(TR(RuntimePath));
@@ -529,7 +643,20 @@ void MainUI::BlockNeural(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         if (ComboIds(TR(Route), &s.nrRoute, routes, 2, TR(TipRoute))) { ev.nrChanged = true; ev.settingsChanged = true; }
     }
     ImGui::Spacing();
-    ImGui::BeginDisabled(!s.nrEnabled);
+    EffectControls(s, ev, s.showAdvanced, s.nrEnabled);
+    if (st && s.showAdvanced) {
+        Readout(m_fonts, TR(GpuTime), FormatMsFixed(m_shown.gpuMs[(UINT)GpuTimer::Neural]));
+        Readout(m_fonts, TR(Frames), StrPrintf("%llu", m_shown.processedFrames));
+        Readout(m_fonts, TR(NrPassSize), st->nrActive && st->nrPassWidth ? StrPrintf("%ux%u", st->nrPassWidth, st->nrPassHeight) : std::string("-"));
+        Readout(m_fonts, TR(NrOutputCheck), st->nrActive && m_shown.nrOutDelta >= 0.0f ? StrPrintf("%5.3f", m_shown.nrOutDelta) : std::string("    -"));
+        Help(TR(TipNrOutputCheck));
+    }
+    ImGui::Spacing();
+}
+
+// The effect controls of the DLSS 5 pass: shared by the sidebar and by the window of a library item's own values.
+void MainUI::EffectControls(Settings& s, UiEvents& ev, bool advanced, bool enabled) {
+    ImGui::BeginDisabled(!enabled);
     {
         const char* presets[] = { "Preset A (0)", "Preset B (1)", "Preset C (2)", "Preset D (3)" };
         if (ComboIds(TR(Preset), &s.nrPreset, presets, 4, TR(TipPreset))) { ev.nrChanged = true; ev.settingsChanged = true; }
@@ -540,9 +667,9 @@ void MainUI::BlockNeural(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
     // 0..2: up to 1 goes to the runtime (which stops there); above 1 the composite pass amplifies the matching part
     // of the change the network made (see the tooltips).
     ch |= SliderReset(TR(Intensity), &s.nrIntensity, 0.0f, 2.0f, 1.0f, "%.2f", TR(TipIntensity));
-    if (!s.showAdvanced) Hint(TR(NrStrengthHint));
+    if (!advanced) Hint(TR(NrStrengthHint));
     bool blend = false;
-    if (s.showAdvanced) {
+    if (advanced) {
         ch |= SliderReset(TR(GlobalTone), &s.nrGlobalTone, 0.0f, 2.0f, 1.0f, "%.2f", TR(TipGlobalTone));
         ch |= SliderReset(TR(LocalTone), &s.nrLocalTone, 0.0f, 2.0f, 1.0f, "%.2f", TR(TipLocalTone));
         ch |= SliderReset(TR(LocalStructure), &s.nrLocalStructure, 0.0f, 2.0f, 1.0f, "%.2f", TR(TipLocalStructure));
@@ -592,14 +719,6 @@ void MainUI::BlockNeural(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         s.nrShadowGain = 1.0f; s.nrHighlightGain = 1.0f; s.nrInputScale = 100;
         ev.nrChanged = true; ev.settingsChanged = true;
     }
-    if (st && s.showAdvanced) {
-        Readout(m_fonts, TR(GpuTime), FormatMsFixed(m_shown.gpuMs[(UINT)GpuTimer::Neural]));
-        Readout(m_fonts, TR(Frames), StrPrintf("%llu", m_shown.processedFrames));
-        Readout(m_fonts, TR(NrPassSize), st->nrActive && st->nrPassWidth ? StrPrintf("%ux%u", st->nrPassWidth, st->nrPassHeight) : std::string("-"));
-        Readout(m_fonts, TR(NrOutputCheck), st->nrActive && m_shown.nrOutDelta >= 0.0f ? StrPrintf("%5.3f", m_shown.nrOutDelta) : std::string("    -"));
-        Help(TR(TipNrOutputCheck));
-    }
-    ImGui::Spacing();
 }
 
 void MainUI::BlockSave(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
@@ -611,6 +730,11 @@ void MainUI::BlockSave(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
     ImGui::EndDisabled();
     Tip(s.sourceMode == SourceVideo ? TR(VideoHint) : s.sourceMode == SourceImage ? TR(ImageHint) : TR(CaptureHint));
     Hint(TR(OutputHint));
+    if (s.sourceMode != SourceSpout) {
+        // What the run would take on this card, so a slow card can be judged before the wait.
+        Readout(m_fonts, TR(Estimate), EstimateText(s, info));
+        Help(TR(TipEstimate));
+    }
     {
         SyncBuffer(m_folderBuf, sizeof(m_folderBuf), s.captureFolder, m_folderEditing);
         const float btnW = ImGui::GetFrameHeight() * 1.6f;
@@ -620,11 +744,10 @@ void MainUI::BlockSave(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         m_folderEditing = ImGui::IsItemActive();
         if (ImGui::IsItemDeactivatedAfterEdit()) { s.captureFolder = m_folderBuf; ev.settingsChanged = true; }
         ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
-        if (ImGui::Button("...##folder", ImVec2(btnW, 0))) ev.browseFolder = true;
+        if (FlatButton("...##folder", ImVec2(btnW, 0))) ev.browseFolder = true;
         Tip(TR(Browse));
         ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
-        if (ImGui::Button("\xE2\x86\x97", ImVec2(btnW, 0))) ev.openCaptureFolder = true;
-        Tip(TR(OpenFolder));
+        if (IconButton("##openfolder", Icon::OpenExternal, ImVec2(btnW, 0), TR(OpenFolder))) ev.openCaptureFolder = true;
         ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
         ImGui::TextUnformatted(TR(CaptureFolder));
     }
@@ -704,9 +827,8 @@ void MainUI::BlockView(Settings& s, const UiFrameInfo& /*info*/, UiEvents& ev) {
         Tip(TR(TipZoom));
         ImGui::SameLine(0.0f, style.ItemInnerSpacing.x);
         ImGui::BeginDisabled(std::fabs(m_zoom - 1.0f) < 1e-4f && m_pan.x == 0.0f && m_pan.y == 0.0f);
-        if (ImGui::Button("\xE2\x86\xBA", ImVec2(resetW, 0))) { m_pan = ImVec2(0, 0); m_zoom = 1.0f; }
+        if (IconButton("##resetview", Icon::Reset, ImVec2(resetW, 0), TR(ResetView), ButtonKind::Plain)) { m_pan = ImVec2(0, 0); m_zoom = 1.0f; }
         ImGui::EndDisabled();
-        Tip(TR(ResetView));
         ImGui::SameLine(0.0f, style.ItemInnerSpacing.x);
         ImGui::TextUnformatted(TR(Zoom));
         ImGui::PopID();
@@ -798,7 +920,7 @@ void MainUI::BlockGuidance(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
             m_depthModelEditing = ImGui::IsItemActive();
             if (ImGui::IsItemDeactivatedAfterEdit()) { s.depthModelPath = m_depthModelBuf; ev.settingsChanged = true; }
             ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
-            if (ImGui::Button("...##depthmodel", ImVec2(btnW, 0))) ev.browseDepthModel = true;
+            if (FlatButton("...##depthmodel", ImVec2(btnW, 0))) ev.browseDepthModel = true;
             Tip(TR(Browse));
             ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
             ImGui::TextUnformatted(TR(DepthModel));
@@ -907,7 +1029,7 @@ void MainUI::BlockAbout(Settings& /*s*/, const UiFrameInfo& info, UiEvents& ev, 
         ImGui::Separator();
         if (AccentButton(TR(Ok), ImVec2(120, 0))) { ev.resetDefaults = true; ImGui::CloseCurrentPopup(); }
         ImGui::SameLine();
-        if (ImGui::Button(TR(Cancel), ImVec2(120, 0))) ImGui::CloseCurrentPopup();
+        if (FlatButton(TR(Cancel), ImVec2(120, 0))) ImGui::CloseCurrentPopup();
         ImGui::EndPopup();
     }
     ImGui::Spacing();
@@ -925,9 +1047,10 @@ void MainUI::DrawPreview(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
     const bool transport = s.sourceMode == SourceVideo && info.videoLoaded;
     const float transportH = transport ? frameH * 2.0f + style.ItemSpacing.y * 3.0f + 8.0f : 0.0f;
     const float thumbH = ImGui::GetFontSize() * 4.5f;
-    const float libraryH = s.libraryVisible
-        ? frameH + thumbH + ImGui::GetTextLineHeight() * 2.0f + style.ItemSpacing.y * 4.0f + style.ScrollbarSize + 16.0f
-        : frameH + 12.0f;
+    m_libraryFold = Ease(AnimateLinear(ImGui::GetID("##libraryFold"), s.libraryVisible ? 1.0f : 0.0f, 0.2f));
+    const float libraryOpenH = frameH + thumbH + ImGui::GetTextLineHeight() * 2.0f + style.ItemSpacing.y * 4.0f + style.ScrollbarSize + 16.0f;
+    const float libraryClosedH = frameH + 12.0f;
+    const float libraryH = libraryClosedH + (libraryOpenH - libraryClosedH) * m_libraryFold;
     const float pictureH = std::max(60.0f, region.y - transportH - libraryH);
 
     DrawPicture(s, info, ev, fonts, origin, ImVec2(region.x, pictureH));
@@ -960,7 +1083,9 @@ void MainUI::DrawPicture(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
         const float wrap = std::min(region.x * 0.8f, ImGui::GetFontSize() * 34.0f);
         const float blockH = ImGui::GetFontSize() * 13.0f;
         const float x = origin.x + (region.x - wrap) * 0.5f;
-        ImGui::SetCursorScreenPos(ImVec2(x, origin.y + std::max(12.0f, (region.y - blockH) * 0.5f)));
+        const float fade = AnimateFrom(ImGui::GetID("##welcome"), 0.0f, 1.0f, 5.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * fade);
+        ImGui::SetCursorScreenPos(ImVec2(x, origin.y + std::max(12.0f, (region.y - blockH) * 0.5f) + (1.0f - fade) * 12.0f));
         ImGui::BeginGroup();
         ImGui::PushTextWrapPos(x + wrap);
         ImGui::PushFont(fonts.Bold(), ImGui::GetStyle().FontSizeBase * 1.15f);
@@ -972,11 +1097,11 @@ void MainUI::DrawPicture(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
         ImGui::TextUnformatted(TR(WelcomeFiles));
         ImGui::PopStyleColor();
         ImGui::Spacing();
-        if (ImGui::Button(TR(OpenImage))) ev.openImage = true;
+        if (FlatButton(TR(OpenImage))) ev.openImage = true;
         ImGui::SameLine();
-        if (ImGui::Button(TR(OpenVideo))) ev.openVideo = true;
+        if (FlatButton(TR(OpenVideo))) ev.openVideo = true;
         ImGui::SameLine();
-        if (ImGui::Button(TR(AddFiles))) ev.libraryAddFiles = true;
+        if (FlatButton(TR(AddFiles))) ev.libraryAddFiles = true;
         ImGui::Spacing();
         ImGui::Spacing();
         ImGui::PushFont(fonts.Bold(), ImGui::GetStyle().FontSizeBase * 1.15f);
@@ -987,8 +1112,10 @@ void MainUI::DrawPicture(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
         ImGui::PopFont();
         ImGui::PopTextWrapPos();
         ImGui::EndGroup();
+        ImGui::PopStyleVar();
         return;
     }
+    AnimateSnap(ImGui::GetID("##welcome"), 0.0f);   // the card fades in again the next time nothing is open
 
     // Image rectangle: fitted to the view or 1:1, times the manual magnification (wheel, slider; double-click resets).
     const float texW = (float)info.displayWidth, texH = (float)info.displayHeight;
@@ -1198,12 +1325,16 @@ void MainUI::DrawTransport(Settings& /*s*/, const UiFrameInfo& info, UiEvents& e
             dl->AddRectFilled(ImVec2(xAt(inSec) - 1.5f, cy - mh), ImVec2(xAt(inSec) + 1.5f, cy + mh), p.knob);
             if (info.videoOut > 0.0) dl->AddRectFilled(ImVec2(xAt(outSec) - 1.5f, cy - mh), ImVec2(xAt(outSec) + 1.5f, cy + mh), p.knob);
         }
-        const float r = (barHovered || m_seekDragging) ? barH * 0.34f : barH * 0.27f;
+        const float grow = Animate(ImGui::GetID("##knob"), (barHovered || m_seekDragging) ? 1.0f : 0.0f, 18.0f);
+        const float r = barH * (0.27f + 0.07f * grow);
         dl->AddCircleFilled(ImVec2(xAt(shownPos), cy), r, p.knob);
     }
 
     // Hover: the frame under the cursor, from the storyboard or the exact frame the scanner decoded for this spot.
-    if (barHovered && !busy && !m_seekDragging) {
+    const bool showHover = barHovered && !busy && !m_seekDragging;
+    const float hoverT = showHover ? AnimateFrom(ImGui::GetID("##hovercard"), 0.0f, 1.0f, 22.0f) : 0.0f;
+    if (!showHover) AnimateSnap(ImGui::GetID("##hovercard"), 0.0f);
+    if (showHover) {
         const double t = timeAt(io.MousePos.x);
         ev.videoHover = true; ev.videoHoverTime = t;
         int cell = -1; double best = 1e9;
@@ -1223,28 +1354,30 @@ void MainUI::DrawTransport(Settings& /*s*/, const UiFrameInfo& info, UiEvents& e
         const float x = std::clamp(io.MousePos.x - w * 0.5f, barPos.x, barPos.x + barW - w);
         const float y0 = barPos.y - boxH - 6.0f;
         ImDrawList* fg = ImGui::GetForegroundDrawList();
-        fg->AddRectFilled(ImVec2(x, y0), ImVec2(x + w, y0 + boxH), p.overlayBg, 4.0f);
+        const float lift = (1.0f - hoverT) * 6.0f;   // the card rises and fades in
+        fg->AddRectFilled(ImVec2(x, y0 + lift), ImVec2(x + w, y0 + boxH + lift), WithAlpha(p.overlayBg, 0.82f * hoverT), 4.0f);
         if (cell >= 0) {
             float u0, v0, u1, v1;
             info.atlas->Uv(cell, u0, v0, u1, v1);
-            fg->AddImageRounded(ImTextureRef((ImTextureID)info.atlas->TextureHandle()), ImVec2(x + 2.0f, y0 + 2.0f), ImVec2(x + w - 2.0f, y0 + 2.0f + h),
-                                ImVec2(u0, v0), ImVec2(u1, v1), IM_COL32_WHITE, 3.0f);
+            fg->AddImageRounded(ImTextureRef((ImTextureID)info.atlas->TextureHandle()), ImVec2(x + 2.0f, y0 + 2.0f + lift), ImVec2(x + w - 2.0f, y0 + 2.0f + h + lift),
+                                ImVec2(u0, v0), ImVec2(u1, v1), WithAlpha(IM_COL32_WHITE, hoverT), 3.0f);
         }
         ImGui::PushFont(fonts.Mono(), 0.0f);
         const std::string tt = FormatClock(t);
         const ImVec2 ts = ImGui::CalcTextSize(tt.c_str());
-        fg->AddText(ImVec2(x + (w - ts.x) * 0.5f, y0 + boxH - lineH - 5.0f), IM_COL32(235, 237, 242, 255), tt.c_str());
+        fg->AddText(ImVec2(x + (w - ts.x) * 0.5f, y0 + boxH - lineH - 5.0f + lift), WithAlpha(IM_COL32(235, 237, 242, 255), hoverT), tt.c_str());
         ImGui::PopFont();
-        fg->AddLine(ImVec2(io.MousePos.x, barPos.y), ImVec2(io.MousePos.x, barPos.y + barH), WithAlpha(p.knob, 0.5f));
+        fg->AddLine(ImVec2(io.MousePos.x, barPos.y), ImVec2(io.MousePos.x, barPos.y + barH), WithAlpha(p.knob, 0.5f * hoverT));
     }
 
     // Controls row.
     ImGui::BeginDisabled(busy);
-    if (GlyphButton("back", "\xE2\x97\x80|", TR(PrevFrame))) ev.videoStep -= 1;
+    if (IconButton("##back", Icon::StepBack, ImVec2(frameH * 1.6f, frameH), TR(PrevFrame))) ev.videoStep -= 1;
     ImGui::SameLine(0.0f, 4.0f);
-    if (GlyphButton("play", info.videoPlaying ? "\xE2\x96\x8C\xE2\x96\x8C" : "\xE2\x96\xB6", info.videoPlaying ? TR(Pause) : TR(Play), frameH * 2.0f, true)) ev.videoPlayToggle = true;
+    if (IconButton("##play", info.videoPlaying ? Icon::Pause : Icon::Play, ImVec2(frameH * 2.2f, frameH), info.videoPlaying ? TR(Pause) : TR(Play), ButtonKind::Accent))
+        ev.videoPlayToggle = true;
     ImGui::SameLine(0.0f, 4.0f);
-    if (GlyphButton("fwd", "|\xE2\x96\xB6", TR(NextFrame))) ev.videoStep += 1;
+    if (IconButton("##fwd", Icon::StepForward, ImVec2(frameH * 1.6f, frameH), TR(NextFrame))) ev.videoStep += 1;
     ImGui::EndDisabled();
     ImGui::SameLine(0.0f, 12.0f);
     ImGui::PushFont(fonts.Mono(), 0.0f);
@@ -1270,7 +1403,7 @@ void MainUI::DrawTransport(Settings& /*s*/, const UiFrameInfo& info, UiEvents& e
     auto bw = [&](const char* t) { return ImGui::CalcTextSize(t).x + style.FramePadding.x * 2.0f; };
     const std::string rangeText = ranged ? StrPrintf("%s %s \xE2\x80\x93 %s", TR(RangeLabel), FormatDuration(inSec).c_str(), FormatDuration(outSec).c_str()) : std::string();
     const float rangeW = ranged ? ImGui::CalcTextSize(rangeText.c_str()).x + 12.0f : 0.0f;
-    const float helpW = ImGui::CalcTextSize("(?)").x + style.ItemSpacing.x;
+    const float helpW = ImGui::GetFontSize() * 1.05f + style.ItemSpacing.x;
     const float rightW = bw(inText) + bw(outText) + bw(wholeText) + style.ItemSpacing.x * 2.0f + rangeW + helpW;
     const float rightX = ImGui::GetWindowWidth() - style.WindowPadding.x - rightW;
     const float leftEnd = ImGui::GetItemRectMax().x - ImGui::GetWindowPos().x;
@@ -1295,7 +1428,8 @@ void MainUI::DrawTransport(Settings& /*s*/, const UiFrameInfo& info, UiEvents& e
     ImGui::EndChild();
 }
 
-// The media library: a strip of thumbnails under the preview. Click previews, the box selects for processing.
+// The media library: a strip of thumbnails under the preview. A click previews a file, a drag across the cards
+// selects them for processing (Ctrl adds, Shift extends), the right button opens a card's menu.
 void MainUI::DrawLibrary(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts, const ImVec2& pos, const ImVec2& size) {
     const Palette& p = Colors();
     const ImGuiStyle& style = ImGui::GetStyle();
@@ -1312,6 +1446,7 @@ void MainUI::DrawLibrary(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
     const bool running = info.batchRunning;
     const bool busy = running || info.videoProcessing;
     const float frameH = ImGui::GetFrameHeight();
+    const float fold = m_libraryFold;
 
     // Header line: caption, counts, and the actions at the right end.
     ImGui::AlignTextToFramePadding();
@@ -1320,26 +1455,31 @@ void MainUI::DrawLibrary(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
     ImGui::PopFont();
     ImGui::SameLine(0.0f, 10.0f);
     ImGui::AlignTextToFramePadding();
-    if (count) ImGui::TextDisabled(TR(LibraryCount), count, selected);
-    else ImGui::TextDisabled("%s", TR(BatchEmpty));
-    if (count && !running && s.libraryVisible) {
+    std::string caption = count ? StrPrintf(TR(LibraryCount), count, selected) : std::string(TR(BatchEmpty));
+    if (running) {
+        const double left = BatchRemaining(info);
+        if (left >= 0.0) caption += "  \xC2\xB7  " + StrPrintf(TR(RemainingFmt), ("\xE2\x89\x88 " + FormatEstimate(left)).c_str());
+    }
+    ImGui::TextDisabled("%s", caption.c_str());
+    if (count && !running && fold > 0.5f) {
         ImGui::SameLine(0.0f, 10.0f);
-        if (ImGui::SmallButton(TR(SelectAll))) { for (auto& it : *lib) it.selected = true; }
+        if (ImGui::SmallButton(TR(SelectAll))) { for (auto& it : *lib) it.selected = it.probe != 2; }
         ImGui::SameLine();
         if (ImGui::SmallButton(TR(SelectNone))) { for (auto& it : *lib) it.selected = false; }
+        Help(TR(TipLibrarySelect));
     }
     {
         const char* addF = TR(AddFiles);
         const char* addD = TR(AddFolder);
         const char* procSel = TR(ProcessSelected);
         const char* procAll = TR(BatchStart);
-        const char* clear = TR(Clear);
+        const char* del = TR(Delete);
         const char* cancel = TR(Cancel);
         auto bw = [&](const char* t) { return ImGui::CalcTextSize(t).x + style.FramePadding.x * 2.0f; };
         const float toggleW = frameH + 6.0f;
         float rightW = toggleW + style.ItemSpacing.x;
         if (running) rightW += bw(cancel) + style.ItemSpacing.x;
-        else rightW += bw(addF) + bw(addD) + bw(procSel) + bw(procAll) + bw(clear) + style.ItemSpacing.x * 5.0f;
+        else rightW += bw(addF) + bw(addD) + bw(procSel) + bw(procAll) + bw(del) + style.ItemSpacing.x * 5.0f;
         const float rightX = ImGui::GetWindowWidth() - style.WindowPadding.x - rightW;
         const float leftEnd = ImGui::GetItemRectMax().x - ImGui::GetWindowPos().x;
         ImGui::SameLine(std::max(leftEnd + 12.0f, rightX));
@@ -1356,18 +1496,19 @@ void MainUI::DrawLibrary(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
             ImGui::EndDisabled();
             ImGui::SameLine();
             ImGui::BeginDisabled(count == 0 || busy);
-            if (ImGui::Button(procAll)) ev.libraryProcessAll = true;
+            if (FlatButton(procAll)) ev.libraryProcessAll = true;
             ImGui::EndDisabled();
             ImGui::SameLine();
-            ImGui::BeginDisabled(count == 0);
-            if (ImGui::Button(clear)) ev.libraryClear = true;
+            // Red only while something is selected. It drops the items from the library; the files stay.
+            ImGui::BeginDisabled(selected == 0);
+            if (DangerButton(del)) ev.libraryDeleteSelected = true;
+            Tip(TR(TipDelete));
             ImGui::EndDisabled();
             ImGui::SameLine();
         }
-        if (ImGui::Button(s.libraryVisible ? "\xE2\x96\xBE" : "\xE2\x96\xB4", ImVec2(toggleW, 0))) { s.libraryVisible = !s.libraryVisible; ev.settingsChanged = true; }
-        Tip(TR(ShowLibrary));
+        if (ChevronButton("##fold", IM_PI * (1.0f - fold), ImVec2(toggleW, 0), TR(ShowLibrary))) { s.libraryVisible = !s.libraryVisible; ev.settingsChanged = true; }
     }
-    if (!s.libraryVisible) { ImGui::EndChild(); return; }
+    if (fold <= 0.001f) { m_libDrag = false; ImGui::EndChild(); return; }
 
     // The strip.
     const float cardW = ImGui::GetFontSize() * 8.0f;
@@ -1382,6 +1523,7 @@ void MainUI::DrawLibrary(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
     if (ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows) && io.MouseWheel != 0.0f)
         ImGui::SetScrollX(ImGui::GetScrollX() - io.MouseWheel * (cardW + style.ItemSpacing.x));
     if (count == 0) {
+        m_libDrag = false;
         const float wrap = std::min(ImGui::GetContentRegionAvail().x - 20.0f, ImGui::GetFontSize() * 40.0f);
         const ImVec2 ts = ImGui::CalcTextSize(TR(LibraryHint), nullptr, false, wrap);
         const ImVec2 o = ImGui::GetCursorScreenPos();
@@ -1397,22 +1539,50 @@ void MainUI::DrawLibrary(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
     ImDrawList* dl = ImGui::GetWindowDrawList();
     const ImTextureRef atlasTex = (info.atlas && info.atlas->Ready()) ? ImTextureRef((ImTextureID)info.atlas->TextureHandle()) : ImTextureRef();
     const ImVec2 rowStart = ImGui::GetCursorScreenPos();
+    const bool stripHovered = ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows);
+    const bool menuOpen = ImGui::IsPopupOpen("##libctx");   // judged here: inside a card's PushID the name would hash differently
+    // Selection drags are kept in content coordinates, so the rectangle stays put while the strip scrolls.
+    const ImVec2 winPos = ImGui::GetWindowPos();
+    const ImVec2 scroll(ImGui::GetScrollX(), ImGui::GetScrollY());
+    auto toContent = [&](const ImVec2& v) { return ImVec2(v.x - winPos.x + scroll.x, v.y - winPos.y + scroll.y); };
+    auto toScreen = [&](const ImVec2& v) { return ImVec2(v.x + winPos.x - scroll.x, v.y + winPos.y - scroll.y); };
+    ImRect marquee;
+    const bool dragging = m_libDrag && m_libDragMoved;
+    if (dragging) {
+        const ImVec2 a = toScreen(m_libDragStart), b = io.MousePos;
+        marquee = ImRect(ImVec2(std::min(a.x, b.x), std::min(a.y, b.y)), ImVec2(std::max(a.x, b.x), std::max(a.y, b.y)));
+    }
+    bool overControl = false;   // the cursor is on a card's box or its remove button
+    unsigned underCursor = 0;   // the card under the cursor
+    unsigned menuCard = 0;
     for (size_t i = 0; i < lib->size(); ++i) {
         LibraryItem& it = (*lib)[i];
         ImGui::PushID((int)it.id);
         const ImVec2 c0(rowStart.x + (float)i * (cardW + style.ItemSpacing.x), rowStart.y);
-        ImGui::SetCursorScreenPos(c0);
-        ImGui::SetNextItemAllowOverlap();
-        ImGui::InvisibleButton("##card", ImVec2(cardW, cardH));
-        const bool hovered = ImGui::IsItemHovered();
-        if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && !running && it.probe != 2) ev.libraryPreview = it.id;
-        if (hovered && it.probe == 2 && !it.error.empty()) ImGui::SetTooltip("%s", it.error.c_str());
-        else if (hovered && it.state == LibraryItem::Failed && !it.error.empty()) ImGui::SetTooltip("%s", it.error.c_str());
-        else if (hovered && it.state == LibraryItem::Done && !it.outName.empty()) ImGui::SetTooltip("%s: %s", TR(Saved), it.outName.c_str());
-        else if (hovered) ImGui::SetTooltip("%s", it.name.c_str());
+        const ImVec2 c1(c0.x + cardW, c0.y + cardH);
         const ImVec2 t1(c0.x + cardW, c0.y + thumbH);
+        ImGui::SetCursorScreenPos(c0);
+        ImGui::Dummy(ImVec2(cardW, cardH));
+        // Hover is judged on the card's rectangle: the box and the remove button sit on it and must not end it.
+        const bool hovered = stripHovered && !dragging && ImGui::IsMouseHoveringRect(c0, c1);
+        if (hovered) underCursor = it.id;
+        if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) menuCard = it.id;
+        if (dragging && it.probe != 2) {
+            const bool inRect = marquee.Overlaps(ImRect(c0, c1));
+            const bool kept = io.KeyCtrl && std::find(m_libDragKeep.begin(), m_libDragKeep.end(), it.id) != m_libDragKeep.end();
+            it.selected = inRect || kept;
+        }
+        const float hov = Animate(ImGui::GetID("##hover"), hovered ? 1.0f : 0.0f, 16.0f);
+        const float sel = Animate(ImGui::GetID("##selected"), it.selected ? 1.0f : 0.0f, 16.0f);
+        if (hovered && !dragging && !menuOpen) {
+            if (it.probe == 2 && !it.error.empty()) ImGui::SetTooltip("%s", it.error.c_str());
+            else if (it.state == LibraryItem::Failed && !it.error.empty()) ImGui::SetTooltip("%s", it.error.c_str());
+            else if (it.state == LibraryItem::Done && !it.outName.empty()) ImGui::SetTooltip("%s: %s", TR(Saved), it.outName.c_str());
+            else ImGui::SetTooltip("%s", it.name.c_str());
+        }
         const bool current = (s.sourceMode == SourceVideo && it.isVideo && !info.videoPath.empty() && it.path == info.videoPath)
                           || (s.sourceMode == SourceImage && !it.isVideo && !info.imagePath.empty() && it.path == info.imagePath);
+        if (sel > 0.001f) dl->AddRectFilled(ImVec2(c0.x - 3.0f, c0.y - 3.0f), ImVec2(c1.x + 3.0f, c1.y + 1.0f), WithAlpha(p.selection, sel * 0.9f), 5.0f);
         dl->AddRectFilled(c0, t1, p.control, 3.0f);
         if (info.atlas && it.thumbCell >= 0 && info.atlas->Filled(it.thumbCell)) {
             float u0, v0, u1, v1;
@@ -1429,8 +1599,10 @@ void MainUI::DrawLibrary(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
             dl->AddRectFilled(ImVec2(c0.x, t1.y - ph), t1, IM_COL32(0, 0, 0, 160), 3.0f, ImDrawFlags_RoundCornersBottom);
             dl->AddRectFilled(ImVec2(c0.x, t1.y - ph), ImVec2(c0.x + cardW * std::clamp(it.progress, 0.02f, 1.0f), t1.y), p.accent, 3.0f, ImDrawFlags_RoundCornersBottom);
         }
+        if (hov > 0.001f) dl->AddRectFilled(c0, t1, WithAlpha(IM_COL32(255, 255, 255, 255), 0.05f * hov), 3.0f);
         if (current) dl->AddRect(ImVec2(c0.x - 1.0f, c0.y - 1.0f), ImVec2(t1.x + 1.0f, t1.y + 1.0f), p.accent, 4.0f, 2.0f);
-        else if (hovered) dl->AddRect(c0, t1, WithAlpha(p.knob, 0.6f), 3.0f);
+        else if (sel > 0.001f) dl->AddRect(c0, t1, WithAlpha(p.accent, sel), 3.0f);
+        else if (hov > 0.001f) dl->AddRect(c0, t1, WithAlpha(p.knob, 0.6f * hov), 3.0f);
         // State badge at the top right of the picture.
         if (const char* st = StateText(it)) {
             const ImU32 col = (it.state == LibraryItem::Done) ? p.good : (it.state == LibraryItem::Failed || it.probe == 2) ? p.bad
@@ -1440,6 +1612,15 @@ void MainUI::DrawLibrary(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
             const ImVec2 b0(t1.x - ss.x - 12.0f, c0.y + 4.0f);
             dl->AddRectFilled(b0, ImVec2(b0.x + ss.x + 8.0f, b0.y + ss.y + 4.0f), WithAlpha(IM_COL32(0, 0, 0, 255), 0.7f), 3.0f);
             dl->AddText(ImVec2(b0.x + 4.0f, b0.y + 2.0f), col, st);
+            ImGui::PopFont();
+        }
+        // A file with its own values carries a small mark at the bottom left of the picture.
+        if (it.useOwn && it.own) {
+            ImGui::PushFont(nullptr, ImGui::GetFontSize() * 0.78f);
+            const ImVec2 os = ImGui::CalcTextSize(TR(OwnBadge));
+            const ImVec2 b0(c0.x + 4.0f, t1.y - os.y - 8.0f);
+            dl->AddRectFilled(b0, ImVec2(b0.x + os.x + 8.0f, b0.y + os.y + 4.0f), WithAlpha(p.accent, 0.85f), 3.0f);
+            dl->AddText(ImVec2(b0.x + 4.0f, b0.y + 2.0f), p.accentText, TR(OwnBadge));
             ImGui::PopFont();
         }
         // Name and details.
@@ -1463,24 +1644,126 @@ void MainUI::DrawLibrary(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
             ImGui::SetCursorScreenPos(ImVec2(c0.x + 4.0f, c0.y + 4.0f));
             ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2, 2));
             ImGui::BeginDisabled(running);
-            ImGui::Checkbox("##sel", &it.selected);
+            if (ImGui::Checkbox("##sel", &it.selected)) m_lastClicked = it.id;
             ImGui::EndDisabled();
             ImGui::PopStyleVar();
+            overControl |= ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled);
         }
-        if (hovered && !running && it.state != LibraryItem::Processing) {
-            const float bs = ImGui::GetFrameHeight() * 0.8f;
-            ImGui::SetCursorScreenPos(ImVec2(t1.x - bs - 4.0f, t1.y - bs - 4.0f));
-            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2, 2));
-            if (ImGui::Button("\xC3\x97", ImVec2(bs, bs))) ev.libraryRemove = it.id;
+        if (hov > 0.01f && !running && it.state != LibraryItem::Processing) {
+            const float bs = frameH * 0.8f;
+            const ImVec2 b0(t1.x - bs - 4.0f, t1.y - bs - 4.0f);
+            dl->AddRectFilled(b0, ImVec2(b0.x + bs, b0.y + bs), WithAlpha(IM_COL32(0, 0, 0, 255), 0.55f * hov), 3.0f);
+            ImGui::SetCursorScreenPos(b0);
+            ImGui::PushStyleVar(ImGuiStyleVar_Alpha, style.Alpha * hov);
+            if (IconButton("##remove", Icon::Close, ImVec2(bs, bs), TR(Remove), ButtonKind::Plain)) ev.libraryRemove = it.id;
             ImGui::PopStyleVar();
-            Tip(TR(Remove));
+            overControl |= ImGui::IsItemHovered();
         }
         ImGui::PopID();
     }
     ImGui::SetCursorScreenPos(ImVec2(rowStart.x + (float)count * (cardW + style.ItemSpacing.x), rowStart.y));
     ImGui::Dummy(ImVec2(1.0f, cardH));
+
+    // Presses on the strip: a click previews (Ctrl toggles the box, Shift extends from the last one), a drag selects.
+    if (!m_libDrag && stripHovered && !overControl && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !menuOpen) {
+        m_libDrag = true;
+        m_libDragMoved = false;
+        m_libDragStart = toContent(io.MousePos);
+        m_libDragKeep.clear();
+        for (const auto& it : *lib) if (it.selected) m_libDragKeep.push_back(it.id);
+    }
+    if (m_libDrag) {
+        if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+            const ImVec2 a = toScreen(m_libDragStart);
+            if (!m_libDragMoved && !running && (std::fabs(io.MousePos.x - a.x) > 4.0f || std::fabs(io.MousePos.y - a.y) > 4.0f)) m_libDragMoved = true;
+        } else {
+            if (!m_libDragMoved && underCursor && !running) {
+                LibraryItem* item = nullptr;
+                for (auto& it : *lib) if (it.id == underCursor) item = &it;
+                if (item && item->probe != 2) {
+                    if (io.KeyCtrl) {
+                        item->selected = !item->selected;
+                        m_lastClicked = item->id;
+                    } else if (io.KeyShift && m_lastClicked) {
+                        size_t from = lib->size(), to = lib->size();
+                        for (size_t i = 0; i < lib->size(); ++i) { if ((*lib)[i].id == m_lastClicked) from = i; if ((*lib)[i].id == item->id) to = i; }
+                        if (from < lib->size() && to < lib->size()) {
+                            for (size_t i = std::min(from, to); i <= std::max(from, to); ++i) if ((*lib)[i].probe != 2) (*lib)[i].selected = true;
+                        } else {
+                            item->selected = true;
+                        }
+                    } else {
+                        ev.libraryPreview = item->id;
+                        m_lastClicked = item->id;
+                    }
+                }
+            }
+            m_libDrag = false;
+            m_libDragMoved = false;
+        }
+    }
+    if (dragging) {
+        dl->AddRectFilled(marquee.Min, marquee.Max, WithAlpha(p.accent, 0.14f), 2.0f);
+        dl->AddRect(marquee.Min, marquee.Max, WithAlpha(p.accent, 0.8f), 2.0f);
+    }
+    if (menuCard) { m_ctxItem = menuCard; m_libDrag = false; ImGui::OpenPopup("##libctx"); }
+    DrawLibraryMenu(s, info, ev);
     ImGui::EndChild();
     ImGui::EndChild();
+}
+
+// The menu of a card: the file in Explorer, its own values, out of the library.
+void MainUI::DrawLibraryMenu(Settings& /*s*/, const UiFrameInfo& info, UiEvents& ev) {
+    if (!ImGui::BeginPopup("##libctx")) return;
+    LibraryItem* item = nullptr;
+    if (info.library) for (auto& it : *info.library) if (it.id == m_ctxItem) item = &it;
+    if (!item) { ImGui::CloseCurrentPopup(); ImGui::EndPopup(); return; }
+    const bool running = info.batchRunning;
+    ImGui::TextDisabled("%s", item->name.c_str());
+    ImGui::Separator();
+    if (ImGui::MenuItem(TR(LocateFile))) ev.libraryLocate = item->id;
+    ImGui::BeginDisabled(running || item->probe == 2);
+    if (ImGui::MenuItem(TR(ItemParams), nullptr, item->useOwn)) { m_paramsItem = item->id; ev.libraryPreview = item->id; }
+    ImGui::EndDisabled();
+    ImGui::BeginDisabled(running || item->state == LibraryItem::Processing);
+    if (ImGui::MenuItem(TR(RemoveFromLibrary))) ev.libraryRemove = item->id;
+    ImGui::EndDisabled();
+    ImGui::EndPopup();
+}
+
+// A floating window with the DLSS 5 controls of one library item. Its values replace the sidebar's for that file,
+// in the preview and when it is processed.
+void MainUI::DrawItemParams(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& /*fonts*/) {
+    if (!m_paramsItem) return;
+    LibraryItem* item = nullptr;
+    if (info.library) for (auto& it : *info.library) if (it.id == m_paramsItem) item = &it;
+    if (!item) { m_paramsItem = 0; return; }
+    bool open = true;
+    ImGui::SetNextWindowSize(ImVec2(ImGui::GetFontSize() * 27.0f, ImGui::GetFontSize() * 32.0f), ImGuiCond_FirstUseEver);
+    const std::string title = StrPrintf(TR(OwnParamsTitle), item->name.c_str()) + "###itemparams";
+    if (ImGui::Begin(title.c_str(), &open)) {
+        ImGui::PushItemWidth(-ImGui::GetFontSize() * 7.5f);
+        const bool locked = info.batchRunning || info.videoProcessing || info.videoFinishing;
+        ImGui::BeginDisabled(locked);
+        bool changed = false;
+        if (Toggle(TR(UseOwnParams), &item->useOwn)) {
+            if (item->useOwn && !item->own) item->own = std::make_shared<Settings>(s);
+            changed = true;
+        }
+        Hint(TR(OwnParamsHint));
+        if (item->useOwn && item->own) {
+            ImGui::Spacing();
+            UiEvents sub;
+            EffectControls(*item->own, sub, s.showAdvanced, s.nrEnabled);
+            if (sub.nrChanged || sub.settingsChanged) changed = true;
+            if (sub.resetHistory) ev.resetHistory = true;
+        }
+        ImGui::EndDisabled();
+        if (changed) ev.itemParamsChanged = true;
+        ImGui::PopItemWidth();
+    }
+    ImGui::End();
+    if (!open) m_paramsItem = 0;
 }
 
 // ------------------------------------------------------------------------------------------
@@ -1492,13 +1775,20 @@ void MainUI::DrawStatusBar(Settings& s, const UiFrameInfo& info, UiEvents& /*ev*
     ImGui::SetCursorPosY(ImGui::GetStyle().ItemSpacing.y);
     // Monospace, padded figures throughout: nothing here may shift when a number changes.
     ImGui::PushFont(fonts.Mono(), 0.0f);
+    auto leftText = [&](double seconds) { return "  \xC2\xB7  " + StrPrintf(TR(RemainingFmt), ("\xE2\x89\x88 " + FormatEstimate(seconds)).c_str()); };
     if (info.batchRunning) {
         const std::string progress = StrPrintf(TR(BatchRunning), std::min(info.batchIndex + 1, info.batchCount), info.batchCount);
-        StatusDot(p.accentHover, StrPrintf("%s  %s", progress.c_str(), info.batchItemName.c_str()).c_str());
+        std::string line = StrPrintf("%s  %s", progress.c_str(), info.batchItemName.c_str());
+        const double left = BatchRemaining(info);
+        if (left >= 0.0) line += leftText(left);
+        StatusDot(p.accentHover, line.c_str());
     } else if (s.sourceMode == SourceVideo) {
         if (info.videoProcessing) {
-            const std::string frame = StrPrintf(TR(FrameOf), (unsigned long long)info.videoFrame, (unsigned long long)std::max(info.videoFrames, info.videoFrame));
-            StatusDot(p.warn, StrPrintf("%s  %s", info.videoName.c_str(), frame.c_str()).c_str());
+            const unsigned long long total = std::max(info.videoFrames, info.videoFrame);
+            std::string line = StrPrintf("%s  %s", info.videoName.c_str(), StrPrintf(TR(FrameOf), (unsigned long long)info.videoFrame, total).c_str());
+            if (info.videoFrame >= 5 && info.videoElapsed > 0.5 && !info.videoFinishing)
+                line += leftText((double)(total - info.videoFrame) * info.videoElapsed / (double)info.videoFrame);
+            StatusDot(p.warn, line.c_str());
         } else if (info.videoLoaded) {
             StatusDot(p.good, StrPrintf("%s  %ux%u @ %3.0f", info.videoName.c_str(), info.videoWidth, info.videoHeight, info.videoFps).c_str());
         } else {
@@ -1546,9 +1836,9 @@ void MainUI::DrawStatusBar(Settings& s, const UiFrameInfo& info, UiEvents& /*ev*
 void MainUI::DrawLogWindow(Settings& s, UiEvents& ev, const Fonts& fonts) {
     ImGui::SetNextWindowSize(ImVec2(760, 420), ImGuiCond_FirstUseEver);
     if (ImGui::Begin(TR(LogTitle), &s.showLog)) {
-        if (ImGui::Button(TR(OpenLogFile))) ev.openLogFile = true;
+        if (FlatButton(TR(OpenLogFile))) ev.openLogFile = true;
         ImGui::SameLine();
-        if (ImGui::Button(TR(Clear))) { m_logCache.clear(); m_logGeneration = Log::Generation(); }
+        if (FlatButton(TR(Clear))) { m_logCache.clear(); m_logGeneration = Log::Generation(); }
         if (Log::Generation() != m_logGeneration) { m_logCache = Log::Snapshot(); m_logGeneration = Log::Generation(); }
         ImGui::BeginChild("##logtext", ImVec2(0, 0), ImGuiChildFlags_AlwaysUseWindowPadding);
         ImGui::PushFont(fonts.Mono(), ImGui::GetStyle().FontSizeBase * 0.92f);
@@ -1580,11 +1870,12 @@ void MainUI::DrawToasts(const Fonts& fonts) {
     for (auto it = m_toasts.rbegin(); it != m_toasts.rend(); ++it) {
         const double age = now - it->time;
         const float alpha = (float)std::clamp(std::min(age / 0.2, (lifetime - age) / 0.6), 0.0, 1.0);
+        const float slide = (1.0f - Ease((float)std::clamp(age / 0.25, 0.0, 1.0))) * 24.0f;
         const float wrap = std::min(vp->WorkSize.x * 0.5f, ImGui::GetFontSize() * 36.0f);
         const ImVec2 ts = ImGui::CalcTextSize(it->text.c_str(), nullptr, false, wrap);
         const ImVec2 pad(14.0f, 10.0f);
         const ImVec2 size(ts.x + pad.x * 2.0f + 14.0f, ts.y + pad.y * 2.0f);
-        const ImVec2 pos(vp->WorkPos.x + vp->WorkSize.x - size.x - 22.0f, y - size.y);
+        const ImVec2 pos(vp->WorkPos.x + vp->WorkSize.x - size.x - 22.0f + slide, y - size.y);
         dl->AddRectFilled(pos, ImVec2(pos.x + size.x, pos.y + size.y), WithAlpha(IM_COL32(30, 33, 41, 255), alpha * 0.96f), 4.0f);
         dl->AddRectFilled(pos, ImVec2(pos.x + 4.0f, pos.y + size.y), WithAlpha(it->error ? p.bad : p.accent, alpha), 4.0f, ImDrawFlags_RoundCornersLeft);
         dl->AddText(nullptr, 0.0f, ImVec2(pos.x + pad.x + 8.0f, pos.y + pad.y), WithAlpha(IM_COL32(235, 237, 242, 255), alpha), it->text.c_str(), nullptr, wrap);

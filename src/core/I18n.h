@@ -354,6 +354,30 @@ enum class Lang { English = 0, Chinese = 1, Japanese = 2, Korean = 3, Count = 4 
     X(OutputHint,         "Where the results go. Pictures are saved as lossless PNG, videos as MP4 or a PNG sequence.", "结果保存的位置。图片保存为无损 PNG，视频保存为 MP4 或 PNG 序列。", "結果の保存先です。画像はロスレス PNG、動画は MP4 または PNG 連番として保存されます。", "결과가 저장되는 위치입니다. 이미지는 무손실 PNG로, 동영상은 MP4 또는 PNG 시퀀스로 저장됩니다.") \
     X(PreviewLuma,        "Brightness", "亮度", "明るさ", "밝기") \
     X(ItemRemoved,        "Removed", "已移除", "削除しました", "제거됨") \
+    X(MatchSource,        "Match the source", "同步原视频规格", "元動画の仕様に合わせる", "원본 영상 규격에 맞추기") \
+    X(TipMatchSource,     "The MP4 takes the codec (H.264 or HEVC), the average bitrate and the frame rate of the opened file, so the result looks like the original at the same size. A variable-bitrate source is matched by its average. Off, the format and bitrate below are used.", "输出 MP4 采用原视频的编码（H.264 或 HEVC）、平均码率和帧率，成片与原片规格一致、体积相近；动态码率的视频按其平均码率同步。关闭后使用下方手动设置的格式和码率。", "出力 MP4 は元ファイルのコーデック（H.264 または HEVC）、平均ビットレート、フレームレートを引き継ぎます。可変ビットレートの動画は平均値で合わせます。オフにすると下の形式とビットレートを使います。", "출력 MP4는 원본 파일의 코덱(H.264 또는 HEVC), 평균 비트레이트, 프레임 속도를 그대로 따릅니다. 가변 비트레이트 영상은 평균값으로 맞춥니다. 끄면 아래의 형식과 비트레이트를 사용합니다.") \
+    X(MatchedSpecs,       "Output: %s, %s, %.3g fps", "输出：%s，%s，%.3g fps", "出力: %s、%s、%.3g fps", "출력: %s, %s, %.3g fps") \
+    X(BitrateUnknown,     "bitrate unknown, 40 Mbit/s", "码率未知，按 40 Mbit/s", "ビットレート不明、40 Mbit/s", "비트레이트 알 수 없음, 40 Mbit/s") \
+    X(Estimate,           "Estimated time", "预计处理时间", "推定処理時間", "예상 처리 시간") \
+    X(TipEstimate,        "From the speed this card processes frames at right now (the preview passes, or the last run). The first run makes it more accurate. Images include the settling passes and the PNG encoding.", "按本机显卡当前的处理速度推算（预览时的处理耗时，或上一次处理的实测速度），处理过一次后会更准确。图片包含收敛处理和 PNG 编码时间。", "このカードの現在の処理速度（プレビュー時の処理時間、または前回の実測）から推定します。一度処理すると精度が上がります。画像は収束パスと PNG エンコードを含みます。", "이 카드의 현재 처리 속도(미리보기 처리 시간 또는 마지막 실행의 실측)로 추정합니다. 한 번 처리하면 더 정확해집니다. 이미지는 수렴 패스와 PNG 인코딩을 포함합니다.") \
+    X(EstimateNone,       "after the first frames", "处理几帧后显示", "数フレーム処理後に表示", "몇 프레임 처리 후 표시") \
+    X(EstSeconds,         "%d s", "%d 秒", "%d 秒", "%d초") \
+    X(EstMinutes,         "%d min %02d s", "%d 分 %02d 秒", "%d 分 %02d 秒", "%d분 %02d초") \
+    X(EstHours,           "%d h %02d min", "%d 小时 %02d 分", "%d 時間 %02d 分", "%d시간 %02d분") \
+    X(LockedWhileBusy,    "Locked while processing", "处理期间参数已锁定", "処理中は設定をロックしています", "처리 중에는 설정이 잠깁니다") \
+    X(SidebarShow,        "Show the sidebar", "显示侧边栏", "サイドバーを表示", "사이드바 표시") \
+    X(SidebarHide,        "Hide the sidebar", "收起侧边栏", "サイドバーを隠す", "사이드바 숨기기") \
+    X(RemainingFmt,       "%s left", "剩余 %s", "残り %s", "%s 남음") \
+    X(LocateFile,         "Show in Explorer", "在资源管理器中显示", "エクスプローラーで表示", "탐색기에서 표시") \
+    X(ItemParams,         "Own parameters...", "单独参数…", "個別パラメーター…", "개별 매개변수…") \
+    X(RemoveFromLibrary,  "Remove from the library", "从素材库移除", "ライブラリから外す", "라이브러리에서 제거") \
+    X(Delete,             "Delete", "删除", "削除", "삭제") \
+    X(TipDelete,          "Removes the selected items from the library. The files stay on disk.", "从素材库移除所选素材，不会删除文件。", "選択した項目をライブラリから外します。ファイルは削除されません。", "선택한 항목을 라이브러리에서 제거합니다. 파일은 삭제되지 않습니다.") \
+    X(TipLibrarySelect,   "Drag across the thumbnails to select them; Ctrl+click adds one, Shift+click extends the selection. A click previews the file, the right button opens its menu.", "在缩略图上拖动即可框选；Ctrl+点击加选，Shift+点击连续选择。单击预览该文件，右键打开菜单。", "サムネイル上をドラッグして選択します。Ctrl+クリックで追加、Shift+クリックで範囲選択。クリックでプレビュー、右クリックでメニューを開きます。", "썸네일 위를 드래그하여 선택합니다. Ctrl+클릭은 추가, Shift+클릭은 범위 선택입니다. 클릭하면 미리보기, 오른쪽 버튼은 메뉴를 엽니다.") \
+    X(UseOwnParams,       "Use own parameters for this file", "此素材使用单独参数", "このファイルに個別のパラメーターを使う", "이 파일에 개별 매개변수 사용") \
+    X(OwnParamsHint,      "These values replace the DLSS 5 controls of the sidebar for this file, in the preview and when it is processed.", "此处的数值在预览和处理该素材时代替侧边栏的 DLSS 5 控件。", "ここの値は、このファイルのプレビューと処理でサイドバーの DLSS 5 コントロールの代わりに使われます。", "이 값은 이 파일의 미리보기와 처리에서 사이드바의 DLSS 5 컨트롤을 대신합니다.") \
+    X(OwnParamsTitle,     "Parameters: %s", "单独参数：%s", "パラメーター: %s", "매개변수: %s") \
+    X(OwnBadge,           "Own", "单独", "個別", "개별") \
     X(EndOfVideo,         "End", "结束", "終了", "끝")
 
 enum class Str {

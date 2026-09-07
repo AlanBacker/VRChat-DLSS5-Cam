@@ -33,8 +33,10 @@ or as a batch. It is a stand-alone Windows application: nothing is injected into
   (a small picture of the frame under the cursor appears, like in a video player) and mark a start and an end point:
   processing, and the audio track, then cover only that range.
 - **Media library.** Every picture and video you open or drop onto the window lands in a strip of thumbnails under
-  the preview. Click one to preview it with all sliders live, tick the ones to process, then *Process all* or
-  *Process selected* runs them one after another with the current settings into the capture folder.
+  the preview. Click one to preview it with all sliders live, drag across the thumbnails to select the ones to
+  process, then *Process all* or *Process selected* runs them one after another with the current settings into the
+  capture folder. The right mouse button opens a menu on a thumbnail: show the file in Explorer, give it its own
+  DLSS 5 values in a separate window, or take it out of the library.
 - **Frame guidance.** DLSSNR is a temporal model that expects motion vectors and depth. The app feeds it
   **NVIDIA Optical Flow** motion vectors with a forward/backward consistency check and a depth map estimated on the
   GPU by **Depth Anything V2** (ONNX Runtime + DirectML). GPU block matching and placeholder depth remain available
@@ -46,8 +48,10 @@ or as a batch. It is a stand-alone Windows application: nothing is injected into
 - **Four languages** (English, 简体中文, 日本語, 한국어), automatic selection from the Windows UI language.
 - **Responsive interface.** The window runs on its own thread and GPU queue; the preview and controls stay smooth even
   when a 4K neural pass takes tens of milliseconds.
-- **Flat, uncluttered interface.** Three steps (source, DLSS 5, save) with the everyday controls in view; an *Advanced*
-  switch in the top bar reveals the tone and structure sliders, frame guidance, DLAA, the output blend and the timers.
+- **Flat, uncluttered interface.** Three steps (source, DLSS 5, save) with the everyday controls in view; the *Advanced*
+  switch in the DLSS 5 section hides the tone and structure sliders, frame guidance, DLAA, the output blend and the
+  timers when you do not need them. The sidebar slides away behind the handle at its edge, and while a file is being
+  processed it is locked, with an estimate of the time the job takes.
 - **Command line** options for opening files, unattended processing, screenshots and headless runs
   (see [docs/COMMAND_LINE.md](docs/COMMAND_LINE.md)).
 - Per-monitor DPI aware, GPU timers and a built-in log.
@@ -90,16 +94,19 @@ Tips
   *Add folder*). Each file shows a thumbnail, its size and length, and its state. Click a thumbnail to preview that
   file and tune the sliders on it; the box on each thumbnail selects it for processing. *Process all* or *Process
   selected* then processes the files one after another with the current settings, each saved like a single file
-  would be; a bar on the thumbnail shows the progress and the state is kept afterwards. *Advanced* in the top bar
-  shows the less common controls; the everyday ones are always in view.
+  would be; a bar on the thumbnail shows the progress and the state is kept afterwards. *Advanced* in the DLSS 5
+  section shows the less common controls; the everyday ones are always in view. Before you start, the *Save* section
+  states roughly how long the opened picture or video takes with the current settings; during a run the library and
+  the status bar show the time left.
 
 ## Parameters
 
 | Section | Setting | Meaning |
 |---|---|---|
 | Source | Input | *VRChat camera (Spout)*, *Image file* or *Video file*. |
-| Source | Save as | Video files only: *MP4 (H.264)*, *MP4 (HEVC)* or *PNG sequence*. The MP4 keeps the source frame rate and, when present, the audio track (AAC). |
-| Source | Bitrate | Target bitrate of the MP4 encoder, 5–200 Mbit/s. |
+| Source | Match the source | Video files only, on by default: the output uses the codec (H.264 or HEVC), the frame rate and the average bitrate of the source file, also for variable-bitrate sources. Switch it off to choose the format and bitrate yourself. |
+| Source | Save as | With *Match the source* off: *MP4 (H.264)*, *MP4 (HEVC)* or *PNG sequence*. The MP4 keeps the source frame rate and, when present, the audio track (AAC). |
+| Source | Bitrate | With *Match the source* off: target bitrate of the MP4 encoder, 5–200 Mbit/s. |
 | Source | Keep audio | Copies the audio track of the source into the MP4. |
 | Source | Hardware decoding | Decodes the video on the GPU (DXVA). Switch it off if a file decodes with wrong colours or fails to open. |
 | Source | Paper white / Highlight compression | Shown only for floating-point (linear HDR) Spout textures: exposure reference and soft highlight roll-off applied before the SDR neural pass. |
@@ -120,8 +127,10 @@ Tips
 | DLAA | Enable / Preset | Optional DLSS anti-aliasing pass at native resolution before neural rendering. |
 | Save | Keep alpha / Save original / Hotkey / Time-lapse | Capture options. |
 | Video controls | Play / Pause, frame steps, seek bar, Start here / End here / Whole video | Under the preview when a video is open. Space plays and pauses, the arrow keys step (Shift: ten frames), Home / End jump to the ends, `I` / `O` set the range. Hovering the seek bar shows the frame at that spot; the wheel over it steps. |
-| Library | Add files / Add folder / Process all / Process selected / Remove / Clear | The thumbnails under the preview. Click previews, the box selects for processing, × removes; a folder adds every supported file it contains. The strip can be hidden from the *View* section. |
-| Top bar | Advanced | Shows the tone, structure and output-blend sliders, frame guidance, DLAA and the internal timers; off by default. |
+| Library | Add files / Add folder / Process all / Process selected / Delete | The thumbnails under the preview. A click previews; a drag across the thumbnails, the box on each one, Ctrl+click and Shift+click select for processing; × takes one out and *Delete* the selected ones (the files stay on disk). The right mouse button opens a menu: show the file in Explorer, own DLSS 5 parameters for that file, remove. A folder adds every supported file it contains. The button at the right end folds the strip. |
+| DLSS 5 | Advanced | Shows the tone, structure and output-blend sliders, frame guidance, DLAA and the internal timers; on by default. |
+| Save | Estimated time | Rough processing time of the opened picture or video with the current settings, measured from the preview passes and refined by every run. |
+| Sidebar | Handle | The slim bar between the preview and the sidebar slides the sidebar away and back. While a picture or video is being processed the sidebar is locked and offers *Cancel*. |
 | View | Compare / Fit / Zoom / VSync / Overlay / Show library | Preview options. The mouse wheel over the preview zooms around the cursor, dragging pans, a double-click returns to the fitted view. |
 | Display | Processing rate cap | Live source: processes at most this many source frames per second at a steady cadence and drops the frames in between, which caps the GPU load; the preview keeps the last processed frame meanwhile. 0 = every source frame. |
 

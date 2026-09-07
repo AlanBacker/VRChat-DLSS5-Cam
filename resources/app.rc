@@ -18,12 +18,12 @@ BEGIN
         BEGIN
             VALUE "CompanyName",      "VRChat DLSS5 Cam contributors"
             VALUE "FileDescription",  "VRChat DLSS5 Cam - DLSS 5 neural rendering for the VRChat camera"
-            VALUE "FileVersion",      "0.6.0.0"
+            VALUE "FileVersion",      "0.6.1.0"
             VALUE "InternalName",     "VRChatDLSS5Cam"
             VALUE "LegalCopyright",   "MIT License. Not affiliated with VRChat Inc. or NVIDIA Corporation."
             VALUE "OriginalFilename", "VRChatDLSS5Cam.exe"
             VALUE "ProductName",      "VRChat DLSS5 Cam"
-            VALUE "ProductVersion",   "0.6.0.0"
+            VALUE "ProductVersion",   "0.6.1.0"
         END
     END
     BLOCK "VarFileInfo"

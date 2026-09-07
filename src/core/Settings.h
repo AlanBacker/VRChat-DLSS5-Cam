@@ -19,6 +19,7 @@ struct Settings {
     int         sourceMode = SourceSpout;   // Spout stream or a still image file
     std::string imagePath;             // UTF-8, the picture opened in image mode (reopened at startup)
     std::string videoPath;             // UTF-8, the video opened in video mode (reopened at startup)
+    bool videoMatchSource = true;      // output codec and bitrate follow the opened file (the frame rate always does)
     int  videoOutput = 0;              // 0 = MP4 (H.264), 1 = MP4 (HEVC), 2 = PNG sequence
     int  videoBitrateMbps = 40;        // MP4 video bitrate
     bool videoKeepAudio = true;        // copy the sound track into the MP4 (AAC)
@@ -101,7 +102,7 @@ struct Settings {
     bool windowMaximized = false;
     bool sidebarVisible = true;
     bool libraryVisible = true;        // the media library strip under the preview
-    bool showAdvanced = false;         // advanced controls in the sidebar
+    bool showAdvanced = true;          // advanced controls in the sidebar
 
     // Misc
     bool showLog = false;
@@ -113,6 +114,9 @@ struct Settings {
     bool Apply(const std::string& key, const std::string& value);
     bool ApplyText(const std::string& data);
     void Clamp();
+    // Takes the DLSS 5 effect values (preset, style, strengths, blend, pass resolution) from another set: a library
+    // item with parameters of its own replaces these while it is previewed or processed.
+    void CopyEffects(const Settings& from);
 };
 
 } // namespace vdc

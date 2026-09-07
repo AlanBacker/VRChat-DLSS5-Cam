@@ -27,6 +27,7 @@ struct CaptureResult {
     std::string  error;
     double       seconds = 0.0;
     uint64_t     bytes = 0;
+    UINT         width = 0, height = 0;
 };
 
 class Capture {

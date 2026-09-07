@@ -33,6 +33,8 @@ struct VideoInfo {
     UINT64 frameEstimate = 0;
     bool   hasAudio = false;
     UINT   audioRate = 0, audioChannels = 0;
+    UINT32 videoBitrateKbps = 0;              // average video bitrate of the file (0 = unknown)
+    UINT32 audioBitrateKbps = 0;
     bool   hardwareDecode = false;            // the GPU decoder is in use
     std::string codec;                        // "HEVC", "H.264", ...
     std::string decoderOutput;                // "NV12", "RGB32", ...

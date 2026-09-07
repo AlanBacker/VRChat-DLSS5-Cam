@@ -26,6 +26,7 @@ struct VideoReader {
     UINT32 fpsNum = 30, fpsDen = 1;
     double durationSeconds = 0.0;
     std::string codec;
+    UINT32 videoBitrateKbps = 0, audioBitrateKbps = 0;   // averages from the file (0 = unknown)
     ComPtr<IMFMediaType> audioType;
     UINT32 audioRate = 0, audioChannels = 0;
     bool   hardware = false;
@@ -186,9 +187,14 @@ bool CreateReader(const std::wstring& path, bool withAudio, IMFDXGIDeviceManager
             UINT32 rot = 0;
             if (SUCCEEDED(native->GetUINT32(MF_MT_VIDEO_ROTATION, &rot))) r.rotation = rot % 360;
             mf::GetSize(native.Get(), MF_MT_FRAME_SIZE, nativeW, nativeH);
+            UINT32 bps = 0;
+            if (SUCCEEDED(native->GetUINT32(MF_MT_AVG_BITRATE, &bps)) && bps > 0) r.videoBitrateKbps = bps / 1000;
         } else if (major == MFMediaType_Audio && !r.hasAudioStream) {
             r.hasAudioStream = true;
             r.audioStream = i;
+            UINT32 bytesPerSec = 0, bps = 0;
+            if (SUCCEEDED(native->GetUINT32(MF_MT_AUDIO_AVG_BYTES_PER_SECOND, &bytesPerSec)) && bytesPerSec > 0) r.audioBitrateKbps = bytesPerSec * 8 / 1000;
+            else if (SUCCEEDED(native->GetUINT32(MF_MT_AVG_BITRATE, &bps)) && bps > 0) r.audioBitrateKbps = bps / 1000;
         }
     }
     if (!haveVideo) { error = "the file has no video stream"; return false; }
@@ -230,6 +236,14 @@ bool CreateReader(const std::wstring& path, bool withAudio, IMFDXGIDeviceManager
     if (SUCCEEDED(r.reader->GetPresentationAttribute((DWORD)MF_SOURCE_READER_MEDIASOURCE, MF_PD_DURATION, &var))) {
         if (var.vt == VT_UI8) r.durationSeconds = (double)var.uhVal.QuadPart / 1e7;
         PropVariantClear(&var);
+    }
+    // A file that does not state its video bitrate (most MP4s do not): the file size over the duration, less the audio.
+    if (r.videoBitrateKbps == 0 && r.durationSeconds > 0.5) {
+        const uint64_t bytes = GetFileSizeBytes(path);
+        if (bytes > 0) {
+            const double kbps = (double)bytes * 8.0 / r.durationSeconds / 1000.0 - (double)r.audioBitrateKbps;
+            if (kbps >= 100.0) r.videoBitrateKbps = (UINT32)(kbps * 0.98);   // a little container overhead
+        }
     }
 
     if (withAudio && r.hasAudioStream) {
@@ -377,6 +391,8 @@ void FillInfo(const VideoReader& r, VideoInfo& info) {
     info.hasAudio = r.hasAudioStream;
     info.hardwareDecode = r.hardware;
     info.codec = r.codec;
+    info.videoBitrateKbps = r.videoBitrateKbps;
+    info.audioBitrateKbps = r.audioBitrateKbps;
     info.decoderOutput = mf::SubtypeName(r.subtype);
 }
 
@@ -651,10 +667,10 @@ bool VideoSource::Open(GpuContext& gpu, const std::wstring& path, bool hardwareD
     m_previewSeconds = ToSeconds(first.pts);
     m_previewLuma = first.luma;
     SetPending(std::move(first.bgra));
-    Log::Info("Video: %s %ux%u (coded %ux%u, %s -> %s, %.3f fps, %.1f s, ~%llu frames, rotation %u, %s decoder, audio stream %s) in %.0f ms",
+    Log::Info("Video: %s %ux%u (coded %ux%u, %s -> %s, %.3f fps, %.1f s, ~%llu frames, %u kbit/s video, %u kbit/s audio, rotation %u, %s decoder, audio stream %s) in %.0f ms",
               WideToUtf8(path).c_str(), m_info.width, m_info.height, m_info.fileWidth, m_info.fileHeight, m_info.codec.c_str(),
               m_info.decoderOutput.c_str(), (double)r.fpsNum / (double)r.fpsDen, r.durationSeconds,
-              (unsigned long long)m_info.frameEstimate, r.rotation, r.hardware ? "hardware" : "software",
+              (unsigned long long)m_info.frameEstimate, m_info.videoBitrateKbps, m_info.audioBitrateKbps, r.rotation, r.hardware ? "hardware" : "software",
               r.hasAudioStream ? "yes" : "no", (NowSeconds() - t0) * 1000.0);
     Log::Info("Video: preview frame at %.3f s, mean luma %.3f, read from a %s%s", m_previewSeconds, m_previewLuma, r.bufferKind.c_str(),
               first.skippedBlack ? StrPrintf(" (%d black frame%s at the start skipped)", first.skippedBlack, first.skippedBlack == 1 ? "" : "s").c_str() : "");

@@ -5,12 +5,15 @@
 #include <atomic>
 #include <condition_variable>
 #include <deque>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
 
 namespace vdc {
+
+struct Settings;
 
 // One entry of the library (interface thread).
 struct LibraryItem {
@@ -19,7 +22,7 @@ struct LibraryItem {
     std::wstring path;
     std::string  name;             // file name, UTF-8
     bool         isVideo = false;
-    bool         selected = true;
+    bool         selected = false;
     int          probe = 0;        // 0 = pending, 1 = read, 2 = failed
     UINT         width = 0, height = 0;
     double       duration = 0.0;   // seconds (videos)
@@ -31,6 +34,8 @@ struct LibraryItem {
     float        progress = 0.0f;  // 0..1 while processing
     std::string  outName;          // the file or folder written
     double       inSec = 0.0, outSec = 0.0;   // processing range for videos (outSec <= 0: to the end)
+    bool         useOwn = false;   // the item is previewed and processed with its own effect values
+    std::shared_ptr<Settings> own; // those values (a full settings copy; only the effect fields count)
 };
 
 // Work for the scanner thread and what comes back.

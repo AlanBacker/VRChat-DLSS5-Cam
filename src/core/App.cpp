@@ -561,8 +561,10 @@ void App::PostBatchEvent(unsigned id, int state, const std::string& outName, con
 
 void App::PushSettings() {
     {
+        Settings effective = m_settings;
+        if (const LibraryItem* item = OverrideItem()) effective.CopyEffects(*item->own);
         std::lock_guard<std::mutex> lock(m_shared.mutex);
-        m_shared.settings = m_settings;
+        m_shared.settings = effective;
         ++m_shared.settingsGeneration;
     }
     WakeWorker();
@@ -637,9 +639,19 @@ bool App::WorkerStartVideo(const Settings& settings, VideoRun& run, const std::w
     fromSec = std::max(0.0, fromSec);
     if (toSec <= fromSec) toSec = 0.0;
     if (vi.durationSeconds > 0.0 && fromSec >= vi.durationSeconds) { error = "the range starts after the end of the video"; return false; }
-    run.pngSequence = settings.videoOutput == 2;
-    run.codec = settings.videoOutput == 1 ? 1 : 0;
-    run.bitrateKbps = (UINT32)std::clamp(settings.videoBitrateMbps, 5, 200) * 1000u;
+    if (settings.videoMatchSource) {
+        // The output follows the file: its codec (HEVC stays HEVC, everything else becomes H.264), its average bitrate
+        // (a variable-bitrate source by its average) and, as always, its frame rate.
+        run.pngSequence = false;
+        run.codec = (vi.codec.find("HEV") != std::string::npos || vi.codec == "H265") ? 1 : 0;
+        run.bitrateKbps = vi.videoBitrateKbps > 0 ? std::clamp(vi.videoBitrateKbps, 1000u, 400000u) : 40000u;
+        Log::Info("Video: output matched to the source: %s, %u kbit/s, %u/%u fps%s", run.codec ? "HEVC" : "H.264", run.bitrateKbps,
+                  vi.fpsNum, vi.fpsDen, vi.videoBitrateKbps ? "" : " (bitrate unknown: 40 Mbit/s)");
+    } else {
+        run.pngSequence = settings.videoOutput == 2;
+        run.codec = settings.videoOutput == 1 ? 1 : 0;
+        run.bitrateKbps = (UINT32)std::clamp(settings.videoBitrateMbps, 5, 200) * 1000u;
+    }
     run.withAudio = settings.videoKeepAudio && !run.pngSequence && vi.hasAudio;
     run.folder = folder;
     run.stem = m_video.Stem();
@@ -922,6 +934,12 @@ void App::WorkerMain() {
     double   fpsWindowStart = NowSeconds();
     unsigned fpsWindowFrames = 0;
     double   processingFps = 0.0;
+    // Processing cost per frame, for the time estimates: gathered over the fps window from the passes that run
+    // (preview, still pictures), and replaced by the measured throughput once a file run is under way.
+    double   costAccumMs = 0.0;
+    unsigned costAccumFrames = 0;
+    double   timerCostSec = 0.0, timerCostPixels = 0.0;
+    double   runCostSec = 0.0, runCostPixels = 0.0;
 
     // Perf line: only loop iterations that processed a new source frame count.
     struct Perf {
@@ -952,6 +970,8 @@ void App::WorkerMain() {
             if (m_shared.settingsGeneration != settingsGen) {
                 settingsGen = m_shared.settingsGeneration;
                 settings = m_shared.settings;
+                if (batch.active && batch.itemStarted && batch.index < batch.items.size() && batch.items[batch.index].own)
+                    settings.CopyEffects(*batch.items[batch.index].own);
                 userMode = settings.sourceMode;
                 settingsChanged = true;
             }
@@ -1057,7 +1077,14 @@ void App::WorkerMain() {
             }
             const BatchItem& item = batch.items[batch.index];
             batch.itemIsVideo = item.isVideo;
-            Log::Info("Batch: %zu/%zu %s", batch.index + 1, batch.items.size(), WideToUtf8(item.path).c_str());
+            Log::Info("Batch: %zu/%zu %s%s", batch.index + 1, batch.items.size(), WideToUtf8(item.path).c_str(), item.own ? " (own parameters)" : "");
+            // The item's own effect values, or the plain settings again after an item that had some.
+            {
+                std::lock_guard<std::mutex> lock(m_shared.mutex);
+                settings = m_shared.settings;
+            }
+            if (item.own) settings.CopyEffects(*item.own);
+            m_pipeline.MarkNrDirty();
             PostBatchEvent(item.id, LibraryItem::Processing, "", "");
             if (item.isVideo) {
                 WorkerLoadVideo(gpu, item.path, settings.videoHardwareDecode, false);
@@ -1259,6 +1286,8 @@ void App::WorkerMain() {
                 perf.record += (tSubmit - tRecord) * 1000.0;
                 perf.submit += (tUpdate - tSubmit) * 1000.0;
                 perf.update += (tEnd - tUpdate) * 1000.0;
+                costAccumMs += (tEnd - tBegin) * 1000.0 + receiveMs + st.gpuMs[(UINT)GpuTimer::Frame];
+                ++costAccumFrames;
                 for (UINT t = 0; t < (UINT)GpuTimer::Count; ++t) perf.gpu[t] += st.gpuMs[t];
                 if (st.depthInferences != depthInferencesSeen) {
                     depthInferencesSeen = st.depthInferences;
@@ -1273,6 +1302,12 @@ void App::WorkerMain() {
             processingFps = fpsWindowFrames / (now - fpsWindowStart);
             fpsWindowStart = now;
             fpsWindowFrames = 0;
+            if (costAccumFrames >= 3) {
+                const PipelineStatus& st = m_pipeline.Status();
+                timerCostSec = costAccumMs / (double)costAccumFrames / 1000.0;
+                timerCostPixels = (double)st.srcWidth * (double)st.srcHeight;
+            }
+            costAccumMs = 0.0; costAccumFrames = 0;
         }
 
         // Source snapshot for the interface.
@@ -1293,6 +1328,14 @@ void App::WorkerMain() {
                 info.videoDurationSeconds = vi.durationSeconds;
                 info.videoHasAudio = vi.hasAudio;
                 info.videoHardwareDecode = vi.hardwareDecode;
+                info.videoBitrateKbps = vi.videoBitrateKbps;
+                if (videoRun.active && videoRun.delivered >= 8 && now - videoRun.startTime > 0.5) {
+                    runCostSec = (now - videoRun.startTime) / (double)videoRun.delivered;
+                    runCostPixels = (double)vi.width * (double)vi.height;
+                }
+                info.costMeasured = runCostSec > 0.0 && runCostPixels > 0.0;
+                info.costSecPerFrame = info.costMeasured ? runCostSec : timerCostSec;
+                info.costPixels = info.costMeasured ? runCostPixels : timerCostPixels;
                 info.videoProcessing = videoRun.active;
                 info.videoFrame = videoRun.delivered;
                 info.videoElapsed = videoRun.active ? now - videoRun.startTime : 0.0;
@@ -1386,6 +1429,8 @@ void App::DrainNotices() {
     CaptureResult cr;
     while (m_capture.PollResult(cr)) {
         const std::wstring name = FileNameOf(cr.path);
+        if (cr.ok && cr.width && cr.height && cr.seconds > 0.0)
+            m_pngSecPerMegapixel = std::clamp(cr.seconds / ((double)cr.width * (double)cr.height / 1e6), 0.01, 5.0);
         if (cr.ok && cr.quiet) continue;   // a frame of a video sequence, or a screenshot
         if (!cr.quiet) ++m_captureResultsSeen;
         if (cr.ok) {
@@ -1523,6 +1568,7 @@ void App::Frame() {
     info.videoDurationSeconds = m_source.videoDurationSeconds;
     info.videoHasAudio = m_source.videoHasAudio;
     info.videoHardwareDecode = m_source.videoHardwareDecode;
+    info.videoBitrateKbps = m_source.videoBitrateKbps;
     info.videoProcessing = m_source.videoProcessing;
     info.videoFinishing = m_source.videoFinishing;
     info.videoFrame = m_source.videoFrame;
@@ -1538,6 +1584,8 @@ void App::Frame() {
     info.batchDone = m_source.batchDone; info.batchFailed = m_source.batchFailed;
     info.batchItemId = m_source.batchItemId;
     info.batchItemName = m_source.batchItemName;
+    info.costSecPerFrame = m_source.costSecPerFrame; info.costPixels = m_source.costPixels; info.costMeasured = m_source.costMeasured;
+    info.pngSecPerMegapixel = m_pngSecPerMegapixel;
     info.library = &m_library;
     info.atlas = &m_atlas;
     info.storyCells = &m_storyCells;
@@ -1756,6 +1804,19 @@ void App::HandleEvents(ui::UiEvents& ev) {
     if (ev.libraryClear) ClearLibrary();
     if (ev.libraryProcessAll) StartLibraryProcessing(false);
     if (ev.libraryProcessSelected) StartLibraryProcessing(true);
+    if (ev.libraryLocate) LocateLibraryItem(ev.libraryLocate);
+    if (ev.libraryDeleteSelected) RemoveSelectedLibraryItems();
+    // A file with effect values of its own is previewed with them: the pushed settings carry them while it is shown.
+    {
+        const LibraryItem* item = OverrideItem();
+        const std::wstring key = item ? item->path : std::wstring();
+        if (key != m_overridePath || ev.itemParamsChanged) {
+            m_overridePath = key;
+            PushSettings();
+            m_pipeline.MarkNrDirty();
+            WakeWorker();
+        }
+    }
     if (ev.libraryAddFiles) m_pendingBrowseLibraryFiles = true;
     if (ev.libraryAddFolder) m_pendingBrowseLibraryFolder = true;
 
@@ -1982,6 +2043,30 @@ void App::RemoveLibraryItem(unsigned id) {
     }
 }
 
+void App::RemoveSelectedLibraryItems() {
+    std::vector<unsigned> ids;
+    for (const LibraryItem& item : m_library) if (item.selected) ids.push_back(item.id);
+    for (unsigned id : ids) RemoveLibraryItem(id);
+}
+
+void App::LocateLibraryItem(unsigned id) {
+    const LibraryItem* item = FindItem(id);
+    if (!item) return;
+    const std::wstring args = L"/select,\"" + item->path + L"\"";
+    const HINSTANCE r = ShellExecuteW(m_hwnd, L"open", L"explorer.exe", args.c_str(), nullptr, SW_SHOWNORMAL);
+    if ((INT_PTR)r <= 32) Log::Warn("Explorer could not be opened for %s (%d)", WideToUtf8(item->path).c_str(), (int)(INT_PTR)r);
+}
+
+const LibraryItem* App::OverrideItem() const {
+    const bool video = m_settings.sourceMode == SourceVideo, image = m_settings.sourceMode == SourceImage;
+    if (!video && !image) return nullptr;
+    const std::wstring& shown = video ? m_source.videoPath : m_source.imagePath;
+    if (shown.empty() || (video && !m_source.videoLoaded) || (image && !m_source.imageLoaded)) return nullptr;
+    for (const LibraryItem& item : m_library)
+        if (item.useOwn && item.own && item.isVideo == video && SamePath(item.path, shown)) return &item;
+    return nullptr;
+}
+
 void App::ClearLibrary() {
     if (m_libraryBatchRunning || m_source.batchRunning) { m_ui.Toast(TR(BatchBusy), true); return; }
     for (const LibraryItem& item : m_library) {
@@ -2015,6 +2100,7 @@ void App::StartLibraryProcessing(bool selectedOnly) {
         if (item.probe == 2) continue;   // unreadable
         BatchItem b;
         b.id = item.id; b.path = item.path; b.isVideo = item.isVideo; b.inSec = item.inSec; b.outSec = item.outSec;
+        if (item.useOwn && item.own) b.own = std::make_shared<Settings>(*item.own);
         items.push_back(b);
     }
     if (items.empty()) { m_ui.Toast(TR(BatchEmpty), true); return; }

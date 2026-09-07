@@ -43,6 +43,7 @@ struct UiFrameInfo {
     double                videoDurationSeconds = 0.0;
     bool                  videoHasAudio = false;
     bool                  videoHardwareDecode = false;
+    UINT32                videoBitrateKbps = 0;     // average video bitrate of the file (0 = unknown)
     bool                  videoProcessing = false;  // the file is being run through the pipeline
     bool                  videoFinishing = false;
     UINT64                videoFrame = 0;           // frames delivered to the output
@@ -57,6 +58,10 @@ struct UiFrameInfo {
     int                   batchIndex = 0, batchCount = 0, batchDone = 0, batchFailed = 0;
     unsigned              batchItemId = 0;
     std::string           batchItemName;
+    double                costSecPerFrame = 0.0;    // processing time per frame at costPixels pixels (0 = unknown yet)
+    double                costPixels = 0.0;
+    bool                  costMeasured = false;     // from a file run rather than the preview passes
+    double                pngSecPerMegapixel = 0.12;
     std::vector<LibraryItem>* library = nullptr;    // the interface toggles `selected`
     const ThumbnailAtlas* atlas = nullptr;          // thumbnails of the library and the seek bar
     const std::vector<int>*    storyCells = nullptr;   // seek-bar pictures of the opened video
@@ -121,6 +126,9 @@ struct UiEvents {
     bool libraryProcessSelected = false;
     bool libraryAddFiles = false;
     bool libraryAddFolder = false;
+    unsigned libraryLocate = 0;      // show this item's file in Explorer
+    bool libraryDeleteSelected = false;   // drop the selected items from the library
+    bool itemParamsChanged = false;  // an item's own effect values were edited
 };
 
 class MainUI {
@@ -150,6 +158,11 @@ private:
     void BlockDlaa(Settings& s, const UiFrameInfo& info, UiEvents& ev);
     void BlockInternals(Settings& s, const UiFrameInfo& info, UiEvents& ev);
     void BlockAbout(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts);
+    void EffectControls(Settings& s, UiEvents& ev, bool advanced, bool enabled);   // the DLSS 5 effect controls
+    void DrawItemParams(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts);   // a library item's own values
+    void DrawLibraryMenu(Settings& s, const UiFrameInfo& info, UiEvents& ev);      // the context menu of a card
+    std::string EstimateText(const Settings& s, const UiFrameInfo& info) const;    // "≈ 2 min 30 s" for the current file
+    double BatchRemaining(const UiFrameInfo& info) const;                          // seconds left in the batch (-1: unknown)
 
     // Performance readouts are refreshed a few times per second rather than every frame, so the digits stay legible;
     // every place that shows them uses fixed-width text so a changing figure never moves the controls around it.
@@ -180,6 +193,14 @@ private:
     // Seek bar: while the knob is dragged the bar follows the cursor and seeks are sent a few times per second;
     // after a seek the bar shows the target until the processing thread reports a position near it.
     bool   m_seekDragging = false;
+    float  m_libraryFold = 1.0f;     // 0 = the library strip is folded away, 1 = fully shown (animated)
+    unsigned m_paramsItem = 0;       // the library item whose own parameters are open in a window (0: none)
+    unsigned m_ctxItem = 0;          // the item under the context menu
+    unsigned m_lastClicked = 0;      // anchor of a shift-click range
+    bool   m_libDrag = false;        // a selection drag runs in the library strip
+    bool   m_libDragMoved = false;
+    ImVec2 m_libDragStart;           // in strip content coordinates
+    std::vector<unsigned> m_libDragKeep;   // items selected when the drag began (kept with Ctrl)
     double m_seekDragTime = 0.0;
     double m_seekSentTime = 0.0;     // when the last seek was sent
     double m_seekTarget = -1.0;      // -1: none pending

@@ -97,6 +97,7 @@ void Capture::WorkerMain() {
         CaptureResult result;
         result.path = job.path;
         result.quiet = job.quiet;
+        result.width = job.width; result.height = job.height;
         const double t0 = NowSeconds();
         result.ok = EncodePng(job, result.error, result.bytes);
         result.seconds = NowSeconds() - t0;
