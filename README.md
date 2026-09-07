@@ -63,13 +63,13 @@ or as a batch. It is a stand-alone Windows application: nothing is injected into
 | OS | Windows 10 21H2 / Windows 11, 64-bit |
 | GPU | NVIDIA GeForce RTX. The DLSS 5 runtime build decides which generation can run the neural pass: the 310.8 build only contains code for RTX 50 (Blackwell); on RTX 40/30/20 the app reports the failure and keeps working with DLAA and the original picture. Nothing in the app itself is generation-specific. |
 | VRChat | Any build with the Stream Camera *Spout Stream* option (desktop or VR) |
-| DLSS 5 runtime | Your own copy of `nvngx_dlssnr.dll`. **It is not included and never downloaded by this project.** |
+| DLSS 5 runtime | Your own copy of `nvngx_dlssnr.dll`. **It is not included and never downloaded by this project.** The file is shared on the [RenoDX Discord server](https://discord.com/invite/renodx), where a modified build of `nvngx_dlssnr.dll` for cards other than the RTX 50 series is available as well. That server belongs to the RenoDX project and is **not** this project's Discord; this project has no Discord server of its own. |
 | Video files | Windows Media Foundation (part of Windows). The N / KN editions need the *Media Feature Pack*; HEVC files may need the *HEVC Video Extensions* from the Microsoft Store. |
 
 ## Setup
 
 1. Download `VRChatDLSS5Cam-win64.zip` from the [Releases](https://github.com/AlanBacker/VRChat-DLSS5-Cam/releases) page and extract it anywhere.
-2. Copy your `nvngx_dlssnr.dll` into the extracted folder (next to `VRChatDLSS5Cam.exe`). You can also point the app to the file from *DLSS 5 Neural Rendering → Runtime path*.
+2. Copy your `nvngx_dlssnr.dll` into the extracted folder (next to `VRChatDLSS5Cam.exe`). You can also point the app to the file from *DLSS 5 Neural Rendering → Runtime path*. If you do not have the file, see the *DLSS 5 runtime* row above; on an RTX 40/30/20 card you need the modified build.
 3. Start VRChat, open the **Camera**, switch the camera mode to **Stream**, and enable **Spout Stream** in the stream camera settings. VRChat then publishes the camera picture as a Spout sender (`VRCSender1`).
 4. Start `VRChatDLSS5Cam.exe`. The sender is picked up automatically and the processed picture appears in the preview.
 5. Frame your shot in VRChat and press **Ctrl+Alt+P** (or the *Capture* button). PNG files are written to `Pictures\VRChat DLSS5 Cam` by default.
@@ -144,7 +144,7 @@ Command-line options (open files, process unattended, screenshots, headless runs
 - **"nvngx_dlssnr.dll not found"** – copy the runtime next to the executable or select its path.
 - **NGX not initialized / DLAA unsupported** – the NGX runtime needs an NVIDIA GPU and a current driver. DLSSNR still works through the *Signed snippet* route.
 - **The app does not start / closes immediately** – open `%LOCALAPPDATA%\VRChatDLSS5Cam\` and check `log.txt` (its last line is the step that failed) and `crash.txt` (written whenever the process crashes). Attach both files to an issue.
-- **Neural rendering failed** – on RTX 40/30/20 with the 310.8 runtime this is expected: that build only contains RTX 50 code (the app says so under the error). Otherwise some runtime builds need a newer driver; check `log.txt` for the NGX result code. Try *Preset* 0 and the *NGX core* route.
+- **Neural rendering failed** – on RTX 40/30/20 with the 310.8 runtime this is expected: that build only contains RTX 50 code (the app says so under the error); the modified build for those cards is shared on the RenoDX Discord server (see *Requirements*, not affiliated with this project). Otherwise some runtime builds need a newer driver; check `log.txt` for the NGX result code. Try *Preset* 0 and the *NGX core* route.
 - **Neural pass active, but the picture is black or unchanged** – the app compares every neural frame with its input; the Neural section shows *Output change* and warns when the runtime reports success but delivers a black or unchanged picture (`log.txt`: "DLSSNR output check"). Switch DLSS 5 off and on: off releases the feature and unloads the runtime, on loads it from the file again, the same fresh start as launching the app. If it persists, that runtime build does not produce a picture on this GPU.
 - **Depth estimator unavailable** – `onnxruntime.dll`, `onnxruntime_providers_shared.dll`, `DirectML.dll` and `models\depth_anything_v2_small_fp16.onnx` must sit next to the executable (all are part of the release package). Until the estimator is ready the app falls back to zero depth; its state is shown under *Frame guidance*.
 - **Optical flow unavailable** – NVIDIA Optical Flow runs on a private native D3D11 device (the driver rejects the D3D11On12 layer, which was the cause of the "UNSUPPORTED_DEVICE" error in 0.2.0). If `log.txt` says "NVOF unavailable, falling back to block matching", update the GeForce driver; block matching is used automatically until then. The status dot under *Frame guidance* shows which source is active.

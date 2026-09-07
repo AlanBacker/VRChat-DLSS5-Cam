@@ -46,13 +46,13 @@ VRChat DLSS5 Cam 会捕获 VRChat 内置相机（Stream 相机并开启 *Spout S
 | 系统 | Windows 10 21H2 / Windows 11，64 位 |
 | 显卡 | NVIDIA GeForce RTX。能否运行神经渲染由 DLSS 5 运行库版本决定：310.8 版本只包含 RTX 50（Blackwell）的代码，在 RTX 40/30/20 上程序会报告失败并继续以 DLAA 和原始画面工作。程序本身不区分显卡代际。 |
 | VRChat | 任何带有 Stream 相机 *Spout Stream* 选项的版本（桌面或 VR） |
-| DLSS 5 运行库 | 你自己的 `nvngx_dlssnr.dll`。**本项目不包含、也绝不会下载该文件。** |
+| DLSS 5 运行库 | 你自己的 `nvngx_dlssnr.dll`。**本项目不包含、也绝不会下载该文件。** 该文件可以在 [RenoDX 的 Discord 服务器](https://discord.com/invite/renodx) 获取，那里也提供适用于非 RTX 50 系列显卡的 `nvngx_dlssnr.dll` 修改版。请注意：那是 RenoDX 项目的服务器，**不是**本项目的 Discord，本项目没有自己的 Discord 服务器。 |
 | 视频文件 | Windows Media Foundation（Windows 自带）。N / KN 版本需要安装 *Media Feature Pack*；HEVC 文件可能需要 Microsoft Store 的 *HEVC 视频扩展*。 |
 
 ## 使用步骤
 
 1. 在 [Releases](https://github.com/AlanBacker/VRChat-DLSS5-Cam/releases) 页面下载 `VRChatDLSS5Cam-win64.zip` 并解压到任意位置。
-2. 把你的 `nvngx_dlssnr.dll` 复制到解压目录（与 `VRChatDLSS5Cam.exe` 同级）。也可以在 *DLSS 5 神经渲染 → 运行库路径* 中指定文件。
+2. 把你的 `nvngx_dlssnr.dll` 复制到解压目录（与 `VRChatDLSS5Cam.exe` 同级）。也可以在 *DLSS 5 神经渲染 → 运行库路径* 中指定文件。如果你还没有这个文件，请看上面的 *DLSS 5 运行库* 一行；RTX 40/30/20 显卡需要修改版。
 3. 启动 VRChat，打开 **相机**，把相机模式切换到 **Stream**，并在 Stream 相机设置中开启 **Spout Stream**。VRChat 会把相机画面作为 Spout 发送端（`VRCSender1`）输出。
 4. 启动 `VRChatDLSS5Cam.exe`。程序会自动连接发送端，预览区显示处理后的画面。
 5. 在 VRChat 中取景，按 **Ctrl+Alt+P**（或点击 *拍照* 按钮）。PNG 默认保存到 `图片\VRChat DLSS5 Cam`。
@@ -117,7 +117,7 @@ VRChat DLSS5 Cam 会捕获 VRChat 内置相机（Stream 相机并开启 *Spout S
 - **“未找到 nvngx_dlssnr.dll”** —— 把运行库复制到程序目录或选择其路径。
 - **NGX 未初始化 / DLAA 不支持** —— NGX 运行库需要 NVIDIA 显卡和较新的驱动。DLSSNR 仍可通过 *签名片段* 路径工作。
 - **程序打不开 / 一闪就退出** —— 打开 `%LOCALAPPDATA%\VRChatDLSS5Cam\`，查看 `log.txt`（最后一行就是失败的步骤）和 `crash.txt`（进程崩溃时写入）。提交 Issue 时请附上这两个文件。
-- **神经渲染失败** —— 在 RTX 40/30/20 上搭配 310.8 运行库时属于正常现象：该版本只包含 RTX 50 的代码（程序会在错误下方说明）。其他情况下，某些运行库版本需要更新的驱动；请查看 `log.txt` 中的 NGX 结果码。可尝试 *预设* 0 和 *NGX 核心* 路径。
+- **神经渲染失败** —— 在 RTX 40/30/20 上搭配 310.8 运行库时属于正常现象：该版本只包含 RTX 50 的代码（程序会在错误下方说明）；适用于这些显卡的修改版可以在 RenoDX 的 Discord 服务器获取（见 *系统要求*，与本项目无关）。其他情况下，某些运行库版本需要更新的驱动；请查看 `log.txt` 中的 NGX 结果码。可尝试 *预设* 0 和 *NGX 核心* 路径。
 - **神经渲染显示运行中，但画面全黑或没有变化** —— 程序会把每一帧神经渲染的输出与输入比较；神经渲染区显示“输出变化”，当运行库报告成功却给出全黑或与输入相同的画面时会提示（`log.txt` 中为 "DLSSNR output check"）。把 DLSS 5 关掉再打开：关闭会释放功能实例并卸载运行库，打开时重新从文件加载，和重启程序一样从头开始。若仍然如此，说明这份运行库版本在这块显卡上无法生成画面。
 - **深度估计器不可用** —— `onnxruntime.dll`、`onnxruntime_providers_shared.dll`、`DirectML.dll` 和 `models\depth_anything_v2_small_fp16.onnx` 必须放在程序目录下（发布包里都有）。估计器就绪之前程序会回退到零深度，状态显示在 *帧引导* 一栏。
 - **光流不可用** —— NVIDIA Optical Flow 在程序自建的原生 D3D11 设备上运行（驱动会拒绝 D3D11On12 层，这正是 0.2.0 里 “UNSUPPORTED_DEVICE” 错误的原因）。若 `log.txt` 出现 "NVOF unavailable, falling back to block matching"，请更新 GeForce 驱动；在此之前程序会自动改用块匹配。*帧引导* 一栏的状态点会显示当前使用的来源。

@@ -51,13 +51,13 @@ VRChat DLSS5 Cam은 VRChat 내장 카메라(*Spout Stream*을 켠 Stream 카메�
 | OS | Windows 10 21H2 / Windows 11, 64비트 |
 | GPU | NVIDIA GeForce RTX. 뉴럴 패스를 실행할 수 있는 세대는 DLSS 5 런타임 빌드가 결정합니다. 310.8 빌드에는 RTX 50(Blackwell)용 코드만 있어 RTX 40/30/20에서는 앱이 실패를 보고하고 DLAA와 원본 화면으로 계속 동작합니다. 앱 자체에는 세대 제한이 없습니다. |
 | VRChat | Stream 카메라에 *Spout Stream* 옵션이 있는 빌드(데스크톱 또는 VR) |
-| DLSS 5 런타임 | 직접 준비한 `nvngx_dlssnr.dll`. **이 프로젝트에는 포함되지 않으며 다운로드하지도 않습니다.** |
+| DLSS 5 런타임 | 직접 준비한 `nvngx_dlssnr.dll`. **이 프로젝트에는 포함되지 않으며 다운로드하지도 않습니다.** 파일은 [RenoDX Discord 서버](https://discord.com/invite/renodx)에서 공유되며, RTX 50 시리즈가 아닌 카드용으로 수정된 `nvngx_dlssnr.dll`도 그곳에서 구할 수 있습니다. 그 서버는 RenoDX 프로젝트의 것이며 이 프로젝트의 Discord가 **아닙니다**. 이 프로젝트에는 자체 Discord 서버가 없습니다. |
 | 동영상 파일 | Windows Media Foundation(Windows에 포함). N / KN 에디션은 *Media Feature Pack*이 필요하며, HEVC 파일은 Microsoft Store의 *HEVC 비디오 확장*이 필요할 수 있습니다. |
 
 ## 설정 방법
 
 1. [Releases](https://github.com/AlanBacker/VRChat-DLSS5-Cam/releases)에서 `VRChatDLSS5Cam-win64.zip`을 내려받아 원하는 위치에 압축을 풉니다.
-2. `nvngx_dlssnr.dll`을 압축 해제한 폴더(`VRChatDLSS5Cam.exe` 옆)에 복사합니다. *DLSS 5 뉴럴 렌더링 → 런타임 경로*에서 파일을 지정할 수도 있습니다.
+2. `nvngx_dlssnr.dll`을 압축 해제한 폴더(`VRChatDLSS5Cam.exe` 옆)에 복사합니다. *DLSS 5 뉴럴 렌더링 → 런타임 경로*에서 파일을 지정할 수도 있습니다. 파일이 없다면 위의 *DLSS 5 런타임* 행을 참고하세요. RTX 40/30/20 카드에는 수정 빌드가 필요합니다.
 3. VRChat을 실행하고 **카메라**를 연 뒤 카메라 모드를 **Stream**으로 전환하고, Stream 카메라 설정에서 **Spout Stream**을 켭니다. VRChat은 카메라 화면을 Spout 송신자(`VRCSender1`)로 내보냅니다.
 4. `VRChatDLSS5Cam.exe`를 실행합니다. 송신자가 자동으로 연결되고 처리된 화면이 미리보기에 표시됩니다.
 5. VRChat에서 구도를 잡고 **Ctrl+Alt+P**(또는 *촬영* 버튼)를 누릅니다. PNG는 기본적으로 `사진\VRChat DLSS5 Cam`에 저장됩니다.
@@ -123,7 +123,7 @@ VRChat DLSS5 Cam은 VRChat 내장 카메라(*Spout Stream*을 켠 Stream 카메�
 - **"nvngx_dlssnr.dll을 찾을 수 없습니다"** – 런타임을 실행 파일 옆에 복사하거나 경로를 선택하세요.
 - **NGX 초기화 안 됨 / DLAA 지원 안 됨** – NGX 런타임에는 NVIDIA GPU와 최신 드라이버가 필요합니다. DLSSNR은 *서명된 스니펫* 경로로 계속 동작합니다.
 - **앱이 시작되지 않음 / 바로 종료됨** – `%LOCALAPPDATA%\VRChatDLSS5Cam\`를 열어 `log.txt`(마지막 줄이 실패한 단계)와 `crash.txt`(크래시 시 기록됨)를 확인하세요. 이슈에는 두 파일을 모두 첨부해 주세요.
-- **뉴럴 렌더링 실패** – RTX 40/30/20에서 310.8 런타임을 쓰는 경우 정상적인 동작입니다. 그 빌드에는 RTX 50용 코드만 들어 있습니다(앱이 오류 아래에 표시). 그 외에는 일부 런타임 빌드가 더 새로운 드라이버를 필요로 합니다. `log.txt`의 NGX 결과 코드를 확인하고 *프리셋* 0과 *NGX 코어* 경로를 시도해 보세요.
+- **뉴럴 렌더링 실패** – RTX 40/30/20에서 310.8 런타임을 쓰는 경우 정상적인 동작입니다. 그 빌드에는 RTX 50용 코드만 들어 있습니다(앱이 오류 아래에 표시). 이 카드들을 위한 수정 빌드는 RenoDX Discord 서버에서 공유됩니다(*요구 사항* 참고, 이 프로젝트와는 무관). 그 외에는 일부 런타임 빌드가 더 새로운 드라이버를 필요로 합니다. `log.txt`의 NGX 결과 코드를 확인하고 *프리셋* 0과 *NGX 코어* 경로를 시도해 보세요.
 - **뉴럴 패스는 동작 중인데 화면이 검거나 변화가 없음** – 앱은 뉴럴 프레임마다 출력을 입력과 비교합니다. 뉴럴 섹션에 "출력 변화"가 표시되고, 런타임이 성공을 보고하면서 검은 화면이나 입력과 같은 화면을 내놓으면 경고합니다(`log.txt`의 "DLSSNR output check"). DLSS 5를 껐다가 켜 보세요. 끄면 기능과 런타임을 해제하고, 켜면 파일에서 다시 불러오므로 앱을 새로 시작한 것과 같은 상태에서 시작합니다. 그래도 계속되면 그 런타임 빌드는 이 GPU에서 화면을 만들지 못합니다.
 - **깊이 추정기 사용 불가** – `onnxruntime.dll`, `onnxruntime_providers_shared.dll`, `DirectML.dll`, `models\depth_anything_v2_small_fp16.onnx`가 실행 파일 옆에 있어야 합니다(모두 릴리스 패키지에 포함). 추정기가 준비될 때까지 앱은 0 깊이로 대체하며, 상태는 *프레임 가이던스*에 표시됩니다.
 - **옵티컬 플로우 사용 불가** – NVIDIA Optical Flow는 앱 전용 네이티브 D3D11 장치에서 실행됩니다(드라이버가 D3D11On12 레이어를 거부하며, 이것이 0.2.0의 "UNSUPPORTED_DEVICE" 오류의 원인이었습니다). `log.txt`에 "NVOF unavailable, falling back to block matching"이 보이면 GeForce 드라이버를 업데이트하세요. 그때까지는 블록 매칭이 자동으로 사용됩니다. *프레임 가이던스*의 상태 점이 현재 사용 중인 소스를 보여 줍니다.
