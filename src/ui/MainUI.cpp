@@ -67,19 +67,19 @@ void SyncBuffer(char* buf, size_t size, const std::string& value, bool editing) 
 bool ComboIds(const char* label, int* value, const char* const* items, int count, const char* tooltip = nullptr) {
     bool changed = false;
     if (*value < 0 || *value >= count) *value = 0;
-    if (ImGui::BeginCombo(label, items[*value])) {
+    if (BeginDropdown(label, items[*value])) {
         for (int i = 0; i < count; ++i) {
             const bool selected = (*value == i);
             if (ImGui::Selectable(items[i], selected)) { *value = i; changed = true; }
             if (selected) ImGui::SetItemDefaultFocus();
         }
-        ImGui::EndCombo();
+        EndDropdown();
     }
-    if (tooltip && ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip)) ImGui::SetTooltip("%s", tooltip);
+    Tooltip(tooltip);
     return changed;
 }
 
-void Tip(const char* text) { if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip)) ImGui::SetTooltip("%s", text); }
+void Tip(const char* text) { Tooltip(text); }
 
 // "2 min 05 s" style text of a duration estimate.
 std::string FormatEstimate(double seconds) {
@@ -132,6 +132,22 @@ void MainUI::UpdateShown(const UiFrameInfo& info) {
 void MainUI::Draw(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts) {
     m_fonts = &fonts;
     UpdateShown(info);
+    ImGuiIO& io = ImGui::GetIO();
+    // Theme: the palette crossfades when the choice (or Windows) changes.
+    {
+        const float target = (s.theme == 2 || (s.theme == 0 && info.systemLight)) ? 1.0f : 0.0f;
+        if (m_themeLight < 0.0f) m_themeLight = target;
+        else if (m_themeLight != target) {
+            const float d = target - m_themeLight;
+            m_themeLight = std::fabs(d) < 0.004f ? target : m_themeLight + d * (1.0f - std::exp(-9.0f * std::min(io.DeltaTime, 0.05f)));
+        }
+        if (m_themeLight != Colors().light) SetThemeLight(ImGui::GetStyle(), m_themeLight);
+    }
+    if (!m_undoInit) { m_undoBase = s.ParameterText(); m_undoInit = true; }
+    if (!io.WantTextInput && io.KeyCtrl && !io.KeyAlt) {
+        if (ImGui::IsKeyPressed(ImGuiKey_Z, false)) ApplyUndo(s, ev, io.KeyShift);
+        else if (ImGui::IsKeyPressed(ImGuiKey_Y, false)) ApplyUndo(s, ev, true);
+    }
     ImGuiViewport* vp = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(vp->WorkPos);
     ImGui::SetNextWindowSize(vp->WorkSize);
@@ -182,8 +198,9 @@ void MainUI::Draw(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Font
     if (shownW > 0.5f) {
         ImGui::SameLine(0.0f, style.ItemSpacing.x * sideT);
         ImGui::PushClipRect(bodyOrigin, ImVec2(bodyOrigin.x + avail.x, bodyOrigin.y + bodyH), true);
-        ImGui::BeginChild("##sidebar", ImVec2(sidebarW, bodyH), ImGuiChildFlags_AlwaysUseWindowPadding);
+        ImGui::BeginChild("##sidebar", ImVec2(sidebarW, bodyH), ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_NoScrollWithMouse);
         ImGui::SetScrollX(0.0f);   // the sidebar only ever scrolls vertically
+        SmoothScroll(false, ImGui::GetFontSize() * 3.6f);
         DrawSidebar(s, info, ev, fonts);
         ImGui::EndChild();
         ImGui::PopClipRect();
@@ -195,6 +212,43 @@ void MainUI::Draw(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Font
     if (s.showLog) DrawLogWindow(s, ev, fonts);
     DrawItemParams(s, info, ev, fonts);
     DrawToasts(fonts);
+    TrackUndo(s);
+}
+
+// Undo ---------------------------------------------------------------------------------------
+
+void MainUI::TrackUndo(const Settings& s) {
+    if (ImGui::IsAnyItemActive()) return;   // a slider is held or a field is being typed in: one step per edit
+    std::string cur = s.ParameterText();
+    if (cur == m_undoBase) return;
+    m_undo.push_back(std::move(m_undoBase));
+    if (m_undo.size() > 100) m_undo.erase(m_undo.begin());
+    m_redo.clear();
+    m_undoBase = std::move(cur);
+}
+
+void MainUI::ApplyUndo(Settings& s, UiEvents& ev, bool redo) {
+    std::vector<std::string>& from = redo ? m_redo : m_undo;
+    std::vector<std::string>& to = redo ? m_undo : m_redo;
+    if (from.empty()) return;
+    to.push_back(s.ParameterText());
+    const std::string snapshot = std::move(from.back());
+    from.pop_back();
+    const bool nrWas = s.nrEnabled, dlaaWas = s.dlaaEnabled;
+    s.ApplyText(snapshot);
+    s.Clamp();
+    m_undoBase = s.ParameterText();
+    ev.settingsChanged = true;
+    ev.nrChanged = true;
+    ev.dlaaChanged = true;
+    if (nrWas != s.nrEnabled || dlaaWas != s.dlaaEnabled) ev.resetHistory = true;
+    ImGui::ClearActiveID();
+}
+
+void MainUI::ResetView(bool animate) {
+    m_zoomTarget = 1.0f;
+    m_panHome = animate;
+    if (!animate) { m_zoom = 1.0f; m_pan = ImVec2(0, 0); }
 }
 
 // ------------------------------------------------------------------------------------------
@@ -263,11 +317,13 @@ void MainUI::DrawTopBar(Settings& s, const UiFrameInfo& info, UiEvents& ev, cons
     const float availW = ImGui::GetWindowWidth() - style.WindowPadding.x * 2.0f;
     const float gap = 20.0f;
     float langW = ImGui::GetFontSize() * 8.0f;
-    bool showFps = true, showBadges = true, showTitle = true;
-    auto rightW = [&]() { return actionW + langW + style.ItemSpacing.x + (showFps ? fpsW + style.ItemSpacing.x : 0.0f); };
+    const float undoW = frameH * 2.0f + style.ItemInnerSpacing.x;
+    bool showFps = true, showBadges = true, showTitle = true, showUndo = true;
+    auto rightW = [&]() { return actionW + langW + style.ItemSpacing.x + (showUndo ? undoW + style.ItemSpacing.x : 0.0f) + (showFps ? fpsW + style.ItemSpacing.x : 0.0f); };
     auto leftW = [&]() { return (showTitle ? titleSize.x + 16.0f : 0.0f) + switchW + (showBadges ? 14.0f + badgesW : 0.0f); };
     if (leftW() + gap + rightW() > availW) showFps = false;
     if (leftW() + gap + rightW() > availW) langW = ImGui::GetFontSize() * 4.5f;
+    if (leftW() + gap + rightW() > availW) showUndo = false;
     if (leftW() + gap + rightW() > availW) showBadges = false;
     if (leftW() + gap + rightW() > availW) showTitle = false;
 
@@ -304,6 +360,18 @@ void MainUI::DrawTopBar(Settings& s, const UiFrameInfo& info, UiEvents& ev, cons
         Tip(TR(TipUiFps));
         ImGui::SameLine();
     }
+    if (showUndo) {
+        ImGui::SetCursorPosY(centred(frameH));
+        ImGui::BeginDisabled(m_undo.empty());
+        if (IconButton("##undo", Icon::Undo, ImVec2(frameH, frameH), TR(TipUndo), ButtonKind::Plain)) ApplyUndo(s, ev, false);
+        ImGui::EndDisabled();
+        ImGui::SameLine(0.0f, style.ItemInnerSpacing.x);
+        ImGui::SetCursorPosY(centred(frameH));
+        ImGui::BeginDisabled(m_redo.empty());
+        if (IconButton("##redo", Icon::Redo, ImVec2(frameH, frameH), TR(TipRedo), ButtonKind::Plain)) ApplyUndo(s, ev, true);
+        ImGui::EndDisabled();
+        ImGui::SameLine();
+    }
     ImGui::SetCursorPosY(centred(frameH));
     ImGui::SetNextItemWidth(langW);
     {
@@ -318,8 +386,7 @@ void MainUI::DrawTopBar(Settings& s, const UiFrameInfo& info, UiEvents& ev, cons
         else if (info.videoProcessing) ev.cancelVideo = true;
         else ev.captureNow = true;
     }
-    if (!busy && ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip))
-        ImGui::SetTooltip("%s (%s)", videoMode ? TR(VideoHint) : imageMode ? TR(ImageHint) : TR(CaptureHint), info.hotkeyText.c_str());
+    if (!busy) Tooltip(StrPrintf("%s (%s)", videoMode ? TR(VideoHint) : imageMode ? TR(ImageHint) : TR(CaptureHint), info.hotkeyText.c_str()).c_str());
     ImGui::EndChild();
 }
 
@@ -501,7 +568,7 @@ void MainUI::BlockSource(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         {
             const std::string preview = s.senderName.empty() ? std::string(TR(SenderAuto)) : s.senderName;
             ImGui::SetNextItemWidth(ImGui::CalcItemWidth() - ImGui::GetFrameHeight() - ImGui::GetStyle().ItemInnerSpacing.x);
-            if (ImGui::BeginCombo("##sender", preview.c_str())) {
+            if (BeginDropdown("##sender", preview.c_str())) {
                 if (ImGui::Selectable(TR(SenderAuto), s.senderName.empty())) { s.senderName.clear(); ev.senderChanged = true; ev.settingsChanged = true; }
                 if (info.senders) {
                     for (const auto& name : *info.senders) {
@@ -509,7 +576,7 @@ void MainUI::BlockSource(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
                     }
                     if (info.senders->empty()) ImGui::TextDisabled("%s", TR(NoSenders));
                 }
-                ImGui::EndCombo();
+                EndDropdown();
             }
             ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
             if (IconButton("##refresh", Icon::Refresh, ImVec2(ImGui::GetFrameHeight(), 0), TR(Refresh))) ev.refreshSenders = true;
@@ -617,7 +684,7 @@ void MainUI::BlockNeural(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
             ImGui::PopStyleColor();
         }
     }
-    if (st && st->nrActive && (st->nrOutState == 2 || st->nrOutState == 3)) {
+    if (st && st->nrActive && (st->nrOutState == 2 || (st->nrOutState == 3 && s.nrIntensity > 0.05f))) {
         // The runtime reports success but the output check found a black or unchanged picture.
         ImGui::PushStyleColor(ImGuiCol_Text, p.bad);
         ImGui::TextWrapped("%s", I18n::T(st->nrOutState == 2 ? Str::NrOutBlack : Str::NrOutSame));
@@ -771,11 +838,11 @@ void MainUI::BlockSave(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
             hc |= ImGui::Checkbox("Win", &win);
             if (hc) s.hotkeyModifiers = (ctrl ? 0x0002u : 0u) | (alt ? 0x0001u : 0u) | (shift ? 0x0004u : 0u) | (win ? 0x0008u : 0u);
             ImGui::SetNextItemWidth(ImGui::GetFontSize() * 8.0f);
-            if (ImGui::BeginCombo(TR(Key), HotkeyKeyName(s.hotkeyKey))) {
+            if (BeginDropdown(TR(Key), HotkeyKeyName(s.hotkeyKey))) {
                 for (const auto& h : kHotkeys) {
                     if (ImGui::Selectable(h.name, h.vk == s.hotkeyKey)) { s.hotkeyKey = h.vk; hc = true; }
                 }
-                ImGui::EndCombo();
+                EndDropdown();
             }
             if (hc) { ev.hotkeyChanged = true; ev.settingsChanged = true; }
             ImGui::Unindent(6.0f);
@@ -806,6 +873,13 @@ void MainUI::BlockSave(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
 
 void MainUI::BlockView(Settings& s, const UiFrameInfo& /*info*/, UiEvents& ev) {
     {
+        const char* themes[] = { TR(ThemeSystem), TR(ThemeDark), TR(ThemeLight) };
+        if (Segmented("##theme", themes, 3, &s.theme, ImGui::CalcItemWidth())) ev.settingsChanged = true;
+        Tip(TR(TipTheme));
+        ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
+        ImGui::TextUnformatted(TR(Theme));
+    }
+    {
         const char* items[] = { TR(CompareOutput), TR(CompareOriginal), TR(CompareWipe), TR(CompareMotion), TR(CompareDepth) };
         if (ComboIds(TR(Compare), &s.compareMode, items, 5)) ev.settingsChanged = true;
     }
@@ -814,20 +888,22 @@ void MainUI::BlockView(Settings& s, const UiFrameInfo& /*info*/, UiEvents& ev) {
     }
     {
         const char* items[] = { TR(FitWindowLabel), TR(OneToOne) };
-        if (ComboIds("##fit", &s.fitMode, items, 2)) { ev.settingsChanged = true; m_pan = ImVec2(0, 0); m_zoom = 1.0f; }
+        if (ComboIds("##fit", &s.fitMode, items, 2)) { ev.settingsChanged = true; ResetView(false); }
         // Manual magnification on top of the fit, shown relative to the picture's pixels. The wheel over the preview
         // does the same; the button returns to the fitted view.
         ImGui::PushID("zoom");
         const ImGuiStyle& style = ImGui::GetStyle();
         const float resetW = ImGui::GetFrameHeight();
         ImGui::SetNextItemWidth(ImGui::CalcItemWidth() - resetW - style.ItemInnerSpacing.x);
-        float pct = m_zoom * m_baseScale * 100.0f;
-        if (ImGui::SliderFloat("##z", &pct, kZoomMin * 100.0f, kZoomMax * 100.0f, "%.0f%%", ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_AlwaysClamp))
-            m_zoom = pct / (100.0f * std::max(m_baseScale, 1e-6f));
+        float pct = m_zoomTarget * m_baseScale * 100.0f;
+        if (ImGui::SliderFloat("##z", &pct, kZoomMin * 100.0f, kZoomMax * 100.0f, "%.0f%%", ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_AlwaysClamp)) {
+            m_zoom = m_zoomTarget = pct / (100.0f * std::max(m_baseScale, 1e-6f));
+            m_panHome = false;
+        }
         Tip(TR(TipZoom));
         ImGui::SameLine(0.0f, style.ItemInnerSpacing.x);
-        ImGui::BeginDisabled(std::fabs(m_zoom - 1.0f) < 1e-4f && m_pan.x == 0.0f && m_pan.y == 0.0f);
-        if (IconButton("##resetview", Icon::Reset, ImVec2(resetW, 0), TR(ResetView), ButtonKind::Plain)) { m_pan = ImVec2(0, 0); m_zoom = 1.0f; }
+        ImGui::BeginDisabled(std::fabs(m_zoomTarget - 1.0f) < 1e-4f && m_pan.x == 0.0f && m_pan.y == 0.0f);
+        if (IconButton("##resetview", Icon::Reset, ImVec2(resetW, 0), TR(ResetView), ButtonKind::Plain)) ResetView(true);
         ImGui::EndDisabled();
         ImGui::SameLine(0.0f, style.ItemInnerSpacing.x);
         ImGui::TextUnformatted(TR(Zoom));
@@ -1016,21 +1092,25 @@ void MainUI::BlockAbout(Settings& /*s*/, const UiFrameInfo& info, UiEvents& ev, 
         ImGui::TextDisabled("%s:", TR(NgxStatus)); ImGui::SameLine(); ImGui::TextUnformatted(info.status->ngxStatus.c_str());
         ImGui::TextDisabled("%s:", TR(Nvof)); ImGui::SameLine(); ImGui::TextUnformatted(info.status->nvofAvailable ? TR(Available) : TR(NotAvailable));
     }
-    if (GhostButton(TR(OpenLogFile))) ev.openLogFile = true;
-    ImGui::SameLine();
-    if (GhostButton(TR(OpenSettingsFolder))) ev.openSettingsFolder = true;
-    if (GhostButton(TR(ProjectPage))) ev.openProjectPage = true;
-    ImGui::SameLine();
-    if (GhostButton(TR(Licenses))) ev.openLicenses = true;
-    ImGui::Spacing();
-    if (GhostButton(TR(ResetAllSettings))) ImGui::OpenPopup("##resetall");
-    if (ImGui::BeginPopup("##resetall")) {
+    // Two rows of two equal buttons and the reset across the full width, all the same height.
+    const ImGuiStyle& style = ImGui::GetStyle();
+    const float fullW = ImGui::GetContentRegionAvail().x;
+    const float halfW = std::floor((fullW - style.ItemSpacing.x) * 0.5f);
+    const ImVec2 half(halfW, 0.0f);
+    if (GhostButton(TR(OpenLogFile), half)) ev.openLogFile = true;
+    ImGui::SameLine(0.0f, style.ItemSpacing.x);
+    if (GhostButton(TR(OpenSettingsFolder), half)) ev.openSettingsFolder = true;
+    if (GhostButton(TR(ProjectPage), half)) ev.openProjectPage = true;
+    ImGui::SameLine(0.0f, style.ItemSpacing.x);
+    if (GhostButton(TR(Licenses), half)) ev.openLicenses = true;
+    if (GhostButton(TR(ResetAllSettings), ImVec2(fullW, 0.0f))) ImGui::OpenPopup("##resetall");
+    if (BeginPopupFade("##resetall")) {
         ImGui::TextUnformatted(TR(ResetAllSettings));
         ImGui::Separator();
         if (AccentButton(TR(Ok), ImVec2(120, 0))) { ev.resetDefaults = true; ImGui::CloseCurrentPopup(); }
         ImGui::SameLine();
         if (FlatButton(TR(Cancel), ImVec2(120, 0))) ImGui::CloseCurrentPopup();
-        ImGui::EndPopup();
+        EndPopupFade();
     }
     ImGui::Spacing();
 }
@@ -1121,7 +1201,9 @@ void MainUI::DrawPicture(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
     const float texW = (float)info.displayWidth, texH = (float)info.displayHeight;
     m_baseScale = (s.fitMode == FitWindow) ? std::min(region.x / texW, region.y / texH) : 1.0f;
     const float zoomMin = kZoomMin / m_baseScale, zoomMax = kZoomMax / m_baseScale;
+    m_zoomTarget = std::clamp(m_zoomTarget, zoomMin, zoomMax);
     m_zoom = std::clamp(m_zoom, zoomMin, zoomMax);
+    const ImVec2 centre(origin.x + region.x * 0.5f, origin.y + region.y * 0.5f);
     auto imageSize = [&]() { return ImVec2(texW * m_baseScale * m_zoom, texH * m_baseScale * m_zoom); };
     auto imagePos = [&](const ImVec2& size) {
         return ImVec2(origin.x + (region.x - size.x) * 0.5f + m_pan.x, origin.y + (region.y - size.y) * 0.5f + m_pan.y);
@@ -1139,16 +1221,28 @@ void MainUI::DrawPicture(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
             m_pan.x += io.MouseDelta.x; m_pan.y += io.MouseDelta.y;
         }
         if (hovered && io.MouseWheel != 0.0f) {
-            const float old = m_zoom;
-            m_zoom = std::clamp(m_zoom * (io.MouseWheel > 0 ? 1.25f : 0.8f), zoomMin, zoomMax);
-            if (std::fabs(m_zoom - 1.0f) < 0.06f) m_zoom = 1.0f;   // snaps back to the fitted view
-            // Keep the picture point under the cursor where it is.
-            const float k = m_zoom / old;
-            const ImVec2 centre(origin.x + region.x * 0.5f, origin.y + region.y * 0.5f);
-            m_pan.x = (m_pan.x + centre.x - io.MousePos.x) * k + io.MousePos.x - centre.x;
-            m_pan.y = (m_pan.y + centre.y - io.MousePos.y) * k + io.MousePos.y - centre.y;
+            float t = std::clamp(m_zoomTarget * (io.MouseWheel > 0 ? 1.25f : 0.8f), zoomMin, zoomMax);
+            if (std::fabs(t - 1.0f) < 0.06f) t = 1.0f;   // snaps back to the fitted view
+            m_zoomTarget = t;
+            m_zoomAnchor = io.MousePos;   // the picture point under the cursor stays put while the zoom moves
+            m_panHome = false;
         }
-        if (hovered && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) { m_zoom = 1.0f; m_pan = ImVec2(0, 0); }
+        if (hovered && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) { ResetView(true); m_zoomAnchor = centre; }
+        if (active && (io.MouseDelta.x != 0.0f || io.MouseDelta.y != 0.0f)) m_panHome = false;
+    }
+    // The zoom glides toward its target; the pan follows so the anchor point keeps its place on the screen.
+    if (m_zoom != m_zoomTarget) {
+        const float old = m_zoom;
+        const float d = m_zoomTarget - m_zoom;
+        m_zoom = std::fabs(d) < 0.0015f * m_zoom ? m_zoomTarget : m_zoom + d * (1.0f - std::exp(-20.0f * std::min(io.DeltaTime, 0.05f)));
+        const float k = m_zoom / old;
+        m_pan.x = (m_pan.x + centre.x - m_zoomAnchor.x) * k + m_zoomAnchor.x - centre.x;
+        m_pan.y = (m_pan.y + centre.y - m_zoomAnchor.y) * k + m_zoomAnchor.y - centre.y;
+    }
+    if (m_panHome) {
+        const float f = std::exp(-20.0f * std::min(io.DeltaTime, 0.05f));
+        m_pan.x *= f; m_pan.y *= f;
+        if (std::fabs(m_pan.x) < 0.5f && std::fabs(m_pan.y) < 0.5f) { m_pan = ImVec2(0, 0); m_panHome = false; }
     }
     // The picture stays within reach: centred while it is smaller than the view, and never leaving a gap on a side
     // once it is larger.
@@ -1216,7 +1310,7 @@ void MainUI::DrawPicture(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
         const ImVec2 bpos(origin.x + 12.0f, origin.y + 12.0f);
         dl->AddRectFilled(bpos, ImVec2(bpos.x + w + pad.x * 2.0f, bpos.y + lh * 4.0f + pad.y * 2.0f), p.overlayBg, 4.0f);
         for (int i = 0; i < 4; ++i)
-            dl->AddText(ImVec2(bpos.x + pad.x, bpos.y + pad.y + lh * i), i == 1 && st.nrActive ? p.good : IM_COL32(235, 237, 242, 255), lines[i].c_str());
+            dl->AddText(ImVec2(bpos.x + pad.x, bpos.y + pad.y + lh * i), i == 1 && st.nrActive ? p.good : p.text, lines[i].c_str());
         ImGui::PopFont();
     }
     if (s.fitMode == FitOneToOne || std::fabs(m_zoom - 1.0f) > 1e-3f) {
@@ -1224,7 +1318,7 @@ void MainUI::DrawPicture(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
         const std::string z = StrPrintf("%s %.0f%%", TR(Zoom), m_baseScale * m_zoom * 100.0f);
         const ImVec2 zs = ImGui::CalcTextSize(z.c_str());
         dl->AddRectFilled(ImVec2(origin.x + region.x - zs.x - 28.0f, origin.y + 12.0f), ImVec2(origin.x + region.x - 12.0f, origin.y + 12.0f + zs.y + 10.0f), p.overlayBg, 4.0f);
-        dl->AddText(ImVec2(origin.x + region.x - zs.x - 20.0f, origin.y + 17.0f), IM_COL32(235, 237, 242, 255), z.c_str());
+        dl->AddText(ImVec2(origin.x + region.x - zs.x - 20.0f, origin.y + 17.0f), p.text, z.c_str());
         ImGui::PopFont();
     }
     // A video frame that is (almost) black, such as the fade-in at the start of a film: say so, or the user takes the
@@ -1235,7 +1329,7 @@ void MainUI::DrawPicture(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
         const ImVec2 pad(12.0f, 8.0f);
         const ImVec2 bpos(origin.x + (region.x - ts.x - pad.x * 2.0f) * 0.5f, origin.y + region.y - ts.y - pad.y * 2.0f - 16.0f);
         dl->AddRectFilled(bpos, ImVec2(bpos.x + ts.x + pad.x * 2.0f, bpos.y + ts.y + pad.y * 2.0f), p.overlayBg, 4.0f);
-        dl->AddText(nullptr, 0.0f, ImVec2(bpos.x + pad.x, bpos.y + pad.y), IM_COL32(235, 237, 242, 255), TR(DarkFrameHint), nullptr, wrap);
+        dl->AddText(nullptr, 0.0f, ImVec2(bpos.x + pad.x, bpos.y + pad.y), p.text, TR(DarkFrameHint), nullptr, wrap);
     }
     dl->PopClipRect();
 }
@@ -1520,8 +1614,7 @@ void MainUI::DrawLibrary(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
     ImGui::BeginChild("##strip", ImVec2(0, stripH), ImGuiChildFlags_None, ImGuiWindowFlags_HorizontalScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     ImGui::PopStyleColor();
     ImGuiIO& io = ImGui::GetIO();
-    if (ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows) && io.MouseWheel != 0.0f)
-        ImGui::SetScrollX(ImGui::GetScrollX() - io.MouseWheel * (cardW + style.ItemSpacing.x));
+    SmoothScroll(true, cardW + style.ItemSpacing.x);
     if (count == 0) {
         m_libDrag = false;
         const float wrap = std::min(ImGui::GetContentRegionAvail().x - 20.0f, ImGui::GetFontSize() * 40.0f);
@@ -1541,6 +1634,10 @@ void MainUI::DrawLibrary(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
     const ImVec2 rowStart = ImGui::GetCursorScreenPos();
     const bool stripHovered = ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows);
     const bool menuOpen = ImGui::IsPopupOpen("##libctx");   // judged here: inside a card's PushID the name would hash differently
+    // Ctrl+A while the cursor is on the strip (or it was clicked last) selects every readable file.
+    if ((stripHovered || ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows)) && !running && !io.WantTextInput && io.KeyCtrl && !io.KeyAlt
+        && ImGui::IsKeyPressed(ImGuiKey_A, false))
+        for (auto& it : *lib) it.selected = it.probe != 2;
     // Selection drags are kept in content coordinates, so the rectangle stays put while the strip scrolls.
     const ImVec2 winPos = ImGui::GetWindowPos();
     const ImVec2 scroll(ImGui::GetScrollX(), ImGui::GetScrollY());
@@ -1575,10 +1672,10 @@ void MainUI::DrawLibrary(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
         const float hov = Animate(ImGui::GetID("##hover"), hovered ? 1.0f : 0.0f, 16.0f);
         const float sel = Animate(ImGui::GetID("##selected"), it.selected ? 1.0f : 0.0f, 16.0f);
         if (hovered && !dragging && !menuOpen) {
-            if (it.probe == 2 && !it.error.empty()) ImGui::SetTooltip("%s", it.error.c_str());
-            else if (it.state == LibraryItem::Failed && !it.error.empty()) ImGui::SetTooltip("%s", it.error.c_str());
-            else if (it.state == LibraryItem::Done && !it.outName.empty()) ImGui::SetTooltip("%s: %s", TR(Saved), it.outName.c_str());
-            else ImGui::SetTooltip("%s", it.name.c_str());
+            if (it.probe == 2 && !it.error.empty()) TooltipShow(it.id, it.error.c_str());
+            else if (it.state == LibraryItem::Failed && !it.error.empty()) TooltipShow(it.id, it.error.c_str());
+            else if (it.state == LibraryItem::Done && !it.outName.empty()) TooltipShow(it.id, StrPrintf("%s: %s", TR(Saved), it.outName.c_str()).c_str());
+            else TooltipShow(it.id, it.name.c_str());
         }
         const bool current = (s.sourceMode == SourceVideo && it.isVideo && !info.videoPath.empty() && it.path == info.videoPath)
                           || (s.sourceMode == SourceImage && !it.isVideo && !info.imagePath.empty() && it.path == info.imagePath);
@@ -1712,50 +1809,88 @@ void MainUI::DrawLibrary(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
     ImGui::EndChild();
 }
 
-// The menu of a card: the file in Explorer, its own values, out of the library.
+// The menu of a card: the file in Explorer, its own values (for every selected file when the card is one of
+// several selected), out of the library.
 void MainUI::DrawLibraryMenu(Settings& /*s*/, const UiFrameInfo& info, UiEvents& ev) {
-    if (!ImGui::BeginPopup("##libctx")) return;
+    if (!BeginPopupFade("##libctx")) return;
     LibraryItem* item = nullptr;
     if (info.library) for (auto& it : *info.library) if (it.id == m_ctxItem) item = &it;
-    if (!item) { ImGui::CloseCurrentPopup(); ImGui::EndPopup(); return; }
+    if (!item) { ImGui::CloseCurrentPopup(); EndPopupFade(); return; }
     const bool running = info.batchRunning;
+    int selectedCount = 0;
+    if (item->selected) for (const auto& it : *info.library) if (it.selected && it.probe != 2) ++selectedCount;
+    const bool group = item->selected && selectedCount > 1;
     ImGui::TextDisabled("%s", item->name.c_str());
     ImGui::Separator();
     if (ImGui::MenuItem(TR(LocateFile))) ev.libraryLocate = item->id;
     ImGui::BeginDisabled(running || item->probe == 2);
-    if (ImGui::MenuItem(TR(ItemParams), nullptr, item->useOwn)) { m_paramsItem = item->id; ev.libraryPreview = item->id; }
+    if (group && ImGui::MenuItem(StrPrintf(TR(ItemParamsMany), selectedCount).c_str(), nullptr, item->useOwn)) {
+        m_paramsItems.clear();
+        m_paramsItems.push_back(item->id);   // the clicked file leads: its values are shown and copied to the others
+        for (const auto& it : *info.library) if (it.selected && it.probe != 2 && it.id != item->id) m_paramsItems.push_back(it.id);
+        ev.libraryPreview = item->id;
+    }
+    if (ImGui::MenuItem(TR(ItemParams), nullptr, item->useOwn)) { m_paramsItems.assign(1, item->id); ev.libraryPreview = item->id; }
     ImGui::EndDisabled();
     ImGui::BeginDisabled(running || item->state == LibraryItem::Processing);
     if (ImGui::MenuItem(TR(RemoveFromLibrary))) ev.libraryRemove = item->id;
     ImGui::EndDisabled();
-    ImGui::EndPopup();
+    EndPopupFade();
 }
 
-// A floating window with the DLSS 5 controls of one library item. Its values replace the sidebar's for that file,
-// in the preview and when it is processed.
+// A floating window with the DLSS 5 controls of one library item, or of several selected at once. Their values
+// replace the sidebar's for those files, in the preview and when they are processed. With several files the first
+// one is edited and every change is copied to the others.
 void MainUI::DrawItemParams(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& /*fonts*/) {
-    if (!m_paramsItem) return;
-    LibraryItem* item = nullptr;
-    if (info.library) for (auto& it : *info.library) if (it.id == m_paramsItem) item = &it;
-    if (!item) { m_paramsItem = 0; return; }
+    if (m_paramsItems.empty()) return;
+    std::vector<LibraryItem*> items;
+    if (info.library) {
+        for (unsigned id : m_paramsItems)
+            for (auto& it : *info.library) if (it.id == id && it.probe != 2) { items.push_back(&it); break; }
+    }
+    if (items.empty()) { m_paramsItems.clear(); return; }
+    LibraryItem* lead = items.front();
+    const int n = (int)items.size();
     bool open = true;
     ImGui::SetNextWindowSize(ImVec2(ImGui::GetFontSize() * 27.0f, ImGui::GetFontSize() * 32.0f), ImGuiCond_FirstUseEver);
-    const std::string title = StrPrintf(TR(OwnParamsTitle), item->name.c_str()) + "###itemparams";
-    if (ImGui::Begin(title.c_str(), &open)) {
+    const std::string title = (n > 1 ? StrPrintf(TR(OwnParamsMany), n) : StrPrintf(TR(OwnParamsTitle), lead->name.c_str())) + "###itemparams";
+    if (ImGui::Begin(title.c_str(), &open, ImGuiWindowFlags_NoScrollWithMouse)) {
+        SmoothScroll(false, ImGui::GetFontSize() * 3.6f);
         ImGui::PushItemWidth(-ImGui::GetFontSize() * 7.5f);
         const bool locked = info.batchRunning || info.videoProcessing || info.videoFinishing;
         ImGui::BeginDisabled(locked);
         bool changed = false;
-        if (Toggle(TR(UseOwnParams), &item->useOwn)) {
-            if (item->useOwn && !item->own) item->own = std::make_shared<Settings>(s);
+        bool useOwn = lead->useOwn;
+        if (Toggle(n > 1 ? TR(UseOwnParamsMany) : TR(UseOwnParams), &useOwn)) {
+            if (useOwn && !lead->own) lead->own = std::make_shared<Settings>(s);
+            for (LibraryItem* it : items) {
+                it->useOwn = useOwn;
+                if (useOwn && it != lead) it->own = std::make_shared<Settings>(*lead->own);
+            }
             changed = true;
         }
-        Hint(TR(OwnParamsHint));
-        if (item->useOwn && item->own) {
+        Hint(n > 1 ? TR(OwnParamsManyHint) : TR(OwnParamsHint));
+        if (n > 1) {
+            std::string names;
+            for (int i = 0; i < n && i < 8; ++i) { if (i) names += ", "; names += items[i]->name; }
+            if (n > 8) names += ", \xE2\x80\xA6";
+            ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetColorU32(ImGuiCol_TextDisabled));
+            ImGui::TextWrapped("%s", names.c_str());
+            ImGui::PopStyleColor();
+        }
+        if (lead->useOwn && lead->own) {
             ImGui::Spacing();
             UiEvents sub;
-            EffectControls(*item->own, sub, s.showAdvanced, s.nrEnabled);
-            if (sub.nrChanged || sub.settingsChanged) changed = true;
+            EffectControls(*lead->own, sub, s.showAdvanced, s.nrEnabled);
+            if (sub.nrChanged || sub.settingsChanged) {
+                changed = true;
+                for (LibraryItem* it : items) {
+                    if (it == lead) continue;
+                    if (!it->own) it->own = std::make_shared<Settings>(*lead->own);
+                    else it->own->CopyEffects(*lead->own);
+                    it->useOwn = true;
+                }
+            }
             if (sub.resetHistory) ev.resetHistory = true;
         }
         ImGui::EndDisabled();
@@ -1763,7 +1898,7 @@ void MainUI::DrawItemParams(Settings& s, const UiFrameInfo& info, UiEvents& ev, 
         ImGui::PopItemWidth();
     }
     ImGui::End();
-    if (!open) m_paramsItem = 0;
+    if (!open) m_paramsItems.clear();
 }
 
 // ------------------------------------------------------------------------------------------
@@ -1840,7 +1975,8 @@ void MainUI::DrawLogWindow(Settings& s, UiEvents& ev, const Fonts& fonts) {
         ImGui::SameLine();
         if (FlatButton(TR(Clear))) { m_logCache.clear(); m_logGeneration = Log::Generation(); }
         if (Log::Generation() != m_logGeneration) { m_logCache = Log::Snapshot(); m_logGeneration = Log::Generation(); }
-        ImGui::BeginChild("##logtext", ImVec2(0, 0), ImGuiChildFlags_AlwaysUseWindowPadding);
+        ImGui::BeginChild("##logtext", ImVec2(0, 0), ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_NoScrollWithMouse);
+        SmoothScroll(false, ImGui::GetFontSize() * 3.6f);
         ImGui::PushFont(fonts.Mono(), ImGui::GetStyle().FontSizeBase * 0.92f);
         const Palette& p = Colors();
         for (const auto& e : m_logCache) {

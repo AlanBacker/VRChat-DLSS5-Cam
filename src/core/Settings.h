@@ -103,6 +103,7 @@ struct Settings {
     bool sidebarVisible = true;
     bool libraryVisible = true;        // the media library strip under the preview
     bool showAdvanced = true;          // advanced controls in the sidebar
+    int  theme = 0;                    // 0 = follow Windows, 1 = dark, 2 = light
 
     // Misc
     bool showLog = false;
@@ -114,6 +115,9 @@ struct Settings {
     bool Apply(const std::string& key, const std::string& value);
     bool ApplyText(const std::string& data);
     void Clamp();
+    // The adjustable values as "key=value" lines, without paths, window placement and interface state: the undo
+    // history keeps these snapshots and ApplyText() restores one.
+    std::string ParameterText() const;
     // Takes the DLSS 5 effect values (preset, style, strengths, blend, pass resolution) from another set: a library
     // item with parameters of its own replaces these while it is previewed or processed.
     void CopyEffects(const Settings& from);

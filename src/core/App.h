@@ -231,7 +231,9 @@ private:
     void RemoveLibraryItem(unsigned id);
     void RemoveSelectedLibraryItems();
     void LocateLibraryItem(unsigned id);         // Explorer with the file selected
-    const LibraryItem* OverrideItem() const;    // the library item whose own effect values apply to the shown file
+    const LibraryItem* OverrideItem() const;
+    void ReadSystemTheme();
+    void UpdateTitleBar();                 // dark or light title bar to match the interface theme    // the library item whose own effect values apply to the shown file
     void ClearLibrary();
     void PreviewLibraryItem(unsigned id);
     void StartLibraryProcessing(bool selectedOnly);
@@ -269,6 +271,8 @@ private:
     bool          m_inFrame = false;
     bool          m_deviceReady = false;
     bool          m_imguiReady = false;
+    bool          m_systemLight = false;   // Windows app colours are light (read from the registry, refreshed on WM_SETTINGCHANGE)
+    int           m_titleDark = -1;        // the title bar colour last handed to DWM (-1: not yet)
     bool          m_deviceLostReported = false;
     bool          m_fontsDirty = true;
     bool          m_pendingResize = false;

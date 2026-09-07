@@ -721,7 +721,8 @@ void Pipeline::UpdateNeuralCheck(float delta, float outLuma, float inLuma) {
     int state = 1;
     if (inLuma < 0.002f) state = 1;                                     // black input: nothing to judge
     else if (outLuma < 0.002f && inLuma > 0.02f) state = 2;             // black picture out of a lit one
-    else if (delta < 0.0005f && m_nrMaxStrength > 0.05f) state = 3;     // nothing changed although strengths are set
+    else if (delta < 0.0005f && m_nrIntensity > 0.05f && m_nrMaxStrength > 0.05f) state = 3;   // nothing changed although an effect was asked for
+    // (intensity at zero switches the effect off: an unchanged picture is the expected result then, not a failure)
     if (state == m_nrOutState) return;
     m_nrOutState = state;
     const char* verdict = state == 2 ? "output is black" : state == 3 ? "output equals the input (no effect)" : "ok";
@@ -992,6 +993,7 @@ bool Pipeline::RunNeural(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const 
     p.skinStructure = s.nrSkinStructure < 0.0f ? -1.0f : std::min(s.nrSkinStructure, 1.0f);
     p.autoMask = s.nrAutoMask; p.uiCorrection = s.nrUiCorrection;
     m_nrMaxStrength = std::max({ p.intensity, p.globalTone, p.localTone, p.localStructure, p.skinStructure < 0.0f ? 1.0f : p.skinStructure });
+    m_nrIntensity = s.nrIntensity;
     std::string err;
     const bool ok = m_nr.Evaluate(cmd, in, p, err);
     gpu.TimerEnd(cmd, GpuTimer::Neural);

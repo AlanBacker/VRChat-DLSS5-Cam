@@ -9,7 +9,8 @@ namespace vdc::ui {
 namespace {
 ImVec4 C(int r, int g, int b, float a = 1.0f) { return ImVec4(r / 255.0f, g / 255.0f, b / 255.0f, a); }
 
-Palette g_palette = {
+// The two palettes; g_palette holds the blend in use.
+const Palette kDark = {
     IM_COL32(79, 146, 255, 255),  IM_COL32(104, 164, 255, 255), IM_COL32(58, 122, 228, 255), IM_COL32(255, 255, 255, 255),
     IM_COL32(86, 208, 128, 255),  IM_COL32(255, 184, 64, 255),  IM_COL32(255, 92, 92, 255),  IM_COL32(136, 142, 156, 255),
     IM_COL32(24, 26, 31, 255),    IM_COL32(40, 43, 51, 255),    IM_COL32(10, 11, 14, 210),
@@ -19,7 +20,139 @@ Palette g_palette = {
     IM_COL32(52, 56, 66, 255),    IM_COL32(79, 146, 255, 110),  IM_COL32(240, 242, 246, 255),
     IM_COL32(79, 146, 255, 60),
     C(16, 17, 21),
+    0.0f,
 };
+const Palette kLight = {
+    IM_COL32(46, 111, 224, 255),  IM_COL32(72, 132, 240, 255),  IM_COL32(36, 94, 200, 255),  IM_COL32(255, 255, 255, 255),
+    IM_COL32(32, 160, 86, 255),   IM_COL32(200, 128, 12, 255),  IM_COL32(214, 52, 52, 255),  IM_COL32(120, 126, 140, 255),
+    IM_COL32(255, 255, 255, 255), IM_COL32(222, 226, 233, 255), IM_COL32(255, 255, 255, 222),
+    IM_COL32(28, 30, 36, 255),    IM_COL32(110, 116, 130, 255),
+    IM_COL32(232, 235, 241, 255), IM_COL32(220, 224, 232, 255), IM_COL32(206, 211, 221, 255),
+    IM_COL32(220, 223, 229, 255),
+    IM_COL32(214, 218, 226, 255), IM_COL32(46, 111, 224, 110),  IM_COL32(52, 58, 70, 255),
+    IM_COL32(46, 111, 224, 60),
+    C(240, 242, 246),
+    1.0f,
+};
+Palette g_palette = kDark;
+float g_light = 0.0f;
+
+ImU32 LerpCol(ImU32 a, ImU32 b, float t) {
+    return ImGui::ColorConvertFloat4ToU32(ImLerp(ImGui::ColorConvertU32ToFloat4(a), ImGui::ColorConvertU32ToFloat4(b), t));
+}
+
+// The ImGui colour table of one theme.
+void ThemeColors(ImVec4* c, bool light) {
+    if (!light) {
+        c[ImGuiCol_Text]                 = C(230, 232, 238);
+        c[ImGuiCol_TextDisabled]         = C(148, 154, 168);
+        c[ImGuiCol_WindowBg]             = C(16, 17, 21);
+        c[ImGuiCol_ChildBg]              = C(24, 26, 31);
+        c[ImGuiCol_PopupBg]              = C(28, 30, 36, 0.98f);
+        c[ImGuiCol_Border]               = C(40, 43, 51);
+        c[ImGuiCol_BorderShadow]         = C(0, 0, 0, 0);
+        c[ImGuiCol_FrameBg]              = C(36, 39, 47);
+        c[ImGuiCol_FrameBgHovered]       = C(48, 52, 62);
+        c[ImGuiCol_FrameBgActive]        = C(60, 65, 78);
+        c[ImGuiCol_TitleBg]              = C(16, 17, 21);
+        c[ImGuiCol_TitleBgActive]        = C(24, 26, 31);
+        c[ImGuiCol_TitleBgCollapsed]     = C(16, 17, 21);
+        c[ImGuiCol_MenuBarBg]            = C(24, 26, 31);
+        c[ImGuiCol_ScrollbarBg]          = C(16, 17, 21, 0.0f);
+        c[ImGuiCol_ScrollbarGrab]        = C(56, 60, 72);
+        c[ImGuiCol_ScrollbarGrabHovered] = C(76, 82, 98);
+        c[ImGuiCol_ScrollbarGrabActive]  = C(92, 100, 118);
+        c[ImGuiCol_CheckMark]            = C(79, 146, 255);
+        c[ImGuiCol_SliderGrab]           = C(79, 146, 255);
+        c[ImGuiCol_SliderGrabActive]     = C(104, 164, 255);
+        c[ImGuiCol_Button]               = C(36, 39, 47);
+        c[ImGuiCol_ButtonHovered]        = C(48, 52, 62);
+        c[ImGuiCol_ButtonActive]         = C(60, 65, 78);
+        c[ImGuiCol_Header]               = C(36, 39, 47, 0.0f);
+        c[ImGuiCol_HeaderHovered]        = C(48, 52, 62, 0.6f);
+        c[ImGuiCol_HeaderActive]         = C(60, 65, 78, 0.8f);
+        c[ImGuiCol_Separator]            = C(40, 43, 51);
+        c[ImGuiCol_SeparatorHovered]     = C(79, 146, 255);
+        c[ImGuiCol_SeparatorActive]      = C(104, 164, 255);
+        c[ImGuiCol_ResizeGrip]           = C(40, 43, 51, 0.5f);
+        c[ImGuiCol_ResizeGripHovered]    = C(79, 146, 255, 0.7f);
+        c[ImGuiCol_ResizeGripActive]     = C(104, 164, 255);
+        c[ImGuiCol_Tab]                  = C(24, 26, 31);
+        c[ImGuiCol_TabHovered]           = C(48, 52, 62);
+        c[ImGuiCol_TabSelected]          = C(36, 39, 47);
+        c[ImGuiCol_TabSelectedOverline]  = C(79, 146, 255);
+        c[ImGuiCol_TabDimmed]            = C(24, 26, 31);
+        c[ImGuiCol_TabDimmedSelected]    = C(36, 39, 47);
+        c[ImGuiCol_TabDimmedSelectedOverline] = C(40, 43, 51);
+        c[ImGuiCol_PlotLines]            = C(79, 146, 255);
+        c[ImGuiCol_PlotHistogram]        = C(86, 208, 128);
+        c[ImGuiCol_TableHeaderBg]        = C(28, 30, 36);
+        c[ImGuiCol_TableBorderStrong]    = C(40, 43, 51);
+        c[ImGuiCol_TableBorderLight]     = C(32, 35, 42);
+        c[ImGuiCol_TableRowBg]           = C(0, 0, 0, 0);
+        c[ImGuiCol_TableRowBgAlt]        = C(255, 255, 255, 0.03f);
+        c[ImGuiCol_TextLink]             = C(104, 164, 255);
+        c[ImGuiCol_TextSelectedBg]       = C(79, 146, 255, 0.35f);
+        c[ImGuiCol_DragDropTarget]       = C(79, 146, 255);
+        c[ImGuiCol_NavCursor]            = C(79, 146, 255, 0.8f);
+        c[ImGuiCol_ModalWindowDimBg]     = C(0, 0, 0, 0.6f);
+        c[ImGuiCol_InputTextCursor]      = C(230, 232, 238);
+    } else {
+        c[ImGuiCol_Text]                 = C(28, 30, 36);
+        c[ImGuiCol_TextDisabled]         = C(110, 116, 130);
+        c[ImGuiCol_WindowBg]             = C(240, 242, 246);
+        c[ImGuiCol_ChildBg]              = C(255, 255, 255);
+        c[ImGuiCol_PopupBg]              = C(255, 255, 255, 0.98f);
+        c[ImGuiCol_Border]               = C(222, 226, 233);
+        c[ImGuiCol_BorderShadow]         = C(0, 0, 0, 0);
+        c[ImGuiCol_FrameBg]              = C(232, 235, 241);
+        c[ImGuiCol_FrameBgHovered]       = C(220, 224, 232);
+        c[ImGuiCol_FrameBgActive]        = C(206, 211, 221);
+        c[ImGuiCol_TitleBg]              = C(240, 242, 246);
+        c[ImGuiCol_TitleBgActive]        = C(255, 255, 255);
+        c[ImGuiCol_TitleBgCollapsed]     = C(240, 242, 246);
+        c[ImGuiCol_MenuBarBg]            = C(255, 255, 255);
+        c[ImGuiCol_ScrollbarBg]          = C(240, 242, 246, 0.0f);
+        c[ImGuiCol_ScrollbarGrab]        = C(200, 205, 214);
+        c[ImGuiCol_ScrollbarGrabHovered] = C(176, 182, 194);
+        c[ImGuiCol_ScrollbarGrabActive]  = C(156, 163, 177);
+        c[ImGuiCol_CheckMark]            = C(46, 111, 224);
+        c[ImGuiCol_SliderGrab]           = C(46, 111, 224);
+        c[ImGuiCol_SliderGrabActive]     = C(72, 132, 240);
+        c[ImGuiCol_Button]               = C(232, 235, 241);
+        c[ImGuiCol_ButtonHovered]        = C(220, 224, 232);
+        c[ImGuiCol_ButtonActive]         = C(206, 211, 221);
+        c[ImGuiCol_Header]               = C(232, 235, 241, 0.0f);
+        c[ImGuiCol_HeaderHovered]        = C(220, 224, 232, 0.6f);
+        c[ImGuiCol_HeaderActive]         = C(206, 211, 221, 0.8f);
+        c[ImGuiCol_Separator]            = C(222, 226, 233);
+        c[ImGuiCol_SeparatorHovered]     = C(46, 111, 224);
+        c[ImGuiCol_SeparatorActive]      = C(72, 132, 240);
+        c[ImGuiCol_ResizeGrip]           = C(222, 226, 233, 0.5f);
+        c[ImGuiCol_ResizeGripHovered]    = C(46, 111, 224, 0.7f);
+        c[ImGuiCol_ResizeGripActive]     = C(72, 132, 240);
+        c[ImGuiCol_Tab]                  = C(255, 255, 255);
+        c[ImGuiCol_TabHovered]           = C(220, 224, 232);
+        c[ImGuiCol_TabSelected]          = C(232, 235, 241);
+        c[ImGuiCol_TabSelectedOverline]  = C(46, 111, 224);
+        c[ImGuiCol_TabDimmed]            = C(255, 255, 255);
+        c[ImGuiCol_TabDimmedSelected]    = C(232, 235, 241);
+        c[ImGuiCol_TabDimmedSelectedOverline] = C(222, 226, 233);
+        c[ImGuiCol_PlotLines]            = C(46, 111, 224);
+        c[ImGuiCol_PlotHistogram]        = C(32, 160, 86);
+        c[ImGuiCol_TableHeaderBg]        = C(235, 238, 243);
+        c[ImGuiCol_TableBorderStrong]    = C(222, 226, 233);
+        c[ImGuiCol_TableBorderLight]     = C(232, 235, 241);
+        c[ImGuiCol_TableRowBg]           = C(0, 0, 0, 0);
+        c[ImGuiCol_TableRowBgAlt]        = C(0, 0, 0, 0.03f);
+        c[ImGuiCol_TextLink]             = C(46, 111, 224);
+        c[ImGuiCol_TextSelectedBg]       = C(46, 111, 224, 0.3f);
+        c[ImGuiCol_DragDropTarget]       = C(46, 111, 224);
+        c[ImGuiCol_NavCursor]            = C(46, 111, 224, 0.8f);
+        c[ImGuiCol_ModalWindowDimBg]     = C(0, 0, 0, 0.35f);
+        c[ImGuiCol_InputTextCursor]      = C(28, 30, 36);
+    }
+}
 
 constexpr ImGuiID kHoverKey = 0x9E3779B9u;   // mixed into an item's id for its hover animation
 
@@ -74,62 +207,40 @@ void ApplyTheme(ImGuiStyle& style, float dpiScale) {
     style.CellPadding = ImVec2(6, 4);
     style.DisabledAlpha = 0.45f;
 
-    ImVec4* c = style.Colors;
-    c[ImGuiCol_Text]                 = C(230, 232, 238);
-    c[ImGuiCol_TextDisabled]         = C(148, 154, 168);
-    c[ImGuiCol_WindowBg]             = C(16, 17, 21);
-    c[ImGuiCol_ChildBg]              = C(24, 26, 31);
-    c[ImGuiCol_PopupBg]              = C(28, 30, 36, 0.98f);
-    c[ImGuiCol_Border]               = C(40, 43, 51);
-    c[ImGuiCol_BorderShadow]         = C(0, 0, 0, 0);
-    c[ImGuiCol_FrameBg]              = C(36, 39, 47);
-    c[ImGuiCol_FrameBgHovered]       = C(48, 52, 62);
-    c[ImGuiCol_FrameBgActive]        = C(60, 65, 78);
-    c[ImGuiCol_TitleBg]              = C(16, 17, 21);
-    c[ImGuiCol_TitleBgActive]        = C(24, 26, 31);
-    c[ImGuiCol_TitleBgCollapsed]     = C(16, 17, 21);
-    c[ImGuiCol_MenuBarBg]            = C(24, 26, 31);
-    c[ImGuiCol_ScrollbarBg]          = C(16, 17, 21, 0.0f);
-    c[ImGuiCol_ScrollbarGrab]        = C(56, 60, 72);
-    c[ImGuiCol_ScrollbarGrabHovered] = C(76, 82, 98);
-    c[ImGuiCol_ScrollbarGrabActive]  = C(92, 100, 118);
-    c[ImGuiCol_CheckMark]            = C(79, 146, 255);
-    c[ImGuiCol_SliderGrab]           = C(79, 146, 255);
-    c[ImGuiCol_SliderGrabActive]     = C(104, 164, 255);
-    c[ImGuiCol_Button]               = C(36, 39, 47);
-    c[ImGuiCol_ButtonHovered]        = C(48, 52, 62);
-    c[ImGuiCol_ButtonActive]         = C(60, 65, 78);
-    c[ImGuiCol_Header]               = C(36, 39, 47, 0.0f);
-    c[ImGuiCol_HeaderHovered]        = C(48, 52, 62, 0.6f);
-    c[ImGuiCol_HeaderActive]         = C(60, 65, 78, 0.8f);
-    c[ImGuiCol_Separator]            = C(40, 43, 51);
-    c[ImGuiCol_SeparatorHovered]     = C(79, 146, 255);
-    c[ImGuiCol_SeparatorActive]      = C(104, 164, 255);
-    c[ImGuiCol_ResizeGrip]           = C(40, 43, 51, 0.5f);
-    c[ImGuiCol_ResizeGripHovered]    = C(79, 146, 255, 0.7f);
-    c[ImGuiCol_ResizeGripActive]     = C(104, 164, 255);
-    c[ImGuiCol_Tab]                  = C(24, 26, 31);
-    c[ImGuiCol_TabHovered]           = C(48, 52, 62);
-    c[ImGuiCol_TabSelected]          = C(36, 39, 47);
-    c[ImGuiCol_TabSelectedOverline]  = C(79, 146, 255);
-    c[ImGuiCol_TabDimmed]            = C(24, 26, 31);
-    c[ImGuiCol_TabDimmedSelected]    = C(36, 39, 47);
-    c[ImGuiCol_TabDimmedSelectedOverline] = C(40, 43, 51);
-    c[ImGuiCol_PlotLines]            = C(79, 146, 255);
-    c[ImGuiCol_PlotHistogram]        = C(86, 208, 128);
-    c[ImGuiCol_TableHeaderBg]        = C(28, 30, 36);
-    c[ImGuiCol_TableBorderStrong]    = C(40, 43, 51);
-    c[ImGuiCol_TableBorderLight]     = C(32, 35, 42);
-    c[ImGuiCol_TableRowBg]           = C(0, 0, 0, 0);
-    c[ImGuiCol_TableRowBgAlt]        = C(255, 255, 255, 0.03f);
-    c[ImGuiCol_TextLink]             = C(104, 164, 255);
-    c[ImGuiCol_TextSelectedBg]       = C(79, 146, 255, 0.35f);
-    c[ImGuiCol_DragDropTarget]       = C(79, 146, 255);
-    c[ImGuiCol_NavCursor]            = C(79, 146, 255, 0.8f);
-    c[ImGuiCol_ModalWindowDimBg]     = C(0, 0, 0, 0.6f);
-    c[ImGuiCol_InputTextCursor]      = C(230, 232, 238);
+    SetThemeLight(style, g_light);
     style.ScaleAllSizes(dpiScale);
     style.FontScaleDpi = dpiScale;
+}
+
+void SetThemeLight(ImGuiStyle& style, float light) {
+    light = ImSaturate(light);
+    g_light = light;
+    if (light <= 0.0f || light >= 1.0f) {
+        g_palette = light >= 1.0f ? kLight : kDark;
+        ThemeColors(style.Colors, light >= 1.0f);
+        return;
+    }
+    const Palette& a = kDark;
+    const Palette& b = kLight;
+    Palette& p = g_palette;
+    p.accent = LerpCol(a.accent, b.accent, light); p.accentHover = LerpCol(a.accentHover, b.accentHover, light);
+    p.accentActive = LerpCol(a.accentActive, b.accentActive, light); p.accentText = LerpCol(a.accentText, b.accentText, light);
+    p.good = LerpCol(a.good, b.good, light); p.warn = LerpCol(a.warn, b.warn, light); p.bad = LerpCol(a.bad, b.bad, light);
+    p.muted = LerpCol(a.muted, b.muted, light);
+    p.panel = LerpCol(a.panel, b.panel, light); p.panelBorder = LerpCol(a.panelBorder, b.panelBorder, light);
+    p.overlayBg = LerpCol(a.overlayBg, b.overlayBg, light);
+    p.text = LerpCol(a.text, b.text, light); p.textDim = LerpCol(a.textDim, b.textDim, light);
+    p.control = LerpCol(a.control, b.control, light); p.controlHover = LerpCol(a.controlHover, b.controlHover, light);
+    p.controlActive = LerpCol(a.controlActive, b.controlActive, light);
+    p.surface = LerpCol(a.surface, b.surface, light);
+    p.track = LerpCol(a.track, b.track, light); p.rangeFill = LerpCol(a.rangeFill, b.rangeFill, light); p.knob = LerpCol(a.knob, b.knob, light);
+    p.selection = LerpCol(a.selection, b.selection, light);
+    p.window = ImLerp(a.window, b.window, light);
+    p.light = light;
+    ImVec4 dark[ImGuiCol_COUNT], lite[ImGuiCol_COUNT];
+    ThemeColors(dark, false);
+    ThemeColors(lite, true);
+    for (int i = 0; i < ImGuiCol_COUNT; ++i) style.Colors[i] = ImLerp(dark[i], lite[i], light);
 }
 
 // Motion ------------------------------------------------------------------------------------
@@ -155,6 +266,147 @@ float AnimateLinear(ImGuiID id, float target, float seconds) {
 void AnimateSnap(ImGuiID id, float value) { *MotionValue(id, value) = value; }
 
 float Ease(float t) { t = ImSaturate(t); return t * t * (3.0f - 2.0f * t); }
+
+// Scrolling ---------------------------------------------------------------------------------
+
+namespace {
+constexpr ImGuiID kScrollTargetKey = 0x51A3C9E7u;
+constexpr ImGuiID kScrollLastKey = 0x6D2B8F15u;
+constexpr ImGuiID kFadeKey = 0x3C6EF372u;
+constexpr ImGuiID kOpenKey = 0xA54FF53Au;
+
+// The window's scroll on one axis glides toward a stored target; a scroll moved by other means (scrollbar drag,
+// SetScrollHere, a shorter content) resets the target to where the window is.
+void GlideScroll(ImGuiWindow* w, bool horizontal, float* newTarget) {
+    ImGuiStorage& st = w->StateStorage;
+    const ImGuiID axisKey = horizontal ? 0x1u : 0x2u;
+    const float scroll = horizontal ? w->Scroll.x : w->Scroll.y;
+    const float maxScroll = ImMax(horizontal ? w->ScrollMax.x : w->ScrollMax.y, 0.0f);
+    float* target = st.GetFloatRef(w->ID ^ kScrollTargetKey ^ axisKey, scroll);
+    float* last = st.GetFloatRef(w->ID ^ kScrollLastKey ^ axisKey, scroll);
+    if (ImFabs(scroll - *last) > 0.5f) *target = scroll;
+    if (newTarget) *target = ImClamp(*newTarget, 0.0f, maxScroll);
+    if (*target > maxScroll && maxScroll > 0.0f) *target = maxScroll;
+    const float d = *target - scroll;
+    float next = scroll;
+    if (ImFabs(d) > 0.3f) next = scroll + d * (1.0f - std::exp(-18.0f * FrameStep()));
+    else if (d != 0.0f) next = *target;
+    if (next != scroll) {
+        if (horizontal) ImGui::SetScrollX(w, next); else ImGui::SetScrollY(w, next);
+    }
+    *last = next;
+}
+}
+
+void SmoothScroll(bool horizontal, float step) {
+    ImGuiWindow* w = ImGui::GetCurrentWindow();
+    const ImGuiIO& io = ImGui::GetIO();
+    const float wheel = io.MouseWheel + io.MouseWheelH;
+    float* newTarget = nullptr;
+    float t = 0.0f;
+    if (wheel != 0.0f && !io.KeyCtrl && !io.KeyAlt && ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows | ImGuiHoveredFlags_AllowWhenBlockedByActiveItem)) {
+        ImGuiStorage& st = w->StateStorage;
+        const ImGuiID axisKey = horizontal ? 0x1u : 0x2u;
+        const float scroll = horizontal ? w->Scroll.x : w->Scroll.y;
+        float* target = st.GetFloatRef(w->ID ^ kScrollTargetKey ^ axisKey, scroll);
+        float* last = st.GetFloatRef(w->ID ^ kScrollLastKey ^ axisKey, scroll);
+        t = (ImFabs(scroll - *last) > 0.5f ? scroll : *target) - wheel * step;
+        newTarget = &t;
+    }
+    GlideScroll(w, horizontal, newTarget);
+}
+
+void SmoothScrollTo(float target, bool horizontal) {
+    GlideScroll(ImGui::GetCurrentWindow(), horizontal, &target);
+}
+
+// Popups ------------------------------------------------------------------------------------
+
+bool BeginPopupFade(const char* strId, ImGuiWindowFlags flags) {
+    const ImGuiID id = ImGui::GetID(strId);
+    const bool open = ImGui::IsPopupOpen(strId);
+    if (!open) { AnimateSnap(id ^ kFadeKey, 0.0f); return false; }
+    const float t = AnimateFrom(id ^ kFadeKey, 0.0f, 1.0f, 24.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * Ease(t));
+    if (!ImGui::BeginPopup(strId, flags)) { ImGui::PopStyleVar(); return false; }
+    return true;
+}
+
+void EndPopupFade() {
+    ImGui::EndPopup();
+    ImGui::PopStyleVar();
+}
+
+bool BeginDropdown(const char* label, const char* preview, ImGuiComboFlags flags) {
+    ImGuiContext& g = *GImGui;
+    ImGuiWindow* window = ImGui::GetCurrentWindow();
+    if (window->SkipItems) return false;
+    const ImGuiStyle& style = g.Style;
+    const Palette& p = Colors();
+    const ImGuiID id = window->GetID(label);
+    const ImGuiID popupId = ImHashStr("##ComboPopup", 0, id);
+    const float arrowW = ImGui::GetFrameHeight();
+    const ImVec2 labelSize = ImGui::CalcTextSize(label, nullptr, true);
+    const float w = ImGui::CalcItemWidth();
+    const ImVec2 pos = window->DC.CursorPos;
+    const ImRect bb(pos, ImVec2(pos.x + w, pos.y + labelSize.y + style.FramePadding.y * 2.0f));
+    const ImRect total(bb.Min, ImVec2(bb.Max.x + (labelSize.x > 0.0f ? style.ItemInnerSpacing.x + labelSize.x : 0.0f), bb.Max.y));
+    ImGui::ItemSize(total, style.FramePadding.y);
+    if (!ImGui::ItemAdd(total, id, &bb)) return false;
+    bool hovered = false, held = false;
+    const bool pressed = ImGui::ButtonBehavior(bb, id, &hovered, &held);
+    bool open = ImGui::IsPopupOpen(popupId, ImGuiPopupFlags_None);
+    if (pressed && !open) { ImGui::OpenPopupEx(popupId, ImGuiPopupFlags_None); open = true; }
+    const float hov = Animate(id ^ kHoverKey, hovered ? 1.0f : 0.0f, 16.0f);
+    const ImU32 bg = (held || open) ? p.controlActive : Mix(p.control, p.controlHover, hov);
+    ImDrawList* dl = window->DrawList;
+    ImGui::RenderNavCursor(bb, id);
+    dl->AddRectFilled(bb.Min, bb.Max, Col(bg), style.FrameRounding);
+    const float angle = Animate(id ^ kOpenKey, open ? IM_PI : 0.0f, 18.0f);
+    DrawChevron(dl, ImVec2(bb.Max.x - arrowW * 0.5f, bb.GetCenter().y), arrowW * 0.34f, angle, Col(p.textDim));
+    if (preview) {
+        ImGui::PushStyleColor(ImGuiCol_Text, p.text);
+        ImGui::RenderTextClipped(ImVec2(bb.Min.x + style.FramePadding.x, bb.Min.y + style.FramePadding.y),
+                                 ImVec2(bb.Max.x - arrowW, bb.Max.y - style.FramePadding.y), preview, nullptr, nullptr);
+        ImGui::PopStyleColor();
+    }
+    if (labelSize.x > 0.0f) ImGui::RenderText(ImVec2(bb.Max.x + style.ItemInnerSpacing.x, bb.Min.y + style.FramePadding.y), label);
+    if (!open) { AnimateSnap(id ^ kFadeKey, 0.0f); return false; }
+    const float t = AnimateFrom(id ^ kFadeKey, 0.0f, 1.0f, 24.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_Alpha, style.Alpha * Ease(t));
+    if (!ImGui::BeginComboPopup(popupId, bb, flags)) { ImGui::PopStyleVar(); return false; }
+    return true;
+}
+
+void EndDropdown() {
+    ImGui::EndCombo();
+    ImGui::PopStyleVar();
+}
+
+void TooltipShow(ImGuiID key, const char* text) {
+    if (!text || !*text) return;
+    static ImGuiID lastKey = 0;
+    static int lastFrame = -1000;
+    static float t = 0.0f;
+    const int frame = ImGui::GetFrameCount();
+    if (key != lastKey || frame - lastFrame > 2) t = 0.0f;   // another item, or the tooltip was away for a while
+    lastKey = key; lastFrame = frame;
+    t += (1.0f - t) * (1.0f - std::exp(-22.0f * FrameStep()));
+    if (t > 0.995f) t = 1.0f;
+    ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * Ease(t));
+    if (ImGui::BeginTooltip()) {
+        ImGui::PushTextWrapPos(ImGui::GetFontSize() * 28.0f);
+        ImGui::TextUnformatted(text);
+        ImGui::PopTextWrapPos();
+        ImGui::EndTooltip();
+    }
+    ImGui::PopStyleVar();
+}
+
+void Tooltip(const char* text) {
+    if (!text || !ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip)) return;
+    TooltipShow(ImGui::GetItemID(), text);
+}
 
 // Icons -------------------------------------------------------------------------------------
 
@@ -228,6 +480,29 @@ void DrawIcon(ImDrawList* dl, Icon icon, const ImVec2& c, float size, ImU32 col)
         dl->AddLine(at(-0.6f, -0.6f), at(0.6f, 0.6f), col, thick);
         dl->AddLine(at(-0.6f, 0.6f), at(0.6f, -0.6f), col, thick);
         break;
+    case Icon::Undo:
+    case Icon::Redo: {
+        // An arc from the lower right over the top to the left, ending in a head that points down; mirrored for redo.
+        const bool redo = icon == Icon::Redo;
+        const float r = size * 0.36f;
+        constexpr int n = 18;
+        const float a0 = IM_PI * 0.3f, a1 = -IM_PI * 0.92f;
+        ImVec2 pts[n + 1];
+        for (int i = 0; i <= n; ++i) {
+            const float a = a0 + (a1 - a0) * (float)i / (float)n;
+            const float x = std::cos(a) * r;
+            pts[i] = ImVec2(c.x + (redo ? -x : x) + (redo ? -1.0f : 1.0f) * size * 0.04f, c.y + std::sin(a) * r + size * 0.08f);
+        }
+        dl->AddPolyline(pts, n + 1, col, thick);
+        ImVec2 dir(std::sin(a1), -std::cos(a1)), nrm(std::cos(a1), std::sin(a1));
+        if (redo) { dir.x = -dir.x; nrm.x = -nrm.x; }
+        const float h = size * 0.26f;
+        const ImVec2 tip(pts[n].x + dir.x * h * 0.45f, pts[n].y + dir.y * h * 0.45f);
+        dl->AddTriangleFilled(ImVec2(tip.x + dir.x * h * 0.5f, tip.y + dir.y * h * 0.5f),
+                              ImVec2(tip.x - dir.x * h * 0.5f + nrm.x * h * 0.7f, tip.y - dir.y * h * 0.5f + nrm.y * h * 0.7f),
+                              ImVec2(tip.x - dir.x * h * 0.5f - nrm.x * h * 0.7f, tip.y - dir.y * h * 0.5f - nrm.y * h * 0.7f), col);
+        break;
+    }
     case Icon::Lock: {
         dl->AddRectFilled(at(-0.7f, -0.05f), at(0.7f, 0.85f), col, size * 0.1f);
         ImVec2 pts[14];
@@ -311,7 +586,7 @@ bool GlyphFrame(const char* id, const ImVec2& sizeArg, const char* tooltip, Butt
     center = bb.GetCenter();
     iconSize = ImMin(size.x, size.y) * 0.56f;
     fg = Col(fg);
-    if (tooltip && ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip)) ImGui::SetTooltip("%s", tooltip);
+    Tooltip(tooltip);
     return pressed;
 }
 }
@@ -495,12 +770,7 @@ void Help(const char* text) {
     const float fs = ImGui::GetFontSize() * 0.78f;
     const ImVec2 ts = font->CalcTextSizeA(fs, FLT_MAX, 0.0f, "?");
     dl->AddText(font, fs, ImVec2(c.x - ts.x * 0.5f, c.y - ts.y * 0.5f), ink, "?");
-    if (ImGui::BeginItemTooltip()) {
-        ImGui::PushTextWrapPos(ImGui::GetFontSize() * 24.0f);
-        ImGui::TextUnformatted(text);
-        ImGui::PopTextWrapPos();
-        ImGui::EndTooltip();
-    }
+    Tooltip(text);
 }
 
 void Hint(const char* text) {
@@ -548,7 +818,7 @@ bool SliderReset(const char* label, float* v, float minV, float maxV, float def,
     const ImGuiStyle& style = ImGui::GetStyle();
     ImGui::SetNextItemWidth(ImGui::CalcItemWidth() - resetW - style.ItemInnerSpacing.x);
     bool changed = ImGui::SliderFloat("##s", v, minV, maxV, fmt, ImGuiSliderFlags_AlwaysClamp);
-    if (tooltip && ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip)) ImGui::SetTooltip("%s", tooltip);
+    Tooltip(tooltip);
     ImGui::SameLine(0.0f, style.ItemInnerSpacing.x);
     if (ResetButton(*v != def, resetW)) { *v = def; changed = true; }
     ImGui::SameLine(0.0f, style.ItemInnerSpacing.x);
@@ -563,7 +833,7 @@ bool SliderIntReset(const char* label, int* v, int minV, int maxV, int def, cons
     const ImGuiStyle& style = ImGui::GetStyle();
     ImGui::SetNextItemWidth(ImGui::CalcItemWidth() - resetW - style.ItemInnerSpacing.x);
     bool changed = ImGui::SliderInt("##s", v, minV, maxV, fmt, ImGuiSliderFlags_AlwaysClamp);
-    if (tooltip && ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip)) ImGui::SetTooltip("%s", tooltip);
+    Tooltip(tooltip);
     ImGui::SameLine(0.0f, style.ItemInnerSpacing.x);
     if (ResetButton(*v != def, resetW)) { *v = def; changed = true; }
     ImGui::SameLine(0.0f, style.ItemInnerSpacing.x);

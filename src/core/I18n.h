@@ -373,11 +373,22 @@ enum class Lang { English = 0, Chinese = 1, Japanese = 2, Korean = 3, Count = 4 
     X(RemoveFromLibrary,  "Remove from the library", "从素材库移除", "ライブラリから外す", "라이브러리에서 제거") \
     X(Delete,             "Delete", "删除", "削除", "삭제") \
     X(TipDelete,          "Removes the selected items from the library. The files stay on disk.", "从素材库移除所选素材，不会删除文件。", "選択した項目をライブラリから外します。ファイルは削除されません。", "선택한 항목을 라이브러리에서 제거합니다. 파일은 삭제되지 않습니다.") \
-    X(TipLibrarySelect,   "Drag across the thumbnails to select them; Ctrl+click adds one, Shift+click extends the selection. A click previews the file, the right button opens its menu.", "在缩略图上拖动即可框选；Ctrl+点击加选，Shift+点击连续选择。单击预览该文件，右键打开菜单。", "サムネイル上をドラッグして選択します。Ctrl+クリックで追加、Shift+クリックで範囲選択。クリックでプレビュー、右クリックでメニューを開きます。", "썸네일 위를 드래그하여 선택합니다. Ctrl+클릭은 추가, Shift+클릭은 범위 선택입니다. 클릭하면 미리보기, 오른쪽 버튼은 메뉴를 엽니다.") \
+    X(TipLibrarySelect,   "Drag across the thumbnails to select them; Ctrl+click adds one, Shift+click extends the selection, Ctrl+A selects every file. A click previews the file, the right button opens its menu.", "在缩略图上拖动即可框选；Ctrl+点击加选，Shift+点击连续选择，Ctrl+A 全选。单击预览该文件，右键打开菜单。", "サムネイル上をドラッグして選択します。Ctrl+クリックで追加、Shift+クリックで範囲選択、Ctrl+A ですべて選択。クリックでプレビュー、右クリックでメニューを開きます。", "썸네일 위를 드래그하여 선택합니다. Ctrl+클릭은 추가, Shift+클릭은 범위 선택, Ctrl+A는 모두 선택입니다. 클릭하면 미리보기, 오른쪽 버튼은 메뉴를 엽니다.") \
     X(UseOwnParams,       "Use own parameters for this file", "此素材使用单独参数", "このファイルに個別のパラメーターを使う", "이 파일에 개별 매개변수 사용") \
     X(OwnParamsHint,      "These values replace the DLSS 5 controls of the sidebar for this file, in the preview and when it is processed.", "此处的数值在预览和处理该素材时代替侧边栏的 DLSS 5 控件。", "ここの値は、このファイルのプレビューと処理でサイドバーの DLSS 5 コントロールの代わりに使われます。", "이 값은 이 파일의 미리보기와 처리에서 사이드바의 DLSS 5 컨트롤을 대신합니다.") \
     X(OwnParamsTitle,     "Parameters: %s", "单独参数：%s", "パラメーター: %s", "매개변수: %s") \
     X(OwnBadge,           "Own", "单独", "個別", "개별") \
+    X(ItemParamsMany,     "Own parameters for %d files...", "为 %d 个素材设置单独参数…", "%d 件のファイルに個別パラメーター…", "%d개 파일의 개별 매개변수…") \
+    X(OwnParamsMany,      "Parameters: %d files", "单独参数：%d 个素材", "パラメーター: %d 件", "매개변수: %d개 파일") \
+    X(UseOwnParamsMany,   "Use own parameters for these files", "这些素材使用单独参数", "これらのファイルに個別のパラメーターを使う", "이 파일들에 개별 매개변수 사용") \
+    X(OwnParamsManyHint,  "The values below are written to every selected file at once; each keeps its own copy afterwards.", "下面的数值会同时写入所有选中的素材，之后每个素材各自保留一份。", "下の値は選択したすべてのファイルに同時に書き込まれ、その後は各ファイルが自分の値を保持します。", "아래 값은 선택한 모든 파일에 동시에 적용되며, 이후 각 파일이 자신의 값을 유지합니다.") \
+    X(Theme,              "Theme", "主题", "テーマ", "테마") \
+    X(ThemeSystem,        "System", "跟随系统", "システム", "시스템") \
+    X(ThemeDark,          "Dark", "深色", "ダーク", "다크") \
+    X(ThemeLight,         "Light", "浅色", "ライト", "라이트") \
+    X(TipTheme,           "Dark or light interface. \"System\" follows the app colour setting of Windows.", "深色或浅色界面。“跟随系统”按 Windows 的应用颜色设置切换。", "ダークまたはライトの外観。「システム」は Windows のアプリの色設定に従います。", "어두운 또는 밝은 인터페이스. \"시스템\"은 Windows의 앱 색상 설정을 따릅니다.") \
+    X(TipUndo,            "Undo the last change to the settings (Ctrl+Z)", "撤销上一次设置更改（Ctrl+Z）", "設定の直前の変更を元に戻す（Ctrl+Z）", "마지막 설정 변경을 취소합니다 (Ctrl+Z)") \
+    X(TipRedo,            "Redo the change that was undone (Ctrl+Y)", "重做已撤销的更改（Ctrl+Y）", "元に戻した変更をやり直す（Ctrl+Y）", "취소한 변경을 다시 적용합니다 (Ctrl+Y)") \
     X(EndOfVideo,         "End", "结束", "終了", "끝")
 
 enum class Str {

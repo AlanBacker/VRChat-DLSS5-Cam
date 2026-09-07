@@ -428,9 +428,8 @@ bool App::CreateMainWindow(HINSTANCE hInstance, int nCmdShow) {
         Log::Error("CreateWindowExW failed: %s", LastErrorText().c_str());
         return false;
     }
-    BOOL dark = TRUE;
-    if (FAILED(DwmSetWindowAttribute(m_hwnd, 20 /*DWMWA_USE_IMMERSIVE_DARK_MODE*/, &dark, sizeof(dark))))
-        DwmSetWindowAttribute(m_hwnd, 19, &dark, sizeof(dark));
+    ReadSystemTheme();
+    UpdateTitleBar();
     m_dpiScale = ImGui_ImplWin32_GetDpiScaleForHwnd(m_hwnd);
     if (m_headless) {
         // The window only exists for messages; its client size is the size of the offscreen frames.
@@ -1588,6 +1587,7 @@ void App::Frame() {
     info.pngSecPerMegapixel = m_pngSecPerMegapixel;
     info.library = &m_library;
     info.atlas = &m_atlas;
+    info.systemLight = m_systemLight;
     info.storyCells = &m_storyCells;
     info.storyTimes = &m_storyTimes;
     info.storyReady = &m_storyReady;
@@ -1609,6 +1609,7 @@ void App::Frame() {
     ui::UiEvents ev;
     m_ui.Draw(m_settings, info, ev, m_fonts);
     HandleEvents(ev);
+    UpdateTitleBar();
     ImGui::Render();
 
     m_device.TimerBegin(cmd, GpuTimer::Ui);
@@ -2055,6 +2056,24 @@ void App::LocateLibraryItem(unsigned id) {
     const std::wstring args = L"/select,\"" + item->path + L"\"";
     const HINSTANCE r = ShellExecuteW(m_hwnd, L"open", L"explorer.exe", args.c_str(), nullptr, SW_SHOWNORMAL);
     if ((INT_PTR)r <= 32) Log::Warn("Explorer could not be opened for %s (%d)", WideToUtf8(item->path).c_str(), (int)(INT_PTR)r);
+}
+
+void App::ReadSystemTheme() {
+    DWORD value = 0, size = sizeof(value);
+    const LSTATUS st = RegGetValueW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+                                    L"AppsUseLightTheme", RRF_RT_REG_DWORD, nullptr, &value, &size);
+    m_systemLight = (st == ERROR_SUCCESS && value != 0);
+}
+
+void App::UpdateTitleBar() {
+    if (!m_hwnd) return;
+    const bool light = m_settings.theme == 2 || (m_settings.theme == 0 && m_systemLight);
+    const int dark = light ? 0 : 1;
+    if (dark == m_titleDark) return;
+    m_titleDark = dark;
+    BOOL flag = dark ? TRUE : FALSE;
+    if (FAILED(DwmSetWindowAttribute(m_hwnd, 20 /*DWMWA_USE_IMMERSIVE_DARK_MODE*/, &flag, sizeof(flag))))
+        DwmSetWindowAttribute(m_hwnd, 19, &flag, sizeof(flag));
 }
 
 const LibraryItem* App::OverrideItem() const {
@@ -2506,6 +2525,9 @@ LRESULT App::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     }
     case WM_SYSCOMMAND:
         if ((wParam & 0xFFF0) == SC_KEYMENU) return 0;   // no menu on Alt
+        break;
+    case WM_SETTINGCHANGE:
+        if (lParam && wcscmp((const wchar_t*)lParam, L"ImmersiveColorSet") == 0) ReadSystemTheme();
         break;
     case WM_CLOSE:
         SaveWindowPlacement();

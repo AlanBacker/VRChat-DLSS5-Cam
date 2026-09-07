@@ -312,6 +312,7 @@ private:
     float  m_nrOutDelta = -1.0f, m_nrOutLuma = 0.0f, m_nrInLuma = 0.0f;   // neural output check (see RunNeuralCheck)
     int    m_nrOutState = 0;
     float  m_nrMaxStrength = 1.0f;    // highest strength handed to the runtime on the last evaluate
+    float  m_nrIntensity = 1.0f;      // the intensity asked for on the last evaluate (0 = no effect expected)
     bool   m_nrSkipped = false;       // fresh frames went by without the neural pass: reset its history next time
     bool   m_featureCreated = false;  // an NGX feature was created on the frame being recorded
     UINT64 m_featureCreateFence = 0;  // fence of the last frame that created one; the depth network waits for it

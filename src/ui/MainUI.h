@@ -80,6 +80,7 @@ struct UiFrameInfo {
     size_t                capturePending = 0;
     std::string           lastCapture;
     bool                  lastCaptureOk = true;
+    bool                  systemLight = false;      // Windows uses light app colours (theme "System" follows it)
 };
 
 struct UiEvents {
@@ -161,6 +162,9 @@ private:
     void EffectControls(Settings& s, UiEvents& ev, bool advanced, bool enabled);   // the DLSS 5 effect controls
     void DrawItemParams(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts);   // a library item's own values
     void DrawLibraryMenu(Settings& s, const UiFrameInfo& info, UiEvents& ev);      // the context menu of a card
+    void TrackUndo(const Settings& s);                                             // records a settings change as an undo step
+    void ApplyUndo(Settings& s, UiEvents& ev, bool redo);
+    void ResetView(bool animate);                                                  // back to the fitted, centred picture
     std::string EstimateText(const Settings& s, const UiFrameInfo& info) const;    // "≈ 2 min 30 s" for the current file
     double BatchRemaining(const UiFrameInfo& info) const;                          // seconds left in the batch (-1: unknown)
 
@@ -186,15 +190,24 @@ private:
     bool   m_runtimeEditing = false;
     bool   m_depthModelEditing = false;
     bool   m_folderEditing = false;
-    float  m_zoom = 1.0f;          // manual magnification on top of the fit (1 = as fitted, or 1:1)
+    float  m_zoom = 1.0f;          // manual magnification on top of the fit (1 = as fitted, or 1:1), moving toward m_zoomTarget
+    float  m_zoomTarget = 1.0f;
+    ImVec2 m_zoomAnchor = ImVec2(0, 0);   // the screen point kept in place while the zoom moves
+    bool   m_panHome = false;      // the pan glides back to the centre
     float  m_baseScale = 1.0f;     // preview pixels per picture pixel at zoom 1, from the last preview draw
     ImVec2 m_pan = ImVec2(0, 0);
+    float  m_themeLight = -1.0f;   // the theme blend in use (-1: not set yet)
+    // Undo: a snapshot of the adjustable values is taken whenever they change while no control is held; Ctrl+Z
+    // and the top-bar buttons move through them.
+    std::vector<std::string> m_undo, m_redo;
+    std::string m_undoBase;
+    bool   m_undoInit = false;
     bool   m_wipeDragging = false;
     // Seek bar: while the knob is dragged the bar follows the cursor and seeks are sent a few times per second;
     // after a seek the bar shows the target until the processing thread reports a position near it.
     bool   m_seekDragging = false;
     float  m_libraryFold = 1.0f;     // 0 = the library strip is folded away, 1 = fully shown (animated)
-    unsigned m_paramsItem = 0;       // the library item whose own parameters are open in a window (0: none)
+    std::vector<unsigned> m_paramsItems;   // the library items whose own parameters are open in a window (first = shown)
     unsigned m_ctxItem = 0;          // the item under the context menu
     unsigned m_lastClicked = 0;      // anchor of a shift-click range
     bool   m_libDrag = false;        // a selection drag runs in the library strip

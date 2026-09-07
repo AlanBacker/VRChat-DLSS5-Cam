@@ -17,7 +17,7 @@ A bare `file` argument (what Windows passes for *Open with*) opens that picture 
 | `--play` | Video: start playback in the preview. |
 | `--in <seconds>` / `--out <seconds>` | Video: set the range that processing (and the audio) covers. |
 | `--process [folder]` | Process the library (or the opened file) with the current settings and exit. The files are written into `folder`, or into the capture folder when none is given. |
-| `--set <key>=<value>` | Override one setting for this run, using the key names of `settings.ini` (for example `--set nrIntensity=1.5`, `--set videoMatchSource=0 --set videoOutput=2`, `--set keepAudio=0`). The value is not saved. `videoMatchSource` (1 by default) makes the output follow the codec, frame rate and bitrate of the source; set it to 0 for `videoOutput` (0 = MP4 H.264, 1 = MP4 HEVC, 2 = PNG sequence) and `videoBitrate` to apply. |
+| `--set <key>=<value>` | Override one setting for this run, using the key names of `settings.ini` (for example `--set nrIntensity=1.5`, `--set videoMatchSource=0 --set videoOutput=2`, `--set keepAudio=0`, `--set theme=2`). The value is not saved. `videoMatchSource` (1 by default) makes the output follow the codec, frame rate and bitrate of the source; set it to 0 for `videoOutput` (0 = MP4 H.264, 1 = MP4 HEVC, 2 = PNG sequence) and `videoBitrate` to apply. `theme` selects the look: 0 = follow Windows, 1 = dark, 2 = light. |
 | `--lang <en\|zh\|ja\|ko\|auto>` | Interface language for this run. |
 | `--window <W>x<H>` | Start with this client size instead of the saved one (320×240 up to 16384×16384). |
 | `--screenshot <seconds> <file.png>` | Save a picture of the whole window `seconds` after the start (repeatable). |
@@ -43,10 +43,10 @@ Process ten seconds of a video, from 1:00 to 1:10:
 VRChatDLSS5Cam.exe --headless --open "D:\clip.mp4" --in 1:00 --out 1:10 --process
 ```
 
-Take a picture of the interface with a video open at 30 s, in Japanese, then quit:
+Take a picture of the interface with a video open at 30 s, in Japanese and in the light theme, then quit:
 
 ```
-VRChatDLSS5Cam.exe --window 1600x900 --lang ja --open "D:\clip.mp4" --seek 30 --screenshot 6 "D:\ui.png" --exit-after 8
+VRChatDLSS5Cam.exe --window 1600x900 --lang ja --set theme=2 --open "D:\clip.mp4" --seek 30 --screenshot 6 "D:\ui.png" --exit-after 8
 ```
 
 The log (`log.txt`) records every command-line action, so a failed unattended run can be read back afterwards.

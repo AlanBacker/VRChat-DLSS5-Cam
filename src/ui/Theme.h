@@ -14,10 +14,14 @@ struct Palette {
     ImU32 track, rangeFill, knob;        // seek bar
     ImU32 selection;                     // selected library item
     ImVec4 window;                       // the clear colour behind everything
+    float  light;                        // 0 = the dark theme, 1 = the light one (in between while switching)
 };
 const Palette& Colors();
 
 void ApplyTheme(ImGuiStyle& style, float dpiScale);
+// Moves between the dark (0) and the light (1) theme: blends the palette and rewrites the style colours. Cheap enough
+// to call every frame while a switch animates.
+void SetThemeLight(ImGuiStyle& style, float light);
 
 ImU32 WithAlpha(ImU32 color, float alpha);
 ImU32 Mix(ImU32 a, ImU32 b, float t);   // blend of two colours; a fully transparent side only lends its alpha
@@ -30,9 +34,22 @@ float AnimateLinear(ImGuiID id, float target, float seconds);                  /
 void AnimateSnap(ImGuiID id, float value);                                     // jump without motion
 float Ease(float t);                                                           // smoothstep of 0..1
 
+// Smooth scrolling for a window opened with ImGuiWindowFlags_NoScrollWithMouse: call right after Begin/BeginChild.
+// The wheel moves a target by "step" per notch and the window glides there; scrollbar drags are followed.
+void SmoothScroll(bool horizontal, float step);
+void SmoothScrollTo(float target, bool horizontal = false);                    // glide to a position (SetScroll with motion)
+
+// Popups and tooltips that fade in instead of appearing at once ---------------------------------------------------
+bool BeginPopupFade(const char* strId, ImGuiWindowFlags flags = 0);            // pair with EndPopupFade() when true
+void EndPopupFade();
+bool BeginDropdown(const char* label, const char* preview, ImGuiComboFlags flags = 0);   // flat combo box; pair with EndDropdown()
+void EndDropdown();
+void Tooltip(const char* text);                                                // tooltip of the last item, fading in
+void TooltipShow(ImGuiID key, const char* text);                               // shows it now; "key" tells one tooltip from another
+
 // Icons drawn from lines and triangles, so they scale with the interface -----------------------------------------
 enum class Icon { Play, Pause, StepBack, StepForward, ChevronDown, ChevronUp, ChevronLeft, ChevronRight,
-                  Reset, Refresh, OpenExternal, Close, Lock };
+                  Reset, Refresh, OpenExternal, Close, Lock, Undo, Redo };
 void DrawIcon(ImDrawList* dl, Icon icon, const ImVec2& center, float size, ImU32 color);          // size: side of the icon's box
 void DrawChevron(ImDrawList* dl, const ImVec2& center, float size, float angle, ImU32 color);    // 0 points down, turns clockwise
 

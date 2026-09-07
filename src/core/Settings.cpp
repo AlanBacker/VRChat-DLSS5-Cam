@@ -150,10 +150,76 @@ bool Settings::ApplyText(const std::string& data) {
     r.Get("sidebarVisible", sidebarVisible);
     r.Get("libraryVisible", libraryVisible);
     r.Get("advancedControls", showAdvanced);
+    r.Get("theme", theme);
     r.Get("showLog", showLog);
     r.Get("debugLayer", debugLayer);
     Clamp();
     return r.used == keys;
+}
+
+namespace {
+// The values an undo step covers: everything the sidebar and the item windows adjust.
+void PutParameters(Writer& w, const Settings& s) {
+    w.Put("videoMatchSource", s.videoMatchSource);
+    w.Put("videoOutput", s.videoOutput);
+    w.Put("videoBitrateMbps", s.videoBitrateMbps);
+    w.Put("videoKeepAudio", s.videoKeepAudio);
+    w.Put("videoHardwareDecode", s.videoHardwareDecode);
+    w.Put("customResolution", s.customResolution);
+    w.Put("customWidth", s.customWidth);
+    w.Put("customHeight", s.customHeight);
+    w.Put("keepAspect", s.keepAspect);
+    w.Put("nrEnabled", s.nrEnabled);
+    w.Put("nrCaptureOnly", s.nrCaptureOnly);
+    w.Put("nrRoute", s.nrRoute);
+    w.Put("nrPreset", s.nrPreset);
+    w.Put("nrStyle", s.nrStyle);
+    w.Put("nrIntensity", s.nrIntensity);
+    w.Put("nrGlobalTone", s.nrGlobalTone);
+    w.Put("nrLocalTone", s.nrLocalTone);
+    w.Put("nrLocalStructure", s.nrLocalStructure);
+    w.Put("nrSkinStructure", s.nrSkinStructure);
+    w.Put("nrAutoMask", s.nrAutoMask);
+    w.Put("hdrPaperWhite", s.hdrPaperWhite);
+    w.Put("hdrHighlightCompression", s.hdrHighlightCompression);
+    w.Put("nrUiCorrection", s.nrUiCorrection);
+    w.Put("nrUpscale", s.nrUpscale);
+    w.Put("nrInputExposure", s.nrInputExposure);
+    w.Put("nrToneTransfer", s.nrToneTransfer);
+    w.Put("nrColorStrength", s.nrColorStrength);
+    w.Put("nrShadowGain", s.nrShadowGain);
+    w.Put("nrHighlightGain", s.nrHighlightGain);
+    w.Put("nrInputScale", s.nrInputScale);
+    w.Put("motionMode", s.motionMode);
+    w.Put("depthMode", s.depthMode);
+    w.Put("searchRadius", s.searchRadius);
+    w.Put("motionConfidence", s.motionConfidence);
+    w.Put("nvofGrid", s.nvofGrid);
+    w.Put("nvofPerf", s.nvofPerf);
+    w.Put("nvofBidirectional", s.nvofBidirectional);
+    w.Put("depthInterval", s.depthInterval);
+    w.Put("depthLongSide", s.depthLongSide);
+    w.Put("autoReset", s.autoReset);
+    w.Put("cutThreshold", s.cutThreshold);
+    w.Put("dlaaEnabled", s.dlaaEnabled);
+    w.Put("dlaaPreset", s.dlaaPreset);
+    w.Put("compareMode", s.compareMode);
+    w.Put("wipePosition", s.wipePosition);
+    w.Put("checkerboard", s.checkerboard);
+    w.Put("fitMode", s.fitMode);
+    w.Put("vsync", s.vsync);
+    w.Put("processRateLimit", s.processRateLimit);
+    w.Put("showOverlay", s.showOverlay);
+    w.Put("keepAlpha", s.keepAlpha);
+    w.Put("saveOriginal", s.saveOriginal);
+    w.Put("timelapseSeconds", s.timelapseSeconds);
+}
+} // namespace
+
+std::string Settings::ParameterText() const {
+    Writer w;
+    PutParameters(w, *this);
+    return w.out;
 }
 
 bool Settings::Save(const std::wstring& path) const {
@@ -232,6 +298,7 @@ bool Settings::Save(const std::wstring& path) const {
     w.Put("sidebarVisible", sidebarVisible);
     w.Put("libraryVisible", libraryVisible);
     w.Put("advancedControls", showAdvanced);
+    w.Put("theme", theme);
     w.Put("showLog", showLog);
     w.Put("debugLayer", debugLayer);
 
@@ -279,6 +346,7 @@ void Settings::Clamp() {
     compareMode = std::clamp(compareMode, 0, 4);
     wipePosition = std::clamp(wipePosition, 0.0f, 1.0f);
     fitMode = std::clamp(fitMode, 0, 1);
+    theme = std::clamp(theme, 0, 2);
     timelapseSeconds = std::clamp(timelapseSeconds, 0, 3600);
     windowWidth = std::clamp(windowWidth, 800, 10000);
     windowHeight = std::clamp(windowHeight, 500, 10000);
