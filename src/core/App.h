@@ -3,12 +3,14 @@
 #include <windows.h>
 #include "core/Settings.h"
 #include "core/Capture.h"
+#include "core/MediaLibrary.h"
 #include "core/SpoutReceiver.h"
 #include "core/ImageSource.h"
 #include "core/VideoSource.h"
 #include "core/VideoWriter.h"
 #include "gfx/Device.h"
 #include "gfx/Pipeline.h"
+#include "gfx/ThumbnailAtlas.h"
 #include "ui/Fonts.h"
 #include "ui/MainUI.h"
 #include <atomic>
@@ -17,13 +19,36 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 namespace vdc {
 
+// Options on the command line, for automated runs (see docs/COMMAND_LINE.md).
+struct CommandLine {
+    bool         headless = false;        // no swap chain: draw offscreen, never show a message box, exit by itself
+    UINT         width = 0, height = 0;   // --window WxH
+    std::wstring open;                    // --open <picture or video>
+    std::vector<std::wstring> add;        // --add <file or folder> (library)
+    double       seek = -1.0;             // --seek <seconds>
+    bool         play = false;            // --play
+    double       in = -1.0, out = -1.0;   // --in / --out <seconds>
+    int          language = -1;           // --lang en|zh|ja|ko
+    std::vector<std::pair<double, std::wstring>> screenshots;   // --screenshot <seconds> <png>
+    bool         process = false;         // --process [folder]: run the opened file / the library, then exit when done
+    std::wstring processDir;
+    double       exitAfter = -1.0;        // --exit-after <seconds>
+    std::vector<std::pair<std::string, std::string>> sets;      // --set key=value (settings)
+    std::wstring dataDir;                 // --data-dir <folder>
+    std::string  error;                   // the first unknown option
+
+    static CommandLine Parse();
+};
+
 // Two threads: the interface thread owns the window, ImGui and the present queue; the processing thread owns the
-// Spout / image source, the pipeline and the processing queue. They exchange small snapshots under one mutex, the
-// finished pictures travel through the pipeline's display buffers, so a slow neural pass never stalls the interface.
+// Spout / image / video sources, the pipeline and the processing queue. They exchange small snapshots under one
+// mutex, the finished pictures travel through the pipeline's display buffers, so a slow neural pass never stalls
+// the interface.
 class App {
 public:
     int Run(HINSTANCE hInstance, int nCmdShow);
@@ -60,19 +85,41 @@ private:
         UINT64       videoFrame = 0;             // frames delivered to the output
         double       videoElapsed = 0.0;
         std::string  videoOutName;
+        double       videoPosition = 0.0;        // preview position (seconds)
+        bool         videoPlaying = false;       // the preview plays at the file's frame rate
+        bool         videoSeeking = false;       // a seek is being decoded
+        double       videoIn = 0.0, videoOut = 0.0;   // processing range (out <= 0: to the end)
+        float        videoPreviewLuma = 0.0f;
         bool         batchRunning = false;
         int          batchIndex = 0, batchCount = 0, batchDone = 0, batchFailed = 0;
+        unsigned     batchItemId = 0;
         std::string  batchItemName;
     };
     struct Notice { std::string text; bool error = false; };
+    struct BatchItem {
+        unsigned     id = 0;
+        std::wstring path;
+        bool         isVideo = false;
+        double       inSec = 0.0, outSec = 0.0;
+    };
+    struct BatchEvent {
+        unsigned    id = 0;
+        int         state = 0;                   // LibraryItem::State
+        std::string outName;
+        std::string error;
+    };
     struct Command {
-        enum Type { LoadRuntime, LoadImage, CaptureImage, LoadVideo, ProcessVideo, CancelVideo, BatchStart, BatchCancel };
+        enum Type { LoadRuntime, LoadImage, CaptureImage, LoadVideo, ProcessVideo, CancelVideo, BatchStart, BatchCancel,
+                    VideoSeek, VideoPlay, VideoPause, VideoStep, VideoSetRange };
         Type         type = LoadRuntime;
         std::wstring path;                       // runtime DLL / image or video file / capture folder
         bool         announce = false;           // LoadRuntime: toast on success and on a missing file
         bool         keepAlpha = true;           // CaptureImage, BatchStart
         bool         saveOriginal = false;       // CaptureImage, BatchStart
-        std::vector<std::wstring> paths;         // BatchStart
+        double       seconds = 0.0;              // VideoSeek, VideoSetRange (in)
+        double       seconds2 = 0.0;             // VideoSetRange (out), ProcessVideo (unused)
+        int          step = 0;                   // VideoStep: frames forward (+) or back (-)
+        std::vector<BatchItem> items;            // BatchStart
     };
     // A video file being run through the pipeline (processing thread).
     struct VideoRun {
@@ -83,8 +130,10 @@ private:
         int          heldRetries = 0;
         UINT64       handed = 0;                 // frames handed to the pipeline
         UINT64       delivered = 0;              // frames that reached the output
-        UINT64       total = 0;                  // estimate from the file
+        UINT64       total = 0;                  // estimate from the file (or the range)
         double       startTime = 0.0;
+        double       fromSec = 0.0, toSec = 0.0; // range
+        double       resumeSec = 0.0;            // preview position to return to afterwards
         std::wstring folder;                     // capture folder
         std::wstring stem;
         std::wstring outPath;                    // MP4 file or PNG folder (once known)
@@ -95,9 +144,21 @@ private:
         std::map<UINT64, std::pair<LONGLONG, LONGLONG>> times;   // frame index -> (pts, duration)
         std::string  error;
     };
+    // The still/playing preview of the opened video (processing thread).
+    struct VideoPreview {
+        bool   playing = false;                  // wanted: play at the file's frame rate
+        bool   running = false;                  // the frame sequence runs for playback
+        double inSec = 0.0, outSec = 0.0;        // processing range (outSec <= 0: to the end)
+        bool   seekPending = false;
+        double seekTo = 0.0;
+        int    stepFrames = 0;
+        bool   rangeChanged = false;
+        double nextFrameWall = 0.0;              // when the next played frame is due
+        bool   ended = false;                    // playback reached the end of the range
+    };
     // A queue of images and videos processed one after the other (processing thread).
     struct BatchRun {
-        std::vector<std::wstring> files;
+        std::vector<BatchItem> items;
         size_t       index = 0;
         bool         active = false;
         bool         itemStarted = false;
@@ -117,6 +178,7 @@ private:
         std::vector<std::string> senders;        // processing -> interface
         unsigned                 sendersGeneration = 0;
         std::deque<Notice>       notices;        // processing -> interface (toasts)
+        std::deque<BatchEvent>   batchEvents;    // processing -> interface (library item states)
     };
 
     static LRESULT CALLBACK WndProcThunk(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
@@ -126,6 +188,9 @@ private:
     bool CreateMainWindow(HINSTANCE hInstance, int nCmdShow);
     bool InitImGui();
     void Shutdown();
+    void ApplyCommandLineSettings();
+    void RunCommandLineActions();
+    void FatalMessage(const std::wstring& text);
 
     // Interface thread.
     void Frame();
@@ -137,8 +202,7 @@ private:
     void OpenImageFile(const std::wstring& path);
     void OpenVideoFile(const std::wstring& path);
     void OnFileDropped(const std::wstring& path);
-    void AddBatchFiles(const std::vector<std::wstring>& paths);
-    void StartBatch();
+    void OnFilesDropped(const std::vector<std::wstring>& paths);
     void PostCommand(Command&& c);
     void PushSettings();
     void MarkSettingsDirty();
@@ -153,9 +217,21 @@ private:
     void BrowseFolder();
     void BrowseImage();
     void BrowseVideo();
-    void BrowseBatchFiles();
-    void BrowseBatchFolder();
+    void BrowseLibraryFiles();
+    void BrowseLibraryFolder();
     void OpenPath(const std::wstring& path);
+
+    // Media library (interface thread).
+    void AddLibraryFiles(const std::vector<std::wstring>& paths, bool announce);
+    void RemoveLibraryItem(unsigned id);
+    void ClearLibrary();
+    void PreviewLibraryItem(unsigned id);
+    void StartLibraryProcessing(bool selectedOnly);
+    void PollScanner();
+    void UpdateStoryboard();
+    void RequestHoverThumb(double seconds);
+    LibraryItem* FindItem(unsigned id);
+    void RequestScreenshot(const std::wstring& path);
 
     // Processing thread.
     void StartWorker();
@@ -165,10 +241,17 @@ private:
     void WorkerLoadRuntime(GpuContext& gpu, const std::wstring& path, bool announce);
     void WorkerLoadImage(GpuContext& gpu, const std::wstring& path, bool announce);
     void WorkerLoadVideo(GpuContext& gpu, const std::wstring& path, bool hardwareDecode, bool announce);
-    bool WorkerStartVideo(const Settings& settings, VideoRun& run, const std::wstring& folder, std::string& error);
+    bool WorkerStartVideo(const Settings& settings, VideoRun& run, const std::wstring& folder, double fromSec, double toSec,
+                          std::string& error);
     bool WorkerEndVideo(GpuContext& gpu, VideoRun& run, FrameSink& sink, bool completed);
     void WorkerVideoFrame(VideoRun& run, std::vector<uint8_t>&& rgba, UINT w, UINT h, UINT pitch, UINT64 index);
+    void WorkerPreviewCommand(const Command& c);
+    // Playback / seeking / stepping of the video preview. True when the picture (or the playback state) changed and
+    // the still passes should start over; `fresh` is set when a played frame is pending, `reset` when the temporal
+    // history should be dropped (a jump).
+    bool WorkerPreviewStep(bool& fresh, bool& reset);
     void PostNotice(const std::string& text, bool error);
+    void PostBatchEvent(unsigned id, int state, const std::string& outName, const std::string& error);
 
     HINSTANCE     m_hInstance = nullptr;
     HWND          m_hwnd = nullptr;
@@ -187,13 +270,28 @@ private:
     bool          m_pendingBrowseFolder = false;
     bool          m_pendingBrowseImage = false;
     bool          m_pendingBrowseVideo = false;
-    bool          m_pendingBrowseBatchFiles = false;
-    bool          m_pendingBrowseBatchFolder = false;
+    bool          m_pendingBrowseLibraryFiles = false;
+    bool          m_pendingBrowseLibraryFolder = false;
     float         m_dpiScale = 1.0f;
 
     std::wstring  m_exeDir;
     std::wstring  m_appDataDir;
     std::wstring  m_settingsPath;
+    CommandLine   m_cli;
+    bool          m_headless = false;
+    int           m_exitCode = 0;
+    double        m_startTime = 0.0;
+    size_t        m_nextScreenshot = 0;
+    bool          m_cliActionsDone = false;
+    bool          m_cliVideoActionsDone = false;
+    bool          m_cliProcessStarted = false;
+    double        m_cliProcessStartTime = 0.0;
+    unsigned      m_cliCaptureBaseline = 0;
+    unsigned      m_captureResultsSeen = 0;
+    unsigned      m_batchFailures = 0;
+    std::wstring  m_pendingScreenshot;     // path of the screenshot to take with the next frame
+    UINT64        m_screenshotFence = 0;
+    std::wstring  m_screenshotPath;
 
     Settings      m_settings;
     Device        m_device;
@@ -202,9 +300,12 @@ private:
     ImageSource   m_image;                 // processing thread
     VideoSource   m_video;                 // processing thread
     VideoWriter   m_videoWriter;           // processing thread
+    VideoPreview  m_preview;               // processing thread
     Capture       m_capture;
     ui::Fonts     m_fonts;
     ui::MainUI    m_ui;
+    ThumbnailAtlas m_atlas;                // interface thread
+    LibraryScanner m_scanner;
 
     Shared            m_shared;
     std::thread       m_worker;
@@ -213,6 +314,9 @@ private:
     std::atomic<bool> m_refreshSenders{false};
     std::atomic<double> m_uiFpsShared{0.0};
     std::atomic<double> m_uiGpuMsShared{0.0};
+    std::atomic<unsigned> m_videoFailures{0};
+    std::string       m_workerLastError;   // processing thread: reason of the last failed load
+    std::string       m_workerLastOut;     // processing thread: name of the last video output
 
     // Interface-thread copies of the shared state.
     PipelineStatus m_status;
@@ -225,8 +329,21 @@ private:
     double         m_cpuMs = 0.0;
     std::string    m_lastCapture;
     bool           m_lastCaptureOk = true;
-    std::vector<std::wstring> m_batchFiles;   // interface thread: the batch queue as shown
-    std::vector<std::string>  m_batchNames;
+
+    // Media library and the video storyboard (interface thread).
+    std::vector<LibraryItem> m_library;
+    unsigned       m_nextItemId = 1;
+    unsigned       m_storyGeneration = 0;
+    std::wstring   m_storyPath;
+    double         m_storyDuration = 0.0;
+    std::vector<int>    m_storyCells;
+    std::vector<double> m_storyTimes;
+    std::vector<bool>   m_storyReady;
+    int            m_hoverCell = -1;
+    double         m_hoverCellTime = -1.0;   // time of the picture in the hover cell (-1: none)
+    double         m_hoverRequested = -1.0;
+    double         m_hoverRequestTime = 0.0;
+    bool           m_libraryBatchRunning = false;
 };
 
 } // namespace vdc

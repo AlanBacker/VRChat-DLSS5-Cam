@@ -163,7 +163,8 @@ private:
     bool WrapShared(GpuContext& gpu, Tex& t, ID3D12Resource* res, UINT w, UINT h, DXGI_FORMAT fmt, const wchar_t* name);
     void Transition(ID3D12GraphicsCommandList* cmd, Tex& t, D3D12_RESOURCE_STATES state);
     bool Rebuild(GpuContext& gpu, const Config& cfg);
-    void ReleaseResources(GpuContext& gpu);
+    void ReleaseResources(GpuContext& gpu, bool shutdown = false);
+    void CountCaptures();       // m_status.capturesInFlight from the readbacks
     void ReleaseFeatures(GpuContext& gpu);
     void ReleaseDepthResources(GpuContext& gpu);
     bool CreateDepthResources(GpuContext& gpu, const Config& cfg);

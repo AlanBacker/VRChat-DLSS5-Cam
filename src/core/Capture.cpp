@@ -102,7 +102,7 @@ void Capture::WorkerMain() {
         result.seconds = NowSeconds() - t0;
         if (result.ok && !result.quiet) Log::Info("Saved %s (%ux%u, %.0f KB, %.2f s)", WideToUtf8(job.path).c_str(), job.width, job.height,
                                  result.bytes / 1024.0, result.seconds);
-        else Log::Error("Capture failed for %s: %s", WideToUtf8(job.path).c_str(), result.error.c_str());
+        else if (!result.ok) Log::Error("Capture failed for %s: %s", WideToUtf8(job.path).c_str(), result.error.c_str());
         {
             std::lock_guard<std::mutex> lock(m_mutex);
             m_results.push_back(std::move(result));

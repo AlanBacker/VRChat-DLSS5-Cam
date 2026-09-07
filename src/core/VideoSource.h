@@ -1,8 +1,8 @@
-// VRChat DLSS5 Cam - a video file (Media Foundation) as a pipeline source: the first frame as a still preview, or
-// every frame in order for offline processing.
+// VRChat DLSS5 Cam - video file source (Media Foundation): a seekable still preview, a paced or as-fast-as-possible
+// frame sequence over a time range with its sound track, and thumbnails for the media library and the seek bar.
 #pragma once
-#include "core/SourceFrame.h"
 #include "core/MediaFoundation.h"
+#include "core/SourceFrame.h"
 #include "gfx/Device.h"
 #include <d3d11.h>
 #include <atomic>
@@ -16,126 +16,145 @@
 
 namespace vdc {
 
-// One decoded frame: BGRA8 rows without padding.
+// One decoded frame of a sequence, handed over with its timing (100 ns units, as in the file).
 struct VideoFrameData {
     std::vector<uint8_t> bgra;
     UINT     width = 0, height = 0;
-    UINT64   index = 0;                 // 0-based position in the sequence
-    LONGLONG pts = 0, duration = 0;     // 100 ns units
+    UINT64   index = 0;          // 0-based frame number within the sequence
+    LONGLONG pts = 0;            // presentation time
+    LONGLONG duration = 0;       // 0 = unknown
 };
 
 struct VideoInfo {
-    UINT        width = 0, height = 0;          // as handed to the pipeline (display aperture, rotation applied)
-    UINT        fileWidth = 0, fileHeight = 0;  // coded size
-    UINT32      fpsNum = 30, fpsDen = 1;
-    double      durationSeconds = 0.0;
-    UINT64      frameEstimate = 0;              // duration x frame rate
-    bool        hasAudio = false;               // an audio stream exists in the file
-    UINT32      audioRate = 0, audioChannels = 0;
-    bool        hardwareDecode = false;         // the decoder runs on the GPU
-    std::string codec;                          // "H264", "HEVC", ...
-    std::string decoderOutput;                  // "NV12" / "RGB32"
+    UINT   width = 0, height = 0;             // as processed (rotated, cropped, limited to kMaxLongSide)
+    UINT   fileWidth = 0, fileHeight = 0;     // as stored
+    UINT   fpsNum = 30, fpsDen = 1;
+    double durationSeconds = 0.0;
+    UINT64 frameEstimate = 0;
+    bool   hasAudio = false;
+    UINT   audioRate = 0, audioChannels = 0;
+    bool   hardwareDecode = false;            // the GPU decoder is in use
+    std::string codec;                        // "HEVC", "H.264", ...
+    std::string decoderOutput;                // "NV12", "RGB32", ...
 };
+
+struct VideoReader;   // a Media Foundation source reader with its parsed video type (VideoSource.cpp)
+
+// A D3D11 device with video support for Media Foundation's GPU decoders. Readers made with the same device share it.
+struct DecoderDevice {
+    ComPtr<ID3D11Device>        dev;
+    ComPtr<ID3D11DeviceContext> ctx;
+    ComPtr<IMFDXGIDeviceManager> manager;
+    UINT                        token = 0;
+    bool Create(IDXGIAdapter* adapter, std::string& error);
+    void Reset();
+    bool Ready() const { return manager != nullptr; }
+};
+
+// Fits a BGRA picture into w x h with its aspect kept (dark bars) using a box filter; the thumbnail cells.
+void FitThumbnail(const std::vector<uint8_t>& src, UINT srcW, UINT srcH, UINT w, UINT h, std::vector<uint8_t>& dst);
+// Mean luma of a BGRA picture (0..1), sampled on a coarse grid.
+float MeanLuma(const std::vector<uint8_t>& bgra, UINT w, UINT h);
 
 class VideoSource {
 public:
-    static constexpr UINT kMaxLongSide = 8192;
+    static constexpr UINT   kMaxLongSide = 8192;
+    static constexpr double kBlackSkipSeconds = 2.0;   // leading black frames passed over for the preview
     enum class Next { Frame, Wait, End, Error };
 
-    // Opens the file and decodes its first frame into a BGRA8 texture (processing thread). hardwareDecode asks for
-    // a GPU decoder; the software decoder is the fallback either way.
+    VideoSource();
+    ~VideoSource();
+
+    // Opens the file, decodes its preview frame (the first frame that is not black) and creates the source texture.
     bool Open(GpuContext& gpu, const std::wstring& path, bool hardwareDecode, std::string& error);
     void Close(GpuContext& gpu);
 
-    // Sequence: a fresh reader from the start of the file feeds a small frame queue from a decode thread. withAudio
-    // also decodes the audio stream to PCM samples (PopAudio) for the output file.
-    bool StartSequence(bool withAudio, std::string& error);
-    // Frame: the next picture is pending for Upload(); timing carries its index and time stamps (no pixels).
+    // Still preview: shows the frame at `seconds` (clamped to the file). The frame is uploaded by the next Upload().
+    bool   SeekPreview(double seconds, std::string& error);
+    bool   ReloadPreview(std::string& error) { return SeekPreview(m_previewSeconds, error); }
+    double PreviewSeconds() const { return m_previewSeconds; }
+    float  PreviewLuma() const { return m_previewLuma; }
+    double FrameSeconds() const;   // duration of one frame
+
+    // Frame sequence from `fromSeconds` up to `toSeconds` (<= 0: to the end), decoded on a thread. Frames whose
+    // interval ends before the start are skipped; the sequence ends with the first frame at or after `toSeconds`.
+    bool StartSequence(bool withAudio, double fromSeconds, double toSeconds, std::string& error);
     Next NextFrame(double timeoutSeconds, VideoFrameData& timing);
     void StopSequence();
     bool SequenceRunning() const { return m_seqRunning; }
     std::string SequenceError();
     bool PopAudio(ComPtr<IMFSample>& sample);
-    ComPtr<IMFMediaType> AudioType() const { return m_audioType; }   // PCM type of the sequence's audio (null: none)
+    ComPtr<IMFMediaType> AudioType() const { return m_audioType; }
 
-    // Back to the first frame once a sequence ended.
-    bool ReloadPreview(std::string& error);
-
-    // Records the pending frame copy into cmd (the processing context's list). No-op when nothing is pending.
+    // Copies the pending preview/sequence frame into the source texture (processing command list).
     void Upload(ID3D12GraphicsCommandList* cmd, GpuContext& gpu);
-
-    bool                Loaded() const { return m_tex != nullptr; }
-    SourceFrame         Frame(bool still) const;   // still: the temporal history converges on one picture
+    bool Loaded() const { return m_tex != nullptr; }
+    SourceFrame Frame(bool still) const;
     const std::wstring& Path() const { return m_path; }
-    std::wstring        Stem() const;              // file name without folder and extension
-    const VideoInfo&    Info() const { return m_info; }
+    std::wstring Stem() const;
+    const VideoInfo& Info() const { return m_info; }
+    IMFDXGIDeviceManager* DecoderManager() const { return m_decoder.manager.Get(); }
 
-    // Extensions Media Foundation usually demuxes (lower case, without the dot).
     static bool IsSupportedExtension(const std::wstring& path);
 
 private:
-    struct Reader {
-        ComPtr<IMFSourceReader> reader;
-        DWORD  videoStream = 0, audioStream = 0;
-        bool   hasAudioStream = false;
-        bool   audio = false;                       // audio selected and converted to PCM
-        GUID   subtype{};                           // decoder output: NV12, RGB32 or ARGB32
-        UINT   frameW = 0, frameH = 0;              // coded frame (plane) size
-        LONG   stride = 0;                          // default stride from the type (0 = unknown)
-        UINT   cropX = 0, cropY = 0, cropW = 0, cropH = 0;
-        UINT   outW = 0, outH = 0;                  // after the crop and the rotation
-        UINT   rotation = 0;                        // degrees clockwise the picture has to be turned
-        bool   bt709 = true, fullRange = false;
-        UINT32 fpsNum = 30, fpsDen = 1;
-        double durationSeconds = 0.0;
-        std::string codec;
-        ComPtr<IMFMediaType> audioType;
-        UINT32 audioRate = 0, audioChannels = 0;
-        bool   hardware = false;
-    };
-
-    bool CreateReader(const std::wstring& path, bool withAudio, bool hardware, Reader& r, std::string& error);
-    bool ParseVideoType(IMFMediaType* type, Reader& r, std::string& error);
-    bool ReadFirstFrame(Reader& r, std::vector<uint8_t>& bgra, std::string& error);
-    bool ConvertSample(const Reader& r, IMFSample* sample, std::vector<uint8_t>& bgra, std::string& error);
-    bool CreateDecoderDevice(GpuContext& gpu, std::string& error);
     bool CreateTexture(GpuContext& gpu, UINT w, UINT h, std::string& error);
     void ReleaseTexture(GpuContext& gpu);
+    bool OpenPreviewReader(bool hardware, std::string& error);
     void SetPending(std::vector<uint8_t>&& bgra);
     void DecodeMain();
 
-    // Picture
-    ComPtr<ID3D12Resource>      m_tex;
+    ComPtr<ID3D12Resource>  m_tex;
     D3D12_CPU_DESCRIPTOR_HANDLE m_srv{};
-    ComPtr<ID3D12Resource>      m_upload[GpuContext::kFramesInFlight];   // persistently mapped ring, one per frame
-    uint8_t*                    m_uploadPtr[GpuContext::kFramesInFlight] = {};
-    UINT                        m_uploadIndex = 0;
-    UINT                        m_uploadPitch = 0;
-    std::vector<uint8_t>        m_pendingBgra;
-    bool                        m_uploadPending = false;
-    bool                        m_uploaded = false;
+    ComPtr<ID3D12Resource>  m_upload[GpuContext::kFramesInFlight];
+    uint8_t*                m_uploadPtr[GpuContext::kFramesInFlight] = {};
+    UINT                    m_uploadIndex = 0;
+    UINT                    m_uploadPitch = 0;
+    std::vector<uint8_t>    m_pendingBgra;      // guarded by m_qm
+    bool                    m_uploadPending = false;
+    bool                    m_uploaded = false;
 
-    std::wstring m_path;
-    VideoInfo    m_info;
+    std::wstring  m_path;
+    VideoInfo     m_info;
+    DecoderDevice m_decoder;
 
-    // Hardware decoding
-    ComPtr<ID3D11Device>          m_dev11;
-    ComPtr<ID3D11DeviceContext>   m_ctx11;
-    ComPtr<IMFDXGIDeviceManager>  m_dxgiManager;
-    UINT                          m_dxgiToken = 0;
+    std::unique_ptr<VideoReader> m_preview;    // kept open so the preview can seek
+    double m_previewSeconds = 0.0;
+    float  m_previewLuma = 0.0f;
 
-    // Sequence
-    std::unique_ptr<Reader>       m_seq;
-    std::thread                   m_seqThread;
-    std::mutex                    m_qm;
-    std::condition_variable       m_qcv, m_spaceCv;
-    std::deque<VideoFrameData>    m_queue;
+    std::unique_ptr<VideoReader> m_seq;
+    std::thread                  m_seqThread;
+    mutable std::mutex           m_qm;
+    std::condition_variable      m_qcv, m_spaceCv;
+    std::deque<VideoFrameData>   m_queue;
     std::deque<ComPtr<IMFSample>> m_audioQueue;
-    ComPtr<IMFMediaType>          m_audioType;
-    std::atomic<bool>             m_seqStop{false};
-    bool                          m_seqDone = false;
-    bool                          m_seqRunning = false;
-    std::string                   m_seqError;
+    ComPtr<IMFMediaType>         m_audioType;
+    LONGLONG                     m_seqStartPts = 0, m_seqEndPts = 0;
+    std::atomic<bool>            m_seqStop{false};
+    std::atomic<bool>            m_seqDone{false};
+    std::atomic<bool>            m_seqRunning{false};
+    std::string                  m_seqError;
+};
+
+// Reads single frames of a file for thumbnails, on any thread, with its own reader (software or the given GPU decoder).
+class VideoScanner {
+public:
+    VideoScanner();
+    ~VideoScanner();
+    bool Open(const std::wstring& path, IMFDXGIDeviceManager* manager, std::string& error);
+    void Close();
+    bool Opened() const { return m_reader != nullptr; }
+    const VideoInfo& Info() const { return m_info; }
+    // The frame covering `seconds`, fitted into w x h BGRA. skipBlack passes over leading black frames like the still
+    // preview does. gotSeconds receives the time of the frame used.
+    bool Thumbnail(double seconds, bool skipBlack, UINT w, UINT h, std::vector<uint8_t>& bgra, double& gotSeconds,
+                   std::string& error);
+
+private:
+    std::unique_ptr<VideoReader> m_reader;
+    VideoInfo    m_info;
+    std::wstring m_path;
+    IMFDXGIDeviceManager* m_manager = nullptr;
 };
 
 } // namespace vdc

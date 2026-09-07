@@ -311,7 +311,50 @@ enum class Lang { English = 0, Chinese = 1, Japanese = 2, Korean = 3, Count = 4 
     X(BatchNoFiles,       "No supported files found", "未找到支持的文件", "対応するファイルが見つかりません", "지원되는 파일이 없습니다") \
     X(BatchBusy,          "Finish or cancel the batch first", "请先完成或取消批量处理", "先にバッチ処理を完了またはキャンセルしてください", "먼저 일괄 처리를 완료하거나 취소하세요") \
     X(Remove,             "Remove", "移除", "削除", "제거") \
-    X(SourceModeHint,     "Process the VRChat camera stream live, or open a picture or a video from disk and run it through DLSS 5.", "实时处理 VRChat 相机串流，或打开磁盘上的图片或视频交给 DLSS 5 处理。", "VRChat のカメラストリームをリアルタイムで処理するか、ディスク上の画像や動画を開いて DLSS 5 で処理します。", "VRChat 카메라 스트림을 실시간으로 처리하거나, 디스크의 이미지나 동영상을 열어 DLSS 5로 처리합니다.")
+    X(SourceModeHint,     "Process the VRChat camera stream live, or open a picture or a video from disk and run it through DLSS 5.", "实时处理 VRChat 相机串流，或打开磁盘上的图片或视频交给 DLSS 5 处理。", "VRChat のカメラストリームをリアルタイムで処理するか、ディスク上の画像や動画を開いて DLSS 5 で処理します。", "VRChat 카메라 스트림을 실시간으로 처리하거나, 디스크의 이미지나 동영상을 열어 DLSS 5로 처리합니다.") \
+    X(LibraryFull,        "The library is full (%d files)", "素材库已满（最多 %d 个文件）", "ライブラリがいっぱいです（最大 %d ファイル）", "라이브러리가 가득 찼습니다(최대 %d개)") \
+    X(SecLibrary,         "Library", "素材库", "ライブラリ", "라이브러리") \
+    X(LibraryHint,        "Drop pictures and videos here, or add them with the buttons. Click an item to preview it with the current settings; tick the ones to process.", "把图片和视频拖到这里，或用按钮添加。点击条目即可用当前设置预览；勾选要处理的条目。", "画像や動画をここにドロップするか、ボタンで追加してください。項目をクリックすると現在の設定でプレビューされます。処理する項目にチェックを入れてください。", "이미지와 동영상을 여기에 끌어다 놓거나 버튼으로 추가하세요. 항목을 클릭하면 현재 설정으로 미리 보고, 처리할 항목에 체크하세요.") \
+    X(ProcessSelected,    "Process selected", "处理选中", "選択項目を処理", "선택 항목 처리") \
+    X(LibraryCount,       "%d files, %d selected", "%d 个文件，已选 %d 个", "%d ファイル、%d 件選択", "파일 %d개, %d개 선택") \
+    X(StateQueued,        "Queued", "排队中", "待機中", "대기 중") \
+    X(StateDone,          "Done", "完成", "完了", "완료") \
+    X(StateFailed,        "Failed", "失败", "失敗", "실패") \
+    X(StateUnreadable,    "Cannot be read", "无法读取", "読み込めません", "읽을 수 없음") \
+    X(SelectAll,          "Select all", "全选", "すべて選択", "모두 선택") \
+    X(SelectNone,         "Select none", "全不选", "選択解除", "모두 해제") \
+    X(Play,               "Play", "播放", "再生", "재생") \
+    X(Pause,              "Pause", "暂停", "一時停止", "일시정지") \
+    X(PrevFrame,          "Previous frame", "上一帧", "前のフレーム", "이전 프레임") \
+    X(NextFrame,          "Next frame", "下一帧", "次のフレーム", "다음 프레임") \
+    X(SetIn,              "Start here", "起点设在这里", "ここを開始点に", "여기를 시작점으로") \
+    X(SetOut,             "End here", "终点设在这里", "ここを終了点に", "여기를 끝점으로") \
+    X(WholeVideo,         "Whole video", "整段视频", "動画全体", "전체 동영상") \
+    X(RangeHint,          "Only the part between the start and end points is processed (with its sound). Shortcuts: Space play/pause, arrow keys one frame, I / O set the points.", "只处理起点与终点之间的部分（包括声音）。快捷键：空格播放/暂停，方向键逐帧，I / O 设置起点和终点。", "開始点と終了点の間だけを処理します（音声も含む）。ショートカット：スペースで再生/一時停止、矢印キーで 1 フレーム、I / O で開始点と終了点を設定。", "시작점과 끝점 사이만 처리합니다(소리 포함). 단축키: 스페이스 재생/일시정지, 방향키 한 프레임, I / O 시작점과 끝점 설정.") \
+    X(RangeLabel,         "Range", "范围", "範囲", "범위") \
+    X(Seeking,            "Seeking...", "跳转中…", "シーク中…", "탐색 중…") \
+    X(StaticPreview,      "Static preview, no motion", "静态预览，无运动", "静止プレビュー、動きなし", "정지 미리보기, 움직임 없음") \
+    X(DarkFrameHint,      "This frame is almost black. Move along the seek bar to find a picture.", "当前帧几乎全黑，请拖动进度条寻找有画面的位置。", "このフレームはほぼ真っ黒です。シークバーで別の位置に移動してください。", "이 프레임은 거의 검은색입니다. 탐색 막대로 다른 위치를 찾아보세요.") \
+    X(Advanced,           "Advanced", "高级", "詳細", "고급") \
+    X(TipAdvanced,        "Shows every control: the runtime route, capture-only mode, the fine strengths, frame guidance, DLAA and the display internals. Off, only the essentials are shown.", "显示全部控件：运行库加载方式、仅拍照时启用、细分强度、帧引导、DLAA 与显示内部信息。关闭时只显示常用项。", "すべてのコントロールを表示します：ランタイム経路、撮影時のみモード、細かな強度、フレームガイダンス、DLAA、表示内部情報。オフでは基本項目だけを表示します。", "모든 컨트롤을 표시합니다: 런타임 경로, 촬영 시에만 모드, 세부 강도, 프레임 가이드, DLAA, 표시 내부 정보. 끄면 기본 항목만 표시합니다.") \
+    X(Basics,             "Basics", "基本", "基本", "기본") \
+    X(SecOutput,          "Output", "输出", "出力", "출력") \
+    X(SecInternals,       "Internals", "内部信息", "内部情報", "내부 정보") \
+    X(TopSpout,           "Live", "实时", "ライブ", "라이브") \
+    X(TopImage,           "Picture", "图片", "画像", "이미지") \
+    X(TopVideo,           "Video", "视频", "動画", "동영상") \
+    X(StepOne,            "Choose the source", "选择输入源", "入力ソースを選ぶ", "입력 소스 선택") \
+    X(StepTwo,            "Adjust DLSS 5", "调整 DLSS 5", "DLSS 5 を調整", "DLSS 5 조정") \
+    X(StepThree,          "Save", "保存", "保存", "저장") \
+    X(WelcomeLive,        "Live: start VRChat, open the camera, switch to Stream mode and enable Spout Stream. The picture appears here.", "实时：启动 VRChat，打开相机，切换到 Stream 模式并开启 Spout Stream，画面会显示在这里。", "ライブ：VRChat を起動し、カメラを開いて Stream モードに切り替え、Spout Stream を有効にすると、ここに映像が表示されます。", "라이브: VRChat를 실행하고 카메라를 열어 Stream 모드로 전환한 뒤 Spout Stream을 켜면 여기에 화면이 표시됩니다.") \
+    X(WelcomeFiles,       "Pictures and videos: drop them onto this window or use Open. They appear in the library below, one click previews them.", "图片和视频：拖进这个窗口或点“打开”。它们会出现在下方的素材库中，点一下即可预览。", "画像と動画：このウィンドウにドロップするか「開く」を使ってください。下のライブラリに表示され、クリックでプレビューできます。", "이미지와 동영상: 이 창에 끌어다 놓거나 열기를 사용하세요. 아래 라이브러리에 나타나며 클릭하면 미리 봅니다.") \
+    X(ShowLibrary,        "Show the library", "显示素材库", "ライブラリを表示", "라이브러리 표시") \
+    X(Thumbnails,         "Thumbnails", "缩略图", "サムネイル", "썸네일") \
+    X(NrStrengthHint,     "1.00 is the runtime's own look. Below it the effect fades out, above it the change is amplified.", "1.00 为运行库的原始效果；小于 1 逐渐减弱，大于 1 会放大变化。", "1.00 がランタイム本来の仕上がりです。これより小さいと効果が弱まり、大きいと変化が強調されます。", "1.00이 런타임 본래의 결과입니다. 이보다 작으면 효과가 약해지고, 크면 변화가 강조됩니다.") \
+    X(OutputHint,         "Where the results go. Pictures are saved as lossless PNG, videos as MP4 or a PNG sequence.", "结果保存的位置。图片保存为无损 PNG，视频保存为 MP4 或 PNG 序列。", "結果の保存先です。画像はロスレス PNG、動画は MP4 または PNG 連番として保存されます。", "결과가 저장되는 위치입니다. 이미지는 무손실 PNG로, 동영상은 MP4 또는 PNG 시퀀스로 저장됩니다.") \
+    X(PreviewLuma,        "Brightness", "亮度", "明るさ", "밝기") \
+    X(ItemRemoved,        "Removed", "已移除", "削除しました", "제거됨") \
+    X(EndOfVideo,         "End", "结束", "終了", "끝")
 
 enum class Str {
 #define VDC_STR_ENUM(id, en, zh, ja, ko) id,

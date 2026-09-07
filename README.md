@@ -29,8 +29,12 @@ or as a batch. It is a stand-alone Windows application: nothing is injected into
   through DLSS 5 with real motion vectors and depth, exactly like the live camera, and writes an MP4 (H.264 or HEVC,
   audio kept) or a PNG sequence next to your captures. Decoding and encoding use Windows Media Foundation, on the GPU
   where available.
-- **Batch processing.** Queue any number of pictures and videos (or a whole folder), press *Process all* and every file
-  is processed with the current settings and saved into the capture folder.
+- **Video controls.** Play and pause the video through the whole pipeline, step frame by frame, drag the seek bar
+  (a small picture of the frame under the cursor appears, like in a video player) and mark a start and an end point:
+  processing, and the audio track, then cover only that range.
+- **Media library.** Every picture and video you open or drop onto the window lands in a strip of thumbnails under
+  the preview. Click one to preview it with all sliders live, tick the ones to process, then *Process all* or
+  *Process selected* runs them one after another with the current settings into the capture folder.
 - **Frame guidance.** DLSSNR is a temporal model that expects motion vectors and depth. The app feeds it
   **NVIDIA Optical Flow** motion vectors with a forward/backward consistency check and a depth map estimated on the
   GPU by **Depth Anything V2** (ONNX Runtime + DirectML). GPU block matching and placeholder depth remain available
@@ -42,7 +46,11 @@ or as a batch. It is a stand-alone Windows application: nothing is injected into
 - **Four languages** (English, 简体中文, 日本語, 한국어), automatic selection from the Windows UI language.
 - **Responsive interface.** The window runs on its own thread and GPU queue; the preview and controls stay smooth even
   when a 4K neural pass takes tens of milliseconds.
-- Per-monitor DPI aware, dark themed UI, GPU timers and a built-in log.
+- **Flat, uncluttered interface.** Three steps (source, DLSS 5, save) with the everyday controls in view; an *Advanced*
+  switch in the top bar reveals the tone and structure sliders, frame guidance, DLAA, the output blend and the timers.
+- **Command line** options for opening files, unattended processing, screenshots and headless runs
+  (see [docs/COMMAND_LINE.md](docs/COMMAND_LINE.md)).
+- Per-monitor DPI aware, GPU timers and a built-in log.
 
 ## Requirements
 
@@ -71,13 +79,19 @@ Tips
   result is written as `<name>_DLSS5_<w>x<h>.png` into the capture folder. Pictures larger than 8192 px on the long side
   are processed at a reduced size.
 - To process a video, switch *Input* to *Video file* and open it (or drop it onto the window). The first frame is shown
-  in the preview so the sliders can be tuned; *Process & save video* (or the hotkey) then runs the whole file and writes
-  `<name>_DLSS5_<w>x<h>.mp4` (or a folder `<name>_DLSS5` of PNG frames) into the capture folder. Processing runs as
-  fast as the GPU allows, never faster than the neural pass; a progress bar shows the frame count and the remaining time,
-  and *Cancel* keeps what has been written so far.
-- To process many files, open the *Batch* section, add files or a folder (or drop several files onto the window) and
-  press *Process all*. Pictures and videos can be mixed; each is saved like a single file would be. Batch items are
-  processed one after another with the settings in effect when the batch starts.
+  in the preview so the sliders can be tuned (dark frames at the very start of a film are skipped). The controls
+  under the preview play and pause the video through the pipeline, step one frame at a time (arrow keys; Shift for
+  ten), and the seek bar shows a small picture of the frame under the cursor before you jump there. *Start here* /
+  *End here* (or `I` / `O`) limit processing to a range; *Whole video* clears it. *Process & save video* (or the
+  hotkey) then runs the file and writes `<name>_DLSS5_<w>x<h>.mp4` (or a folder `<name>_DLSS5` of PNG frames) into the
+  capture folder. Processing runs as fast as the GPU allows, never faster than the neural pass; the seek bar turns
+  into a progress bar, the status line shows the frame count, and *Cancel* keeps what has been written so far.
+- To work with many files, add them to the **library** under the preview (drop them onto the window, or *Add files* /
+  *Add folder*). Each file shows a thumbnail, its size and length, and its state. Click a thumbnail to preview that
+  file and tune the sliders on it; the box on each thumbnail selects it for processing. *Process all* or *Process
+  selected* then processes the files one after another with the current settings, each saved like a single file
+  would be; a bar on the thumbnail shows the progress and the state is kept afterwards. *Advanced* in the top bar
+  shows the less common controls; the everyday ones are always in view.
 
 ## Parameters
 
@@ -104,12 +118,16 @@ Tips
 | Frame guidance | Depth | AI estimated (Depth Anything V2 Small on DirectML; update interval and network resolution are adjustable), flat, gradient, or zero. |
 | Frame guidance | Auto reset | Clears the temporal history on sharp matching-cost jumps (scene cuts). Off by default. |
 | DLAA | Enable / Preset | Optional DLSS anti-aliasing pass at native resolution before neural rendering. |
-| Capture | Keep alpha / Save original / Hotkey / Time-lapse | Capture options. |
-| Batch | Add files / Add folder / Process all | Queue of pictures and videos processed one after another with the current settings; a folder adds every supported file it contains. |
-| Display | Compare / Fit / Zoom / VSync / Overlay | Preview options. The mouse wheel over the preview zooms around the cursor, dragging pans, a double-click returns to the fitted view. |
+| Save | Keep alpha / Save original / Hotkey / Time-lapse | Capture options. |
+| Video controls | Play / Pause, frame steps, seek bar, Start here / End here / Whole video | Under the preview when a video is open. Space plays and pauses, the arrow keys step (Shift: ten frames), Home / End jump to the ends, `I` / `O` set the range. Hovering the seek bar shows the frame at that spot; the wheel over it steps. |
+| Library | Add files / Add folder / Process all / Process selected / Remove / Clear | The thumbnails under the preview. Click previews, the box selects for processing, × removes; a folder adds every supported file it contains. The strip can be hidden from the *View* section. |
+| Top bar | Advanced | Shows the tone, structure and output-blend sliders, frame guidance, DLAA and the internal timers; off by default. |
+| View | Compare / Fit / Zoom / VSync / Overlay / Show library | Preview options. The mouse wheel over the preview zooms around the cursor, dragging pans, a double-click returns to the fitted view. |
 | Display | Processing rate cap | Live source: processes at most this many source frames per second at a steady cadence and drops the frames in between, which caps the GPU load; the preview keeps the last processed frame meanwhile. 0 = every source frame. |
 
 Settings are stored in `%LOCALAPPDATA%\VRChatDLSS5Cam\settings.ini`; the log is `log.txt` in the same folder.
+Command-line options (open files, process unattended, screenshots, headless runs) are listed in
+[docs/COMMAND_LINE.md](docs/COMMAND_LINE.md).
 
 ## Troubleshooting
 
@@ -121,6 +139,10 @@ Settings are stored in `%LOCALAPPDATA%\VRChatDLSS5Cam\settings.ini`; the log is 
 - **Neural pass active, but the picture is black or unchanged** – the app compares every neural frame with its input; the Neural section shows *Output change* and warns when the runtime reports success but delivers a black or unchanged picture (`log.txt`: "DLSSNR output check"). Switch DLSS 5 off and on: off releases the feature and unloads the runtime, on loads it from the file again, the same fresh start as launching the app. If it persists, that runtime build does not produce a picture on this GPU.
 - **Depth estimator unavailable** – `onnxruntime.dll`, `onnxruntime_providers_shared.dll`, `DirectML.dll` and `models\depth_anything_v2_small_fp16.onnx` must sit next to the executable (all are part of the release package). Until the estimator is ready the app falls back to zero depth; its state is shown under *Frame guidance*.
 - **Optical flow unavailable** – NVIDIA Optical Flow runs on a private native D3D11 device (the driver rejects the D3D11On12 layer, which was the cause of the "UNSUPPORTED_DEVICE" error in 0.2.0). If `log.txt` says "NVOF unavailable, falling back to block matching", update the GeForce driver; block matching is used automatically until then. The status dot under *Frame guidance* shows which source is active.
+- **The video preview is black** – many films start with a fade from black; the preview skips those frames and, when
+  the frame on show is still (almost) black, says so under the picture. Seek forward with the bar or the arrow keys.
+  The motion-vector status shows *Static preview, no motion* while a still frame is on show: optical flow only runs
+  during playback and processing.
 - **Video file does not open / no encoder available** – the file formats depend on the codecs installed in Windows. Install the *HEVC Video Extensions* (Microsoft Store) for HEVC files, or the *Media Feature Pack* on Windows N/KN. If the H.264 encoder is missing, choose *PNG sequence* as the output. Switching *Hardware decoding* off helps with files the GPU decoder rejects.
 - **Low frame rate** – disable DLAA, raise the depth update interval or lower the depth network resolution, lower the search radius, or choose NVIDIA Optical Flow for motion vectors. With NVIDIA Optical Flow keep the flow grid at 4 px (the fastest setting; 2 px and 1 px cost far more at 4K). The log prints a `Perf:` line every 15 s with the processing rate, the CPU cost per frame (receive / wait / record / submit), the GPU time of each stage and the depth network cost; only frames that were actually processed count. The interface has its own thread, so a low processing rate no longer slows down the window.
 

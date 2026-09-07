@@ -14,6 +14,7 @@
 #include <wrl/client.h>
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <cwctype>
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
@@ -39,6 +40,11 @@ constexpr int kImageConvergePasses = 32;
 constexpr int kImageSettingsPasses = 24;
 constexpr double kPerfLogInterval = 15.0;
 constexpr UINT WM_COPYGLOBALDATA = 0x0049;
+
+// Media library: thumbnails live in one atlas together with the seek-bar pictures of the opened video.
+constexpr int    kStorySlots = 40;          // seek-bar pictures over the length of the video
+constexpr int    kLibraryMax = 200;         // items (atlas cells left after the seek bar)
+constexpr double kHoverDebounce = 0.04;     // seconds between frame requests while the cursor moves on the seek bar
 
 std::string HotkeyText(const Settings& s) {
     if (!s.hotkeyEnabled) return "-";
@@ -89,6 +95,18 @@ std::wstring LowerExtension(const std::wstring& path) {
     return ext;
 }
 
+// Same file, ignoring case and the slash direction.
+bool SamePath(const std::wstring& a, const std::wstring& b) {
+    if (a.size() != b.size()) return false;
+    for (size_t i = 0; i < a.size(); ++i) {
+        wchar_t x = a[i], y = b[i];
+        if (x == L'/') x = L'\\';
+        if (y == L'/') y = L'\\';
+        if (std::towlower(x) != std::towlower(y)) return false;
+    }
+    return true;
+}
+
 // Files of a folder (not its subfolders), sorted by name.
 std::vector<std::wstring> ListFolderFiles(const std::wstring& dir) {
     std::vector<std::wstring> out;
@@ -109,24 +127,111 @@ void NameCurrentThread(const wchar_t* name) {
     if (HMODULE k32 = GetModuleHandleW(L"kernel32.dll"))
         if (auto fn = (PFN_SetThreadDescription)GetProcAddress(k32, "SetThreadDescription")) fn(GetCurrentThread(), name);
 }
+
+// "90", "1:30", "1:02:03.5" -> seconds; negative when empty.
+double ParseSeconds(const wchar_t* s) {
+    if (!s || !*s) return -1.0;
+    double t = 0.0;
+    std::wstring cur;
+    for (const wchar_t* p = s;; ++p) {
+        if (*p == L':' || *p == 0) {
+            t = t * 60.0 + (cur.empty() ? 0.0 : _wtof(cur.c_str()));
+            cur.clear();
+            if (!*p) break;
+        } else {
+            cur += *p;
+        }
+    }
+    return t;
+}
+
+// "1280x800".
+bool ParseSize(const wchar_t* s, UINT& w, UINT& h) {
+    if (!s) return false;
+    wchar_t* end = nullptr;
+    const unsigned long a = wcstoul(s, &end, 10);
+    if (!end || (*end != L'x' && *end != L'X')) return false;
+    const unsigned long b = wcstoul(end + 1, &end, 10);
+    if (a < 320 || b < 240 || a > 16384 || b > 16384) return false;
+    w = (UINT)a; h = (UINT)b;
+    return true;
+}
+
+int LanguageCode(const std::wstring& s) {
+    if (s == L"auto") return 0;
+    if (s == L"en") return 1;
+    if (s == L"zh") return 2;
+    if (s == L"ja") return 3;
+    if (s == L"ko") return 4;
+    return -1;
+}
 } // namespace
+
+// ------------------------------------------------------------------------------------------
+
+CommandLine CommandLine::Parse() {
+    CommandLine cl;
+    int argc = 0;
+    LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
+    if (!argv) return cl;
+    auto next = [&](int& i) -> const wchar_t* { return i + 1 < argc ? argv[++i] : nullptr; };
+    for (int i = 1; i < argc; ++i) {
+        const std::wstring a = argv[i];
+        if (a == L"--headless") cl.headless = true;
+        else if (a == L"--window") { const wchar_t* v = next(i); if (!ParseSize(v, cl.width, cl.height) && cl.error.empty()) cl.error = "--window expects WIDTHxHEIGHT"; }
+        else if (a == L"--open") { if (const wchar_t* v = next(i)) cl.open = v; }
+        else if (a == L"--add") { if (const wchar_t* v = next(i)) cl.add.push_back(v); }
+        else if (a == L"--seek") cl.seek = ParseSeconds(next(i));
+        else if (a == L"--play") cl.play = true;
+        else if (a == L"--in") cl.in = ParseSeconds(next(i));
+        else if (a == L"--out") cl.out = ParseSeconds(next(i));
+        else if (a == L"--lang") { const wchar_t* v = next(i); cl.language = v ? LanguageCode(v) : -1; if (cl.language < 0 && cl.error.empty()) cl.error = "--lang expects en, zh, ja, ko or auto"; }
+        else if (a == L"--screenshot") {
+            const double t = ParseSeconds(next(i));
+            const wchar_t* path = next(i);
+            if (t >= 0.0 && path) cl.screenshots.emplace_back(t, path);
+            else if (cl.error.empty()) cl.error = "--screenshot expects <seconds> <file.png>";
+        }
+        else if (a == L"--process") {
+            cl.process = true;
+            if (i + 1 < argc && argv[i + 1][0] != L'-') cl.processDir = argv[++i];
+        }
+        else if (a == L"--exit-after") cl.exitAfter = ParseSeconds(next(i));
+        else if (a == L"--set") {
+            const wchar_t* v = next(i);
+            const std::string kv = v ? WideToUtf8(v) : std::string();
+            const size_t eq = kv.find('=');
+            if (eq != std::string::npos && eq > 0) cl.sets.emplace_back(kv.substr(0, eq), kv.substr(eq + 1));
+            else if (cl.error.empty()) cl.error = "--set expects key=value";
+        }
+        else if (a == L"--data-dir") { if (const wchar_t* v = next(i)) cl.dataDir = v; }
+        else if (!a.empty() && a[0] != L'-' && cl.open.empty() && FileExists(a)) cl.open = a;   // "Open with"
+        else if (cl.error.empty()) cl.error = "unknown option " + WideToUtf8(a);
+    }
+    LocalFree(argv);
+    return cl;
+}
 
 // ------------------------------------------------------------------------------------------
 
 int App::Run(HINSTANCE hInstance, int nCmdShow) {
     if (!Init(hInstance, nCmdShow)) {
         Shutdown();
-        return 1;
+        return m_exitCode != 0 ? m_exitCode : 1;
     }
     MSG msg{};
     while (!m_quit) {
         while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) {
-            if (msg.message == WM_QUIT) { m_quit = true; break; }
+            if (msg.message == WM_QUIT) {
+                m_quit = true;
+                if (m_exitCode == 0) m_exitCode = (int)msg.wParam;
+                break;
+            }
             TranslateMessage(&msg);
             DispatchMessageW(&msg);
         }
         if (m_quit) break;
-        if (m_minimized) {
+        if (m_minimized && !m_headless) {
             // Nothing to draw; processing carries on in its own thread. Sleep until a message arrives (or 100 ms),
             // keep settings persisted and keep capture results flowing into the log.
             MsgWaitForMultipleObjects(0, nullptr, FALSE, 100, QS_ALLINPUT);
@@ -137,22 +242,45 @@ int App::Run(HINSTANCE hInstance, int nCmdShow) {
         Frame();
     }
     Shutdown();
-    return (int)msg.wParam;
+    return m_exitCode;
+}
+
+void App::FatalMessage(const std::wstring& text) {
+    Log::Error("%s", WideToUtf8(text).c_str());
+    if (m_headless) return;
+    MessageBoxW(m_hwnd, text.c_str(), L"VRChat DLSS5 Cam", MB_ICONERROR | MB_OK);
+}
+
+void App::ApplyCommandLineSettings() {
+    for (const auto& kv : m_cli.sets) {
+        if (m_settings.Apply(kv.first, kv.second)) Log::Info("Command line: %s=%s", kv.first.c_str(), kv.second.c_str());
+        else Log::Warn("Command line: unknown setting %s", kv.first.c_str());
+    }
+    if (m_cli.language >= 0) m_settings.language = m_cli.language;
+    if (!m_cli.processDir.empty()) m_settings.captureFolder = WideToUtf8(m_cli.processDir);
+    if (m_headless) { m_settings.vsync = false; m_settings.windowMaximized = false; }
+    m_settings.Clamp();
 }
 
 bool App::Init(HINSTANCE hInstance, int nCmdShow) {
     m_hInstance = hInstance;
+    m_cli = CommandLine::Parse();
+    m_headless = m_cli.headless;
+    m_startTime = NowSeconds();
     ImGui_ImplWin32_EnableDpiAwareness();
     m_exeDir = GetExeDir();
     m_appDataDir = GetAppDataDir();
     m_settingsPath = JoinPath(m_appDataDir, L"settings.ini");
     Log::Init(JoinPath(m_appDataDir, L"log.txt"));
-    Log::Info("VRChat DLSS5 Cam %s starting", APP_VERSION_STRING);
+    Log::Info("VRChat DLSS5 Cam %s starting%s", APP_VERSION_STRING, m_headless ? " (headless)" : "");
     Log::Info("Executable folder: %s", WideToUtf8(m_exeDir).c_str());
+    Log::Info("Command line: %s", WideToUtf8(GetCommandLineW()).c_str());
+    if (!m_cli.error.empty()) Log::Warn("Command line: %s", m_cli.error.c_str());
 
     Log::Info("Settings file: %s", WideToUtf8(m_settingsPath).c_str());
     m_settings.Load(m_settingsPath);
     m_settings.Clamp();
+    ApplyCommandLineSettings();
     I18n::SetLanguage(I18n::FromSetting(m_settings.language));
     Log::Info("Language: %s", I18n::LanguageName(I18n::Current()));
 
@@ -165,9 +293,12 @@ bool App::Init(HINSTANCE hInstance, int nCmdShow) {
 
     std::wstring err;
     Log::Info("Initialising Direct3D 12");
-    if (!m_device.Init(m_hwnd, m_settings.debugLayer, err)) {
-        Log::Error("Device init failed: %s", WideToUtf8(err).c_str());
-        MessageBoxW(m_hwnd, (Utf8ToWide(TR(InitFailed)) + L"\n\n" + err).c_str(), L"VRChat DLSS5 Cam", MB_ICONERROR | MB_OK);
+    RECT client{};
+    GetClientRect(m_hwnd, &client);
+    if (m_headless && m_cli.width > 0 && m_cli.height > 0) { client = RECT{ 0, 0, (LONG)m_cli.width, (LONG)m_cli.height }; }
+    if (!m_device.Init(m_hwnd, m_settings.debugLayer, err, m_headless, (UINT)std::max(1L, client.right - client.left),
+                       (UINT)std::max(1L, client.bottom - client.top))) {
+        FatalMessage(Utf8ToWide(TR(InitFailed)) + L"\n\n" + err);
         return false;
     }
     m_deviceReady = true;
@@ -178,14 +309,12 @@ bool App::Init(HINSTANCE hInstance, int nCmdShow) {
 
     Log::Info("Initialising render pipeline");
     if (!m_pipeline.Init(m_device, m_exeDir, m_appDataDir, err)) {
-        Log::Error("Pipeline init failed: %s", WideToUtf8(err).c_str());
-        MessageBoxW(m_hwnd, (Utf8ToWide(TR(InitFailed)) + L"\n\n" + err).c_str(), L"VRChat DLSS5 Cam", MB_ICONERROR | MB_OK);
+        FatalMessage(Utf8ToWide(TR(InitFailed)) + L"\n\n" + err);
         return false;
     }
     Log::Info("Initialising Spout receiver");
     if (!m_spout.Init(m_device)) {
-        Log::Error("Spout receiver init failed");
-        MessageBoxW(m_hwnd, (Utf8ToWide(TR(InitFailed)) + L"\n\nSpout").c_str(), L"VRChat DLSS5 Cam", MB_ICONERROR | MB_OK);
+        FatalMessage(Utf8ToWide(TR(InitFailed)) + L"\n\nSpout");
         return false;
     }
     m_spout.SetRequestedSender(m_settings.senderName);
@@ -193,7 +322,7 @@ bool App::Init(HINSTANCE hInstance, int nCmdShow) {
 
     Log::Info("Initialising UI");
     if (!InitImGui()) return false;
-    RegisterHotkey();
+    if (!m_headless) RegisterHotkey();
 
     // Accept dropped pictures (also from a non-elevated Explorer when this process runs elevated).
     DragAcceptFiles(m_hwnd, TRUE);
@@ -201,25 +330,31 @@ bool App::Init(HINSTANCE hInstance, int nCmdShow) {
     ChangeWindowMessageFilterEx(m_hwnd, WM_COPYDATA, MSGFLT_ALLOW, nullptr);
     ChangeWindowMessageFilterEx(m_hwnd, WM_COPYGLOBALDATA, MSGFLT_ALLOW, nullptr);
 
+    std::string aerr;
+    if (!m_atlas.Init(m_device, aerr)) Log::Warn("Thumbnail atlas unavailable: %s", aerr.c_str());
+    m_scanner.Start(m_device.Adapter());
+
     m_wake = CreateEventW(nullptr, FALSE, FALSE, nullptr);
     PushSettings();
     RequestRuntimeLoad(false);
-    if (m_settings.sourceMode == SourceImage && !m_settings.imagePath.empty()) {
-        const std::wstring path = Utf8ToWide(m_settings.imagePath);
-        if (FileExists(path)) {
-            Command c; c.type = Command::LoadImage; c.path = path;
-            PostCommand(std::move(c));
-        } else {
-            Log::Warn("Image from the previous session not found: %s", m_settings.imagePath.c_str());
+    if (m_cli.open.empty()) {
+        if (m_settings.sourceMode == SourceImage && !m_settings.imagePath.empty()) {
+            const std::wstring path = Utf8ToWide(m_settings.imagePath);
+            if (FileExists(path)) {
+                Command c; c.type = Command::LoadImage; c.path = path;
+                PostCommand(std::move(c));
+            } else {
+                Log::Warn("Image from the previous session not found: %s", m_settings.imagePath.c_str());
+            }
         }
-    }
-    if (m_settings.sourceMode == SourceVideo && !m_settings.videoPath.empty()) {
-        const std::wstring path = Utf8ToWide(m_settings.videoPath);
-        if (FileExists(path)) {
-            Command c; c.type = Command::LoadVideo; c.path = path;
-            PostCommand(std::move(c));
-        } else {
-            Log::Warn("Video from the previous session not found: %s", m_settings.videoPath.c_str());
+        if (m_settings.sourceMode == SourceVideo && !m_settings.videoPath.empty()) {
+            const std::wstring path = Utf8ToWide(m_settings.videoPath);
+            if (FileExists(path)) {
+                Command c; c.type = Command::LoadVideo; c.path = path;
+                PostCommand(std::move(c));
+            } else {
+                Log::Warn("Video from the previous session not found: %s", m_settings.videoPath.c_str());
+            }
         }
     }
     StartWorker();
@@ -265,9 +400,17 @@ bool App::CreateMainWindow(HINSTANCE hInstance, int nCmdShow) {
     }
 
     // Restore the previous geometry when it is still on a monitor; otherwise centre on the primary work area.
+    // --window WxH asks for that client size instead.
     int x = CW_USEDEFAULT, y = CW_USEDEFAULT, w = m_settings.windowWidth, h = m_settings.windowHeight;
     bool restored = false;
-    if (m_settings.windowX != -1 || m_settings.windowY != -1) {
+    if (m_cli.width > 0 && m_cli.height > 0) {
+        RECT rc{ 0, 0, (LONG)m_cli.width, (LONG)m_cli.height };
+        AdjustWindowRect(&rc, WS_OVERLAPPEDWINDOW, FALSE);
+        w = rc.right - rc.left;
+        h = rc.bottom - rc.top;
+        x = 40; y = 40;
+        restored = true;
+    } else if (!m_headless && (m_settings.windowX != -1 || m_settings.windowY != -1)) {
         RECT rc{ m_settings.windowX, m_settings.windowY, m_settings.windowX + w, m_settings.windowY + h };
         if (MonitorFromRect(&rc, MONITOR_DEFAULTTONULL)) { x = rc.left; y = rc.top; restored = true; }
     }
@@ -289,8 +432,13 @@ bool App::CreateMainWindow(HINSTANCE hInstance, int nCmdShow) {
     if (FAILED(DwmSetWindowAttribute(m_hwnd, 20 /*DWMWA_USE_IMMERSIVE_DARK_MODE*/, &dark, sizeof(dark))))
         DwmSetWindowAttribute(m_hwnd, 19, &dark, sizeof(dark));
     m_dpiScale = ImGui_ImplWin32_GetDpiScaleForHwnd(m_hwnd);
-    ShowWindow(m_hwnd, m_settings.windowMaximized ? SW_SHOWMAXIMIZED : nCmdShow);
-    UpdateWindow(m_hwnd);
+    if (m_headless) {
+        // The window only exists for messages; its client size is the size of the offscreen frames.
+        ShowWindow(m_hwnd, SW_HIDE);
+    } else {
+        ShowWindow(m_hwnd, m_settings.windowMaximized ? SW_SHOWMAXIMIZED : nCmdShow);
+        UpdateWindow(m_hwnd);
+    }
     return true;
 }
 
@@ -347,6 +495,7 @@ void App::ApplyDpi(float scale) {
 
 void App::Shutdown() {
     StopWorker();
+    m_scanner.Stop();
     if (m_deviceReady) { m_device.Ui().WaitIdle(); m_device.Proc().WaitIdle(); }
     if (m_imguiReady) {
         ImGui_ImplDX12_Shutdown();
@@ -356,6 +505,7 @@ void App::Shutdown() {
     }
     if (m_hwnd) UnregisterHotKey(m_hwnd, kHotkeyId);
     if (m_deviceReady) {
+        m_atlas.Shutdown();
         m_pipeline.Shutdown(m_device);
         m_spout.Shutdown(m_device.Proc());
         m_image.Release(m_device.Proc());
@@ -365,7 +515,7 @@ void App::Shutdown() {
     mf::Shutdown();
     if (m_deviceReady) { m_device.Shutdown(); m_deviceReady = false; }
     if (!m_settingsPath.empty()) m_settings.Save(m_settingsPath);
-    Log::Info("Shutdown complete");
+    Log::Info("Shutdown complete (exit code %d)", m_exitCode);
     Log::Shutdown();
     if (m_wake) { CloseHandle(m_wake); m_wake = nullptr; }
     if (m_hwnd) { DestroyWindow(m_hwnd); m_hwnd = nullptr; }
@@ -404,6 +554,11 @@ void App::PostNotice(const std::string& text, bool error) {
     m_shared.notices.push_back(Notice{ text, error });
 }
 
+void App::PostBatchEvent(unsigned id, int state, const std::string& outName, const std::string& error) {
+    std::lock_guard<std::mutex> lock(m_shared.mutex);
+    m_shared.batchEvents.push_back(BatchEvent{ id, state, outName, error });
+}
+
 void App::PushSettings() {
     {
         std::lock_guard<std::mutex> lock(m_shared.mutex);
@@ -436,11 +591,13 @@ void App::WorkerLoadImage(GpuContext& gpu, const std::wstring& path, bool announ
     std::string err;
     const std::string name = WideToUtf8(FileNameOf(path));
     if (m_image.Load(gpu, path, err)) {
+        m_workerLastError.clear();
         if (!announce) return;
         PostNotice(StrPrintf("%s: %s (%ux%u)", TR(ImageLoaded), name.c_str(), m_image.OriginalWidth(), m_image.OriginalHeight()), false);
         if (m_image.Width() != m_image.OriginalWidth() || m_image.Height() != m_image.OriginalHeight())
             PostNotice(StrPrintf("%s: %ux%u", TR(ImageDownscaled), m_image.Width(), m_image.Height()), false);
     } else {
+        m_workerLastError = err;
         Log::Error("Image load failed for %s: %s", WideToUtf8(path).c_str(), err.c_str());
         PostNotice(StrPrintf("%s: %s (%s)", TR(ImageLoadFailed), name.c_str(), err.c_str()), true);
     }
@@ -449,28 +606,44 @@ void App::WorkerLoadImage(GpuContext& gpu, const std::wstring& path, bool announ
 void App::WorkerLoadVideo(GpuContext& gpu, const std::wstring& path, bool hardwareDecode, bool announce) {
     std::string err;
     const std::string name = WideToUtf8(FileNameOf(path));
+    // The processing range belongs to the file: it survives a reload of the same one (after a batch), a different
+    // file starts without one.
+    const bool sameFile = m_video.Loaded() && SamePath(m_video.Path(), path);
+    const VideoPreview previous = m_preview;
+    if (m_preview.running) m_video.StopSequence();
+    m_preview = VideoPreview{};
+    if (sameFile) { m_preview.inSec = previous.inSec; m_preview.outSec = previous.outSec; }
     if (m_video.Open(gpu, path, hardwareDecode, err)) {
+        m_workerLastError.clear();
         const VideoInfo& vi = m_video.Info();
         if (announce)
             PostNotice(StrPrintf("%s: %s (%ux%u, %.3g fps, %.1f s)", TR(VideoLoaded), name.c_str(), vi.width, vi.height,
                                  vi.fpsDen ? (double)vi.fpsNum / (double)vi.fpsDen : 0.0, vi.durationSeconds), false);
     } else {
+        m_workerLastError = err;
         Log::Error("Video open failed for %s: %s", WideToUtf8(path).c_str(), err.c_str());
         PostNotice(StrPrintf("%s: %s (%s)", TR(VideoLoadFailed), name.c_str(), err.c_str()), true);
     }
 }
 
-// Starts feeding the opened video through the pipeline. The output file is created when the first processed frame
-// arrives (its size is only known then); frames go to an MP4 (VideoWriter) or a PNG sequence (Capture).
-bool App::WorkerStartVideo(const Settings& settings, VideoRun& run, const std::wstring& folder, std::string& error) {
+// Starts feeding the opened video (or the range fromSec..toSec of it) through the pipeline. The output file is
+// created when the first processed frame arrives (its size is only known then); frames go to an MP4 (VideoWriter)
+// or a PNG sequence (Capture).
+bool App::WorkerStartVideo(const Settings& settings, VideoRun& run, const std::wstring& folder, double fromSec, double toSec,
+                           std::string& error) {
     run = VideoRun{};
     if (!m_video.Loaded()) { error = "no video is open"; return false; }
+    const VideoInfo& vi = m_video.Info();
+    fromSec = std::max(0.0, fromSec);
+    if (toSec <= fromSec) toSec = 0.0;
+    if (vi.durationSeconds > 0.0 && fromSec >= vi.durationSeconds) { error = "the range starts after the end of the video"; return false; }
     run.pngSequence = settings.videoOutput == 2;
     run.codec = settings.videoOutput == 1 ? 1 : 0;
     run.bitrateKbps = (UINT32)std::clamp(settings.videoBitrateMbps, 5, 200) * 1000u;
-    run.withAudio = settings.videoKeepAudio && !run.pngSequence && m_video.Info().hasAudio;
+    run.withAudio = settings.videoKeepAudio && !run.pngSequence && vi.hasAudio;
     run.folder = folder;
     run.stem = m_video.Stem();
+    run.resumeSec = m_video.PreviewSeconds();
     if (!CreateDirectories(folder)) { error = "cannot create the capture folder"; return false; }
     if (run.pngSequence) {
         std::wstring dir;
@@ -481,12 +654,24 @@ bool App::WorkerStartVideo(const Settings& settings, VideoRun& run, const std::w
         if (!CreateDirectories(dir)) { error = "cannot create the output folder"; return false; }
         run.outPath = dir;
     }
-    if (!m_video.StartSequence(run.withAudio, error)) return false;
-    run.total = m_video.Info().frameEstimate;
+    // Playback of the preview stops; the run has the decoder to itself.
+    m_preview.playing = false;
+    m_preview.running = false;
+    m_preview.ended = false;
+    if (!m_video.StartSequence(run.withAudio, fromSec, toSec, error)) return false;
+    run.fromSec = fromSec;
+    run.toSec = toSec;
+    const double fps = vi.fpsDen ? (double)vi.fpsNum / (double)vi.fpsDen : 30.0;
+    if (fromSec > 0.0 || toSec > 0.0) {
+        const double end = toSec > 0.0 ? std::min(toSec, vi.durationSeconds > 0.0 ? vi.durationSeconds : toSec) : vi.durationSeconds;
+        run.total = (UINT64)std::llround(std::max(0.0, end - fromSec) * fps);
+    }
+    if (run.total == 0) run.total = vi.frameEstimate;
     run.startTime = NowSeconds();
     run.active = true;
     m_pipeline.RequestReset();
-    Log::Info("Video: processing %s (%llu frames expected) -> %s", WideToUtf8(m_video.Path()).c_str(), (unsigned long long)run.total,
+    Log::Info("Video: processing %s (%.3f s to %s, %llu frames expected) -> %s", WideToUtf8(m_video.Path()).c_str(), fromSec,
+              toSec > 0.0 ? StrPrintf("%.3f s", toSec).c_str() : "the end", (unsigned long long)run.total,
               run.pngSequence ? WideToUtf8(run.outPath).c_str() : run.codec == 1 ? "MP4 (HEVC)" : "MP4 (H.264)");
     return true;
 }
@@ -557,21 +742,152 @@ bool App::WorkerEndVideo(GpuContext& gpu, VideoRun& run, FrameSink& sink, bool c
     }
     const double seconds = std::max(NowSeconds() - run.startTime, 1e-3);
     const std::string outName = WideToUtf8(FileNameOf(run.outPath));
+    m_workerLastOut = outName;
     if (ok) {
+        m_workerLastError.clear();
         Log::Info("Video: %llu frames processed in %.1f s (%.1f fps) -> %s", (unsigned long long)run.delivered, seconds,
                   (double)run.delivered / seconds, WideToUtf8(run.outPath).c_str());
         PostNotice(StrPrintf("%s: %s (%llu %s, %.0f s)", TR(VideoSaved), outName.c_str(), (unsigned long long)run.delivered,
                              "frames", seconds), false);
     } else if (run.cancel) {
+        m_workerLastError = "cancelled";
         Log::Info("Video: cancelled after %llu frames (%s)", (unsigned long long)run.delivered, WideToUtf8(run.outPath).c_str());
         PostNotice(TR(VideoCancelled), false);
     } else {
+        m_workerLastError = error;
+        ++m_videoFailures;
         Log::Error("Video: %s (%s)", error.c_str(), WideToUtf8(run.outPath).c_str());
         PostNotice(StrPrintf("%s: %s", TR(VideoFailed), error.c_str()), true);
     }
     run = VideoRun{};
     m_pipeline.RequestReset();
     return ok;
+}
+
+void App::WorkerPreviewCommand(const Command& c) {
+    if (!m_video.Loaded()) return;
+    switch (c.type) {
+    case Command::VideoSeek:
+        m_preview.seekPending = true;
+        m_preview.seekTo = c.seconds;
+        m_preview.stepFrames = 0;
+        {
+            // Visible to the interface while the frame decodes.
+            std::lock_guard<std::mutex> lock(m_shared.mutex);
+            m_shared.source.videoSeeking = true;
+            m_shared.source.videoPosition = c.seconds;
+        }
+        break;
+    case Command::VideoPlay:
+        m_preview.playing = true;
+        break;
+    case Command::VideoPause:
+        m_preview.playing = false;
+        break;
+    case Command::VideoStep:
+        m_preview.playing = false;
+        m_preview.stepFrames += c.step;
+        break;
+    case Command::VideoSetRange:
+        m_preview.inSec = std::max(0.0, c.seconds);
+        m_preview.outSec = c.seconds2 > m_preview.inSec ? c.seconds2 : 0.0;
+        m_preview.rangeChanged = true;
+        Log::Info("Video: range %.3f s to %s", m_preview.inSec, m_preview.outSec > 0.0 ? StrPrintf("%.3f s", m_preview.outSec).c_str() : "the end");
+        break;
+    default:
+        break;
+    }
+}
+
+bool App::WorkerPreviewStep(bool& fresh, bool& reset) {
+    if (!m_video.Loaded()) { m_preview.playing = false; m_preview.running = false; return false; }
+    bool changed = false;
+    std::string err;
+    const double frame = std::max(m_video.FrameSeconds(), 1e-3);
+    const VideoInfo& vi = m_video.Info();
+    auto stopPlayback = [&]() {
+        if (!m_preview.running) return;
+        m_video.StopSequence();
+        m_preview.running = false;
+        changed = true;   // the still passes converge on the frame that stayed
+    };
+    // Pause.
+    if (!m_preview.playing) stopPlayback();
+    // A changed range restarts playback from the current position with the new end.
+    if (m_preview.rangeChanged) {
+        m_preview.rangeChanged = false;
+        if (m_preview.running) stopPlayback();
+    }
+    // Frame steps become a seek relative to the frame on show.
+    if (m_preview.stepFrames != 0) {
+        stopPlayback();
+        const double base = m_preview.seekPending ? m_preview.seekTo : m_video.PreviewSeconds();
+        m_preview.seekTo = base + (double)m_preview.stepFrames * frame;
+        m_preview.seekPending = true;
+        m_preview.stepFrames = 0;
+    }
+    if (m_preview.seekPending) {
+        m_preview.seekPending = false;
+        stopPlayback();
+        const double before = m_video.PreviewSeconds();
+        const double t0 = NowSeconds();
+        if (m_video.SeekPreview(m_preview.seekTo, err)) {
+            changed = true;
+            reset = std::fabs(m_video.PreviewSeconds() - before) > frame * 1.5;   // a jump: the history is stale
+            m_preview.ended = false;
+            Log::Info("Video: seek to %.3f s -> frame at %.3f s in %.0f ms", m_preview.seekTo, m_video.PreviewSeconds(), (NowSeconds() - t0) * 1000.0);
+        } else {
+            Log::Warn("Video: seek to %.3f s failed: %s", m_preview.seekTo, err.c_str());
+        }
+    }
+    // Play: the sequence starts at the frame on show, or at the start of the range after its end was reached.
+    if (m_preview.playing && !m_preview.running) {
+        const double end = m_preview.outSec > m_preview.inSec ? m_preview.outSec : vi.durationSeconds;
+        double from = m_video.PreviewSeconds();
+        if (m_preview.ended || (end > 0.0 && from >= end - frame * 0.5)) { from = m_preview.inSec; reset = true; }
+        if (m_video.StartSequence(false, from, m_preview.outSec > m_preview.inSec ? m_preview.outSec : 0.0, err)) {
+            m_preview.running = true;
+            m_preview.ended = false;
+            m_preview.nextFrameWall = NowSeconds();
+            changed = true;
+        } else {
+            Log::Warn("Video: playback failed to start: %s", err.c_str());
+            PostNotice(StrPrintf("%s: %s", TR(VideoFailed), err.c_str()), true);
+            m_preview.playing = false;
+        }
+    }
+    // Playback: one frame per frame interval; when the pipeline falls behind, the clock is moved rather than frames
+    // dropped, so every frame is seen.
+    if (m_preview.running) {
+        const double now = NowSeconds();
+        if (now + 0.0005 >= m_preview.nextFrameWall) {
+            VideoFrameData t;
+            switch (m_video.NextFrame(0.0, t)) {
+            case VideoSource::Next::Frame:
+                fresh = true;
+                changed = true;
+                m_preview.nextFrameWall = (now - m_preview.nextFrameWall > frame) ? now + frame : m_preview.nextFrameWall + frame;
+                break;
+            case VideoSource::Next::Wait:
+                break;
+            case VideoSource::Next::End:
+                m_video.StopSequence();
+                m_preview.running = false;
+                m_preview.playing = false;
+                m_preview.ended = true;
+                changed = true;
+                break;
+            case VideoSource::Next::Error:
+                Log::Warn("Video: playback stopped: %s", m_video.SequenceError().c_str());
+                m_video.StopSequence();
+                m_preview.running = false;
+                m_preview.playing = false;
+                changed = true;
+                break;
+            }
+        }
+    }
+    return changed;
 }
 
 void App::WorkerMain() {
@@ -620,6 +936,10 @@ void App::WorkerMain() {
     UINT64 depthInferencesSeen = 0;
     UINT64 imageDepthSeen = 0;
 
+    auto currentItem = [&]() -> const BatchItem* {
+        return batch.active && batch.index < batch.items.size() ? &batch.items[batch.index] : nullptr;
+    };
+
     while (!m_workerStop.load(std::memory_order_acquire)) {
         const double now = NowSeconds();
 
@@ -664,9 +984,10 @@ void App::WorkerMain() {
             case Command::ProcessVideo: {
                 if (batch.active || videoRun.active) break;
                 std::string err;
-                if (!WorkerStartVideo(settings, videoRun, c.path, err)) {
+                if (!WorkerStartVideo(settings, videoRun, c.path, m_preview.inSec, m_preview.outSec, err)) {
                     Log::Error("Video: cannot start: %s", err.c_str());
                     PostNotice(StrPrintf("%s: %s", TR(VideoFailed), err.c_str()), true);
+                    ++m_videoFailures;
                 }
                 break;
             }
@@ -674,9 +995,9 @@ void App::WorkerMain() {
                 if (videoRun.active) videoRun.cancel = true;
                 break;
             case Command::BatchStart:
-                if (batch.active || videoRun.active || c.paths.empty()) break;
+                if (batch.active || videoRun.active || c.items.empty()) break;
                 batch = BatchRun{};
-                batch.files = std::move(c.paths);
+                batch.items = std::move(c.items);
                 batch.folder = c.path;
                 batch.keepAlpha = c.keepAlpha;
                 batch.saveOriginal = c.saveOriginal;
@@ -684,13 +1005,27 @@ void App::WorkerMain() {
                 batch.restoreVideo = m_video.Path();
                 batch.active = true;
                 imageCapturePending = false;
-                Log::Info("Batch: %zu files -> %s", batch.files.size(), WideToUtf8(batch.folder).c_str());
+                if (m_preview.running) m_video.StopSequence();
+                m_preview.running = false;
+                m_preview.playing = false;
+                Log::Info("Batch: %zu files -> %s", batch.items.size(), WideToUtf8(batch.folder).c_str());
                 break;
             case Command::BatchCancel:
                 if (!batch.active) break;
                 batch.cancel = true;
                 if (videoRun.active) videoRun.cancel = true;
-                if (batch.itemStarted && !batch.itemIsVideo) { imageCapturePending = false; batch.itemStarted = false; ++batch.failed; ++batch.index; }
+                if (batch.itemStarted && !batch.itemIsVideo) {
+                    if (const BatchItem* item = currentItem()) PostBatchEvent(item->id, LibraryItem::Idle, "", "");
+                    imageCapturePending = false; batch.itemStarted = false; ++batch.failed; ++batch.index;
+                }
+                break;
+            case Command::VideoSeek:
+            case Command::VideoPlay:
+            case Command::VideoPause:
+            case Command::VideoStep:
+            case Command::VideoSetRange:
+                if (batch.active || videoRun.active) break;
+                WorkerPreviewCommand(c);
                 break;
             }
         }
@@ -699,10 +1034,10 @@ void App::WorkerMain() {
         bool batchStep = false;
         while (batch.active && !batch.itemStarted && !videoRun.active) {
             batchStep = true;
-            if (batch.cancel || batch.index >= batch.files.size()) {
+            if (batch.cancel || batch.index >= batch.items.size()) {
                 if (batch.cancel) {
-                    Log::Info("Batch: cancelled after %d of %zu files", batch.done, batch.files.size());
-                    PostNotice(StrPrintf(TR(BatchCancelled), batch.done, (int)batch.files.size()), false);
+                    Log::Info("Batch: cancelled after %d of %zu files", batch.done, batch.items.size());
+                    PostNotice(StrPrintf(TR(BatchCancelled), batch.done, (int)batch.items.size()), false);
                 } else {
                     Log::Info("Batch: finished, %d files processed, %d failed", batch.done, batch.failed);
                     PostNotice(StrPrintf(TR(BatchFinished), batch.done, batch.failed), batch.failed > 0);
@@ -711,30 +1046,38 @@ void App::WorkerMain() {
                 batch = BatchRun{};
                 imageCapturePending = false;
                 // The user's own files come back (or go away, when there were none).
-                if (!ended.restoreImage.empty()) { if (m_image.Path() != ended.restoreImage) WorkerLoadImage(gpu, ended.restoreImage, false); }
+                if (!ended.restoreImage.empty()) { if (!SamePath(m_image.Path(), ended.restoreImage)) WorkerLoadImage(gpu, ended.restoreImage, false); }
                 else if (m_image.Loaded()) m_image.Release(gpu);
-                if (!ended.restoreVideo.empty()) { if (m_video.Path() != ended.restoreVideo) WorkerLoadVideo(gpu, ended.restoreVideo, settings.videoHardwareDecode, false); }
+                if (!ended.restoreVideo.empty()) { if (!SamePath(m_video.Path(), ended.restoreVideo)) WorkerLoadVideo(gpu, ended.restoreVideo, settings.videoHardwareDecode, false); }
                 else if (m_video.Loaded()) m_video.Close(gpu);
                 imageChanged = videoChanged = true;
                 passesLeft = kImageConvergePasses;
+                PostBatchEvent(0, LibraryItem::Idle, "", "");   // the batch is over
                 break;
             }
-            const std::wstring& file = batch.files[batch.index];
-            batch.itemIsVideo = VideoSource::IsSupportedExtension(file);
-            Log::Info("Batch: %zu/%zu %s", batch.index + 1, batch.files.size(), WideToUtf8(file).c_str());
-            if (batch.itemIsVideo) {
-                WorkerLoadVideo(gpu, file, settings.videoHardwareDecode, false);
+            const BatchItem& item = batch.items[batch.index];
+            batch.itemIsVideo = item.isVideo;
+            Log::Info("Batch: %zu/%zu %s", batch.index + 1, batch.items.size(), WideToUtf8(item.path).c_str());
+            PostBatchEvent(item.id, LibraryItem::Processing, "", "");
+            if (item.isVideo) {
+                WorkerLoadVideo(gpu, item.path, settings.videoHardwareDecode, false);
                 std::string err;
-                if (!m_video.Loaded() || m_video.Path() != file || !WorkerStartVideo(settings, videoRun, batch.folder, err)) {
+                if (!m_video.Loaded() || !SamePath(m_video.Path(), item.path) ||
+                    !WorkerStartVideo(settings, videoRun, batch.folder, item.inSec, item.outSec, err)) {
                     if (!err.empty()) { Log::Error("Video: cannot start: %s", err.c_str()); PostNotice(StrPrintf("%s: %s", TR(VideoFailed), err.c_str()), true); }
+                    PostBatchEvent(item.id, LibraryItem::Failed, "", err.empty() ? m_workerLastError : err);
                     ++batch.failed; ++batch.index;
                     continue;
                 }
                 videoChanged = true;
                 passesLeft = 0;
             } else {
-                WorkerLoadImage(gpu, file, false);
-                if (!m_image.Loaded() || m_image.Path() != file) { ++batch.failed; ++batch.index; continue; }
+                WorkerLoadImage(gpu, item.path, false);
+                if (!m_image.Loaded() || !SamePath(m_image.Path(), item.path)) {
+                    PostBatchEvent(item.id, LibraryItem::Failed, "", m_workerLastError);
+                    ++batch.failed; ++batch.index;
+                    continue;
+                }
                 imageChanged = true;
                 passesLeft = kImageConvergePasses;
                 imageCapturePending = true;
@@ -755,7 +1098,9 @@ void App::WorkerMain() {
         const bool modeChanged = mode != activeMode;
         activeMode = mode;
         if (videoRun.active && !videoMode) videoRun.cancel = true;   // switched away while a video was running
-        const bool stillMode = imageMode || (videoMode && !videoRun.active);   // convergence passes on one picture
+        if (!videoMode && m_preview.running) { m_video.StopSequence(); m_preview.running = false; m_preview.playing = false; }
+        const bool previewPlaying = videoMode && !videoRun.active && m_preview.running;
+        const bool stillMode = imageMode || (videoMode && !videoRun.active && !previewPlaying);   // convergence passes on one picture
         if (settingsChanged && !modeChanged) passesLeft = std::max(passesLeft, kImageSettingsPasses);
         if (modeChanged) passesLeft = kImageConvergePasses;
 
@@ -776,15 +1121,22 @@ void App::WorkerMain() {
             // A batch item is done once its picture has been written.
             if (batch.active && batch.itemStarted && !batch.itemIsVideo && !imageCapturePending && !m_pipeline.CapturePending() &&
                 m_pipeline.Status().capturesInFlight == 0 && m_capture.Pending() == 0) {
+                if (const BatchItem* item = currentItem()) PostBatchEvent(item->id, LibraryItem::Done, "", "");
                 batch.itemStarted = false; ++batch.done; ++batch.index;
             }
         } else if (videoMode) {
             imageCapturePending = false;
-            src = m_video.Frame(!videoRun.active);
             if (videoChanged) changed = true;
             if (!videoRun.active) {
-                fresh = m_video.Loaded() && passesLeft > 0;
+                bool reset = false;
+                if (!batch.active && WorkerPreviewStep(fresh, reset)) {
+                    passesLeft = kImageConvergePasses;
+                    if (reset) m_pipeline.RequestReset();
+                }
+                if (!m_preview.running) fresh = m_video.Loaded() && passesLeft > 0;
+                src = m_video.Frame(!m_preview.running);
             } else {
+                src = m_video.Frame(false);
                 // Sound goes to the output as it is decoded, so the decoder never waits on a full audio queue.
                 if (!videoRun.pngSequence && m_videoWriter.Running()) { ComPtr<IMFSample> a; while (m_video.PopAudio(a)) m_videoWriter.PushAudio(a); }
                 bool ended = false, completed = false;
@@ -817,13 +1169,15 @@ void App::WorkerMain() {
                     }
                 }
                 if (ended) {
+                    const double resume = videoRun.resumeSec;
                     const bool ok = WorkerEndVideo(gpu, videoRun, sink, completed);
                     if (batch.active && batch.itemStarted && batch.itemIsVideo) {
+                        if (const BatchItem* item = currentItem()) PostBatchEvent(item->id, ok ? LibraryItem::Done : LibraryItem::Failed, m_workerLastOut, ok ? "" : m_workerLastError);
                         batch.itemStarted = false; ++batch.index;
                         if (ok) ++batch.done; else ++batch.failed;
                     } else {
                         std::string err;
-                        if (m_video.Loaded() && !m_video.ReloadPreview(err)) Log::Warn("Video: preview reload failed: %s", err.c_str());
+                        if (m_video.Loaded() && !m_video.SeekPreview(resume, err)) Log::Warn("Video: preview reload failed: %s", err.c_str());
                         passesLeft = kImageConvergePasses;
                     }
                     src = m_video.Frame(true);
@@ -877,7 +1231,7 @@ void App::WorkerMain() {
             ID3D12GraphicsCommandList* cmd = gpu.BeginFrame();
             const double tRecord = NowSeconds();
             if (imageMode) { m_image.Upload(cmd, gpu); src = m_image.Frame(); imageChanged = false; }
-            else if (videoMode) { m_video.Upload(cmd, gpu); src = m_video.Frame(!videoRun.active); videoChanged = false; }
+            else if (videoMode) { m_video.Upload(cmd, gpu); src = m_video.Frame(!videoRun.active && !m_preview.running); videoChanged = false; }
             m_pipeline.Render(gpu, src, settings, cmd, fresh, changed);
             const double tSubmit = NowSeconds();
             const UINT64 fence = gpu.EndFrame();
@@ -935,7 +1289,7 @@ void App::WorkerMain() {
                 info.videoCodec = vi.codec;
                 info.videoWidth = vi.width; info.videoHeight = vi.height;
                 info.videoFps = vi.fpsDen ? (double)vi.fpsNum / (double)vi.fpsDen : 0.0;
-                info.videoFrames = vi.frameEstimate;
+                info.videoFrames = videoRun.active ? videoRun.total : vi.frameEstimate;
                 info.videoDurationSeconds = vi.durationSeconds;
                 info.videoHasAudio = vi.hasAudio;
                 info.videoHardwareDecode = vi.hardwareDecode;
@@ -943,10 +1297,16 @@ void App::WorkerMain() {
                 info.videoFrame = videoRun.delivered;
                 info.videoElapsed = videoRun.active ? now - videoRun.startTime : 0.0;
                 info.videoOutName = WideToUtf8(FileNameOf(videoRun.outPath));
+                info.videoPosition = m_video.PreviewSeconds();
+                info.videoPlaying = m_preview.playing || m_preview.running;
+                info.videoSeeking = false;
+                info.videoIn = m_preview.inSec;
+                info.videoOut = m_preview.outSec;
+                info.videoPreviewLuma = m_video.PreviewLuma();
                 info.batchRunning = batch.active;
-                info.batchIndex = (int)batch.index; info.batchCount = (int)batch.files.size();
+                info.batchIndex = (int)batch.index; info.batchCount = (int)batch.items.size();
                 info.batchDone = batch.done; info.batchFailed = batch.failed;
-                if (batch.active && batch.index < batch.files.size()) info.batchItemName = WideToUtf8(FileNameOf(batch.files[batch.index]));
+                if (const BatchItem* item = currentItem()) { info.batchItemId = item->id; info.batchItemName = WideToUtf8(FileNameOf(item->path)); }
             }
             if (imageMode) {
                 info.connected = m_image.Loaded();
@@ -961,7 +1321,7 @@ void App::WorkerMain() {
             } else if (videoMode) {
                 info.connected = m_video.Loaded();
                 info.hasFrame = m_pipeline.HasDisplay();
-                info.imageConverging = m_video.Loaded() && !videoRun.active && passesLeft > 0;
+                info.imageConverging = m_video.Loaded() && !videoRun.active && !m_preview.running && passesLeft > 0;
                 info.imageLoaded = m_image.Loaded();
                 info.imagePath = m_image.Path();
                 info.imageName = WideToUtf8(FileNameOf(m_image.Path()));
@@ -996,7 +1356,7 @@ void App::WorkerMain() {
                 const double other = std::max(0.0, g(GpuTimer::Frame) - stages);
                 Log::Info("Perf: %s %.1f fps (sender %.1f, ui %.0f fps / %.2f ms gpu), cpu %.2f ms/frame (receive %.2f, wait %.2f, record %.2f, submit %.2f, update %.2f), "
                           "gpu %.2f ms (convert %.2f, guidance %.2f, flow %.2f, dlaa %.2f, neural %.2f, composite %.2f, other %.2f), depth net %.1f ms x %u, frames %u",
-                          videoRun.active ? "video" : imageMode ? "image passes" : videoMode ? "video preview" : "processing",
+                          videoRun.active ? "video" : imageMode ? "image passes" : previewPlaying ? "video playback" : videoMode ? "video preview" : "processing",
                           perf.frames / (now - perf.logTime), m_spout.SenderFps(),
                           m_uiFpsShared.load(), m_uiGpuMsShared.load(), cpu, perf.receive / n, perf.wait / n, perf.record / n, perf.submit / n, perf.update / n,
                           g(GpuTimer::Frame), g(GpuTimer::Convert), g(GpuTimer::Guidance), g(GpuTimer::OpticalFlow), g(GpuTimer::Dlaa),
@@ -1007,29 +1367,35 @@ void App::WorkerMain() {
 
         if (!run || !fresh) {
             // Idle: poll the live source about every millisecond (new Spout frames are picked up within ~1 ms),
-            // more lazily when nothing is connected; commands and settings wake the thread immediately.
-            const DWORD ms = deviceLost ? 50 : (!imageMode && !videoMode && m_spout.Connected()) ? 1 : 4;
+            // more lazily when nothing is connected; commands and settings wake the thread immediately. Video
+            // playback keeps the 1 ms cadence so frames are shown on time.
+            const DWORD ms = deviceLost ? 50 : ((!imageMode && !videoMode && m_spout.Connected()) || previewPlaying) ? 1 : 4;
             WaitForSingleObject(m_wake, ms);
         }
     }
 
     if (videoRun.active) { videoRun.cancel = true; WorkerEndVideo(gpu, videoRun, sink, false); }
+    if (m_preview.running) { m_video.StopSequence(); m_preview.running = false; }
     timeEndPeriod(1);
     if (SUCCEEDED(coHr)) CoUninitialize();
 }
 
-// --- interface thread ----------------------------------------------------------------------
+// --- interface thread -----------------------------------------------------------------------
 
 void App::DrainNotices() {
     CaptureResult cr;
     while (m_capture.PollResult(cr)) {
         const std::wstring name = FileNameOf(cr.path);
-        if (cr.ok && cr.quiet) continue;   // a frame of a video sequence
+        if (cr.ok && cr.quiet) continue;   // a frame of a video sequence, or a screenshot
+        if (!cr.quiet) ++m_captureResultsSeen;
         if (cr.ok) {
             m_lastCapture = WideToUtf8(name);
             m_lastCaptureOk = true;
             m_ui.Toast(StrPrintf("%s: %s (%.1f MB, %.0f ms)", TR(Saved), m_lastCapture.c_str(), cr.bytes / 1048576.0, cr.seconds * 1000.0));
             Log::Info("Saved %s (%llu bytes)", WideToUtf8(cr.path).c_str(), (unsigned long long)cr.bytes);
+            // The picture of a library item being processed.
+            if (LibraryItem* item = FindItem(m_source.batchItemId))
+                if (item->state == LibraryItem::Processing && !item->isVideo) item->outName = m_lastCapture;
         } else {
             m_lastCapture = cr.error;
             m_lastCaptureOk = false;
@@ -1038,11 +1404,29 @@ void App::DrainNotices() {
         }
     }
     std::deque<Notice> notices;
+    std::deque<BatchEvent> events;
     {
         std::lock_guard<std::mutex> lock(m_shared.mutex);
         notices.swap(m_shared.notices);
+        events.swap(m_shared.batchEvents);
     }
     for (const Notice& n : notices) m_ui.Toast(n.text, n.error);
+    for (const BatchEvent& e : events) {
+        if (e.id == 0) {
+            // The batch is over: whatever is still waiting was not processed.
+            m_libraryBatchRunning = false;
+            for (LibraryItem& item : m_library)
+                if (item.state == LibraryItem::Queued || item.state == LibraryItem::Processing) item.state = LibraryItem::Idle;
+            continue;
+        }
+        LibraryItem* item = FindItem(e.id);
+        if (!item) continue;
+        item->state = (LibraryItem::State)e.state;
+        item->progress = 0.0f;
+        if (!e.outName.empty()) item->outName = e.outName;
+        item->error = e.error;
+        if (item->state == LibraryItem::Failed) ++m_batchFailures;
+    }
 }
 
 void App::Frame() {
@@ -1050,11 +1434,27 @@ void App::Frame() {
     m_inFrame = true;
     const double frameStart = NowSeconds();
 
+    // The screenshot recorded with the previous frame.
+    if (m_device.ScreenshotPending()) {
+        std::vector<uint8_t> rgba;
+        UINT w = 0, h = 0;
+        if (m_device.FinishScreenshot(m_screenshotFence, rgba, w, h)) {
+            CaptureJob job;
+            job.width = w; job.height = h; job.rowPitch = w * 4; job.keepAlpha = false; job.quiet = true;
+            job.path = m_screenshotPath;
+            job.pixels = std::move(rgba);
+            m_capture.Enqueue(std::move(job));
+            Log::Info("Screenshot: %s (%ux%u)", WideToUtf8(m_screenshotPath).c_str(), w, h);
+        } else {
+            Log::Warn("Screenshot failed: %s", WideToUtf8(m_screenshotPath).c_str());
+        }
+    }
+
     if (m_device.DeviceRemoved()) {
         if (!m_deviceLostReported) {
             m_deviceLostReported = true;
-            Log::Error("Graphics device removed");
-            MessageBoxW(m_hwnd, Utf8ToWide(TR(DeviceRemoved)).c_str(), L"VRChat DLSS5 Cam", MB_ICONERROR | MB_OK);
+            FatalMessage(Utf8ToWide(TR(DeviceRemoved)));
+            m_exitCode = 2;
             PostQuitMessage(2);
         }
         m_inFrame = false;
@@ -1069,9 +1469,12 @@ void App::Frame() {
         if (!m_fonts.Build(I18n::Current())) Log::Warn("Font atlas build failed; using the default font");
     }
     DrainNotices();
+    PollScanner();
+    UpdateStoryboard();
 
     ID3D12GraphicsCommandList* cmd = m_device.BeginFrame();
     if (!cmd) { m_inFrame = false; return; }
+    m_atlas.Upload(cmd, m_device.Ui());
     const DisplayView display = m_pipeline.AcquireDisplay(m_device.Ui());
     m_pipeline.StatusSnapshot(m_status);
     {
@@ -1079,9 +1482,15 @@ void App::Frame() {
         m_source = m_shared.source;
         if (m_shared.sendersGeneration != m_sendersSeen) { m_sendersSeen = m_shared.sendersGeneration; m_senders = m_shared.senders; }
     }
+    for (LibraryItem& item : m_library) {
+        if (item.state != LibraryItem::Processing) continue;
+        item.progress = (item.id == m_source.batchItemId && m_source.videoProcessing && m_source.videoFrames > 0)
+                            ? (float)std::min(1.0, (double)m_source.videoFrame / (double)m_source.videoFrames) : 0.0f;
+    }
 
     ImGui_ImplDX12_NewFrame();
     ImGui_ImplWin32_NewFrame();
+    if (m_headless && m_cli.width > 0 && m_cli.height > 0) ImGui::GetIO().DisplaySize = ImVec2((float)m_cli.width, (float)m_cli.height);
     ImGui::NewFrame();
 
     ui::UiFrameInfo info;
@@ -1105,6 +1514,7 @@ void App::Frame() {
     info.imageLoaded = m_source.imageLoaded;
     info.imageConverging = m_source.imageConverging;
     info.videoLoaded = m_source.videoLoaded;
+    info.videoPath = m_source.videoPath;
     info.videoName = m_source.videoName;
     info.videoCodec = m_source.videoCodec;
     info.videoWidth = m_source.videoWidth; info.videoHeight = m_source.videoHeight;
@@ -1118,11 +1528,23 @@ void App::Frame() {
     info.videoFrame = m_source.videoFrame;
     info.videoElapsed = m_source.videoElapsed;
     info.videoOutName = m_source.videoOutName;
-    info.batchRunning = m_source.batchRunning;
+    info.videoPosition = m_source.videoPosition;
+    info.videoPlaying = m_source.videoPlaying;
+    info.videoSeeking = m_source.videoSeeking;
+    info.videoIn = m_source.videoIn; info.videoOut = m_source.videoOut;
+    info.videoPreviewLuma = m_source.videoPreviewLuma;
+    info.batchRunning = m_source.batchRunning || m_libraryBatchRunning;
     info.batchIndex = m_source.batchIndex; info.batchCount = m_source.batchCount;
     info.batchDone = m_source.batchDone; info.batchFailed = m_source.batchFailed;
+    info.batchItemId = m_source.batchItemId;
     info.batchItemName = m_source.batchItemName;
-    info.batchFiles = &m_batchNames;
+    info.library = &m_library;
+    info.atlas = &m_atlas;
+    info.storyCells = &m_storyCells;
+    info.storyTimes = &m_storyTimes;
+    info.storyReady = &m_storyReady;
+    info.hoverCell = m_hoverCell;
+    info.hoverCellTime = m_hoverCellTime;
     info.nrRuntimePath = EffectiveRuntimePath();
     info.nrRuntimeExists = FileExists(info.nrRuntimePath);
     info.captureFolder = EffectiveCaptureFolder();
@@ -1145,15 +1567,22 @@ void App::Frame() {
     ID3D12Resource* backBuffer = m_device.CurrentBackBuffer();
     Device::Barrier(cmd, backBuffer, D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET);
     const D3D12_CPU_DESCRIPTOR_HANDLE rtv = m_device.CurrentRtv();
-    const float clear[4] = { 0.055f, 0.06f, 0.075f, 1.0f };
+    const ui::Palette& pal = ui::Colors();
+    const float clear[4] = { pal.window.x, pal.window.y, pal.window.z, 1.0f };
     cmd->ClearRenderTargetView(rtv, clear, 0, nullptr);
     cmd->OMSetRenderTargets(1, &rtv, FALSE, nullptr);
     ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), cmd);
+    if (!m_pendingScreenshot.empty()) {
+        if (m_device.BeginScreenshot(cmd)) m_screenshotPath = m_pendingScreenshot;
+        else Log::Warn("Screenshot could not be recorded: %s", WideToUtf8(m_pendingScreenshot).c_str());
+        m_pendingScreenshot.clear();
+    }
     Device::Barrier(cmd, backBuffer, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
     m_device.TimerEnd(cmd, GpuTimer::Ui);
 
     const UINT64 uiFence = m_device.EndFrame(m_settings.vsync);
     m_pipeline.ReleaseDisplay(uiFence);
+    if (m_device.ScreenshotPending()) m_screenshotFence = uiFence;
 
     const double now = NowSeconds();
     m_cpuMs = m_cpuMs * 0.9 + (now - frameStart) * 1000.0 * 0.1;
@@ -1167,20 +1596,135 @@ void App::Frame() {
     if (m_settingsDirtyTime >= 0.0 && now - m_settingsDirtyTime > 1.0) SaveSettings();
     m_inFrame = false;
 
+    RunCommandLineActions();
+
     // Modal dialogs run their own message pump; open them only once the frame is fully submitted.
     if (m_pendingBrowseRuntime) { m_pendingBrowseRuntime = false; BrowseRuntime(); }
     if (m_pendingBrowseDepthModel) { m_pendingBrowseDepthModel = false; BrowseDepthModel(); }
     if (m_pendingBrowseFolder) { m_pendingBrowseFolder = false; BrowseFolder(); }
     if (m_pendingBrowseImage) { m_pendingBrowseImage = false; BrowseImage(); }
     if (m_pendingBrowseVideo) { m_pendingBrowseVideo = false; BrowseVideo(); }
-    if (m_pendingBrowseBatchFiles) { m_pendingBrowseBatchFiles = false; BrowseBatchFiles(); }
-    if (m_pendingBrowseBatchFolder) { m_pendingBrowseBatchFolder = false; BrowseBatchFolder(); }
+    if (m_pendingBrowseLibraryFiles) { m_pendingBrowseLibraryFiles = false; BrowseLibraryFiles(); }
+    if (m_pendingBrowseLibraryFolder) { m_pendingBrowseLibraryFolder = false; BrowseLibraryFolder(); }
 
     // Without vsync the interface would otherwise spin at thousands of frames per second and take GPU time away
-    // from the processing queue; ~300 fps is plenty for a preview.
-    if (!m_settings.vsync) {
-        while (NowSeconds() - frameStart < 0.003) Sleep(1);
+    // from the processing queue; ~300 fps is plenty for a preview, ~60 for an offscreen run.
+    if (!m_settings.vsync || m_headless) {
+        const double budget = m_headless ? 0.016 : 0.003;
+        while (NowSeconds() - frameStart < budget) Sleep(1);
     }
+}
+
+void App::RunCommandLineActions() {
+    const double now = NowSeconds();
+    const double elapsed = now - m_startTime;
+    if (!m_cliActionsDone) {
+        m_cliActionsDone = true;
+        std::stable_sort(m_cli.screenshots.begin(), m_cli.screenshots.end(),
+                         [](const std::pair<double, std::wstring>& a, const std::pair<double, std::wstring>& b) { return a.first < b.first; });
+        if (!m_cli.open.empty()) {
+            bool isVideo = false;
+            if (IsLibraryFile(m_cli.open, isVideo)) {
+                if (isVideo) OpenVideoFile(m_cli.open);
+                else OpenImageFile(m_cli.open);
+                AddLibraryFiles({ m_cli.open }, false);
+            } else {
+                Log::Warn("Command line: %s is not a picture or a video", WideToUtf8(m_cli.open).c_str());
+                m_cli.open.clear();
+            }
+        }
+        if (!m_cli.add.empty()) AddLibraryFiles(m_cli.add, false);
+    }
+    // The opened file.
+    bool openIsVideo = false;
+    const bool openWanted = !m_cli.open.empty() && IsLibraryFile(m_cli.open, openIsVideo);
+    const bool openLoaded = !openWanted ||
+                            (openIsVideo ? (m_source.videoLoaded && SamePath(m_source.videoPath, m_cli.open))
+                                         : (m_source.imageLoaded && SamePath(m_source.imagePath, m_cli.open)));
+    if (!m_cliVideoActionsDone && (openLoaded || !openIsVideo)) {
+        m_cliVideoActionsDone = true;
+        if (openWanted && openIsVideo) {
+            if (m_cli.in >= 0.0 || m_cli.out >= 0.0) {
+                Command c; c.type = Command::VideoSetRange;
+                c.seconds = std::max(0.0, m_cli.in);
+                c.seconds2 = m_cli.out > c.seconds ? m_cli.out : 0.0;
+                for (LibraryItem& item : m_library)
+                    if (item.isVideo && SamePath(item.path, m_cli.open)) { item.inSec = c.seconds; item.outSec = c.seconds2; }
+                PostCommand(std::move(c));
+            }
+            if (m_cli.seek >= 0.0) { Command c; c.type = Command::VideoSeek; c.seconds = m_cli.seek; PostCommand(std::move(c)); }
+            if (m_cli.play) { Command c; c.type = Command::VideoPlay; PostCommand(std::move(c)); }
+        }
+    }
+    // Screenshots at their times, one at a time.
+    if (m_nextScreenshot < m_cli.screenshots.size() && m_pendingScreenshot.empty() && !m_device.ScreenshotPending() &&
+        elapsed >= m_cli.screenshots[m_nextScreenshot].first) {
+        RequestScreenshot(m_cli.screenshots[m_nextScreenshot].second);
+        ++m_nextScreenshot;
+    }
+    const bool screenshotsFlushed = m_nextScreenshot >= m_cli.screenshots.size() && m_pendingScreenshot.empty() &&
+                                    !m_device.ScreenshotPending() && m_capture.Pending() == 0;
+    // Processing: the opened file or the library, once everything is loaded.
+    bool probesDone = true;
+    for (const LibraryItem& item : m_library) if (item.probe == 0) { probesDone = false; break; }
+    if (m_cli.process && !m_cliProcessStarted && m_cliVideoActionsDone && elapsed >= 1.0 && probesDone) {
+        if (openLoaded) {
+            m_cliProcessStarted = true;
+            m_cliProcessStartTime = now;
+            m_cliCaptureBaseline = m_captureResultsSeen;
+            if (!m_library.empty()) {
+                Log::Info("Command line: processing the library (%zu files)", m_library.size());
+                StartLibraryProcessing(false);
+                if (!m_libraryBatchRunning) ++m_batchFailures;   // it did not start (busy, nothing to do)
+            } else if (m_settings.sourceMode == SourceSpout) {
+                Log::Info("Command line: capturing the live source");
+                CaptureNow();
+            } else {
+                Log::Warn("Command line: nothing to process");
+                ++m_batchFailures;
+            }
+        } else if (elapsed >= 60.0) {
+            Log::Error("Command line: %s did not load", WideToUtf8(m_cli.open).c_str());
+            m_cliProcessStarted = true;
+            m_cliProcessStartTime = now;
+            ++m_batchFailures;
+        }
+    }
+    bool processDone = !m_cli.process;
+    if (m_cli.process && m_cliProcessStarted && now - m_cliProcessStartTime >= 2.0) {
+        const bool running = m_source.batchRunning || m_libraryBatchRunning || m_source.videoProcessing || m_source.videoFinishing ||
+                             m_capture.Pending() > 0 || m_status.capturesInFlight > 0 || m_pipeline.CapturePending();
+        processDone = !running;
+    }
+    auto quit = [&](const char* why) {
+        if (m_quit) return;
+        const bool failed = m_batchFailures > 0 || m_videoFailures.load() > 0;
+        if (failed && m_exitCode == 0) m_exitCode = 1;
+        Log::Info("Command line: %s, exiting with code %d", why, m_exitCode);
+        if (!m_headless) SaveWindowPlacement();
+        SaveSettings();
+        m_quit = true;
+    };
+    if (m_cli.exitAfter >= 0.0 && elapsed >= m_cli.exitAfter) {
+        if (m_nextScreenshot < m_cli.screenshots.size()) {
+            Log::Warn("Command line: %zu screenshot(s) come after --exit-after and were skipped", m_cli.screenshots.size() - m_nextScreenshot);
+            m_nextScreenshot = m_cli.screenshots.size();
+        }
+        if (m_pendingScreenshot.empty() && !m_device.ScreenshotPending() && m_capture.Pending() == 0) quit("--exit-after reached");
+        return;
+    }
+    if ((m_headless || m_cli.process) && screenshotsFlushed && processDone && elapsed >= 1.0) {
+        // A headless run without a task still waits for the runtime to load, so the log tells whether it works.
+        if (!m_cli.process && m_cli.screenshots.empty() && elapsed < 3.0) return;
+        quit(m_cli.process ? "processing finished" : "done");
+    }
+}
+
+void App::RequestScreenshot(const std::wstring& path) {
+    if (path.empty()) return;
+    const size_t slash = path.find_last_of(L"\\/");
+    if (slash != std::wstring::npos) CreateDirectories(path.substr(0, slash));
+    m_pendingScreenshot = path;
 }
 
 void App::HandleEvents(ui::UiEvents& ev) {
@@ -1190,15 +1734,31 @@ void App::HandleEvents(ui::UiEvents& ev) {
     if (ev.openImage) m_pendingBrowseImage = true;
     if (ev.openVideo) m_pendingBrowseVideo = true;
     if (ev.cancelVideo) { Command c; c.type = Command::CancelVideo; PostCommand(std::move(c)); }
-    if (ev.batchAddFiles) m_pendingBrowseBatchFiles = true;
-    if (ev.batchAddFolder) m_pendingBrowseBatchFolder = true;
-    if (ev.batchClear) { m_batchFiles.clear(); m_batchNames.clear(); }
-    if (ev.batchRemove >= 0 && (size_t)ev.batchRemove < m_batchFiles.size()) {
-        m_batchFiles.erase(m_batchFiles.begin() + ev.batchRemove);
-        m_batchNames.erase(m_batchNames.begin() + ev.batchRemove);
-    }
-    if (ev.batchStart) StartBatch();
     if (ev.batchCancel) { Command c; c.type = Command::BatchCancel; PostCommand(std::move(c)); }
+    // Video controls.
+    if (ev.videoSeek) { Command c; c.type = Command::VideoSeek; c.seconds = ev.videoSeekTo; PostCommand(std::move(c)); }
+    if (ev.videoPlayToggle) { Command c; c.type = m_source.videoPlaying ? Command::VideoPause : Command::VideoPlay; PostCommand(std::move(c)); }
+    if (ev.videoStep != 0) { Command c; c.type = Command::VideoStep; c.step = ev.videoStep; PostCommand(std::move(c)); }
+    if (ev.videoSetIn || ev.videoSetOut || ev.videoClearRange) {
+        double in = m_source.videoIn, out = m_source.videoOut;
+        if (ev.videoClearRange) { in = 0.0; out = 0.0; }
+        else if (ev.videoSetIn) { in = m_source.videoPosition; if (out > 0.0 && out <= in) out = 0.0; }
+        else { out = m_source.videoPosition; if (in >= out) in = 0.0; }
+        Command c; c.type = Command::VideoSetRange; c.seconds = in; c.seconds2 = out;
+        PostCommand(std::move(c));
+        for (LibraryItem& item : m_library)
+            if (item.isVideo && SamePath(item.path, m_source.videoPath)) { item.inSec = in; item.outSec = out; }
+    }
+    if (ev.videoHover) RequestHoverThumb(ev.videoHoverTime);
+    // Media library.
+    if (ev.libraryPreview) PreviewLibraryItem(ev.libraryPreview);
+    if (ev.libraryRemove) RemoveLibraryItem(ev.libraryRemove);
+    if (ev.libraryClear) ClearLibrary();
+    if (ev.libraryProcessAll) StartLibraryProcessing(false);
+    if (ev.libraryProcessSelected) StartLibraryProcessing(true);
+    if (ev.libraryAddFiles) m_pendingBrowseLibraryFiles = true;
+    if (ev.libraryAddFolder) m_pendingBrowseLibraryFolder = true;
+
     if (ev.reloadDepth) { m_pipeline.RestartDepthEstimator(); WakeWorker(); }
     if (ev.browseFolder) m_pendingBrowseFolder = true;
     if (ev.openCaptureFolder) {
@@ -1224,11 +1784,14 @@ void App::HandleEvents(ui::UiEvents& ev) {
         def.windowWidth = m_settings.windowWidth; def.windowHeight = m_settings.windowHeight;
         def.windowMaximized = m_settings.windowMaximized;
         def.language = m_settings.language;
+        def.sourceMode = m_settings.sourceMode;
+        def.imagePath = m_settings.imagePath;
+        def.videoPath = m_settings.videoPath;
         m_settings = def;
         m_spout.SetRequestedSender(m_settings.senderName);
         m_pipeline.MarkNrDirty();
         m_pipeline.MarkDlaaDirty();
-        RegisterHotkey();
+        if (!m_headless) RegisterHotkey();
         RequestRuntimeLoad(false);
         m_ui.Toast(TR(SettingsReset));
         ev.settingsChanged = true;
@@ -1243,7 +1806,7 @@ void App::HandleEvents(ui::UiEvents& ev) {
         m_settings.Clamp();
         MarkSettingsDirty();
     }
-    if (ev.hotkeyChanged) RegisterHotkey();
+    if (ev.hotkeyChanged && !m_headless) RegisterHotkey();
     if (ev.nrChanged) { m_pipeline.MarkNrDirty(); WakeWorker(); }
     if (ev.dlaaChanged) { m_pipeline.MarkDlaaDirty(); WakeWorker(); }
     if (ev.resetHistory) { m_pipeline.RequestReset(); WakeWorker(); m_ui.Toast(TR(HistoryReset)); }
@@ -1253,7 +1816,7 @@ void App::HandleEvents(ui::UiEvents& ev) {
 }
 
 void App::CaptureNow() {
-    if (m_source.batchRunning) { m_ui.Toast(TR(BatchBusy), true); return; }
+    if (m_source.batchRunning || m_libraryBatchRunning) { m_ui.Toast(TR(BatchBusy), true); return; }
     if (m_settings.sourceMode == SourceVideo) {
         if (m_source.videoProcessing) { m_ui.Toast(TR(VideoBusy), true); return; }
         if (!m_source.videoLoaded) { m_ui.Toast(TR(CaptureNoVideo), true); return; }
@@ -1309,7 +1872,7 @@ void App::RequestRuntimeLoad(bool announce) {
 
 void App::OpenImageFile(const std::wstring& path) {
     if (path.empty()) return;
-    if (m_source.batchRunning) { m_ui.Toast(TR(BatchBusy), true); return; }
+    if (m_source.batchRunning || m_libraryBatchRunning) { m_ui.Toast(TR(BatchBusy), true); return; }
     if (m_source.videoProcessing) { m_ui.Toast(TR(VideoBusy), true); return; }
     Log::Info("Opening image %s", WideToUtf8(path).c_str());
     m_settings.sourceMode = SourceImage;
@@ -1323,7 +1886,7 @@ void App::OpenImageFile(const std::wstring& path) {
 
 void App::OpenVideoFile(const std::wstring& path) {
     if (path.empty()) return;
-    if (m_source.batchRunning) { m_ui.Toast(TR(BatchBusy), true); return; }
+    if (m_source.batchRunning || m_libraryBatchRunning) { m_ui.Toast(TR(BatchBusy), true); return; }
     if (m_source.videoProcessing) { m_ui.Toast(TR(VideoBusy), true); return; }
     Log::Info("Opening video %s", WideToUtf8(path).c_str());
     m_settings.sourceMode = SourceVideo;
@@ -1335,51 +1898,238 @@ void App::OpenVideoFile(const std::wstring& path) {
     PostCommand(std::move(c));
 }
 
+// One dropped file: the runtime DLL is taken as the runtime, a picture or a video opens (and joins the library).
 void App::OnFileDropped(const std::wstring& path) {
-    if (DirectoryExists(path)) { AddBatchFiles({ path }); return; }
+    if (DirectoryExists(path)) { OnFilesDropped({ path }); return; }
     if (LowerExtension(path) == L"dll") {
-        // The runtime itself was dropped: use it.
         m_settings.nrDllPath = WideToUtf8(path);
         MarkSettingsDirty();
         RequestRuntimeLoad(true);
         return;
     }
-    if (VideoSource::IsSupportedExtension(path)) { OpenVideoFile(path); return; }
-    OpenImageFile(path);
+    bool isVideo = false;
+    if (!IsLibraryFile(path, isVideo)) {
+        m_ui.Toast(TR(BatchNoFiles), true);
+        return;
+    }
+    if (isVideo) OpenVideoFile(path);
+    else OpenImageFile(path);
+    AddLibraryFiles({ path }, false);
 }
 
-// Adds pictures and videos (and the files of folders) to the batch queue, skipping duplicates and other files.
-void App::AddBatchFiles(const std::vector<std::wstring>& paths) {
-    int added = 0;
+// Several files or a folder: they join the library; the first one is shown when nothing is open in the current mode.
+void App::OnFilesDropped(const std::vector<std::wstring>& paths) {
+    if (paths.size() == 1 && !DirectoryExists(paths[0])) { OnFileDropped(paths[0]); return; }
+    const size_t before = m_library.size();
+    AddLibraryFiles(paths, true);
+    if (m_library.size() <= before) return;
+    const LibraryItem& first = m_library[before];
+    const bool nothingOpen = (m_settings.sourceMode == SourceImage && !m_source.imageLoaded) ||
+                             (m_settings.sourceMode == SourceVideo && !m_source.videoLoaded);
+    if (nothingOpen) PreviewLibraryItem(first.id);
+}
+
+// --- media library --------------------------------------------------------------------------
+
+LibraryItem* App::FindItem(unsigned id) {
+    if (id == 0) return nullptr;
+    for (LibraryItem& item : m_library) if (item.id == id) return &item;
+    return nullptr;
+}
+
+void App::AddLibraryFiles(const std::vector<std::wstring>& paths, bool announce) {
     std::vector<std::wstring> files;
     for (const std::wstring& p : paths) {
         if (DirectoryExists(p)) { const std::vector<std::wstring> inside = ListFolderFiles(p); files.insert(files.end(), inside.begin(), inside.end()); }
         else files.push_back(p);
     }
+    int added = 0;
+    bool full = false;
     for (const std::wstring& f : files) {
-        if (!ImageSource::IsSupportedExtension(f) && !VideoSource::IsSupportedExtension(f)) continue;
-        if (std::find(m_batchFiles.begin(), m_batchFiles.end(), f) != m_batchFiles.end()) continue;
-        m_batchFiles.push_back(f);
-        m_batchNames.push_back(WideToUtf8(FileNameOf(f)));
+        bool isVideo = false;
+        if (!IsLibraryFile(f, isVideo)) continue;
+        bool dup = false;
+        for (const LibraryItem& item : m_library) if (SamePath(item.path, f)) { dup = true; break; }
+        if (dup) continue;
+        if (m_library.size() >= (size_t)kLibraryMax) { full = true; break; }
+        LibraryItem item;
+        item.id = m_nextItemId++;
+        item.path = f;
+        item.name = WideToUtf8(FileNameOf(f));
+        item.isVideo = isVideo;
+        item.thumbCell = m_atlas.Ready() ? m_atlas.Alloc() : -1;
+        m_library.push_back(item);
+        m_scanner.Probe(item.id, f, isVideo, item.thumbCell);
         ++added;
     }
-    if (added > 0) m_ui.Toast(StrPrintf(TR(BatchAdded), added));
-    else m_ui.Toast(TR(BatchNoFiles), true);
+    if (added > 0) Log::Info("Library: %d file(s) added, %zu in the library", added, m_library.size());
+    if (full) m_ui.Toast(StrPrintf(TR(LibraryFull), kLibraryMax), true);
+    if (announce) {
+        if (added > 0) m_ui.Toast(StrPrintf(TR(BatchAdded), added));
+        else if (!full) m_ui.Toast(TR(BatchNoFiles), true);
+    }
 }
 
-void App::StartBatch() {
-    if (m_batchFiles.empty()) { m_ui.Toast(TR(BatchEmpty), true); return; }
-    if (m_source.batchRunning) { m_ui.Toast(TR(BatchBusy), true); return; }
+void App::RemoveLibraryItem(unsigned id) {
+    for (size_t i = 0; i < m_library.size(); ++i) {
+        LibraryItem& item = m_library[i];
+        if (item.id != id) continue;
+        if (item.state == LibraryItem::Queued || item.state == LibraryItem::Processing) { m_ui.Toast(TR(BatchBusy), true); return; }
+        m_scanner.Forget(id);
+        if (item.thumbCell >= 0) m_atlas.Free(item.thumbCell);
+        m_library.erase(m_library.begin() + (ptrdiff_t)i);
+        return;
+    }
+}
+
+void App::ClearLibrary() {
+    if (m_libraryBatchRunning || m_source.batchRunning) { m_ui.Toast(TR(BatchBusy), true); return; }
+    for (const LibraryItem& item : m_library) {
+        m_scanner.Forget(item.id);
+        if (item.thumbCell >= 0) m_atlas.Free(item.thumbCell);
+    }
+    m_library.clear();
+}
+
+void App::PreviewLibraryItem(unsigned id) {
+    const LibraryItem* item = FindItem(id);
+    if (!item) return;
+    if (item->isVideo) {
+        if (m_settings.sourceMode == SourceVideo && m_source.videoLoaded && SamePath(m_source.videoPath, item->path)) return;
+        OpenVideoFile(item->path);
+        // The item's range follows the file into the preview (LoadVideo runs first: commands keep their order).
+        Command c; c.type = Command::VideoSetRange; c.seconds = item->inSec; c.seconds2 = item->outSec;
+        PostCommand(std::move(c));
+    } else {
+        if (m_settings.sourceMode == SourceImage && m_source.imageLoaded && SamePath(m_source.imagePath, item->path)) return;
+        OpenImageFile(item->path);
+    }
+}
+
+void App::StartLibraryProcessing(bool selectedOnly) {
+    if (m_libraryBatchRunning || m_source.batchRunning) { m_ui.Toast(TR(BatchBusy), true); return; }
     if (m_source.videoProcessing) { m_ui.Toast(TR(VideoBusy), true); return; }
+    std::vector<BatchItem> items;
+    for (const LibraryItem& item : m_library) {
+        if (selectedOnly && !item.selected) continue;
+        if (item.probe == 2) continue;   // unreadable
+        BatchItem b;
+        b.id = item.id; b.path = item.path; b.isVideo = item.isVideo; b.inSec = item.inSec; b.outSec = item.outSec;
+        items.push_back(b);
+    }
+    if (items.empty()) { m_ui.Toast(TR(BatchEmpty), true); return; }
+    for (const BatchItem& b : items) {
+        if (LibraryItem* item = FindItem(b.id)) { item->state = LibraryItem::Queued; item->progress = 0.0f; item->outName.clear(); item->error.clear(); }
+    }
+    const int count = (int)items.size();
     Command c;
     c.type = Command::BatchStart;
-    c.paths = m_batchFiles;
+    c.items = std::move(items);
     c.path = EffectiveCaptureFolder();
     c.keepAlpha = m_settings.keepAlpha;
     c.saveOriginal = m_settings.saveOriginal;
     PostCommand(std::move(c));
-    m_ui.Toast(StrPrintf(TR(BatchRunning), 1, (int)m_batchFiles.size()));
+    m_libraryBatchRunning = true;
+    m_ui.Toast(StrPrintf(TR(BatchRunning), 1, count));
 }
+
+void App::PollScanner() {
+    ScanResult r;
+    for (int n = 0; n < 32 && m_scanner.Poll(r); ++n) {
+        switch (r.kind) {
+        case ScanRequest::Probe:
+            if (LibraryItem* item = FindItem(r.id)) {
+                item->probe = r.ok ? 1 : 2;
+                item->width = r.width; item->height = r.height;
+                item->duration = r.duration; item->fps = r.fps; item->hasAudio = r.hasAudio;
+                item->error = r.error;
+                if (r.ok && item->thumbCell >= 0 && !r.thumb.empty()) m_atlas.Set(item->thumbCell, std::move(r.thumb));
+                if (!r.ok) Log::Warn("Library: %s: %s", item->name.c_str(), r.error.c_str());
+            }
+            break;
+        case ScanRequest::Storyboard:
+            if (r.id != m_storyGeneration || r.slot < 0 || (size_t)r.slot >= m_storyCells.size()) break;
+            if (r.ok && !r.thumb.empty()) {
+                m_atlas.Set(m_storyCells[(size_t)r.slot], std::move(r.thumb));
+                m_storyTimes[(size_t)r.slot] = r.seconds;
+                m_storyReady[(size_t)r.slot] = true;
+            }
+            break;
+        case ScanRequest::Hover:
+            if (r.id != m_storyGeneration || m_hoverCell < 0) break;
+            if (r.ok && !r.thumb.empty()) {
+                m_atlas.Set(m_hoverCell, std::move(r.thumb));
+                m_hoverCellTime = r.seconds;
+            }
+            break;
+        }
+    }
+}
+
+// The seek-bar pictures follow the opened video: evenly spaced frames, decoded coarse to fine.
+void App::UpdateStoryboard() {
+    if (m_source.batchRunning) return;   // the batch opens its own files
+    const std::wstring path = (m_settings.sourceMode == SourceVideo && m_source.videoLoaded) ? m_source.videoPath : std::wstring();
+    const double duration = m_source.videoDurationSeconds;
+    if (SamePath(path, m_storyPath) && (path.empty() || std::fabs(duration - m_storyDuration) < 1e-6)) return;
+    for (int c : m_storyCells) m_atlas.Free(c);
+    m_storyCells.clear(); m_storyTimes.clear(); m_storyReady.clear();
+    m_scanner.ClearStoryboard();
+    ++m_storyGeneration;
+    m_hoverCellTime = -1.0;
+    m_hoverRequested = -1.0;
+    m_storyPath = path;
+    m_storyDuration = duration;
+    if (path.empty() || !m_atlas.Ready() || duration <= 0.0) return;
+    const double frame = m_source.videoFps > 0.0 ? 1.0 / m_source.videoFps : 1.0 / 30.0;
+    const int slots = (int)std::clamp(std::ceil(duration / frame), 1.0, (double)kStorySlots);
+    for (int i = 0; i < slots; ++i) {
+        const int cell = m_atlas.Alloc();
+        if (cell < 0) break;
+        m_storyCells.push_back(cell);
+        m_storyTimes.push_back(duration * ((double)i + 0.5) / (double)slots);
+        m_storyReady.push_back(false);
+    }
+    const int n = (int)m_storyCells.size();
+    std::vector<bool> queued((size_t)n, false);
+    std::vector<ScanRequest> requests;
+    int step = 1;
+    while (step * 2 <= n) step *= 2;
+    for (; step >= 1; step /= 2) {
+        for (int i = 0; i < n; i += step) {
+            if (queued[(size_t)i]) continue;
+            queued[(size_t)i] = true;
+            ScanRequest r;
+            r.kind = ScanRequest::Storyboard;
+            r.id = m_storyGeneration;
+            r.path = path;
+            r.isVideo = true;
+            r.seconds = m_storyTimes[(size_t)i];
+            r.cell = m_storyCells[(size_t)i];
+            r.slot = i;
+            requests.push_back(std::move(r));
+        }
+    }
+    m_scanner.SetStoryboard(m_storyGeneration, path, std::move(requests));
+}
+
+// The exact frame under the cursor on the seek bar (the storyboard picture shows until it arrives).
+void App::RequestHoverThumb(double seconds) {
+    if (m_storyPath.empty() || !m_atlas.Ready()) return;
+    if (m_hoverCell < 0) {
+        m_hoverCell = m_atlas.Alloc();
+        if (m_hoverCell < 0) return;
+    }
+    const double frame = m_source.videoFps > 0.0 ? 1.0 / m_source.videoFps : 1.0 / 30.0;
+    const double now = NowSeconds();
+    if (m_hoverRequested >= 0.0 && std::fabs(seconds - m_hoverRequested) < frame * 0.5) return;
+    if (now - m_hoverRequestTime < kHoverDebounce) return;   // the next hover event carries the newest position
+    m_hoverRequested = seconds;
+    m_hoverRequestTime = now;
+    m_scanner.Hover(m_storyGeneration, seconds, m_hoverCell);
+}
+
+// --- settings, dialogs ----------------------------------------------------------------------
 
 void App::MarkSettingsDirty() {
     if (m_settingsDirtyTime < 0.0) m_settingsDirtyTime = NowSeconds();
@@ -1392,6 +2142,7 @@ void App::SaveSettings() {
 }
 
 void App::SaveWindowPlacement() {
+    if (m_headless) return;
     WINDOWPLACEMENT wp{};
     wp.length = sizeof(wp);
     if (!m_hwnd || !GetWindowPlacement(m_hwnd, &wp)) return;
@@ -1411,6 +2162,33 @@ std::wstring App::EffectiveCaptureFolder(const Settings& s) {
     if (!s.captureFolder.empty()) return Utf8ToWide(s.captureFolder);
     return JoinPath(GetPicturesDir(), L"VRChat DLSS5 Cam");
 }
+
+namespace {
+// Starts a file dialog in the folder of a previous file.
+void StartInFolderOf(IFileOpenDialog* dlg, const std::string& previousUtf8) {
+    if (previousUtf8.empty()) return;
+    const std::wstring prev = Utf8ToWide(previousUtf8);
+    const size_t slash = prev.find_last_of(L"\\/");
+    if (slash == std::wstring::npos) return;
+    ComPtr<IShellItem> folder;
+    if (SUCCEEDED(SHCreateItemFromParsingName(prev.substr(0, slash).c_str(), nullptr, IID_PPV_ARGS(&folder)))) dlg->SetFolder(folder.Get());
+}
+
+std::vector<std::wstring> DialogResults(IFileOpenDialog* dlg) {
+    std::vector<std::wstring> paths;
+    ComPtr<IShellItemArray> items;
+    if (FAILED(dlg->GetResults(&items)) || !items) return paths;
+    DWORD count = 0;
+    items->GetCount(&count);
+    for (DWORD i = 0; i < count; ++i) {
+        ComPtr<IShellItem> item;
+        if (FAILED(items->GetItemAt(i, &item)) || !item) continue;
+        PWSTR psz = nullptr;
+        if (SUCCEEDED(item->GetDisplayName(SIGDN_FILESYSPATH, &psz)) && psz) { paths.emplace_back(psz); CoTaskMemFree(psz); }
+    }
+    return paths;
+}
+} // namespace
 
 void App::BrowseRuntime() {
     ComPtr<IFileOpenDialog> dlg;
@@ -1482,15 +2260,7 @@ void App::BrowseImage() {
     const COMDLG_FILTERSPEC filters[] = { { imagesLabel.c_str(), kImagePatterns }, { L"All files", L"*.*" } };
     dlg->SetFileTypes(2, filters);
     dlg->SetTitle(title.c_str());
-    if (!m_settings.imagePath.empty()) {
-        // Start in the folder of the current picture.
-        const std::wstring prev = Utf8ToWide(m_settings.imagePath);
-        const size_t slash = prev.find_last_of(L"\\/");
-        if (slash != std::wstring::npos) {
-            ComPtr<IShellItem> folder;
-            if (SUCCEEDED(SHCreateItemFromParsingName(prev.substr(0, slash).c_str(), nullptr, IID_PPV_ARGS(&folder)))) dlg->SetFolder(folder.Get());
-        }
-    }
+    StartInFolderOf(dlg.Get(), m_settings.imagePath);
     if (FAILED(dlg->Show(m_hwnd))) return;
     ComPtr<IShellItem> item;
     if (FAILED(dlg->GetResult(&item))) return;
@@ -1499,6 +2269,7 @@ void App::BrowseImage() {
         const std::wstring path = psz;
         CoTaskMemFree(psz);
         OpenImageFile(path);
+        AddLibraryFiles({ path }, false);
     }
 }
 
@@ -1513,14 +2284,7 @@ void App::BrowseVideo() {
     const COMDLG_FILTERSPEC filters[] = { { videosLabel.c_str(), kVideoPatterns }, { L"All files", L"*.*" } };
     dlg->SetFileTypes(2, filters);
     dlg->SetTitle(title.c_str());
-    if (!m_settings.videoPath.empty()) {
-        const std::wstring prev = Utf8ToWide(m_settings.videoPath);
-        const size_t slash = prev.find_last_of(L"\\/");
-        if (slash != std::wstring::npos) {
-            ComPtr<IShellItem> folder;
-            if (SUCCEEDED(SHCreateItemFromParsingName(prev.substr(0, slash).c_str(), nullptr, IID_PPV_ARGS(&folder)))) dlg->SetFolder(folder.Get());
-        }
-    }
+    StartInFolderOf(dlg.Get(), m_settings.videoPath);
     if (FAILED(dlg->Show(m_hwnd))) return;
     ComPtr<IShellItem> item;
     if (FAILED(dlg->GetResult(&item))) return;
@@ -1529,10 +2293,11 @@ void App::BrowseVideo() {
         const std::wstring path = psz;
         CoTaskMemFree(psz);
         OpenVideoFile(path);
+        AddLibraryFiles({ path }, false);
     }
 }
 
-void App::BrowseBatchFiles() {
+void App::BrowseLibraryFiles() {
     ComPtr<IFileOpenDialog> dlg;
     if (FAILED(CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&dlg)))) return;
     DWORD opts = 0;
@@ -1547,22 +2312,13 @@ void App::BrowseBatchFiles() {
                                           { videosLabel.c_str(), kVideoPatterns }, { L"All files", L"*.*" } };
     dlg->SetFileTypes(4, filters);
     dlg->SetTitle(title.c_str());
+    StartInFolderOf(dlg.Get(), !m_settings.imagePath.empty() ? m_settings.imagePath : m_settings.videoPath);
     if (FAILED(dlg->Show(m_hwnd))) return;
-    ComPtr<IShellItemArray> items;
-    if (FAILED(dlg->GetResults(&items)) || !items) return;
-    DWORD count = 0;
-    items->GetCount(&count);
-    std::vector<std::wstring> paths;
-    for (DWORD i = 0; i < count; ++i) {
-        ComPtr<IShellItem> item;
-        if (FAILED(items->GetItemAt(i, &item)) || !item) continue;
-        PWSTR psz = nullptr;
-        if (SUCCEEDED(item->GetDisplayName(SIGDN_FILESYSPATH, &psz)) && psz) { paths.emplace_back(psz); CoTaskMemFree(psz); }
-    }
-    if (!paths.empty()) AddBatchFiles(paths);
+    const std::vector<std::wstring> paths = DialogResults(dlg.Get());
+    if (!paths.empty()) OnFilesDropped(paths);
 }
 
-void App::BrowseBatchFolder() {
+void App::BrowseLibraryFolder() {
     ComPtr<IFileOpenDialog> dlg;
     if (FAILED(CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&dlg)))) return;
     DWORD opts = 0;
@@ -1577,7 +2333,7 @@ void App::BrowseBatchFolder() {
     if (SUCCEEDED(item->GetDisplayName(SIGDN_FILESYSPATH, &psz)) && psz) {
         const std::wstring folder = psz;
         CoTaskMemFree(psz);
-        AddBatchFiles({ folder });
+        OnFilesDropped({ folder });
     }
 }
 
@@ -1611,7 +2367,7 @@ LRESULT App::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             m_minimized = true;
         } else {
             m_minimized = false;
-            if (m_deviceReady) {
+            if (m_deviceReady && !(m_headless && m_cli.width > 0)) {
                 const UINT w = LOWORD(lParam), h = HIWORD(lParam);
                 if (m_inFrame) { m_pendingResize = true; m_pendingWidth = w; m_pendingHeight = h; }
                 else m_device.Resize(w, h);
@@ -1643,8 +2399,7 @@ LRESULT App::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         DragFinish(drop);
         if (!paths.empty()) {
             SetForegroundWindow(hwnd);
-            if (paths.size() == 1) OnFileDropped(paths[0]);   // one file opens; several (or a folder) queue up for the batch
-            else AddBatchFiles(paths);
+            OnFilesDropped(paths);
         }
         return 0;
     }

@@ -24,7 +24,8 @@ std::string  FormatHr(HRESULT hr);
 std::string  LastErrorText(DWORD err = GetLastError());
 
 std::wstring GetExeDir();                 // folder of the running executable, no trailing slash
-std::wstring GetAppDataDir();             // %LOCALAPPDATA%\VRChatDLSS5Cam (created on demand)
+std::wstring GetAppDataDir();             // %LOCALAPPDATA%\VRChatDLSS5Cam (created on demand), or the override
+void         SetAppDataDirOverride(const std::wstring& dir);   // command line --data-dir (before anything logs)
 std::wstring GetPicturesDir();            // user's Pictures folder
 std::wstring GetWindowsFontsDir();        // C:\Windows\Fonts
 std::wstring JoinPath(std::wstring_view a, std::wstring_view b);

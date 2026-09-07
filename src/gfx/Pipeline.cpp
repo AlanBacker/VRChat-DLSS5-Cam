@@ -116,7 +116,7 @@ void Pipeline::ReleaseFeatures(GpuContext& gpu) {
     m_dlaaCreatedPreset = -1;
 }
 
-void Pipeline::ReleaseResources(GpuContext& gpu) {
+void Pipeline::ReleaseResources(GpuContext& gpu, bool shutdown) {
     gpu.WaitIdle();
     ReleaseFeatures(gpu);
     ReleaseTex(gpu, m_nvofShared);
@@ -143,8 +143,15 @@ void Pipeline::ReleaseResources(GpuContext& gpu) {
         if (m_statsReadback[i]) { gpu.DeferRelease(m_statsReadback[i]); m_statsReadback[i].Reset(); }
         m_statsPending[i] = false; m_statsFence[i] = 0;
     }
-    for (auto& rb : m_readbacks) { if (rb.buffer) gpu.DeferRelease(rb.buffer); }
-    m_readbacks.clear();
+    // A capture still on its way to the disk keeps its buffer: the copy is recorded already, Update() delivers it once
+    // the GPU is through (a batch ends and restores its source right after the last picture was requested). Video
+    // frames belong to a run that is over.
+    std::vector<Readback> kept;
+    for (auto& rb : m_readbacks) {
+        if (rb.inUse && !rb.toSink && !shutdown) { kept.push_back(std::move(rb)); continue; }
+        if (rb.buffer) gpu.DeferRelease(rb.buffer);
+    }
+    m_readbacks = std::move(kept);
     m_built = false;
     m_hasDisplay = false;
     m_haveHistory = false;
@@ -365,7 +372,7 @@ bool Pipeline::Init(Device& device, const std::wstring& exeDir, const std::wstri
 
 void Pipeline::Shutdown(Device& device) {
     GpuContext& gpu = device.Proc();
-    ReleaseResources(gpu);
+    ReleaseResources(gpu, true);
     m_depthEst.Stop();
     UnloadNrRuntime(gpu);
     device.Ui().WaitIdle();
@@ -410,7 +417,7 @@ bool Pipeline::CapturePending() const {
 
 bool Pipeline::NeedsFrame() const {
     return m_resetReq.load() || m_depthRestartReq.load() || m_nrDirtyReq.load() || m_dlaaDirtyReq.load() ||
-           m_displayRetryReq.load() || CapturePending();
+           m_displayRetryReq.load() || CapturePending() || m_status.capturesInFlight > 0;
 }
 
 void Pipeline::PublishStatus(GpuContext& gpu) {
@@ -1149,8 +1156,7 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
     m_status.nrRuntimeVersion = m_nrRuntimeIdle ? m_nrIdleVersion : m_nr.RuntimeVersion();
     m_status.nrRuntimePath = m_nr.RuntimePath();
     m_status.sourceConnected = src.Connected() && src.hasFrame;
-    m_status.capturesInFlight = 0;
-    for (auto& r : m_readbacks) if (r.inUse && !r.toSink) ++m_status.capturesInFlight;
+    CountCaptures();
 
     if (!src.Connected()) {
         if (m_built) ReleaseResources(gpu);
@@ -1377,6 +1383,7 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
         m_frameReadbackReq = false;
         EnqueueReadback(gpu, cmd, m_final, L"", false, true, m_frameReadbackIndex);
     }
+    CountCaptures();   // a capture requested this frame counts from now on: whoever waits for it must see it
 
     m_status.nrActive = nrOk;
     m_status.nrPassWidth = m_nrInW; m_status.nrPassHeight = m_nrInH;
@@ -1463,6 +1470,12 @@ void Pipeline::Update(GpuContext& gpu, Capture& capture, FrameSink* sink) {
         }
         r.inUse = false; r.fence = 0; r.toSink = false;
     }
+    CountCaptures();
+}
+
+void Pipeline::CountCaptures() {
+    m_status.capturesInFlight = 0;
+    for (auto& r : m_readbacks) if (r.inUse && !r.toSink) ++m_status.capturesInFlight;
 }
 
 } // namespace vdc

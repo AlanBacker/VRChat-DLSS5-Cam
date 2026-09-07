@@ -17,12 +17,13 @@ std::string Trim(const std::string& s) {
 
 struct Reader {
     std::map<std::string, std::string> kv;
+    mutable size_t used = 0;   // keys that matched a setting
     bool Has(const char* k) const { return kv.count(k) != 0; }
-    void Get(const char* k, int& v) const { auto it = kv.find(k); if (it != kv.end()) v = atoi(it->second.c_str()); }
-    void Get(const char* k, unsigned& v) const { auto it = kv.find(k); if (it != kv.end()) v = (unsigned)strtoul(it->second.c_str(), nullptr, 10); }
-    void Get(const char* k, float& v) const { auto it = kv.find(k); if (it != kv.end()) v = (float)atof(it->second.c_str()); }
-    void Get(const char* k, bool& v) const { auto it = kv.find(k); if (it != kv.end()) v = it->second == "1" || it->second == "true"; }
-    void Get(const char* k, std::string& v) const { auto it = kv.find(k); if (it != kv.end()) v = it->second; }
+    void Get(const char* k, int& v) const { auto it = kv.find(k); if (it != kv.end()) { v = atoi(it->second.c_str()); ++used; } }
+    void Get(const char* k, unsigned& v) const { auto it = kv.find(k); if (it != kv.end()) { v = (unsigned)strtoul(it->second.c_str(), nullptr, 10); ++used; } }
+    void Get(const char* k, float& v) const { auto it = kv.find(k); if (it != kv.end()) { v = (float)atof(it->second.c_str()); ++used; } }
+    void Get(const char* k, bool& v) const { auto it = kv.find(k); if (it != kv.end()) { v = it->second == "1" || it->second == "true"; ++used; } }
+    void Get(const char* k, std::string& v) const { auto it = kv.find(k); if (it != kv.end()) { v = it->second; ++used; } }
 };
 
 struct Writer {
@@ -43,7 +44,16 @@ bool Settings::Load(const std::wstring& path) {
     size_t n;
     while ((n = fread(buf, 1, sizeof(buf), f)) > 0) data.append(buf, n);
     fclose(f);
+    ApplyText(data);
+    return true;
+}
 
+bool Settings::Apply(const std::string& key, const std::string& value) {
+    return ApplyText(key + "=" + value + "\n");
+}
+
+// Reads "key=value" lines; keys that are not present keep their value. True when every key was known.
+bool Settings::ApplyText(const std::string& data) {
     Reader r;
     size_t pos = 0;
     while (pos < data.size()) {
@@ -56,6 +66,7 @@ bool Settings::Load(const std::wstring& path) {
         if (eq == std::string::npos) continue;
         r.kv[Trim(line.substr(0, eq))] = Trim(line.substr(eq + 1));
     }
+    const size_t keys = r.kv.size();
 
     r.Get("language", language);
     r.Get("senderName", senderName);
@@ -136,10 +147,12 @@ bool Settings::Load(const std::wstring& path) {
     r.Get("windowHeight", windowHeight);
     r.Get("windowMaximized", windowMaximized);
     r.Get("sidebarVisible", sidebarVisible);
+    r.Get("libraryVisible", libraryVisible);
+    r.Get("showAdvanced", showAdvanced);
     r.Get("showLog", showLog);
     r.Get("debugLayer", debugLayer);
     Clamp();
-    return true;
+    return r.used == keys;
 }
 
 bool Settings::Save(const std::wstring& path) const {
@@ -215,6 +228,8 @@ bool Settings::Save(const std::wstring& path) const {
     w.Put("windowHeight", windowHeight);
     w.Put("windowMaximized", windowMaximized);
     w.Put("sidebarVisible", sidebarVisible);
+    w.Put("libraryVisible", libraryVisible);
+    w.Put("showAdvanced", showAdvanced);
     w.Put("showLog", showLog);
     w.Put("debugLayer", debugLayer);
 

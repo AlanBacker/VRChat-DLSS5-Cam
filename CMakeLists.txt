@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(VRChatDLSS5Cam VERSION 0.5.0 LANGUAGES CXX)
+project(VRChatDLSS5Cam VERSION 0.6.0 LANGUAGES CXX)
 
 if(NOT WIN32)
   message(FATAL_ERROR "VRChat DLSS5 Cam targets Windows only.")
@@ -63,7 +63,9 @@ set(APP_SOURCES
   src/core/MediaFoundation.cpp
   src/core/VideoSource.cpp
   src/core/VideoWriter.cpp
+  src/core/MediaLibrary.cpp
   src/gfx/Device.cpp
+  src/gfx/ThumbnailAtlas.cpp
   src/gfx/Shaders.cpp
   src/gfx/Pipeline.cpp
   src/gfx/NvOpticalFlow.cpp

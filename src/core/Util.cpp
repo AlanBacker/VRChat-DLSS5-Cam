@@ -81,7 +81,18 @@ static std::wstring KnownFolder(REFKNOWNFOLDERID id) {
     return out;
 }
 
+static std::wstring g_appDataOverride;
+
+void SetAppDataDirOverride(const std::wstring& dir) {
+    g_appDataOverride = dir;
+    while (!g_appDataOverride.empty() && (g_appDataOverride.back() == L'\\' || g_appDataOverride.back() == L'/')) g_appDataOverride.pop_back();
+}
+
 std::wstring GetAppDataDir() {
+    if (!g_appDataOverride.empty()) {
+        CreateDirectories(g_appDataOverride);
+        return g_appDataOverride;
+    }
     std::wstring base = KnownFolder(FOLDERID_LocalAppData);
     if (base.empty()) base = GetExeDir();
     std::wstring dir = JoinPath(base, L"VRChatDLSS5Cam");

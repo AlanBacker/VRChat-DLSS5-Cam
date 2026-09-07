@@ -156,8 +156,11 @@ public:
     Device(const Device&) = delete;
     Device& operator=(const Device&) = delete;
 
-    bool Init(HWND hwnd, bool debugLayer, std::wstring& error);
+    // headless: no swap chain; the frames are drawn into offscreen textures of width x height (automated runs on a
+    // machine without a desktop session, screenshots through BeginScreenshot/FinishScreenshot).
+    bool Init(HWND hwnd, bool debugLayer, std::wstring& error, bool headless = false, UINT width = 0, UINT height = 0);
     void Shutdown();
+    bool Headless() const { return m_headless; }
 
     ID3D12Device*        D3D12() const { return m_device.Get(); }
     ID3D11Device*        D3D11() const { return m_device11.Get(); }
@@ -192,6 +195,13 @@ public:
     ID3D12Resource* CurrentBackBuffer() const { return m_backBuffers[m_backBufferIndex].Get(); }
     D3D12_CPU_DESCRIPTOR_HANDLE CurrentRtv() const;
 
+    // Screenshot of the frame being recorded: BeginScreenshot records a copy of the current back buffer (which must
+    // be in the RENDER_TARGET state, i.e. after the interface is drawn and before the barrier to PRESENT) into a
+    // readback buffer. FinishScreenshot waits for the frame's fence and returns the pixels as tightly packed RGBA8.
+    bool BeginScreenshot(ID3D12GraphicsCommandList* cmd);
+    bool FinishScreenshot(UINT64 fence, std::vector<uint8_t>& rgba, UINT& width, UINT& height);
+    bool ScreenshotPending() const { return m_shotPending; }
+
     // Descriptors -------------------------------------------------------------
     // Static = the present heap's static region (ImGui textures, preview SRVs). Staging = CPU-only heap holding the
     // persistent views that Shaders::Dispatch copies into the per-frame rings. All thread-safe.
@@ -211,6 +221,7 @@ public:
 
 private:
     bool CreateSwapChain();
+    bool CreateOffscreenBuffers(UINT width, UINT height);
     void ReleaseBackBuffers();
     bool CreateBackBuffers();
     void SelectAdapter(IDXGIFactory6* factory, bool debug);
@@ -227,7 +238,12 @@ private:
     ComPtr<ID3D11On12Device>      m_on12;
     AdapterInfo                   m_info;
     bool                          m_tearing = false;
+    bool                          m_headless = false;
     std::atomic<bool>             m_deviceRemoved{false};
+    ComPtr<ID3D12Resource>        m_shotBuffer;
+    D3D12_PLACED_SUBRESOURCE_FOOTPRINT m_shotFootprint{};
+    UINT                          m_shotWidth = 0, m_shotHeight = 0;
+    bool                          m_shotPending = false;
 
     UINT                          m_width = 0, m_height = 0;
     ComPtr<ID3D12Resource>        m_backBuffers[kBackBuffers];

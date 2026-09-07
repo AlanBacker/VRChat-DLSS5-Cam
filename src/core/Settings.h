@@ -100,6 +100,8 @@ struct Settings {
     int  windowX = -1, windowY = -1, windowWidth = 1520, windowHeight = 940;
     bool windowMaximized = false;
     bool sidebarVisible = true;
+    bool libraryVisible = true;        // the media library strip under the preview
+    bool showAdvanced = false;         // advanced controls in the sidebar
 
     // Misc
     bool showLog = false;
@@ -107,6 +109,9 @@ struct Settings {
 
     bool Load(const std::wstring& path);
     bool Save(const std::wstring& path) const;
+    // Applies one "key=value" pair as found in the settings file (command line --set). False for an unknown key.
+    bool Apply(const std::string& key, const std::string& value);
+    bool ApplyText(const std::string& data);
     void Clamp();
 };
 

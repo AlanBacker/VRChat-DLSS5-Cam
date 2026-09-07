@@ -10,10 +10,36 @@
 
 namespace vdc {
 
+// A Media Foundation source reader with the parsed video type. Owned by VideoSource (preview, sequence) and VideoScanner.
+struct VideoReader {
+    ComPtr<IMFSourceReader> reader;
+    DWORD videoStream = 0, audioStream = 0;
+    bool  hasAudioStream = false;
+    bool  audio = false;             // the audio stream is selected and decodes to PCM
+    GUID  subtype{};
+    UINT  frameW = 0, frameH = 0;    // coded size
+    LONG  stride = 0;
+    UINT  cropX = 0, cropY = 0, cropW = 0, cropH = 0;
+    UINT  outW = 0, outH = 0;        // after crop and rotation
+    UINT  rotation = 0;
+    bool  bt709 = true, fullRange = false;
+    UINT32 fpsNum = 30, fpsDen = 1;
+    double durationSeconds = 0.0;
+    std::string codec;
+    ComPtr<IMFMediaType> audioType;
+    UINT32 audioRate = 0, audioChannels = 0;
+    bool   hardware = false;
+    std::string bufferKind;          // how the last frame was read: "2D buffer", "2D buffer (v1)", "system memory"
+
+    LONGLONG FrameDuration() const { return (LONGLONG)(10000000.0 * (double)fpsDen / (double)std::max(1u, fpsNum)); }
+};
+
 namespace {
 
 constexpr size_t kQueueFrames = 3;     // decoded frames waiting for the pipeline
 constexpr size_t kQueueAudio = 512;    // PCM samples waiting for the output file
+constexpr int    kSeekMaxSamples = 4000;   // frames decoded from a key frame towards a seek target before giving up
+constexpr float  kBlackLuma = 0.02f;   // mean luma below which a frame counts as black
 
 // ID3D10Multithread (also implemented by D3D11 contexts): the decoder and this app share the device.
 const GUID kIidD3D10Multithread = { 0x9b7e4e00, 0x342c, 0x4106, { 0xa1, 0x9f, 0x4f, 0x27, 0x04, 0xf6, 0x89, 0xf0 } };
@@ -67,72 +93,12 @@ void Rotate(const std::vector<uint8_t>& in, UINT w, UINT h, UINT degrees, std::v
     }
 }
 
-} // namespace
+LONGLONG ToPts(double seconds) { return (LONGLONG)std::llround(std::max(0.0, seconds) * 1e7); }
+double   ToSeconds(LONGLONG pts) { return (double)pts / 1e7; }
 
-bool VideoSource::IsSupportedExtension(const std::wstring& path) {
-    const size_t dot = path.find_last_of(L'.');
-    if (dot == std::wstring::npos) return false;
-    std::wstring ext = path.substr(dot + 1);
-    for (auto& c : ext) c = (wchar_t)std::towlower(c);
-    static const wchar_t* kExt[] = { L"mp4", L"m4v", L"mov", L"mkv", L"webm", L"avi", L"wmv", L"mpg", L"mpeg", L"ts",
-                                     L"m2ts", L"mts", L"3gp", L"3g2", L"flv", L"asf" };
-    for (const wchar_t* e : kExt) if (ext == e) return true;
-    return false;
-}
+// --- reader -------------------------------------------------------------------------------------
 
-std::wstring VideoSource::Stem() const {
-    size_t start = m_path.find_last_of(L"\\/");
-    start = (start == std::wstring::npos) ? 0 : start + 1;
-    size_t dot = m_path.find_last_of(L'.');
-    if (dot == std::wstring::npos || dot < start) dot = m_path.size();
-    return m_path.substr(start, dot - start);
-}
-
-SourceFrame VideoSource::Frame(bool still) const {
-    SourceFrame f;
-    if (!m_tex) return f;
-    f.texture = m_tex.Get();
-    f.srv = m_srv;
-    f.width = m_info.width;
-    f.height = m_info.height;
-    f.format = DXGI_FORMAT_B8G8R8A8_UNORM;
-    f.viewFormat = DXGI_FORMAT_B8G8R8A8_UNORM;
-    f.linear = false;
-    f.stillImage = still;
-    f.hasFrame = m_uploaded;
-    return f;
-}
-
-// --- decoder device -------------------------------------------------------------------------
-
-bool VideoSource::CreateDecoderDevice(GpuContext& gpu, std::string& error) {
-    ComPtr<ID3D11Device> dev;
-    ComPtr<ID3D11DeviceContext> ctx;
-    const D3D_FEATURE_LEVEL levels[] = { D3D_FEATURE_LEVEL_11_1, D3D_FEATURE_LEVEL_11_0 };
-    D3D_FEATURE_LEVEL got = D3D_FEATURE_LEVEL_11_0;
-    HRESULT hr = D3D11CreateDevice(gpu.Dev().Adapter(), D3D_DRIVER_TYPE_UNKNOWN, nullptr,
-                                   D3D11_CREATE_DEVICE_VIDEO_SUPPORT | D3D11_CREATE_DEVICE_BGRA_SUPPORT, levels, 2,
-                                   D3D11_SDK_VERSION, &dev, &got, &ctx);
-    if (FAILED(hr)) { error = "D3D11CreateDevice (video decoder device): " + FormatHr(hr); return false; }
-    ComPtr<ID3D10Multithread> mt;
-    if (SUCCEEDED(ctx->QueryInterface(kIidD3D10Multithread, reinterpret_cast<void**>(mt.GetAddressOf()))) && mt)
-        mt->SetMultithreadProtected(TRUE);
-    ComPtr<IMFDXGIDeviceManager> manager;
-    UINT token = 0;
-    hr = mf::CreateDXGIDeviceManager(&token, &manager);
-    if (FAILED(hr)) { error = "MFCreateDXGIDeviceManager: " + FormatHr(hr); return false; }
-    hr = manager->ResetDevice(dev.Get(), token);
-    if (FAILED(hr)) { error = "IMFDXGIDeviceManager::ResetDevice: " + FormatHr(hr); return false; }
-    m_dev11 = dev;
-    m_ctx11 = ctx;
-    m_dxgiManager = manager;
-    m_dxgiToken = token;
-    return true;
-}
-
-// --- reader -----------------------------------------------------------------------------------
-
-bool VideoSource::ParseVideoType(IMFMediaType* type, Reader& r, std::string& error) {
+bool ParseVideoType(IMFMediaType* type, VideoReader& r, std::string& error) {
     GUID sub{};
     type->GetGUID(MF_MT_SUBTYPE, &sub);
     r.subtype = sub;
@@ -169,14 +135,26 @@ bool VideoSource::ParseVideoType(IMFMediaType* type, Reader& r, std::string& err
     return true;
 }
 
-bool VideoSource::CreateReader(const std::wstring& path, bool withAudio, bool hardware, Reader& r, std::string& error) {
+// Re-reads the current type after the reader flagged a change; the rotation of the native type is kept.
+bool RefreshVideoType(VideoReader& r, std::string& error) {
+    ComPtr<IMFMediaType> current;
+    if (FAILED(r.reader->GetCurrentMediaType(r.videoStream, &current)) || !current) return true;
+    const UINT rot = r.rotation;
+    if (!ParseVideoType(current.Get(), r, error)) return false;
+    r.rotation = rot;
+    const bool turned = rot == 90 || rot == 270;
+    r.outW = turned ? r.cropH : r.cropW;
+    r.outH = turned ? r.cropW : r.cropH;
+    return true;
+}
+
+bool CreateReader(const std::wstring& path, bool withAudio, IMFDXGIDeviceManager* manager, VideoReader& r, std::string& error) {
     ComPtr<IMFAttributes> attrs;
     HRESULT hr = mf::CreateAttributes(&attrs, 4);
     if (FAILED(hr)) { error = "MFCreateAttributes: " + FormatHr(hr); return false; }
     attrs->SetUINT32(MF_SOURCE_READER_ENABLE_ADVANCED_VIDEO_PROCESSING, TRUE);
-    const bool useHardware = hardware && m_dxgiManager;
-    if (useHardware) {
-        attrs->SetUnknown(MF_SOURCE_READER_D3D_MANAGER, m_dxgiManager.Get());
+    if (manager) {
+        attrs->SetUnknown(MF_SOURCE_READER_D3D_MANAGER, manager);
         attrs->SetUINT32(MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS, TRUE);
     }
     hr = mf::CreateSourceReaderFromURL(path.c_str(), attrs.Get(), &r.reader);
@@ -187,7 +165,7 @@ bool VideoSource::CreateReader(const std::wstring& path, bool withAudio, bool ha
         else error = "cannot open the file: " + FormatHr(hr);
         return false;
     }
-    r.hardware = useHardware;
+    r.hardware = manager != nullptr;
 
     // Streams: the first video stream, the first audio stream.
     bool haveVideo = false;
@@ -279,7 +257,7 @@ bool VideoSource::CreateReader(const std::wstring& path, bool withAudio, bool ha
     return true;
 }
 
-bool VideoSource::ConvertSample(const Reader& r, IMFSample* sample, std::vector<uint8_t>& bgra, std::string& error) {
+bool ConvertSample(VideoReader& r, IMFSample* sample, std::vector<uint8_t>& bgra, std::string& error) {
     ComPtr<IMFMediaBuffer> buf;
     HRESULT hr = sample->ConvertToContiguousBuffer(&buf);
     if (FAILED(hr) || !buf) { error = "ConvertToContiguousBuffer: " + FormatHr(hr); return false; }
@@ -291,11 +269,11 @@ bool VideoSource::ConvertSample(const Reader& r, IMFSample* sample, std::vector<
     if (SUCCEEDED(buf.As(&b2)) && b2) {
         BYTE* start = nullptr;
         DWORD length = 0;
-        if (SUCCEEDED(b2->Lock2DSize(MF2DBuffer_LockFlags_Read, &scan0, &pitch, &start, &length))) locked2d = true;
+        if (SUCCEEDED(b2->Lock2DSize(MF2DBuffer_LockFlags_Read, &scan0, &pitch, &start, &length))) { locked2d = true; r.bufferKind = "2D buffer"; }
         else b2.Reset();
     }
     if (!locked2d && SUCCEEDED(buf.As(&b1)) && b1) {
-        if (SUCCEEDED(b1->Lock2D(&scan0, &pitch))) locked2d = true;
+        if (SUCCEEDED(b1->Lock2D(&scan0, &pitch))) { locked2d = true; r.bufferKind = "2D buffer (v1)"; }
         else b1.Reset();
     }
     if (!locked2d) {
@@ -304,6 +282,7 @@ bool VideoSource::ConvertSample(const Reader& r, IMFSample* sample, std::vector<
         hr = buf->Lock(&data, &maxLen, &curLen);
         if (FAILED(hr) || !data) { error = "IMFMediaBuffer::Lock: " + FormatHr(hr); return false; }
         locked = true;
+        r.bufferKind = "system memory";
         const LONG stride = r.stride ? r.stride : (LONG)(r.subtype == MFVideoFormat_NV12 ? r.frameW : r.frameW * 4);
         if (stride < 0) { scan0 = data + (size_t)(r.frameH - 1) * (size_t)(-stride); pitch = stride; }
         else { scan0 = data; pitch = stride; }
@@ -332,27 +311,194 @@ bool VideoSource::ConvertSample(const Reader& r, IMFSample* sample, std::vector<
     return true;
 }
 
-bool VideoSource::ReadFirstFrame(Reader& r, std::vector<uint8_t>& bgra, std::string& error) {
-    for (int attempt = 0; attempt < 512; ++attempt) {
+bool SeekReader(VideoReader& r, LONGLONG pts, std::string& error) {
+    PROPVARIANT var;
+    PropVariantInit(&var);
+    var.vt = VT_I8;
+    var.hVal.QuadPart = pts;
+    const HRESULT hr = r.reader->SetCurrentPosition(GUID_NULL, var);
+    PropVariantClear(&var);
+    if (FAILED(hr)) { error = "SetCurrentPosition: " + FormatHr(hr); return false; }
+    return true;
+}
+
+struct DecodedFrame {
+    std::vector<uint8_t> bgra;
+    LONGLONG pts = 0, duration = 0;
+    float    luma = 0.0f;
+    int      skippedBlack = 0;
+};
+
+// Decodes forward to the frame that covers targetPts (or the first frame after it). Frames before the target are
+// decoded but not converted. Black frames earlier than skipBlackUntil are passed over as well; when everything up to
+// there is black the last frame decoded is returned. At the end of the file the last frame is returned.
+bool DecodeAt(VideoReader& r, LONGLONG targetPts, LONGLONG skipBlackUntil, DecodedFrame& out, std::string& error) {
+    bool haveLast = false;
+    out.skippedBlack = 0;
+    for (int n = 0; n < kSeekMaxSamples; ++n) {
         DWORD stream = 0, flags = 0;
         LONGLONG pts = 0;
         ComPtr<IMFSample> sample;
         const HRESULT hr = r.reader->ReadSample(r.videoStream, 0, &stream, &flags, &pts, &sample);
         if (FAILED(hr)) { error = "ReadSample: " + FormatHr(hr); return false; }
-        if (flags & MF_SOURCE_READERF_ERROR) { error = "the decoder reported an error on the first frame"; return false; }
-        if (flags & MF_SOURCE_READERF_CURRENTMEDIATYPECHANGED) {
-            ComPtr<IMFMediaType> current;
-            if (SUCCEEDED(r.reader->GetCurrentMediaType(r.videoStream, &current)) && current) {
-                const UINT rot = r.rotation;
-                if (!ParseVideoType(current.Get(), r, error)) return false;
-                r.rotation = rot;
-            }
+        if (flags & MF_SOURCE_READERF_ERROR) { error = "the decoder reported an error"; return false; }
+        if ((flags & MF_SOURCE_READERF_CURRENTMEDIATYPECHANGED) && !RefreshVideoType(r, error)) return false;
+        if (flags & MF_SOURCE_READERF_ENDOFSTREAM) {
+            if (haveLast) return true;
+            error = "the file contains no video frames";
+            return false;
         }
-        if (flags & MF_SOURCE_READERF_ENDOFSTREAM) { error = "the file contains no video frames"; return false; }
-        if (sample) return ConvertSample(r, sample.Get(), bgra, error);
+        if (!sample) continue;
+        LONGLONG d = 0;
+        if (FAILED(sample->GetSampleDuration(&d)) || d <= 0) d = r.FrameDuration();
+        if (pts + d <= targetPts) continue;
+        std::vector<uint8_t> bgra;
+        if (!ConvertSample(r, sample.Get(), bgra, error)) return false;
+        out.luma = MeanLuma(bgra, r.outW, r.outH);
+        out.bgra = std::move(bgra);
+        out.pts = pts;
+        out.duration = d;
+        haveLast = true;
+        if (out.luma < kBlackLuma && pts < skipBlackUntil) { ++out.skippedBlack; continue; }
+        return true;
     }
+    if (haveLast) return true;
     error = "no video frame within the first samples";
     return false;
+}
+
+void FillInfo(const VideoReader& r, VideoInfo& info) {
+    info = VideoInfo{};
+    info.width = r.outW; info.height = r.outH;
+    info.fileWidth = r.frameW; info.fileHeight = r.frameH;
+    info.fpsNum = r.fpsNum; info.fpsDen = r.fpsDen;
+    info.durationSeconds = r.durationSeconds;
+    info.frameEstimate = (UINT64)std::llround(r.durationSeconds * (double)r.fpsNum / (double)std::max(1u, r.fpsDen));
+    info.hasAudio = r.hasAudioStream;
+    info.hardwareDecode = r.hardware;
+    info.codec = r.codec;
+    info.decoderOutput = mf::SubtypeName(r.subtype);
+}
+
+} // namespace
+
+// --- shared helpers -------------------------------------------------------------------------------
+
+float MeanLuma(const std::vector<uint8_t>& bgra, UINT w, UINT h) {
+    if (!w || !h || bgra.size() < (size_t)w * h * 4) return 0.0f;
+    const UINT step = std::max(1u, std::max(w, h) / 96);
+    double sum = 0.0;
+    unsigned n = 0;
+    for (UINT y = step / 2; y < h; y += step) {
+        const uint8_t* row = bgra.data() + (size_t)y * w * 4;
+        for (UINT x = step / 2; x < w; x += step) {
+            const uint8_t* px = row + (size_t)x * 4;
+            sum += 0.114 * px[0] + 0.587 * px[1] + 0.299 * px[2];
+            ++n;
+        }
+    }
+    return n ? (float)(sum / (255.0 * n)) : 0.0f;
+}
+
+void FitThumbnail(const std::vector<uint8_t>& src, UINT srcW, UINT srcH, UINT w, UINT h, std::vector<uint8_t>& dst) {
+    dst.resize((size_t)w * h * 4);
+    for (size_t i = 0; i < (size_t)w * h; ++i) { dst[i * 4] = 22; dst[i * 4 + 1] = 20; dst[i * 4 + 2] = 18; dst[i * 4 + 3] = 255; }
+    if (!srcW || !srcH || !w || !h || src.size() < (size_t)srcW * srcH * 4) return;
+    const double scale = std::min((double)w / srcW, (double)h / srcH);
+    const UINT cw = std::clamp((UINT)std::lround(srcW * scale), 1u, w), ch = std::clamp((UINT)std::lround(srcH * scale), 1u, h);
+    const UINT ox = (w - cw) / 2, oy = (h - ch) / 2;
+    for (UINT y = 0; y < ch; ++y) {
+        const UINT sy0 = (UINT)((UINT64)y * srcH / ch);
+        const UINT sy1 = std::max(sy0 + 1, (UINT)((UINT64)(y + 1) * srcH / ch));
+        const UINT stepY = std::max(1u, (sy1 - sy0) / 4);
+        for (UINT x = 0; x < cw; ++x) {
+            const UINT sx0 = (UINT)((UINT64)x * srcW / cw);
+            const UINT sx1 = std::max(sx0 + 1, (UINT)((UINT64)(x + 1) * srcW / cw));
+            const UINT stepX = std::max(1u, (sx1 - sx0) / 4);
+            unsigned b = 0, g = 0, rr = 0, n = 0;
+            for (UINT yy = sy0; yy < sy1; yy += stepY) {
+                const uint8_t* row = src.data() + ((size_t)yy * srcW + sx0) * 4;
+                for (UINT xx = sx0; xx < sx1; xx += stepX, row += 4 * stepX) { b += row[0]; g += row[1]; rr += row[2]; ++n; }
+            }
+            uint8_t* o = dst.data() + ((size_t)(oy + y) * w + ox + x) * 4;
+            o[0] = (uint8_t)(b / n); o[1] = (uint8_t)(g / n); o[2] = (uint8_t)(rr / n); o[3] = 255;
+        }
+    }
+}
+
+// --- decoder device ----------------------------------------------------------------------------
+
+bool DecoderDevice::Create(IDXGIAdapter* adapter, std::string& error) {
+    Reset();
+    ComPtr<ID3D11Device> d;
+    ComPtr<ID3D11DeviceContext> c;
+    const D3D_FEATURE_LEVEL levels[] = { D3D_FEATURE_LEVEL_11_1, D3D_FEATURE_LEVEL_11_0 };
+    D3D_FEATURE_LEVEL got = D3D_FEATURE_LEVEL_11_0;
+    HRESULT hr = D3D11CreateDevice(adapter, adapter ? D3D_DRIVER_TYPE_UNKNOWN : D3D_DRIVER_TYPE_HARDWARE, nullptr,
+                                   D3D11_CREATE_DEVICE_VIDEO_SUPPORT | D3D11_CREATE_DEVICE_BGRA_SUPPORT, levels, 2,
+                                   D3D11_SDK_VERSION, &d, &got, &c);
+    if (FAILED(hr)) { error = "D3D11CreateDevice (video decoder device): " + FormatHr(hr); return false; }
+    ComPtr<ID3D10Multithread> mt;
+    if (SUCCEEDED(c->QueryInterface(kIidD3D10Multithread, reinterpret_cast<void**>(mt.GetAddressOf()))) && mt)
+        mt->SetMultithreadProtected(TRUE);
+    ComPtr<IMFDXGIDeviceManager> m;
+    UINT t = 0;
+    hr = mf::CreateDXGIDeviceManager(&t, &m);
+    if (FAILED(hr)) { error = "MFCreateDXGIDeviceManager: " + FormatHr(hr); return false; }
+    hr = m->ResetDevice(d.Get(), t);
+    if (FAILED(hr)) { error = "IMFDXGIDeviceManager::ResetDevice: " + FormatHr(hr); return false; }
+    dev = d; ctx = c; manager = m; token = t;
+    return true;
+}
+
+void DecoderDevice::Reset() {
+    manager.Reset();
+    ctx.Reset();
+    dev.Reset();
+    token = 0;
+}
+
+// --- VideoSource ---------------------------------------------------------------------------------
+
+VideoSource::VideoSource() = default;
+VideoSource::~VideoSource() { StopSequence(); }
+
+bool VideoSource::IsSupportedExtension(const std::wstring& path) {
+    const size_t dot = path.find_last_of(L'.');
+    if (dot == std::wstring::npos) return false;
+    std::wstring ext = path.substr(dot + 1);
+    for (auto& c : ext) c = (wchar_t)std::towlower(c);
+    static const wchar_t* kExt[] = { L"mp4", L"m4v", L"mov", L"mkv", L"webm", L"avi", L"wmv", L"mpg", L"mpeg", L"ts",
+                                     L"m2ts", L"mts", L"3gp", L"3g2", L"flv", L"asf" };
+    for (const wchar_t* e : kExt) if (ext == e) return true;
+    return false;
+}
+
+std::wstring VideoSource::Stem() const {
+    size_t start = m_path.find_last_of(L"\\/");
+    start = (start == std::wstring::npos) ? 0 : start + 1;
+    size_t dot = m_path.find_last_of(L'.');
+    if (dot == std::wstring::npos || dot < start) dot = m_path.size();
+    return m_path.substr(start, dot - start);
+}
+
+double VideoSource::FrameSeconds() const {
+    return (double)m_info.fpsDen / (double)std::max(1u, m_info.fpsNum);
+}
+
+SourceFrame VideoSource::Frame(bool still) const {
+    SourceFrame f;
+    if (!m_tex) return f;
+    f.texture = m_tex.Get();
+    f.srv = m_srv;
+    f.width = m_info.width;
+    f.height = m_info.height;
+    f.format = DXGI_FORMAT_B8G8R8A8_UNORM;
+    f.viewFormat = DXGI_FORMAT_B8G8R8A8_UNORM;
+    f.linear = false;
+    f.stillImage = still;
+    f.hasFrame = m_uploaded;
+    return f;
 }
 
 // --- picture --------------------------------------------------------------------------------
@@ -460,95 +606,118 @@ void VideoSource::Upload(ID3D12GraphicsCommandList* cmd, GpuContext& /*gpu*/) {
     m_uploaded = true;
 }
 
-// --- open / close -------------------------------------------------------------------------------
+// --- open / close / preview ---------------------------------------------------------------------
+
+bool VideoSource::OpenPreviewReader(bool hardware, std::string& error) {
+    m_preview = std::make_unique<VideoReader>();
+    if (CreateReader(m_path, false, hardware ? m_decoder.manager.Get() : nullptr, *m_preview, error)) return true;
+    m_preview.reset();
+    return false;
+}
 
 bool VideoSource::Open(GpuContext& gpu, const std::wstring& path, bool hardwareDecode, std::string& error) {
     error.clear();
     const double t0 = NowSeconds();
     if (!mf::Available(error)) return false;
     StopSequence();
-    if (hardwareDecode && !m_dxgiManager) {
+    m_preview.reset();
+    if (hardwareDecode && !m_decoder.Ready()) {
         std::string e;
-        if (!CreateDecoderDevice(gpu, e)) Log::Warn("Video: hardware decoding unavailable (%s)", e.c_str());
+        if (!m_decoder.Create(gpu.Dev().Adapter(), e)) Log::Warn("Video: hardware decoding unavailable (%s)", e.c_str());
     }
-    Reader r;
-    std::vector<uint8_t> bgra;
-    bool hw = hardwareDecode && m_dxgiManager;
-    bool ok = CreateReader(path, false, hw, r, error) && ReadFirstFrame(r, bgra, error);
+    const std::wstring previous = m_path;
+    m_path = path;
+    DecodedFrame first;
+    const LONGLONG skipUntil = ToPts(kBlackSkipSeconds);
+    bool hw = hardwareDecode && m_decoder.Ready();
+    bool ok = OpenPreviewReader(hw, error) && DecodeAt(*m_preview, 0, skipUntil, first, error);
     if (!ok && hw) {
         Log::Warn("Video: the hardware decoder failed for %s (%s); using the software decoder", WideToUtf8(path).c_str(), error.c_str());
-        r = Reader();
         error.clear();
         hw = false;
-        ok = CreateReader(path, false, false, r, error) && ReadFirstFrame(r, bgra, error);
+        ok = OpenPreviewReader(false, error) && DecodeAt(*m_preview, 0, skipUntil, first, error);
     }
-    if (!ok) return false;
+    if (!ok) { m_preview.reset(); m_path = previous; return false; }
+    VideoReader& r = *m_preview;
     if (std::max(r.outW, r.outH) > kMaxLongSide) {
         error = StrPrintf("the video is too large (%ux%u; at most %u pixels on the long side)", r.outW, r.outH, kMaxLongSide);
+        m_preview.reset();
+        m_path = previous;
         return false;
     }
-    if (!CreateTexture(gpu, r.outW, r.outH, error)) return false;
+    if (!CreateTexture(gpu, r.outW, r.outH, error)) { m_preview.reset(); m_path = previous; return false; }
 
-    m_path = path;
-    m_info = VideoInfo{};
-    m_info.width = r.outW; m_info.height = r.outH;
-    m_info.fileWidth = r.frameW; m_info.fileHeight = r.frameH;
-    m_info.fpsNum = r.fpsNum; m_info.fpsDen = r.fpsDen;
-    m_info.durationSeconds = r.durationSeconds;
-    m_info.frameEstimate = (UINT64)std::llround(r.durationSeconds * (double)r.fpsNum / (double)r.fpsDen);
-    m_info.hasAudio = r.hasAudioStream;
-    m_info.hardwareDecode = r.hardware;
-    m_info.codec = r.codec;
-    m_info.decoderOutput = mf::SubtypeName(r.subtype);
-    SetPending(std::move(bgra));
+    FillInfo(r, m_info);
+    m_previewSeconds = ToSeconds(first.pts);
+    m_previewLuma = first.luma;
+    SetPending(std::move(first.bgra));
     Log::Info("Video: %s %ux%u (coded %ux%u, %s -> %s, %.3f fps, %.1f s, ~%llu frames, rotation %u, %s decoder, audio stream %s) in %.0f ms",
               WideToUtf8(path).c_str(), m_info.width, m_info.height, m_info.fileWidth, m_info.fileHeight, m_info.codec.c_str(),
               m_info.decoderOutput.c_str(), (double)r.fpsNum / (double)r.fpsDen, r.durationSeconds,
               (unsigned long long)m_info.frameEstimate, r.rotation, r.hardware ? "hardware" : "software",
               r.hasAudioStream ? "yes" : "no", (NowSeconds() - t0) * 1000.0);
+    Log::Info("Video: preview frame at %.3f s, mean luma %.3f, read from a %s%s", m_previewSeconds, m_previewLuma, r.bufferKind.c_str(),
+              first.skippedBlack ? StrPrintf(" (%d black frame%s at the start skipped)", first.skippedBlack, first.skippedBlack == 1 ? "" : "s").c_str() : "");
     return true;
 }
 
-bool VideoSource::ReloadPreview(std::string& error) {
+bool VideoSource::SeekPreview(double seconds, std::string& error) {
     error.clear();
-    if (!Loaded()) { error = "no video is open"; return false; }
-    Reader r;
-    std::vector<uint8_t> bgra;
-    if (!CreateReader(m_path, false, m_info.hardwareDecode, r, error) || !ReadFirstFrame(r, bgra, error)) return false;
-    if (r.outW != m_info.width || r.outH != m_info.height) { error = "the picture size changed"; return false; }
-    SetPending(std::move(bgra));
-    return true;
+    if (!Loaded() || m_path.empty()) { error = "no video is open"; return false; }
+    if (m_info.durationSeconds > 0.0) seconds = std::min(seconds, std::max(0.0, m_info.durationSeconds - FrameSeconds() * 0.5));
+    seconds = std::max(0.0, seconds);
+    const LONGLONG target = ToPts(seconds);
+    for (int attempt = 0; attempt < 2; ++attempt) {
+        if (!m_preview && !OpenPreviewReader(m_info.hardwareDecode, error)) return false;
+        DecodedFrame f;
+        if (SeekReader(*m_preview, target, error) && DecodeAt(*m_preview, target, 0, f, error)) {
+            if (m_preview->outW != m_info.width || m_preview->outH != m_info.height) { error = "the picture size changed"; return false; }
+            m_previewSeconds = ToSeconds(f.pts);
+            m_previewLuma = f.luma;
+            SetPending(std::move(f.bgra));
+            return true;
+        }
+        // A reader that failed once (device change, decoder hiccup) is replaced by a fresh one for a second try.
+        Log::Warn("Video: seeking to %.3f s failed (%s); reopening the reader", seconds, error.c_str());
+        m_preview.reset();
+    }
+    return false;
 }
 
 void VideoSource::Close(GpuContext& gpu) {
     StopSequence();
+    m_preview.reset();
     ReleaseTexture(gpu);
     m_path.clear();
     m_info = VideoInfo{};
     m_pendingBgra.clear();
     m_audioType.Reset();
-    m_dxgiManager.Reset();
-    m_ctx11.Reset();
-    m_dev11.Reset();
+    m_previewSeconds = 0.0;
+    m_previewLuma = 0.0f;
+    m_decoder.Reset();
 }
 
 // --- sequence -----------------------------------------------------------------------------------
 
-bool VideoSource::StartSequence(bool withAudio, std::string& error) {
+bool VideoSource::StartSequence(bool withAudio, double fromSeconds, double toSeconds, std::string& error) {
     error.clear();
     StopSequence();
     if (!Loaded()) { error = "no video is open"; return false; }
-    auto r = std::make_unique<Reader>();
+    auto r = std::make_unique<VideoReader>();
     bool hw = m_info.hardwareDecode;
-    if (!CreateReader(m_path, withAudio, hw, *r, error)) {
+    if (!CreateReader(m_path, withAudio, hw ? m_decoder.manager.Get() : nullptr, *r, error)) {
         if (!hw) return false;
         Log::Warn("Video: the hardware decoder failed to restart (%s); using the software decoder", error.c_str());
-        *r = Reader();
+        *r = VideoReader();
         error.clear();
-        if (!CreateReader(m_path, withAudio, false, *r, error)) return false;
+        if (!CreateReader(m_path, withAudio, nullptr, *r, error)) return false;
         m_info.hardwareDecode = false;
     }
-    if (r->outW != m_info.width || r->outH != m_info.height) { error = "the picture size changed between openings"; return false; }
+    // The size is checked frame by frame in the decode loop: some decoders report the coded size until the first sample.
+    m_seqStartPts = ToPts(std::max(0.0, fromSeconds));
+    m_seqEndPts = toSeconds > 0.0 ? ToPts(toSeconds) : 0;
+    if (m_seqEndPts > 0 && m_seqEndPts <= m_seqStartPts) m_seqEndPts = 0;
+    if (m_seqStartPts > 0 && !SeekReader(*r, m_seqStartPts, error)) return false;
     {
         std::lock_guard<std::mutex> lock(m_qm);
         m_queue.clear();
@@ -568,7 +737,7 @@ bool VideoSource::StartSequence(bool withAudio, std::string& error) {
 
 void VideoSource::DecodeMain() {
     const HRESULT coHr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
-    Reader& r = *m_seq;
+    VideoReader& r = *m_seq;
     bool videoEnded = false, audioEnded = !r.audio;
     UINT64 index = 0;
     std::string err;
@@ -584,42 +753,47 @@ void VideoSource::DecodeMain() {
         if (FAILED(hr)) { fail("ReadSample: " + FormatHr(hr)); break; }
         if (flags & MF_SOURCE_READERF_ERROR) { fail("the decoder reported an error"); break; }
         if ((flags & MF_SOURCE_READERF_CURRENTMEDIATYPECHANGED) && stream == r.videoStream) {
-            ComPtr<IMFMediaType> current;
-            if (SUCCEEDED(r.reader->GetCurrentMediaType(r.videoStream, &current)) && current) {
-                const UINT rot = r.rotation;
-                if (!ParseVideoType(current.Get(), r, err)) { fail(err); break; }
-                r.rotation = rot;
-                const bool turned = rot == 90 || rot == 270;
-                r.outW = turned ? r.cropH : r.cropW;
-                r.outH = turned ? r.cropW : r.cropH;
-                if (r.outW != m_info.width || r.outH != m_info.height) { fail("the picture size changes inside the file, which is not supported"); break; }
-            }
+            if (!RefreshVideoType(r, err)) { fail(err); break; }
         }
         if (flags & MF_SOURCE_READERF_ENDOFSTREAM) {
             if (stream == r.videoStream) videoEnded = true;
             else if (r.audio && stream == r.audioStream) audioEnded = true;
         }
         if (sample) {
+            LONGLONG d = 0;
+            if (FAILED(sample->GetSampleDuration(&d)) || d <= 0) d = stream == r.videoStream ? r.FrameDuration() : 0;
             if (stream == r.videoStream) {
-                VideoFrameData f;
-                if (!ConvertSample(r, sample.Get(), f.bgra, err)) { fail(err); break; }
-                f.width = r.outW; f.height = r.outH;
-                f.index = index++;
-                f.pts = pts;
-                LONGLONG d = 0;
-                if (SUCCEEDED(sample->GetSampleDuration(&d)) && d > 0) f.duration = d;
-                else f.duration = (LONGLONG)(10000000.0 * (double)r.fpsDen / (double)r.fpsNum);
-                std::unique_lock<std::mutex> lock(m_qm);
-                m_spaceCv.wait(lock, [&] { return m_queue.size() < kQueueFrames || m_seqStop.load(); });
-                if (m_seqStop.load()) break;
-                m_queue.push_back(std::move(f));
-                lock.unlock();
-                m_qcv.notify_all();
+                if (videoEnded) { /* frames past the range end */ }
+                else if (pts + d <= m_seqStartPts) { /* before the range */ }
+                else if (m_seqEndPts > 0 && pts >= m_seqEndPts) videoEnded = true;
+                else {
+                    if (r.outW != m_info.width || r.outH != m_info.height) {
+                        fail(StrPrintf("the picture size changed to %ux%u inside the file, which is not supported", r.outW, r.outH));
+                        break;
+                    }
+                    VideoFrameData f;
+                    if (!ConvertSample(r, sample.Get(), f.bgra, err)) { fail(err); break; }
+                    f.width = r.outW; f.height = r.outH;
+                    f.index = index++;
+                    f.pts = pts;
+                    f.duration = d;
+                    std::unique_lock<std::mutex> lock(m_qm);
+                    m_spaceCv.wait(lock, [&] { return m_queue.size() < kQueueFrames || m_seqStop.load(); });
+                    if (m_seqStop.load()) break;
+                    m_queue.push_back(std::move(f));
+                    lock.unlock();
+                    m_qcv.notify_all();
+                }
             } else if (r.audio && stream == r.audioStream) {
-                std::unique_lock<std::mutex> lock(m_qm);
-                m_spaceCv.wait(lock, [&] { return m_audioQueue.size() < kQueueAudio || m_seqStop.load(); });
-                if (m_seqStop.load()) break;
-                m_audioQueue.push_back(sample);
+                if (audioEnded) { /* past the range end */ }
+                else if (pts + d <= m_seqStartPts && d > 0) { /* before the range */ }
+                else if (m_seqEndPts > 0 && pts >= m_seqEndPts) audioEnded = true;
+                else {
+                    std::unique_lock<std::mutex> lock(m_qm);
+                    m_spaceCv.wait(lock, [&] { return m_audioQueue.size() < kQueueAudio || m_seqStop.load(); });
+                    if (m_seqStop.load()) break;
+                    m_audioQueue.push_back(sample);
+                }
             }
         }
         if (videoEnded && audioEnded) break;
@@ -645,6 +819,7 @@ VideoSource::Next VideoSource::NextFrame(double timeoutSeconds, VideoFrameData& 
         timing.width = f.width; timing.height = f.height;
         timing.index = f.index; timing.pts = f.pts; timing.duration = f.duration;
         timing.bgra.clear();
+        m_previewSeconds = ToSeconds(f.pts);
         SetPending(std::move(f.bgra));
         return Next::Frame;
     }
@@ -683,6 +858,61 @@ void VideoSource::StopSequence() {
     }
     m_seqRunning = false;
     m_seqStop = false;
+}
+
+// --- VideoScanner --------------------------------------------------------------------------------
+
+VideoScanner::VideoScanner() = default;
+VideoScanner::~VideoScanner() = default;
+
+bool VideoScanner::Open(const std::wstring& path, IMFDXGIDeviceManager* manager, std::string& error) {
+    error.clear();
+    Close();
+    if (!mf::Available(error)) return false;
+    auto r = std::make_unique<VideoReader>();
+    if (!CreateReader(path, false, manager, *r, error)) {
+        if (!manager) return false;
+        *r = VideoReader();
+        error.clear();
+        manager = nullptr;
+        if (!CreateReader(path, false, nullptr, *r, error)) return false;
+    }
+    FillInfo(*r, m_info);
+    m_reader = std::move(r);
+    m_path = path;
+    m_manager = manager;
+    return true;
+}
+
+void VideoScanner::Close() {
+    m_reader.reset();
+    m_info = VideoInfo{};
+    m_path.clear();
+    m_manager = nullptr;
+}
+
+bool VideoScanner::Thumbnail(double seconds, bool skipBlack, UINT w, UINT h, std::vector<uint8_t>& bgra, double& gotSeconds,
+                             std::string& error) {
+    error.clear();
+    if (!m_reader) { error = "no video is open"; return false; }
+    if (m_info.durationSeconds > 0.0) seconds = std::min(seconds, std::max(0.0, m_info.durationSeconds - 0.01));
+    const LONGLONG target = ToPts(std::max(0.0, seconds));
+    for (int attempt = 0; attempt < 2; ++attempt) {
+        DecodedFrame f;
+        if (SeekReader(*m_reader, target, error) &&
+            DecodeAt(*m_reader, target, skipBlack ? target + ToPts(VideoSource::kBlackSkipSeconds) : 0, f, error)) {
+            FitThumbnail(f.bgra, m_reader->outW, m_reader->outH, w, h, bgra);
+            gotSeconds = ToSeconds(f.pts);
+            m_info.width = m_reader->outW;
+            m_info.height = m_reader->outH;
+            return true;
+        }
+        const std::string why = error;
+        const std::wstring path = m_path;
+        IMFDXGIDeviceManager* manager = attempt == 0 ? m_manager : nullptr;
+        if (!Open(path, manager, error)) { error = why + "; " + error; return false; }
+    }
+    return false;
 }
 
 } // namespace vdc

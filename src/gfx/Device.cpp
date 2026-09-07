@@ -2,6 +2,7 @@
 #include "core/Log.h"
 #include <d3d11.h>
 #include <algorithm>
+#include <cstring>
 
 namespace vdc {
 
@@ -380,8 +381,9 @@ void Device::SelectAdapter(IDXGIFactory6* factory, bool /*debug*/) {
     m_adapter = firstNvidia ? firstNvidia : best;
 }
 
-bool Device::Init(HWND hwnd, bool debugLayer, std::wstring& error) {
+bool Device::Init(HWND hwnd, bool debugLayer, std::wstring& error, bool headless, UINT width, UINT height) {
     m_hwnd = hwnd;
+    m_headless = headless;
     HRESULT hr = S_OK;
 
     if (debugLayer) {
@@ -491,7 +493,44 @@ bool Device::Init(HWND hwnd, bool debugLayer, std::wstring& error) {
     if (SUCCEEDED(m_factory->CheckFeatureSupport(DXGI_FEATURE_PRESENT_ALLOW_TEARING, &allowTearing, sizeof(allowTearing))))
         m_tearing = allowTearing == TRUE;
 
+    if (m_headless) {
+        if (!CreateOffscreenBuffers(width, height)) { error = L"Offscreen frame buffer creation failed."; return false; }
+        Log::Info("Headless: drawing into %ux%u offscreen buffers, no swap chain", m_width, m_height);
+        return true;
+    }
     if (!CreateSwapChain()) { error = L"Swap chain creation failed."; return false; }
+    return true;
+}
+
+bool Device::CreateOffscreenBuffers(UINT width, UINT height) {
+    ReleaseBackBuffers();
+    m_width = std::max<UINT>(1, width);
+    m_height = std::max<UINT>(1, height);
+    D3D12_HEAP_PROPERTIES hp{};
+    hp.Type = D3D12_HEAP_TYPE_DEFAULT;
+    D3D12_RESOURCE_DESC rd{};
+    rd.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+    rd.Width = m_width;
+    rd.Height = m_height;
+    rd.DepthOrArraySize = 1;
+    rd.MipLevels = 1;
+    rd.Format = kBackBufferFormat;
+    rd.SampleDesc.Count = 1;
+    rd.Layout = D3D12_TEXTURE_LAYOUT_UNKNOWN;
+    rd.Flags = D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
+    D3D12_CLEAR_VALUE clear{};
+    clear.Format = kBackBufferFormat;
+    clear.Color[0] = 0.055f; clear.Color[1] = 0.06f; clear.Color[2] = 0.075f; clear.Color[3] = 1.0f;
+    for (UINT i = 0; i < kBackBuffers; ++i) {
+        HRESULT hr = m_device->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &rd, D3D12_RESOURCE_STATE_COMMON, &clear,
+                                                       IID_PPV_ARGS(&m_backBuffers[i]));
+        if (FAILED(hr)) { Log::Hr(LogLevel::Error, "Offscreen frame buffer", hr); return false; }
+        m_backBuffers[i]->SetName(L"Offscreen frame buffer");
+        D3D12_CPU_DESCRIPTOR_HANDLE h = m_rtvHeap->GetCPUDescriptorHandleForHeapStart();
+        h.ptr += (SIZE_T)i * m_rtvDescSize;
+        m_device->CreateRenderTargetView(m_backBuffers[i].Get(), nullptr, h);
+    }
+    m_backBufferIndex = 0;
     return true;
 }
 
@@ -541,7 +580,12 @@ void Device::ReleaseBackBuffers() {
 bool Device::Resize(UINT width, UINT height) {
     width = std::max<UINT>(1, width);
     height = std::max<UINT>(1, height);
-    if (!m_swapChain || (width == m_width && height == m_height)) return true;
+    if (width == m_width && height == m_height) return true;
+    if (m_headless) {
+        m_ui.WaitIdle();
+        return CreateOffscreenBuffers(width, height);
+    }
+    if (!m_swapChain) return true;
     m_ui.WaitIdle();
     ReleaseBackBuffers();
     HRESULT hr = m_swapChain->ResizeBuffers(kBackBuffers, width, height, kBackBufferFormat,
@@ -564,6 +608,11 @@ D3D12_CPU_DESCRIPTOR_HANDLE Device::CurrentRtv() const {
 
 UINT64 Device::EndFrame(bool vsync) {
     m_ui.Execute();
+    if (m_headless) {
+        const UINT64 fence = m_ui.FinishFrame();
+        m_backBufferIndex = (m_backBufferIndex + 1) % kBackBuffers;
+        return fence;
+    }
     const UINT flags = (!vsync && m_tearing) ? DXGI_PRESENT_ALLOW_TEARING : 0;
     HRESULT hr = m_swapChain->Present(vsync ? 1 : 0, flags);
     if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET) {
@@ -574,6 +623,66 @@ UINT64 Device::EndFrame(bool vsync) {
     const UINT64 fence = m_ui.FinishFrame();
     m_backBufferIndex = m_swapChain->GetCurrentBackBufferIndex();
     return fence;
+}
+
+// ---------------------------------------------------------------------------
+// Screenshots
+
+bool Device::BeginScreenshot(ID3D12GraphicsCommandList* cmd) {
+    ID3D12Resource* src = CurrentBackBuffer();
+    if (!src || !cmd || m_shotPending) return false;
+    D3D12_RESOURCE_DESC desc = src->GetDesc();
+    UINT64 total = 0;
+    m_device->GetCopyableFootprints(&desc, 0, 1, 0, &m_shotFootprint, nullptr, nullptr, &total);
+    if (!m_shotBuffer || m_shotBuffer->GetDesc().Width < total) {
+        m_shotBuffer.Reset();
+        D3D12_HEAP_PROPERTIES hp{};
+        hp.Type = D3D12_HEAP_TYPE_READBACK;
+        D3D12_RESOURCE_DESC bd{};
+        bd.Dimension = D3D12_RESOURCE_DIMENSION_BUFFER;
+        bd.Width = total;
+        bd.Height = 1; bd.DepthOrArraySize = 1; bd.MipLevels = 1;
+        bd.SampleDesc.Count = 1;
+        bd.Layout = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+        const HRESULT hr = m_device->CreateCommittedResource(&hp, D3D12_HEAP_FLAG_NONE, &bd, D3D12_RESOURCE_STATE_COPY_DEST, nullptr,
+                                                             IID_PPV_ARGS(&m_shotBuffer));
+        if (FAILED(hr)) { Log::Hr(LogLevel::Error, "Screenshot readback buffer", hr); return false; }
+        m_shotBuffer->SetName(L"Screenshot readback");
+    }
+    m_shotWidth = (UINT)desc.Width;
+    m_shotHeight = desc.Height;
+    D3D12_TEXTURE_COPY_LOCATION dst{};
+    dst.pResource = m_shotBuffer.Get();
+    dst.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+    dst.PlacedFootprint = m_shotFootprint;
+    D3D12_TEXTURE_COPY_LOCATION from{};
+    from.pResource = src;
+    from.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+    from.SubresourceIndex = 0;
+    Barrier(cmd, src, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_COPY_SOURCE);
+    cmd->CopyTextureRegion(&dst, 0, 0, 0, &from, nullptr);
+    Barrier(cmd, src, D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET);
+    m_shotPending = true;
+    return true;
+}
+
+bool Device::FinishScreenshot(UINT64 fence, std::vector<uint8_t>& rgba, UINT& width, UINT& height) {
+    if (!m_shotPending || !m_shotBuffer) return false;
+    m_shotPending = false;
+    m_ui.WaitForFence(fence);
+    uint8_t* mapped = nullptr;
+    // The whole buffer is read: its size is the footprint total, which does not pad the last row.
+    const HRESULT hr = m_shotBuffer->Map(0, nullptr, reinterpret_cast<void**>(&mapped));
+    if (FAILED(hr) || !mapped) { Log::Hr(LogLevel::Error, "Screenshot readback map", hr); return false; }
+    width = m_shotWidth;
+    height = m_shotHeight;
+    rgba.resize((size_t)width * height * 4);
+    for (UINT y = 0; y < height; ++y)
+        std::memcpy(rgba.data() + (size_t)y * width * 4, mapped + m_shotFootprint.Offset + (size_t)y * m_shotFootprint.Footprint.RowPitch,
+                    (size_t)width * 4);
+    const D3D12_RANGE none{ 0, 0 };
+    m_shotBuffer->Unmap(0, &none);
+    return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -615,6 +724,8 @@ void Device::Shutdown() {
     m_context11.Reset();
     m_device11.Reset();
     ReleaseBackBuffers();
+    m_shotBuffer.Reset();
+    m_shotPending = false;
     m_swapChain.Reset();
     m_rtvHeap.Reset();
     m_stagingHeap.Reset();

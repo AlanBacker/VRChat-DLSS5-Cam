@@ -236,6 +236,9 @@ int RunGuarded(HINSTANCE hInstance, int nCmdShow) { return RunApp(hInstance, nCm
 } // namespace
 
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
+    // --data-dir moves the log, settings and crash report (automated runs keep the user's own settings untouched).
+    const vdc::CommandLine cl = vdc::CommandLine::Parse();
+    if (!cl.dataDir.empty()) vdc::SetAppDataDirOverride(cl.dataDir);
     InstallCrashHandlers();
     return RunGuarded(hInstance, nCmdShow);
 }

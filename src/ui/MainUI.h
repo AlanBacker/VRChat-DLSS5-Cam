@@ -1,7 +1,10 @@
-// VRChat DLSS5 Cam - main window layout (top bar, sidebar, preview, status bar, log, toasts).
+// VRChat DLSS5 Cam - main window layout: top bar, preview with the video controls and the media library, sidebar,
+// status bar, log window, toasts.
 #pragma once
 #include "core/Settings.h"
+#include "core/MediaLibrary.h"
 #include "gfx/Pipeline.h"
+#include "gfx/ThumbnailAtlas.h"
 #include "ui/Fonts.h"
 #include "core/Log.h"
 #include "imgui.h"
@@ -31,11 +34,12 @@ struct UiFrameInfo {
     bool                  imageLoaded = false;
     bool                  imageConverging = false;  // still-image / video-preview passes still running
     bool                  videoLoaded = false;
+    std::wstring          videoPath;
     std::string           videoName;                // file name of the opened video (UTF-8)
     std::string           videoCodec;
     UINT                  videoWidth = 0, videoHeight = 0;
     double                videoFps = 0.0;
-    UINT64                videoFrames = 0;          // estimate from the file
+    UINT64                videoFrames = 0;          // estimate from the file (or the range while processing)
     double                videoDurationSeconds = 0.0;
     bool                  videoHasAudio = false;
     bool                  videoHardwareDecode = false;
@@ -44,10 +48,22 @@ struct UiFrameInfo {
     UINT64                videoFrame = 0;           // frames delivered to the output
     double                videoElapsed = 0.0;
     std::string           videoOutName;
+    double                videoPosition = 0.0;      // preview position (seconds)
+    bool                  videoPlaying = false;
+    bool                  videoSeeking = false;
+    double                videoIn = 0.0, videoOut = 0.0;   // processing range (out <= 0: to the end)
+    float                 videoPreviewLuma = 0.0f;
     bool                  batchRunning = false;
     int                   batchIndex = 0, batchCount = 0, batchDone = 0, batchFailed = 0;
+    unsigned              batchItemId = 0;
     std::string           batchItemName;
-    const std::vector<std::string>* batchFiles = nullptr;   // names in the batch queue
+    std::vector<LibraryItem>* library = nullptr;    // the interface toggles `selected`
+    const ThumbnailAtlas* atlas = nullptr;          // thumbnails of the library and the seek bar
+    const std::vector<int>*    storyCells = nullptr;   // seek-bar pictures of the opened video
+    const std::vector<double>* storyTimes = nullptr;
+    const std::vector<bool>*   storyReady = nullptr;
+    int                   hoverCell = -1;           // exact frame under the cursor (-1: none)
+    double                hoverCellTime = -1.0;
     std::wstring          nrRuntimePath;      // effective path
     bool                  nrRuntimeExists = false;
     std::wstring          captureFolder;      // effective folder
@@ -85,13 +101,26 @@ struct UiEvents {
     bool openImage = false;          // browse for a picture
     bool openVideo = false;          // browse for a video
     bool cancelVideo = false;        // stop the running video
-    bool batchAddFiles = false;
-    bool batchAddFolder = false;
-    bool batchClear = false;
-    bool batchStart = false;
     bool batchCancel = false;
-    int  batchRemove = -1;           // index of the queued file to drop
     bool sourceModeChanged = false;  // s.sourceMode switched between Spout, image and video
+    // Video controls
+    bool   videoSeek = false;
+    double videoSeekTo = 0.0;
+    bool   videoPlayToggle = false;
+    int    videoStep = 0;            // frames forward (+) or back (-)
+    bool   videoSetIn = false;
+    bool   videoSetOut = false;
+    bool   videoClearRange = false;
+    bool   videoHover = false;       // the cursor is on the seek bar at videoHoverTime
+    double videoHoverTime = 0.0;
+    // Media library
+    unsigned libraryPreview = 0;     // item to show in the preview
+    unsigned libraryRemove = 0;      // item to drop
+    bool libraryClear = false;
+    bool libraryProcessAll = false;
+    bool libraryProcessSelected = false;
+    bool libraryAddFiles = false;
+    bool libraryAddFolder = false;
 };
 
 class MainUI {
@@ -105,18 +134,22 @@ private:
     void DrawTopBar(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts);
     void DrawSidebar(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts);
     void DrawPreview(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts);
+    void DrawPicture(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts, const ImVec2& pos, const ImVec2& size);
+    void DrawTransport(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts, const ImVec2& pos, const ImVec2& size);
+    void DrawLibrary(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts, const ImVec2& pos, const ImVec2& size);
     void DrawStatusBar(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts);
     void DrawLogWindow(Settings& s, UiEvents& ev, const Fonts& fonts);
     void DrawToasts(const Fonts& fonts);
 
-    void SectionSource(Settings& s, const UiFrameInfo& info, UiEvents& ev);
-    void SectionNeural(Settings& s, const UiFrameInfo& info, UiEvents& ev);
-    void SectionGuidance(Settings& s, const UiFrameInfo& info, UiEvents& ev);
-    void SectionDlaa(Settings& s, const UiFrameInfo& info, UiEvents& ev);
-    void SectionCapture(Settings& s, const UiFrameInfo& info, UiEvents& ev);
-    void SectionBatch(Settings& s, const UiFrameInfo& info, UiEvents& ev);
-    void SectionDisplay(Settings& s, const UiFrameInfo& info, UiEvents& ev);
-    void SectionAbout(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts);
+    // Sidebar blocks.
+    void BlockSource(Settings& s, const UiFrameInfo& info, UiEvents& ev);
+    void BlockNeural(Settings& s, const UiFrameInfo& info, UiEvents& ev);
+    void BlockSave(Settings& s, const UiFrameInfo& info, UiEvents& ev);
+    void BlockView(Settings& s, const UiFrameInfo& info, UiEvents& ev);
+    void BlockGuidance(Settings& s, const UiFrameInfo& info, UiEvents& ev);
+    void BlockDlaa(Settings& s, const UiFrameInfo& info, UiEvents& ev);
+    void BlockInternals(Settings& s, const UiFrameInfo& info, UiEvents& ev);
+    void BlockAbout(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts);
 
     // Performance readouts are refreshed a few times per second rather than every frame, so the digits stay legible;
     // every place that shows them uses fixed-width text so a changing figure never moves the controls around it.
@@ -144,6 +177,12 @@ private:
     float  m_baseScale = 1.0f;     // preview pixels per picture pixel at zoom 1, from the last preview draw
     ImVec2 m_pan = ImVec2(0, 0);
     bool   m_wipeDragging = false;
+    // Seek bar: while the knob is dragged the bar follows the cursor and seeks are sent a few times per second;
+    // after a seek the bar shows the target until the processing thread reports a position near it.
+    bool   m_seekDragging = false;
+    double m_seekDragTime = 0.0;
+    double m_seekSentTime = 0.0;     // when the last seek was sent
+    double m_seekTarget = -1.0;      // -1: none pending
     unsigned m_logGeneration = 0;
     std::vector<LogEntry> m_logCache;
 };
