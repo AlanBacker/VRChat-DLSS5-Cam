@@ -49,7 +49,7 @@ void TooltipShow(ImGuiID key, const char* text);                               /
 
 // Icons drawn from lines and triangles, so they scale with the interface -----------------------------------------
 enum class Icon { Play, Pause, StepBack, StepForward, ChevronDown, ChevronUp, ChevronLeft, ChevronRight,
-                  Reset, Refresh, OpenExternal, Close, Lock, Undo, Redo, Fullscreen, ExitFullscreen };
+                  Reset, Refresh, OpenExternal, Close, Lock, Undo, Redo, Fullscreen, ExitFullscreen, History };
 void DrawIcon(ImDrawList* dl, Icon icon, const ImVec2& center, float size, ImU32 color);          // size: side of the icon's box
 void DrawChevron(ImDrawList* dl, const ImVec2& center, float size, float angle, ImU32 color);    // 0 points down, turns clockwise
 

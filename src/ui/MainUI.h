@@ -83,7 +83,18 @@ struct UiFrameInfo {
     std::string           lastCapture;
     bool                  lastCaptureOk = true;
     bool                  systemLight = false;      // Windows uses light app colours (theme "System" follows it)
+    // Updates (App copies the updater's state; the values follow Updater::State in order).
+    int                   updateState = 0;          // UpdateState
+    std::string           updateVersion, updateDate, updateNotes, updateError;
+    bool                  updatePrerelease = false;
+    bool                  updateHasAsset = false;   // the release carries the win64 zip
+    bool                  updateWritable = true;    // the program folder takes new files
+    bool                  updateShow = false;       // open the update popup (set for one frame)
+    float                 updateProgress = 0.0f;
+    double                updateDownloadedMb = 0.0, updateTotalMb = 0.0;
 };
+
+enum UpdateState { UpIdle, UpChecking, UpUpToDate, UpAvailable, UpDownloading, UpExtracting, UpRestarting, UpFailed };
 
 // What the undo history keeps of a library item (MainUI::TrackUndo): the file, its own effect values, its range.
 struct LibrarySnapshotItem {
@@ -99,6 +110,10 @@ struct UiEvents {
     bool fullscreenToggle = false;   // enter or leave the fullscreen view (F11, Esc, the corner button)
     bool libraryRestore = false;     // undo/redo: bring the library to libraryRestoreItems
     std::vector<LibrarySnapshotItem> libraryRestoreItems;
+    bool updateCheckNow = false;     // look for a new version now
+    bool updateStart = false;        // download and install the version found
+    bool updateOpenPage = false;     // the release page in the browser
+    bool updateCancel = false;       // stop a running download
     bool browseRuntime = false;
     bool browseDepthModel = false;
     bool reloadDepth = false;
@@ -181,6 +196,9 @@ private:
     void DrawLibraryMenu(Settings& s, const UiFrameInfo& info, UiEvents& ev);      // the context menu of a card
     void TrackUndo(const Settings& s, const UiFrameInfo& info);                    // records a settings or library change as an undo step
     void ApplyUndo(Settings& s, const UiFrameInfo& info, UiEvents& ev, bool redo);
+    void GoToHistory(Settings& s, const UiFrameInfo& info, UiEvents& ev, int index);   // to an entry of the history list
+    void DrawHistory(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts, const ImVec2& anchor);   // the history popup, under its button
+    void DrawUpdatePopup(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts);
     static std::vector<LibrarySnapshotItem> LibrarySnapshot(const UiFrameInfo& info);
     static bool SameLibrary(const std::vector<LibrarySnapshotItem>& a, const std::vector<LibrarySnapshotItem>& b);
     void ResetView(bool animate);                                                  // back to the fitted, centred picture
@@ -218,12 +236,19 @@ private:
     float  m_themeLight = -1.0f;   // the theme blend in use (-1: not set yet)
     // Undo: a snapshot of the adjustable values and of the library is taken whenever they change while no control
     // is held; Ctrl+Z / Ctrl+Y and the top-bar buttons move through them.
-    struct UndoStep { std::string params; std::vector<LibrarySnapshotItem> library; };
+    struct UndoStep { std::string params; std::vector<LibrarySnapshotItem> library; std::string label; };   // label: the change that led here
+    static std::string StepLabel(const UndoStep& from, const UndoStep& to);      // a short name for the change between two states
     std::vector<UndoStep> m_undo, m_redo;
     UndoStep m_undoBase;
     double m_fullscreenMouseTime = 0.0;   // when the mouse last moved in the fullscreen view
     float  m_fullscreenControls = 1.0f;   // how far the fullscreen controls are shown (they fade after a rest)
     bool   m_undoInit = false;
+    bool   m_undoHold = false;       // skip one TrackUndo: the library restore of an undo lands after this frame
+    bool   m_sidebarDrag = false, m_sidebarDragMoved = false;   // the sidebar handle is held / has moved
+    float  m_sidebarDragW = 0.0f;
+    float  m_libraryDragH = 0.0f;
+    float  m_thumbH = 0.0f;          // thumbnail height of the library cards, from the library's height
+    bool   m_updateOpen = false;     // open the update popup on this frame
     bool   m_wipeDragging = false;
     // Seek bar: while the knob is dragged the bar follows the cursor and seeks are sent a few times per second;
     // after a seek the bar shows the target until the processing thread reports a position near it.

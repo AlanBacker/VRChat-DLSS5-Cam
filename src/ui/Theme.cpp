@@ -503,6 +503,14 @@ void DrawIcon(ImDrawList* dl, Icon icon, const ImVec2& c, float size, ImU32 col)
                               ImVec2(tip.x - dir.x * h * 0.5f - nrm.x * h * 0.7f, tip.y - dir.y * h * 0.5f - nrm.y * h * 0.7f), col);
         break;
     }
+    case Icon::History: {
+        // A clock face: ring plus the hands at twelve and three, which reads as "history" at a glance.
+        const float r = size * 0.4f;
+        dl->AddCircle(c, r, col, 24, thick);
+        dl->AddLine(c, ImVec2(c.x, c.y - r * 0.62f), col, thick);
+        dl->AddLine(c, ImVec2(c.x + r * 0.5f, c.y), col, thick);
+        break;
+    }
     case Icon::Fullscreen:
     case Icon::ExitFullscreen: {
         // Four corner brackets: at the edges with the legs pointing in for entering, near the middle with the legs

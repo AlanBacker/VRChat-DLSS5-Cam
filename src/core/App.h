@@ -2,6 +2,8 @@
 #pragma once
 #include <windows.h>
 #include "core/Settings.h"
+#include "core/Splash.h"
+#include "core/Updater.h"
 #include "core/Capture.h"
 #include "core/MediaLibrary.h"
 #include "core/SpoutReceiver.h"
@@ -37,7 +39,9 @@ struct CommandLine {
     std::vector<std::pair<double, std::wstring>> screenshots;   // --screenshot <seconds> <png>
     bool         process = false;         // --process [folder]: run the opened file / the library, then exit when done
     std::wstring processDir;
+    std::wstring splashDump;              // --splash-dump <bmp> (development: a frame of the start-up card)
     double       exitAfter = -1.0;        // --exit-after <seconds>
+    bool         update = false;          // --update: install a newer version from the chosen channel if there is one
     std::vector<std::pair<std::string, std::string>> sets;      // --set key=value (settings)
     std::wstring dataDir;                 // --data-dir <folder>
     std::string  error;                   // the first unknown option
@@ -322,6 +326,12 @@ private:
     Capture       m_capture;
     ui::Fonts     m_fonts;
     ui::MainUI    m_ui;
+    Updater       m_updater;               // looks for and installs a newer version
+    Splash        m_splash;                // the start-up card
+    bool          m_mainShown = false;     // the main window has been shown (after its first frame)
+    int           m_nCmdShow = SW_SHOWNORMAL;
+    unsigned      m_frameCount = 0;
+    unsigned      m_updateGenSeen = 0;     // the updater state last announced
     ThumbnailAtlas m_atlas;                // interface thread
     LibraryScanner m_scanner;
 

@@ -197,6 +197,8 @@ CommandLine CommandLine::Parse() {
             if (i + 1 < argc && argv[i + 1][0] != L'-') cl.processDir = argv[++i];
         }
         else if (a == L"--exit-after") cl.exitAfter = ParseSeconds(next(i));
+        else if (a == L"--update") cl.update = true;
+        else if (a == L"--splash-dump") { if (const wchar_t* v = next(i)) cl.splashDump = v; }
         else if (a == L"--set") {
             const wchar_t* v = next(i);
             const std::string kv = v ? WideToUtf8(v) : std::string();
@@ -283,16 +285,22 @@ bool App::Init(HINSTANCE hInstance, int nCmdShow) {
     ApplyCommandLineSettings();
     I18n::SetLanguage(I18n::FromSetting(m_settings.language));
     Log::Info("Language: %s", I18n::LanguageName(I18n::Current()));
+    // The start-up card covers the time until the main window has its first frame.
+    ReadSystemTheme();
+    if (!m_cli.splashDump.empty()) m_splash.SetDumpPath(m_cli.splashDump);
+    if (!m_headless) m_splash.Show(hInstance, m_settings.theme == 2 || (m_settings.theme == 0 && m_systemLight), APP_VERSION_STRING, TR(SplashStarting));
 
     const HRESULT hrCo = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
     if (FAILED(hrCo)) Log::Hr(LogLevel::Warn, "CoInitializeEx", hrCo);
 
     Log::Info("Creating main window");
+    m_splash.SetStatus(TR(SplashWindow));
     if (!CreateMainWindow(hInstance, nCmdShow)) return false;
     Log::Info("Main window created (DPI scale %.2f)", m_dpiScale);
 
     std::wstring err;
     Log::Info("Initialising Direct3D 12");
+    m_splash.SetStatus(TR(SplashGpu));
     RECT client{};
     GetClientRect(m_hwnd, &client);
     if (m_headless && m_cli.width > 0 && m_cli.height > 0) { client = RECT{ 0, 0, (LONG)m_cli.width, (LONG)m_cli.height }; }
@@ -308,6 +316,7 @@ bool App::Init(HINSTANCE hInstance, int nCmdShow) {
               WideToUtf8(ai.nvidiaDriverVersion.empty() ? ai.driverVersion : ai.nvidiaDriverVersion).c_str());
 
     Log::Info("Initialising render pipeline");
+    m_splash.SetStatus(TR(SplashPipeline));
     if (!m_pipeline.Init(m_device, m_exeDir, m_appDataDir, err)) {
         FatalMessage(Utf8ToWide(TR(InitFailed)) + L"\n\n" + err);
         return false;
@@ -321,6 +330,7 @@ bool App::Init(HINSTANCE hInstance, int nCmdShow) {
     if (!m_capture.Init()) Log::Warn("Capture worker failed to start; photo capture is unavailable");
 
     Log::Info("Initialising UI");
+    m_splash.SetStatus(TR(SplashUi));
     if (!InitImGui()) return false;
     if (!m_headless) RegisterHotkey();
 
@@ -337,6 +347,7 @@ bool App::Init(HINSTANCE hInstance, int nCmdShow) {
     m_wake = CreateEventW(nullptr, FALSE, FALSE, nullptr);
     PushSettings();
     RequestRuntimeLoad(false);
+    if (!m_headless && (m_cli.update || (!m_cli.process && m_settings.updateCheck))) m_updater.Check(APP_VERSION_STRING, m_settings.updateChannel == 1, false);
     if (m_cli.open.empty()) {
         if (m_settings.sourceMode == SourceImage && !m_settings.imagePath.empty()) {
             const std::wstring path = Utf8ToWide(m_settings.imagePath);
@@ -435,8 +446,7 @@ bool App::CreateMainWindow(HINSTANCE hInstance, int nCmdShow) {
         // The window only exists for messages; its client size is the size of the offscreen frames.
         ShowWindow(m_hwnd, SW_HIDE);
     } else {
-        ShowWindow(m_hwnd, m_settings.windowMaximized ? SW_SHOWMAXIMIZED : nCmdShow);
-        UpdateWindow(m_hwnd);
+        m_nCmdShow = nCmdShow;   // shown once its first frame is drawn (App::Frame), while the start-up card still covers the wait
     }
     return true;
 }
@@ -493,6 +503,8 @@ void App::ApplyDpi(float scale) {
 }
 
 void App::Shutdown() {
+    m_updater.Cancel();
+    m_splash.Close();
     StopWorker();
     m_scanner.Stop();
     if (m_deviceReady) { m_device.Ui().WaitIdle(); m_device.Proc().WaitIdle(); }
@@ -1500,6 +1512,14 @@ void App::Frame() {
     if (m_inFrame || !m_deviceReady || !m_imguiReady) return;
     m_inFrame = true;
     const double frameStart = NowSeconds();
+    // The window appears with its second frame: the first one has been presented behind the start-up card, so no
+    // blank window is ever seen.
+    if (++m_frameCount == 2 && !m_headless && !m_mainShown) {
+        m_mainShown = true;
+        ShowWindow(m_hwnd, m_settings.windowMaximized ? SW_SHOWMAXIMIZED : m_nCmdShow);
+        UpdateWindow(m_hwnd);
+        m_splash.Close();
+    }
 
     // The screenshot recorded with the previous frame.
     if (m_device.ScreenshotPending()) {
@@ -1627,6 +1647,36 @@ void App::Frame() {
     info.displayHeight = display.height;
     info.displayWipe = display.wipe;
     info.appVersion = APP_VERSION_STRING;
+    {
+        const Updater::Status us = m_updater.Get();
+        info.updateState = (int)us.state;
+        info.updateVersion = us.release.version;
+        info.updateDate = us.release.date;
+        info.updateNotes = us.release.notes;
+        info.updatePrerelease = us.release.prerelease;
+        info.updateHasAsset = !us.release.assetUrl.empty();
+        info.updateError = us.error;
+        info.updateWritable = us.writable;
+        info.updateDownloadedMb = us.downloadedMb;
+        info.updateTotalMb = us.totalMb;
+        info.updateProgress = us.totalMb > 0.0 ? (float)std::min(1.0, us.downloadedMb / us.totalMb) : 0.0f;
+        if (us.generation != m_updateGenSeen) {
+            m_updateGenSeen = us.generation;
+            switch (us.state) {
+            case Updater::State::Available:
+                info.updateShow = true;
+                if (m_cli.update) m_updater.Download(m_exeDir, JoinPath(m_appDataDir, L"update"));   // --update: no click needed
+                break;
+            case Updater::State::UpToDate: if (us.manual) m_ui.Toast(StrPrintf(TR(UpdateUpToDate), APP_VERSION_STRING)); break;
+            case Updater::State::Failed:
+                if (us.download) m_ui.Toast(us.writable ? StrPrintf(TR(UpdateFailed), us.error.c_str()) : std::string(TR(UpdateNotWritable)), true);
+                else m_ui.Toast(StrPrintf(TR(UpdateCheckFailed), us.error.c_str()), true);
+                break;
+            case Updater::State::Restarting: PostMessageW(m_hwnd, WM_CLOSE, 0, 0); break;
+            default: break;
+            }
+        }
+    }
     info.capturePending = m_capture.Pending() + m_status.capturesInFlight;
     info.lastCapture = m_lastCapture;
     info.lastCaptureOk = m_lastCaptureOk;
@@ -1859,6 +1909,13 @@ void App::HandleEvents(ui::UiEvents& ev) {
     if (ev.openLogFile) OpenPath(Log::FilePath());
     if (ev.openSettingsFolder) OpenPath(m_appDataDir);
     if (ev.openProjectPage) OpenPath(kProjectUrl);
+    if (ev.updateCheckNow) m_updater.Check(APP_VERSION_STRING, m_settings.updateChannel == 1, true);
+    if (ev.updateStart) m_updater.Download(m_exeDir, JoinPath(m_appDataDir, L"update"));
+    if (ev.updateCancel) m_updater.Cancel();
+    if (ev.updateOpenPage) {
+        const Updater::Status us = m_updater.Get();
+        OpenPath(us.release.pageUrl.empty() ? std::wstring(kProjectUrl) + L"/releases" : Utf8ToWide(us.release.pageUrl));
+    }
     if (ev.openLicenses) {
         const std::wstring local = JoinPath(m_exeDir, L"THIRD_PARTY_NOTICES.md");
         OpenPath(FileExists(local) ? local : std::wstring(kProjectUrl) + L"/blob/main/THIRD_PARTY_NOTICES.md");

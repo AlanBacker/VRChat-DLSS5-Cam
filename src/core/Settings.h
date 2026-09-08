@@ -102,8 +102,14 @@ struct Settings {
     bool windowMaximized = false;
     bool sidebarVisible = true;
     bool libraryVisible = true;        // the media library strip under the preview
+    float sidebarWidth = 0.0f;         // in font-size units, 0 = default (24); dragged at the sidebar handle
+    float libraryHeight = 0.0f;        // in font-size units, 0 = default; dragged at the library's top edge
     bool showAdvanced = true;          // advanced controls in the sidebar
     int  theme = 0;                    // 0 = follow Windows, 1 = dark, 2 = light
+
+    // Updates
+    bool updateCheck = true;           // look for a new version at every start
+    int  updateChannel = 0;            // 0 = stable releases only, 1 = pre-releases too
 
     // Misc
     bool showLog = false;

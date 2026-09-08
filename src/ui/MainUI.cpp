@@ -154,7 +154,8 @@ void MainUI::Draw(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Font
         }
         if (m_themeLight != Colors().light) SetThemeLight(ImGui::GetStyle(), m_themeLight);
     }
-    if (!m_undoInit) { m_undoBase = { s.ParameterText(), LibrarySnapshot(info) }; m_undoInit = true; }
+    if (!m_undoInit) { m_undoBase = { s.ParameterText(), LibrarySnapshot(info), std::string() }; m_undoInit = true; }
+    if (info.updateShow) m_updateOpen = true;
     if (!io.WantTextInput && io.KeyCtrl && !io.KeyAlt) {
         if (ImGui::IsKeyPressed(ImGuiKey_Z, false)) ApplyUndo(s, info, ev, io.KeyShift);
         else if (ImGui::IsKeyPressed(ImGuiKey_Y, false)) ApplyUndo(s, info, ev, true);
@@ -193,7 +194,10 @@ void MainUI::Draw(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Font
     const float statusH = ImGui::GetFrameHeight() + style.ItemSpacing.y * 2.0f;
     const ImVec2 avail = ImGui::GetContentRegionAvail();
     const float bodyH = std::max(50.0f, avail.y - statusH - style.ItemSpacing.y);
-    const float sidebarW = std::min(ImGui::GetFontSize() * 24.0f, avail.x * 0.5f);
+    // The sidebar's width is the user's (dragged at the handle), kept within what the window can give.
+    const float em = ImGui::GetFontSize();
+    const float sidebarMin = em * 16.0f, sidebarMax = std::max(sidebarMin, avail.x * 0.6f);
+    const float sidebarW = std::max(50.0f, std::min(std::clamp((s.sidebarWidth > 0.0f ? s.sidebarWidth : 24.0f) * em, sidebarMin, sidebarMax), avail.x * 0.6f));
     // The sidebar slides in and out behind a slim handle on the edge of the preview; the preview takes the room it
     // frees while it moves.
     const float handleW = 14.0f;
@@ -215,9 +219,23 @@ void MainUI::Draw(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Font
         const Palette& p = Colors();
         const ImVec2 hpos = ImGui::GetCursorScreenPos();
         ImGui::InvisibleButton("##sidebarHandle", ImVec2(handleW, bodyH));
-        if (ImGui::IsItemClicked(ImGuiMouseButton_Left)) { s.sidebarVisible = !s.sidebarVisible; ev.settingsChanged = true; }
-        Tip(s.sidebarVisible ? TR(SidebarHide) : TR(SidebarShow));
-        const float hov = Animate(ImGui::GetID("##sidebarHandleHover"), ImGui::IsItemHovered() ? 1.0f : 0.0f, 16.0f);
+        // A press that moves drags the sidebar's edge; one that does not toggles the sidebar.
+        if (ImGui::IsItemActivated()) { m_sidebarDrag = s.sidebarVisible; m_sidebarDragMoved = false; m_sidebarDragW = sidebarW; }
+        if (ImGui::IsItemActive() && m_sidebarDrag) {
+            const float dx = ImGui::GetMouseDragDelta(ImGuiMouseButton_Left, 0.0f).x;
+            if (!m_sidebarDragMoved && std::fabs(dx) > 4.0f) m_sidebarDragMoved = true;
+            if (m_sidebarDragMoved) s.sidebarWidth = std::clamp(m_sidebarDragW - dx, sidebarMin, sidebarMax) / em;
+        }
+        if (ImGui::IsItemDeactivated()) {
+            if (m_sidebarDragMoved) ev.settingsChanged = true;
+            else if (ImGui::IsItemHovered()) { s.sidebarVisible = !s.sidebarVisible; ev.settingsChanged = true; }
+            m_sidebarDrag = false;
+            m_sidebarDragMoved = false;
+        }
+        const bool handleLit = ImGui::IsItemHovered() || ImGui::IsItemActive();
+        if (handleLit) ImGui::SetMouseCursor(s.sidebarVisible ? ImGuiMouseCursor_ResizeEW : ImGuiMouseCursor_Hand);
+        if (!ImGui::IsItemActive()) Tip(s.sidebarVisible ? TR(TipSidebarDrag) : TR(SidebarShow));
+        const float hov = Animate(ImGui::GetID("##sidebarHandleHover"), handleLit ? 1.0f : 0.0f, 16.0f);
         ImDrawList* dl = ImGui::GetWindowDrawList();
         dl->AddRectFilled(hpos, ImVec2(hpos.x + handleW, hpos.y + bodyH), Mix(p.panel, p.controlHover, hov), 3.0f);
         DrawChevron(dl, ImVec2(hpos.x + handleW * 0.5f, hpos.y + bodyH * 0.5f), 8.0f, IM_PI * 0.5f - IM_PI * sideT, Mix(p.textDim, p.text, hov));
@@ -235,6 +253,7 @@ void MainUI::Draw(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Font
     }
 
     DrawStatusBar(s, info, ev, fonts);
+    DrawUpdatePopup(s, info, ev, fonts);
     ImGui::End();
 
     if (s.showLog) DrawLogWindow(s, ev, fonts);
@@ -315,33 +334,241 @@ bool MainUI::SameLibrary(const std::vector<LibrarySnapshotItem>& a, const std::v
 }
 
 void MainUI::TrackUndo(const Settings& s, const UiFrameInfo& info) {
+    if (m_undoHold) { m_undoHold = false; return; }   // the library of an undo is restored after this frame
     if (ImGui::IsAnyItemActive()) return;   // a slider is held or a field is being typed in: one step per edit
     std::string cur = s.ParameterText();
     std::vector<LibrarySnapshotItem> lib = LibrarySnapshot(info);
     if (cur == m_undoBase.params && SameLibrary(lib, m_undoBase.library)) return;
+    UndoStep next{ std::move(cur), std::move(lib), std::string() };
+    next.label = StepLabel(m_undoBase, next);
     m_undo.push_back(std::move(m_undoBase));
     if (m_undo.size() > 100) m_undo.erase(m_undo.begin());
     m_redo.clear();
-    m_undoBase = { std::move(cur), std::move(lib) };
+    m_undoBase = std::move(next);
 }
 
 void MainUI::ApplyUndo(Settings& s, const UiFrameInfo& info, UiEvents& ev, bool redo) {
+    TrackUndo(s, info);   // a change not yet recorded becomes a step first
     std::vector<UndoStep>& from = redo ? m_redo : m_undo;
     std::vector<UndoStep>& to = redo ? m_undo : m_redo;
     if (from.empty()) return;
-    to.push_back({ s.ParameterText(), LibrarySnapshot(info) });
+    // The recorded current state is moved rather than a fresh snapshot: several steps may be applied in one frame,
+    // before the library restore of the first has landed.
+    to.push_back(m_undoBase);
     UndoStep step = std::move(from.back());
     from.pop_back();
     const bool nrWas = s.nrEnabled, dlaaWas = s.dlaaEnabled;
     s.ApplyText(step.params);
     s.Clamp();
-    if (!SameLibrary(step.library, to.back().library)) { ev.libraryRestore = true; ev.libraryRestoreItems = step.library; }
+    if (!SameLibrary(step.library, to.back().library)) { ev.libraryRestore = true; ev.libraryRestoreItems = step.library; m_undoHold = true; }
     m_undoBase = std::move(step);
     ev.settingsChanged = true;
     ev.nrChanged = true;
     ev.dlaaChanged = true;
     if (nrWas != s.nrEnabled || dlaaWas != s.dlaaEnabled) ev.resetHistory = true;
     ImGui::ClearActiveID();
+}
+
+// To an entry of the history list: index 0 is the oldest kept state, m_undo.size() the current one, later ones
+// the states undone from.
+void MainUI::GoToHistory(Settings& s, const UiFrameInfo& info, UiEvents& ev, int index) {
+    const int cur = (int)m_undo.size();
+    for (int i = cur; i > index && !m_undo.empty(); --i) ApplyUndo(s, info, ev, false);
+    for (int i = cur; i < index && !m_redo.empty(); ++i) ApplyUndo(s, info, ev, true);
+}
+
+// A short name for the change from one state to the next: the file added or removed, or the value that changed.
+std::string MainUI::StepLabel(const UndoStep& from, const UndoStep& to) {
+    auto fileName = [](const std::wstring& path) {
+        const size_t k = path.find_last_of(L"\\/");
+        return WideToUtf8(k == std::wstring::npos ? path : path.substr(k + 1));
+    };
+    if (!SameLibrary(from.library, to.library)) {
+        std::vector<const LibrarySnapshotItem*> added, removed;
+        for (const auto& b : to.library) {
+            bool found = false;
+            for (const auto& a : from.library) if (a.path == b.path) { found = true; break; }
+            if (!found) added.push_back(&b);
+        }
+        for (const auto& a : from.library) {
+            bool found = false;
+            for (const auto& b : to.library) if (a.path == b.path) { found = true; break; }
+            if (!found) removed.push_back(&a);
+        }
+        if (added.size() == 1 && removed.empty()) return StrPrintf(TR(HistoryAdded), fileName(added[0]->path).c_str());
+        if (removed.size() == 1 && added.empty()) return StrPrintf(TR(HistoryRemoved), fileName(removed[0]->path).c_str());
+        if (!added.empty() && added.size() >= removed.size()) return StrPrintf(TR(HistoryAddedMany), (int)added.size());
+        if (!removed.empty()) return StrPrintf(TR(HistoryRemovedMany), (int)removed.size());
+        for (size_t i = 0; i < to.library.size() && i < from.library.size(); ++i) {
+            const LibrarySnapshotItem& a = from.library[i];
+            const LibrarySnapshotItem& b = to.library[i];
+            if (a.path == b.path && (a.useOwn != b.useOwn || a.own != b.own)) return StrPrintf(TR(HistoryOwnParams), fileName(b.path).c_str());
+        }
+        return TR(SecLibrary);
+    }
+    // Values: the "key=value" lines that differ.
+    auto lines = [](const std::string& text) {
+        std::vector<std::pair<std::string, std::string>> out;
+        size_t pos = 0;
+        while (pos < text.size()) {
+            size_t eol = text.find('\n', pos);
+            if (eol == std::string::npos) eol = text.size();
+            const std::string line = text.substr(pos, eol - pos);
+            pos = eol + 1;
+            const size_t eq = line.find('=');
+            if (eq != std::string::npos) out.emplace_back(line.substr(0, eq), line.substr(eq + 1));
+        }
+        return out;
+    };
+    const auto before = lines(from.params), after = lines(to.params);
+    std::string firstKey, firstValue;
+    int changed = 0;
+    for (const auto& kv : after) {
+        std::string old;
+        bool had = false;
+        for (const auto& b : before) if (b.first == kv.first) { old = b.second; had = true; break; }
+        if (had && old == kv.second) continue;
+        if (changed++ == 0) { firstKey = kv.first; firstValue = kv.second; }
+    }
+    if (changed == 0) return "\xE2\x80\xA6";
+    // The key's name in the interface and a readable value.
+    const char* label = nullptr;
+    bool isBool = false;
+#define VDC_KEY(k, name, flag) if (firstKey == k) { label = TR(name); isBool = flag; }
+    VDC_KEY("nrEnabled", NrEnable, true) VDC_KEY("nrCaptureOnly", NrCaptureOnly, true) VDC_KEY("nrRoute", Route, false)
+    VDC_KEY("nrPreset", Preset, false) VDC_KEY("nrStyle", Style, false) VDC_KEY("nrIntensity", Intensity, false)
+    VDC_KEY("nrGlobalTone", GlobalTone, false) VDC_KEY("nrLocalTone", LocalTone, false) VDC_KEY("nrLocalStructure", LocalStructure, false)
+    VDC_KEY("nrSkinStructure", SkinStructure, false) VDC_KEY("nrAutoMask", AutoMask, true) VDC_KEY("nrUiCorrection", UiCorrection, true)
+    VDC_KEY("nrUpscale", NrUpscale, true) VDC_KEY("nrInputExposure", InputExposure, false) VDC_KEY("nrToneTransfer", ToneTransfer, false)
+    VDC_KEY("nrColorStrength", ColorStrength, false) VDC_KEY("nrShadowGain", ShadowGain, false) VDC_KEY("nrHighlightGain", HighlightGain, false)
+    VDC_KEY("nrInputScale", NrInputScale, false) VDC_KEY("hdrPaperWhite", PaperWhite, false) VDC_KEY("hdrHighlightCompression", HighlightCompression, false)
+    VDC_KEY("motionMode", MotionSource, false) VDC_KEY("depthMode", DepthSource, false) VDC_KEY("searchRadius", SearchRadius, false)
+    VDC_KEY("motionConfidence", MotionConfidence, false) VDC_KEY("nvofGrid", NvofGrid, false) VDC_KEY("nvofPerf", NvofPerf, false)
+    VDC_KEY("nvofBidirectional", NvofBidirectional, true) VDC_KEY("depthInterval", DepthInterval, false) VDC_KEY("depthLongSide", DepthResolution, false)
+    VDC_KEY("autoReset", AutoReset, true) VDC_KEY("cutThreshold", CutThreshold, false) VDC_KEY("dlaaEnabled", DlaaEnable, true)
+    VDC_KEY("dlaaPreset", DlaaPreset, false) VDC_KEY("compareMode", Compare, false) VDC_KEY("wipePosition", CompareWipe, false)
+    VDC_KEY("checkerboard", Checkerboard, true) VDC_KEY("fitMode", FitWindowLabel, false) VDC_KEY("vsync", Vsync, true)
+    VDC_KEY("processRateLimit", RateLimit, false) VDC_KEY("showOverlay", Overlay, true) VDC_KEY("keepAlpha", KeepAlpha, true)
+    VDC_KEY("saveOriginal", SaveOriginal, true) VDC_KEY("timelapseSeconds", Timelapse, false) VDC_KEY("videoMatchSource", MatchSource, true)
+    VDC_KEY("videoOutput", VideoOutput, false) VDC_KEY("videoBitrateMbps", Bitrate, false) VDC_KEY("videoKeepAudio", KeepAudio, true)
+    VDC_KEY("videoHardwareDecode", HardwareDecode, true) VDC_KEY("customResolution", CustomResolution, true) VDC_KEY("customWidth", Width, false)
+    VDC_KEY("customHeight", Height, false) VDC_KEY("keepAspect", KeepAspect, true)
+#undef VDC_KEY
+    std::string value = firstValue;
+    if (isBool) value = (value == "1" || value == "true") ? TR(HistoryOn) : TR(HistoryOff);
+    else if (firstKey == "nrSkinStructure" && value.compare(0, 2, "-1") == 0) value = TR(HistoryDefault);
+    else if (value.find('.') != std::string::npos) {
+        // Two decimals, trailing zeros dropped.
+        const double d = atof(value.c_str());
+        value = StrPrintf("%.2f", d);
+        while (value.size() > 1 && value.back() == '0') value.pop_back();
+        if (!value.empty() && value.back() == '.') value.pop_back();
+    }
+    std::string text = std::string(label ? label : firstKey.c_str()) + ": " + value;
+    if (changed > 1) text = StrPrintf(TR(HistoryMore), text.c_str(), changed - 1);
+    return text;
+}
+
+// The history list: every kept state in order, the current one marked, the undone ones dimmed after it. A click
+// takes the settings and the library to that state; the later ones stay until a new change is made.
+void MainUI::DrawHistory(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts, const ImVec2& anchor) {
+    if (ImGui::IsPopupOpen("##history")) ImGui::SetNextWindowPos(ImVec2(anchor.x, anchor.y + 6.0f), ImGuiCond_Appearing, ImVec2(1.0f, 0.0f));
+    if (!BeginPopupFade("##history")) return;
+    const Palette& p = Colors();
+    ImGui::PushFont(fonts.Bold(), 0.0f);
+    ImGui::TextUnformatted(TR(SecHistory));
+    ImGui::PopFont();
+    ImGui::Separator();
+    const int undoN = (int)m_undo.size(), redoN = (int)m_redo.size(), total = undoN + 1 + redoN;
+    const float rowH = ImGui::GetFrameHeight();
+    const float listH = rowH * (float)std::min(total, 14) + 6.0f;
+    ImGui::PushStyleVar(ImGuiStyleVar_SelectableTextAlign, ImVec2(0.0f, 0.5f));
+    ImGui::BeginChild("##historyList", ImVec2(ImGui::GetFontSize() * 20.0f, listH), ImGuiChildFlags_None, ImGuiWindowFlags_None);
+    int jump = -1;
+    for (int i = 0; i < total; ++i) {
+        const UndoStep& st = i < undoN ? m_undo[(size_t)i] : i == undoN ? m_undoBase : m_redo[(size_t)(redoN - 1 - (i - undoN - 1))];
+        const bool current = i == undoN, later = i > undoN;
+        ImGui::PushID(i);
+        if (later) ImGui::PushStyleColor(ImGuiCol_Text, p.textDim);
+        const char* label = st.label.empty() ? TR(HistoryInitial) : st.label.c_str();
+        if (ImGui::Selectable(label, current, ImGuiSelectableFlags_None, ImVec2(0.0f, rowH)) && !current) jump = i;
+        if (later) ImGui::PopStyleColor();
+        if (current && ImGui::IsWindowAppearing()) ImGui::SetScrollHereY(0.5f);
+        ImGui::PopID();
+    }
+    ImGui::EndChild();
+    ImGui::PopStyleVar();
+    EndPopupFade();
+    if (jump >= 0) GoToHistory(s, info, ev, jump);
+}
+
+// The update popup: what is new, the notes, and the one button that downloads, swaps the files and restarts.
+void MainUI::DrawUpdatePopup(Settings& /*s*/, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts) {
+    if (m_updateOpen) { ImGui::OpenPopup("##update"); m_updateOpen = false; }
+    // Centred on every frame from its own size, so it stays put when the progress bar appears.
+    ImGuiViewport* vp = ImGui::GetMainViewport();
+    if (ImGui::IsPopupOpen("##update"))
+        ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x + vp->WorkSize.x * 0.5f, vp->WorkPos.y + vp->WorkSize.y * 0.45f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    if (!BeginPopupFade("##update", ImGuiWindowFlags_NoMove)) return;
+    const Palette& p = Colors();
+    const float em = ImGui::GetFontSize();
+    const float w = em * 28.0f;
+    const int st = info.updateState;
+    const bool busy = st == UpDownloading || st == UpExtracting || st == UpRestarting;
+    ImGui::PushFont(fonts.Bold(), ImGui::GetStyle().FontSizeBase * 1.15f);
+    ImGui::TextUnformatted(TR(UpdateTitle));
+    ImGui::PopFont();
+    if (info.updatePrerelease) { ImGui::SameLine(0.0f, 10.0f); Pill(TR(ChannelPreview), WithAlpha(p.warn, 0.2f), p.warn); }
+    ImGui::TextUnformatted(StrPrintf(TR(UpdateVersionFmt), info.updateVersion.c_str(), info.appVersion.c_str()).c_str());
+    if (!info.updateDate.empty()) ImGui::TextDisabled("%s", StrPrintf(TR(UpdatePublished), info.updateDate.c_str()).c_str());
+    if (!info.updateNotes.empty()) {
+        ImGui::Spacing();
+        const float textH = ImGui::CalcTextSize(info.updateNotes.c_str(), nullptr, false, w - 20.0f).y;
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, p.surface);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(10, 8));
+        ImGui::BeginChild("##notes", ImVec2(w, std::min(em * 14.0f, textH + 20.0f)), ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_None);
+        ImGui::PopStyleVar();
+        ImGui::PopStyleColor();
+        ImGui::PushTextWrapPos(w - 20.0f);
+        ImGui::TextUnformatted(info.updateNotes.c_str());
+        ImGui::PopTextWrapPos();
+        ImGui::EndChild();
+    }
+    ImGui::Spacing();
+    if (st == UpDownloading) {
+        ImGui::ProgressBar(info.updateProgress, ImVec2(w, 0.0f), "");
+        ImGui::TextDisabled("%s", StrPrintf(TR(UpdateDownloading), info.updateDownloadedMb, info.updateTotalMb).c_str());
+    } else if (st == UpExtracting) {
+        ImGui::ProgressBar(-1.0f * (float)ImGui::GetTime(), ImVec2(w, 0.0f), "");
+        ImGui::TextDisabled("%s", TR(UpdateExtracting));
+    } else if (st == UpRestarting) {
+        ImGui::TextDisabled("%s", TR(UpdateRestarting));
+    } else if (st == UpFailed) {
+        ImGui::PushStyleColor(ImGuiCol_Text, p.bad);
+        ImGui::PushTextWrapPos(w);
+        ImGui::TextUnformatted(info.updateWritable ? StrPrintf(TR(UpdateFailed), info.updateError.c_str()).c_str() : TR(UpdateNotWritable));
+        ImGui::PopTextWrapPos();
+        ImGui::PopStyleColor();
+    } else {
+        ImGui::PushTextWrapPos(w);
+        Hint(TR(UpdateApplyHint));
+        ImGui::PopTextWrapPos();
+    }
+    ImGui::Separator();
+    ImGui::BeginDisabled(busy || !info.updateHasAsset || !info.updateWritable);
+    if (AccentButton(TR(UpdateNow), ImVec2(em * 9.0f, 0.0f))) ev.updateStart = true;
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    if (GhostButton(TR(UpdatePage), ImVec2(em * 9.0f, 0.0f))) ev.updateOpenPage = true;
+    ImGui::SameLine();
+    if (st == UpDownloading || st == UpExtracting) {
+        if (FlatButton(TR(Cancel), ImVec2(em * 7.0f, 0.0f))) ev.updateCancel = true;
+    } else {
+        ImGui::BeginDisabled(st == UpRestarting);
+        if (FlatButton(TR(UpdateLater), ImVec2(em * 7.0f, 0.0f))) ImGui::CloseCurrentPopup();
+        ImGui::EndDisabled();
+    }
+    EndPopupFade();
 }
 
 void MainUI::ResetView(bool animate) {
@@ -418,7 +645,7 @@ void MainUI::DrawTopBar(Settings& s, const UiFrameInfo& info, UiEvents& ev, cons
     const float availW = ImGui::GetWindowWidth() - style.WindowPadding.x * 2.0f;
     const float gap = 20.0f;
     float langW = ImGui::GetFontSize() * 8.0f;
-    const float undoW = frameH * 2.0f + style.ItemInnerSpacing.x;
+    const float undoW = frameH * 3.0f + style.ItemInnerSpacing.x * 2.0f;   // undo, redo, history
     bool showFps = true, showBadges = true, showTitle = true, showUndo = true;
     auto rightW = [&]() { return actionW + langW + style.ItemSpacing.x + (showUndo ? undoW + style.ItemSpacing.x : 0.0f) + (showFps ? fpsW + style.ItemSpacing.x : 0.0f); };
     auto leftW = [&]() { return (showTitle ? titleSize.x + 16.0f : 0.0f) + switchW + (showBadges ? 14.0f + badgesW : 0.0f); };
@@ -471,6 +698,10 @@ void MainUI::DrawTopBar(Settings& s, const UiFrameInfo& info, UiEvents& ev, cons
         ImGui::BeginDisabled(m_redo.empty());
         if (IconButton("##redo", Icon::Redo, ImVec2(frameH, frameH), TR(TipRedo), ButtonKind::Plain)) ApplyUndo(s, info, ev, true);
         ImGui::EndDisabled();
+        ImGui::SameLine(0.0f, style.ItemInnerSpacing.x);
+        ImGui::SetCursorPosY(centred(frameH));
+        if (IconButton("##historyBtn", Icon::History, ImVec2(frameH, frameH), TR(TipHistory), ButtonKind::Plain)) ImGui::OpenPopup("##history");
+        DrawHistory(s, info, ev, fonts, ImGui::GetItemRectMax());
         ImGui::SameLine();
     }
     ImGui::SetCursorPosY(centred(frameH));
@@ -532,13 +763,17 @@ void MainUI::DrawSidebar(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
     if (SectionHeader(TR(SecSource), "source")) { BlockSource(s, info, ev); SectionEnd(); }
     if (SectionHeader(TR(SecNeural), "neural")) { BlockNeural(s, info, ev); SectionEnd(); }
     if (SectionHeader(TR(SecCapture), "save")) { BlockSave(s, info, ev); SectionEnd(); }
-    if (SectionHeader(TR(SecDisplay), "view", false)) { BlockView(s, info, ev); SectionEnd(); }
-    // The expert sections fade in and out with the Advanced switch.
+    // The expert sections fade in and out with the Advanced switch; Display sits under DLAA, before the internals.
     const float adv = Animate(ImGui::GetID("##advanced"), s.showAdvanced ? 1.0f : 0.0f, 12.0f);
     if (adv > 0.001f) {
         ImGui::PushStyleVar(ImGuiStyleVar_Alpha, style.Alpha * adv);
         if (SectionHeader(TR(SecGuidance), "guidance", false)) { BlockGuidance(s, info, ev); SectionEnd(); }
         if (SectionHeader(TR(SecDlaa), "dlaa", false)) { BlockDlaa(s, info, ev); SectionEnd(); }
+        ImGui::PopStyleVar();
+    }
+    if (SectionHeader(TR(SecDisplay), "view", false)) { BlockView(s, info, ev); SectionEnd(); }
+    if (adv > 0.001f) {
+        ImGui::PushStyleVar(ImGuiStyleVar_Alpha, style.Alpha * adv);
         if (SectionHeader(TR(SecInternals), "internals", false)) { BlockInternals(s, info, ev); SectionEnd(); }
         ImGui::PopStyleVar();
     }
@@ -1179,7 +1414,7 @@ void MainUI::BlockInternals(Settings& /*s*/, const UiFrameInfo& info, UiEvents& 
     ImGui::Spacing();
 }
 
-void MainUI::BlockAbout(Settings& /*s*/, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts) {
+void MainUI::BlockAbout(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts) {
     ImGui::PushFont(fonts.Bold(), 0.0f);
     ImGui::Text("%s %s", TR(AppTitle), info.appVersion.c_str());
     ImGui::PopFont();
@@ -1193,11 +1428,39 @@ void MainUI::BlockAbout(Settings& /*s*/, const UiFrameInfo& info, UiEvents& ev, 
         ImGui::TextDisabled("%s:", TR(NgxStatus)); ImGui::SameLine(); ImGui::TextUnformatted(info.status->ngxStatus.c_str());
         ImGui::TextDisabled("%s:", TR(Nvof)); ImGui::SameLine(); ImGui::TextUnformatted(info.status->nvofAvailable ? TR(Available) : TR(NotAvailable));
     }
-    // Two rows of two equal buttons and the reset across the full width, all the same height.
+    // Updates: whether to look at every start, which channel, a check by hand and the result of the last one.
     const ImGuiStyle& style = ImGui::GetStyle();
     const float fullW = ImGui::GetContentRegionAvail().x;
     const float halfW = std::floor((fullW - style.ItemSpacing.x) * 0.5f);
     const ImVec2 half(halfW, 0.0f);
+    ImGui::Spacing();
+    if (Toggle(TR(UpdateAuto), &s.updateCheck)) ev.settingsChanged = true;
+    {
+        const char* channels[] = { TR(ChannelStable), TR(ChannelPreview) };
+        if (ComboIds("##updateChannel", &s.updateChannel, channels, 2)) ev.settingsChanged = true;
+        ImGui::SameLine();
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(TR(UpdateChannel));
+        Help(TR(TipUpdateChannel));
+    }
+    {
+        const int st = info.updateState;
+        const bool busy = st == UpChecking || st == UpDownloading || st == UpExtracting || st == UpRestarting;
+        ImGui::BeginDisabled(busy);
+        if (GhostButton(TR(UpdateCheckNow), st == UpAvailable ? half : ImVec2(fullW, 0.0f))) ev.updateCheckNow = true;
+        ImGui::EndDisabled();
+        if (st == UpAvailable) {
+            ImGui::SameLine(0.0f, style.ItemSpacing.x);
+            if (AccentButton(TR(UpdateNow), half)) m_updateOpen = true;
+        }
+        const Palette& p = Colors();
+        if (st == UpChecking) ImGui::TextDisabled("%s", TR(UpdateChecking));
+        else if (st == UpUpToDate) ImGui::TextDisabled("%s", StrPrintf(TR(UpdateUpToDate), info.appVersion.c_str()).c_str());
+        else if (st == UpAvailable) { ImGui::PushStyleColor(ImGuiCol_Text, p.accentHover); ImGui::TextWrapped("%s", StrPrintf(TR(UpdateVersionFmt), info.updateVersion.c_str(), info.appVersion.c_str()).c_str()); ImGui::PopStyleColor(); }
+        else if (st == UpFailed) { ImGui::PushStyleColor(ImGuiCol_Text, p.bad); ImGui::TextWrapped("%s", info.updateWritable ? StrPrintf(TR(UpdateCheckFailed), info.updateError.c_str()).c_str() : TR(UpdateNotWritable)); ImGui::PopStyleColor(); }
+    }
+    ImGui::Spacing();
+    // Two rows of two equal buttons and the reset across the full width, all the same height.
     if (GhostButton(TR(OpenLogFile), half)) ev.openLogFile = true;
     ImGui::SameLine(0.0f, style.ItemSpacing.x);
     if (GhostButton(TR(OpenSettingsFolder), half)) ev.openSettingsFolder = true;
@@ -1227,9 +1490,13 @@ void MainUI::DrawPreview(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
     const float frameH = ImGui::GetFrameHeight();
     const bool transport = s.sourceMode == SourceVideo && info.videoLoaded;
     const float transportH = transport ? frameH * 2.0f + style.ItemSpacing.y * 3.0f + 8.0f : 0.0f;
-    const float thumbH = ImGui::GetFontSize() * 4.5f;
+    // The library's height is the user's (dragged at its top edge); the thumbnails take what is left of it.
+    const float em = ImGui::GetFontSize();
+    const float fixedH = frameH + ImGui::GetTextLineHeight() * 2.0f + style.ItemSpacing.y * 4.0f + style.ScrollbarSize + 16.0f;
+    const float libraryMinH = fixedH + em * 3.0f, libraryMaxH = std::max(libraryMinH, (region.y - transportH) * 0.7f);
+    const float libraryOpenH = std::clamp(s.libraryHeight > 0.0f ? s.libraryHeight * em : fixedH + em * 4.5f, libraryMinH, libraryMaxH);
+    m_thumbH = libraryOpenH - fixedH;
     m_libraryFold = Ease(AnimateLinear(ImGui::GetID("##libraryFold"), s.libraryVisible ? 1.0f : 0.0f, 0.2f));
-    const float libraryOpenH = frameH + thumbH + ImGui::GetTextLineHeight() * 2.0f + style.ItemSpacing.y * 4.0f + style.ScrollbarSize + 16.0f;
     const float libraryClosedH = frameH + 12.0f;
     const float libraryH = libraryClosedH + (libraryOpenH - libraryClosedH) * m_libraryFold;
     const float pictureH = std::max(60.0f, region.y - transportH - libraryH);
@@ -1241,7 +1508,25 @@ void MainUI::DrawPreview(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
         y += transportH;
     }
     const float remaining = origin.y + region.y - y;
-    if (remaining > 8.0f) DrawLibrary(s, info, ev, fonts, ImVec2(origin.x, y), ImVec2(region.x, remaining));
+    if (remaining <= 8.0f) return;
+    if (s.libraryVisible && m_libraryFold > 0.5f) {
+        // The grip on the library's top edge: dragging it changes the library's height.
+        const float grip = 7.0f;
+        ImGui::SetCursorScreenPos(ImVec2(origin.x, y - grip));
+        ImGui::InvisibleButton("##librarySplit", ImVec2(region.x, grip));
+        if (ImGui::IsItemActivated()) m_libraryDragH = libraryOpenH;
+        if (ImGui::IsItemActive()) {
+            const float dy = ImGui::GetMouseDragDelta(ImGuiMouseButton_Left, 0.0f).y;
+            s.libraryHeight = std::clamp(m_libraryDragH - dy, libraryMinH, libraryMaxH) / em;
+        }
+        if (ImGui::IsItemDeactivated()) ev.settingsChanged = true;
+        const bool lit = ImGui::IsItemHovered() || ImGui::IsItemActive();
+        if (lit) ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNS);
+        if (ImGui::IsItemHovered() && !ImGui::IsItemActive()) Tip(TR(TipLibraryResize));
+        const float glow = Animate(ImGui::GetID("##librarySplitGlow"), lit ? 1.0f : 0.0f, 14.0f);
+        if (glow > 0.01f) ImGui::GetWindowDrawList()->AddRectFilled(ImVec2(origin.x, y - 2.0f), ImVec2(origin.x + region.x, y), WithAlpha(Colors().accent, 0.9f * glow));
+    }
+    DrawLibrary(s, info, ev, fonts, ImVec2(origin.x, y), ImVec2(region.x, remaining));
 }
 
 void MainUI::DrawPicture(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts, const ImVec2& origin, const ImVec2& region) {
@@ -1727,8 +2012,8 @@ void MainUI::DrawLibrary(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
     if (fold <= 0.001f) { m_libDrag = false; ImGui::EndChild(); return; }
 
     // The strip.
-    const float cardW = ImGui::GetFontSize() * 8.0f;
-    const float thumbH = ImGui::GetFontSize() * 4.5f;
+    const float thumbH = m_thumbH > 0.0f ? m_thumbH : ImGui::GetFontSize() * 4.5f;
+    const float cardW = std::floor(thumbH * 16.0f / 9.0f);
     const float lineH = ImGui::GetTextLineHeight();
     const float cardH = thumbH + lineH * 2.0f + 6.0f;
     const float stripH = std::max(cardH + style.ScrollbarSize + 4.0f, ImGui::GetContentRegionAvail().y);
@@ -1756,10 +2041,12 @@ void MainUI::DrawLibrary(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
     const ImVec2 rowStart = ImGui::GetCursorScreenPos();
     const bool stripHovered = ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows);
     const bool menuOpen = ImGui::IsPopupOpen("##libctx");   // judged here: inside a card's PushID the name would hash differently
-    // Ctrl+A while the cursor is on the strip (or it was clicked last) selects every readable file.
-    if ((stripHovered || ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows)) && !running && !io.WantTextInput && io.KeyCtrl && !io.KeyAlt
-        && ImGui::IsKeyPressed(ImGuiKey_A, false))
+    // Keys while the cursor is on the strip (or it was clicked last): Ctrl+A selects every readable file, Delete
+    // drops the selected ones from the library.
+    const bool keysHere = (stripHovered || ImGui::IsWindowFocused(ImGuiFocusedFlags_ChildWindows)) && !running && !io.WantTextInput && !io.KeyAlt;
+    if (keysHere && io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_A, false))
         for (auto& it : *lib) it.selected = it.probe != 2;
+    if (keysHere && !io.KeyCtrl && selected > 0 && ImGui::IsKeyPressed(ImGuiKey_Delete, false)) ev.libraryDeleteSelected = true;
     // Selection drags are kept in content coordinates, so the rectangle stays put while the strip scrolls.
     const ImVec2 winPos = ImGui::GetWindowPos();
     const ImVec2 scroll(ImGui::GetScrollX(), ImGui::GetScrollY());
@@ -1786,6 +2073,7 @@ void MainUI::DrawLibrary(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
         const bool hovered = stripHovered && !dragging && ImGui::IsMouseHoveringRect(c0, c1);
         if (hovered) underCursor = it.id;
         if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Right)) menuCard = it.id;
+        bool onControl = false;   // the cursor is on this card's box or remove button
         if (dragging && it.probe != 2) {
             const bool inRect = marquee.Overlaps(ImRect(c0, c1));
             const bool kept = io.KeyCtrl && std::find(m_libDragKeep.begin(), m_libDragKeep.end(), it.id) != m_libDragKeep.end();
@@ -1866,7 +2154,7 @@ void MainUI::DrawLibrary(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
             if (ImGui::Checkbox("##sel", &it.selected)) m_lastClicked = it.id;
             ImGui::EndDisabled();
             ImGui::PopStyleVar();
-            overControl |= ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled);
+            onControl |= ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled);
         }
         if (hov > 0.01f && !running && it.state != LibraryItem::Processing) {
             const float bs = frameH * 0.8f;
@@ -1876,14 +2164,22 @@ void MainUI::DrawLibrary(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
             ImGui::PushStyleVar(ImGuiStyleVar_Alpha, style.Alpha * hov);
             if (IconButton("##remove", Icon::Close, ImVec2(bs, bs), TR(Remove), ButtonKind::Plain)) ev.libraryRemove = it.id;
             ImGui::PopStyleVar();
-            overControl |= ImGui::IsItemHovered();
+            onControl |= ImGui::IsItemHovered();
+        }
+        overControl |= onControl;
+        // A double click opens the file in the preview.
+        if (hovered && !onControl && !running && !menuOpen && it.probe != 2 && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+            ev.libraryPreview = it.id;
+            m_lastClicked = it.id;
+            m_libDrag = false;
         }
         ImGui::PopID();
     }
     ImGui::SetCursorScreenPos(ImVec2(rowStart.x + (float)count * (cardW + style.ItemSpacing.x), rowStart.y));
     ImGui::Dummy(ImVec2(1.0f, cardH));
 
-    // Presses on the strip: a click previews (Ctrl toggles the box, Shift extends from the last one), a drag selects.
+    // Presses on the strip: a click selects the card alone (Ctrl toggles it, Shift extends from the last one), a drag
+    // selects a range; a double click (above) opens the file in the preview.
     if (!m_libDrag && stripHovered && !overControl && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !menuOpen) {
         m_libDrag = true;
         m_libDragMoved = false;
@@ -1912,7 +2208,7 @@ void MainUI::DrawLibrary(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
                             item->selected = true;
                         }
                     } else {
-                        ev.libraryPreview = item->id;
+                        for (auto& o : *lib) o.selected = o.id == item->id && o.probe != 2;
                         m_lastClicked = item->id;
                     }
                 }

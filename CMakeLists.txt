@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(VRChatDLSS5Cam VERSION 1.0.1 LANGUAGES CXX)
+project(VRChatDLSS5Cam VERSION 1.1.0 LANGUAGES CXX)
 
 if(NOT WIN32)
   message(FATAL_ERROR "VRChat DLSS5 Cam targets Windows only.")
@@ -54,6 +54,8 @@ set(APP_SOURCES
   src/main.cpp
   src/core/App.cpp
   src/core/Util.cpp
+  src/core/Updater.cpp
+  src/core/Splash.cpp
   src/core/Log.cpp
   src/core/Settings.cpp
   src/core/I18n.cpp
@@ -90,7 +92,7 @@ target_compile_options(VRChatDLSS5Cam PRIVATE /W4 /MP /utf-8 /permissive- /EHsc 
 target_link_libraries(VRChatDLSS5Cam PRIVATE
   imgui spout ${NGX_STATIC_LIB}
   d3d12 d3d11 dxgi d3dcompiler dxguid windowscodecs mfuuid
-  ole32 shell32 shlwapi user32 gdi32 dwmapi comctl32 advapi32 psapi version winmm)
+  ole32 shell32 shlwapi user32 gdi32 dwmapi comctl32 advapi32 psapi version winmm winhttp)
 set_target_properties(VRChatDLSS5Cam PROPERTIES OUTPUT_NAME "VRChatDLSS5Cam")
 
 # Copy the DLSS super-resolution runtime next to the executable (used by the

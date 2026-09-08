@@ -149,6 +149,10 @@ bool Settings::ApplyText(const std::string& data) {
     r.Get("windowMaximized", windowMaximized);
     r.Get("sidebarVisible", sidebarVisible);
     r.Get("libraryVisible", libraryVisible);
+    r.Get("sidebarWidth", sidebarWidth);
+    r.Get("libraryHeight", libraryHeight);
+    r.Get("updateCheck", updateCheck);
+    r.Get("updateChannel", updateChannel);
     r.Get("advancedControls", showAdvanced);
     r.Get("theme", theme);
     r.Get("showLog", showLog);
@@ -344,6 +348,10 @@ bool Settings::Save(const std::wstring& path) const {
     w.Put("windowMaximized", windowMaximized);
     w.Put("sidebarVisible", sidebarVisible);
     w.Put("libraryVisible", libraryVisible);
+    w.Put("sidebarWidth", sidebarWidth);
+    w.Put("libraryHeight", libraryHeight);
+    w.Put("updateCheck", updateCheck);
+    w.Put("updateChannel", updateChannel);
     w.Put("advancedControls", showAdvanced);
     w.Put("theme", theme);
     w.Put("showLog", showLog);
@@ -362,6 +370,9 @@ void Settings::Clamp() {
     customHeight = std::clamp(customHeight, 256, 4320);
     nrRoute = std::clamp(nrRoute, 0, 1);
     nrPreset = std::clamp(nrPreset, 0, 3);
+    if (sidebarWidth != 0.0f) sidebarWidth = std::clamp(sidebarWidth, 16.0f, 48.0f);
+    if (libraryHeight != 0.0f) libraryHeight = std::clamp(libraryHeight, 7.0f, 30.0f);
+    updateChannel = std::clamp(updateChannel, 0, 1);
     nrStyle = std::clamp(nrStyle, 0, 2);
     sourceMode = std::clamp(sourceMode, 0, 2);
     videoOutput = std::clamp(videoOutput, 0, 2);

@@ -314,7 +314,7 @@ enum class Lang { English = 0, Chinese = 1, Japanese = 2, Korean = 3, Count = 4 
     X(SourceModeHint,     "Process the VRChat camera stream live, or open a picture or a video from disk and run it through DLSS 5.", "实时处理 VRChat 相机串流，或打开磁盘上的图片或视频交给 DLSS 5 处理。", "VRChat のカメラストリームをリアルタイムで処理するか、ディスク上の画像や動画を開いて DLSS 5 で処理します。", "VRChat 카메라 스트림을 실시간으로 처리하거나, 디스크의 이미지나 동영상을 열어 DLSS 5로 처리합니다.") \
     X(LibraryFull,        "The library is full (%d files)", "素材库已满（最多 %d 个文件）", "ライブラリがいっぱいです（最大 %d ファイル）", "라이브러리가 가득 찼습니다(최대 %d개)") \
     X(SecLibrary,         "Library", "素材库", "ライブラリ", "라이브러리") \
-    X(LibraryHint,        "Drop pictures and videos here, or add them with the buttons. Click an item to preview it with the current settings; tick the ones to process.", "把图片和视频拖到这里，或用按钮添加。点击条目即可用当前设置预览；勾选要处理的条目。", "画像や動画をここにドロップするか、ボタンで追加してください。項目をクリックすると現在の設定でプレビューされます。処理する項目にチェックを入れてください。", "이미지와 동영상을 여기에 끌어다 놓거나 버튼으로 추가하세요. 항목을 클릭하면 현재 설정으로 미리 보고, 처리할 항목에 체크하세요.") \
+    X(LibraryHint,        "Drop pictures and videos here, or add them with the buttons. Click an item to select it, double-click to open it in the preview; tick the ones to process. Delete removes the selected ones from the library.", "把图片和视频拖到这里，或用按钮添加。单击条目选中，双击在预览中打开；勾选要处理的条目。按 Delete 从素材库移除选中的条目。", "画像や動画をここにドロップするか、ボタンで追加してください。クリックで選択、ダブルクリックでプレビューに開きます。処理する項目にチェックを入れてください。Delete キーで選択した項目をライブラリから外します。", "이미지와 동영상을 여기에 끌어다 놓거나 버튼으로 추가하세요. 클릭하면 선택, 더블클릭하면 미리보기에서 열립니다. 처리할 항목에 체크하세요. Delete 키는 선택한 항목을 라이브러리에서 제거합니다.") \
     X(ProcessSelected,    "Process selected", "处理选中", "選択項目を処理", "선택 항목 처리") \
     X(LibraryCount,       "%d files, %d selected", "%d 个文件，已选 %d 个", "%d ファイル、%d 件選択", "파일 %d개, %d개 선택") \
     X(StateQueued,        "Queued", "排队中", "待機中", "대기 중") \
@@ -370,13 +370,53 @@ enum class Lang { English = 0, Chinese = 1, Japanese = 2, Korean = 3, Count = 4 
     X(TipCloseMedia,      "Close the file: its processing stops and the preview empties. The file stays in the library.", "关闭文件：停止处理并清空预览，文件仍保留在素材库中。", "ファイルを閉じます：処理を止めてプレビューを空にします。ファイルはライブラリに残ります。", "파일을 닫습니다: 처리를 멈추고 미리보기를 비웁니다. 파일은 라이브러리에 남습니다.") \
     X(TipFullscreen,      "Fullscreen: only the picture, over the whole screen (F11)", "全屏：整个屏幕只显示画面（F11）", "全画面表示：画面全体に映像だけを表示（F11）", "전체 화면: 화면 전체에 영상만 표시 (F11)") \
     X(TipExitFullscreen,  "Leave fullscreen (Esc or F11)", "退出全屏（Esc 或 F11）", "全画面表示を終了（Esc または F11）", "전체 화면 종료 (Esc 또는 F11)") \
+    X(TipSidebarDrag,     "Drag to change the sidebar's width; click to hide it", "拖动改变侧栏宽度；点击收起", "ドラッグでサイドバーの幅を変更、クリックで隠す", "드래그하여 사이드바 너비 변경, 클릭하면 숨김") \
+    X(TipLibraryResize,   "Drag to change the library's height", "拖动改变素材库高度", "ドラッグでライブラリの高さを変更", "드래그하여 라이브러리 높이 변경") \
+    X(SecHistory,         "History", "历史记录", "ヒストリー", "히스토리") \
+    X(TipHistory,         "History: every change as a list. Click a step to go back to it; the later steps stay until you make a new change (Ctrl+Z / Ctrl+Y).", "历史记录：所有更改按顺序列出。点击某一步即可回到那时；之后的步骤在你做出新更改之前都还可以回去（Ctrl+Z / Ctrl+Y）。", "ヒストリー: すべての変更を一覧にします。ステップをクリックするとその状態に戻り、以降のステップは新しい変更をするまで残ります（Ctrl+Z / Ctrl+Y）。", "히스토리: 모든 변경을 목록으로 보여 줍니다. 단계를 클릭하면 그 상태로 돌아가며, 이후 단계는 새 변경을 하기 전까지 남아 있습니다 (Ctrl+Z / Ctrl+Y).") \
+    X(HistoryInitial,     "Opened", "初始状态", "初期状態", "초기 상태") \
+    X(HistoryAdded,       "Added %s", "添加 %s", "%s を追加", "%s 추가") \
+    X(HistoryRemoved,     "Removed %s", "移除 %s", "%s を外した", "%s 제거") \
+    X(HistoryAddedMany,   "Added %d files", "添加 %d 个文件", "%d 個のファイルを追加", "파일 %d개 추가") \
+    X(HistoryRemovedMany, "Removed %d files", "移除 %d 个文件", "%d 個のファイルを外した", "파일 %d개 제거") \
+    X(HistoryOwnParams,   "%s: own values", "%s：自有参数", "%s: 個別の値", "%s: 개별 값") \
+    X(HistoryMore,        "%s and %d more", "%s 等 %d 项", "%s ほか %d 件", "%s 외 %d개") \
+    X(HistoryOn,          "on", "开", "オン", "켬") \
+    X(HistoryOff,         "off", "关", "オフ", "끔") \
+    X(HistoryDefault,     "default", "默认", "既定", "기본") \
+    X(UpdateTitle,        "Update available", "有新版本", "アップデートがあります", "업데이트가 있습니다") \
+    X(UpdateVersionFmt,   "Version %s is available (you have %s).", "新版本 %s 可用（当前 %s）。", "バージョン %s が利用できます（現在 %s）。", "버전 %s을(를) 사용할 수 있습니다 (현재 %s).") \
+    X(UpdatePublished,    "Published %s", "发布于 %s", "%s 公開", "%s 게시") \
+    X(UpdateNow,          "Update now", "立即更新", "今すぐ更新", "지금 업데이트") \
+    X(UpdateLater,        "Later", "以后再说", "あとで", "나중에") \
+    X(UpdatePage,         "Release page", "查看发布页", "リリースページ", "릴리스 페이지") \
+    X(UpdateDownloading,  "Downloading\xE2\x80\xA6 %.1f / %.1f MB", "正在下载… %.1f / %.1f MB", "ダウンロード中… %.1f / %.1f MB", "다운로드 중… %.1f / %.1f MB") \
+    X(UpdateExtracting,   "Unpacking\xE2\x80\xA6", "正在解压…", "展開しています…", "압축을 푸는 중…") \
+    X(UpdateRestarting,   "Restarting to finish the update\xE2\x80\xA6", "正在重启以完成更新…", "更新を完了するために再起動しています…", "업데이트를 마치기 위해 다시 시작하는 중…") \
+    X(UpdateFailed,       "Update failed: %s", "更新失败：%s", "更新に失敗しました: %s", "업데이트 실패: %s") \
+    X(UpdateCheckFailed,  "Update check failed: %s", "检查更新失败：%s", "更新の確認に失敗しました: %s", "업데이트 확인 실패: %s") \
+    X(UpdateUpToDate,     "You have the latest version (%s).", "已是最新版本（%s）。", "最新バージョンです（%s）。", "최신 버전입니다 (%s).") \
+    X(UpdateChecking,     "Checking for updates\xE2\x80\xA6", "正在检查更新…", "更新を確認しています…", "업데이트 확인 중…") \
+    X(UpdateCheckNow,     "Check for updates", "检查更新", "更新を確認", "업데이트 확인") \
+    X(UpdateAuto,         "Check for updates at start", "启动时检查更新", "起動時に更新を確認", "시작 시 업데이트 확인") \
+    X(UpdateChannel,      "Update channel", "更新通道", "更新チャネル", "업데이트 채널") \
+    X(ChannelStable,      "Stable", "稳定版", "安定版", "안정 버전") \
+    X(ChannelPreview,     "Pre-release", "预览版", "プレリリース版", "프리릴리스 버전") \
+    X(TipUpdateChannel,   "Stable: only full releases. Pre-release: also the builds published for testing before a full release.", "稳定版：只接收正式发布的版本。预览版：也接收正式发布前用于测试的版本。", "安定版: 正式リリースのみ。プレリリース版: 正式リリース前にテスト用として公開されたビルドも含みます。", "안정 버전: 정식 릴리스만. 프리릴리스 버전: 정식 릴리스 전에 테스트용으로 공개된 빌드도 포함합니다.") \
+    X(UpdateNotWritable,  "The program folder cannot be written to. Download the new version from the release page and replace the files by hand.", "无法写入程序所在文件夹。请从发布页下载新版本并手动替换文件。", "プログラムのフォルダーに書き込めません。リリースページから新しいバージョンをダウンロードし、手動でファイルを置き換えてください。", "프로그램 폴더에 쓸 수 없습니다. 릴리스 페이지에서 새 버전을 내려받아 파일을 직접 바꿔 주세요.") \
+    X(UpdateApplyHint,    "The download is unpacked next to the program; the program closes, the files are replaced and it starts again. Your settings and library stay.", "下载完成后会在程序旁解压；程序关闭、替换文件后自动重新启动。设置保持不变。", "ダウンロードはプログラムの隣に展開され、プログラムが終了してファイルを置き換えたあと自動的に再起動します。設定はそのまま残ります。", "다운로드한 파일은 프로그램 옆에 풀리고, 프로그램이 종료된 뒤 파일을 바꾸고 다시 시작합니다. 설정은 그대로 유지됩니다.") \
+    X(SplashStarting,     "Starting\xE2\x80\xA6", "正在启动…", "起動しています…", "시작하는 중…") \
+    X(SplashWindow,       "Creating the window\xE2\x80\xA6", "正在创建窗口…", "ウィンドウを作成しています…", "창을 만드는 중…") \
+    X(SplashGpu,          "Initialising Direct3D 12\xE2\x80\xA6", "正在初始化 Direct3D 12…", "Direct3D 12 を初期化しています…", "Direct3D 12 초기화 중…") \
+    X(SplashPipeline,     "Preparing the render pipeline\xE2\x80\xA6", "正在准备渲染管线…", "レンダリングパイプラインを準備しています…", "렌더링 파이프라인 준비 중…") \
+    X(SplashUi,           "Loading the interface\xE2\x80\xA6", "正在加载界面…", "インターフェースを読み込んでいます…", "인터페이스 불러오는 중…") \
     X(RemainingFmt,       "%s left", "剩余 %s", "残り %s", "%s 남음") \
     X(LocateFile,         "Show in Explorer", "在资源管理器中显示", "エクスプローラーで表示", "탐색기에서 표시") \
     X(ItemParams,         "Own parameters...", "单独参数…", "個別パラメーター…", "개별 매개변수…") \
     X(RemoveFromLibrary,  "Remove from the library", "从素材库移除", "ライブラリから外す", "라이브러리에서 제거") \
     X(Delete,             "Delete", "删除", "削除", "삭제") \
-    X(TipDelete,          "Removes the selected items from the library. The files stay on disk.", "从素材库移除所选素材，不会删除文件。", "選択した項目をライブラリから外します。ファイルは削除されません。", "선택한 항목을 라이브러리에서 제거합니다. 파일은 삭제되지 않습니다.") \
-    X(TipLibrarySelect,   "Drag across the thumbnails to select them; Ctrl+click adds one, Shift+click extends the selection, Ctrl+A selects every file. A click previews the file, the right button opens its menu.", "在缩略图上拖动即可框选；Ctrl+点击加选，Shift+点击连续选择，Ctrl+A 全选。单击预览该文件，右键打开菜单。", "サムネイル上をドラッグして選択します。Ctrl+クリックで追加、Shift+クリックで範囲選択、Ctrl+A ですべて選択。クリックでプレビュー、右クリックでメニューを開きます。", "썸네일 위를 드래그하여 선택합니다. Ctrl+클릭은 추가, Shift+클릭은 범위 선택, Ctrl+A는 모두 선택입니다. 클릭하면 미리보기, 오른쪽 버튼은 메뉴를 엽니다.") \
+    X(TipDelete,          "Removes the selected items from the library (Delete key). The files stay on disk.", "从素材库移除所选素材（Delete 键），不会删除文件。", "選択した項目をライブラリから外します（Delete キー）。ファイルは削除されません。", "선택한 항목을 라이브러리에서 제거합니다 (Delete 키). 파일은 삭제되지 않습니다.") \
+    X(TipLibrarySelect,   "Drag across the thumbnails to select them; Ctrl+click adds one, Shift+click extends the selection, Ctrl+A selects every file. A click selects the file, a double click opens it in the preview, the right button opens its menu, Delete removes the selection.", "在缩略图上拖动即可框选；Ctrl+点击加选，Shift+点击连续选择，Ctrl+A 全选。单击选中，双击在预览中打开，右键打开菜单，Delete 移除选中项。", "サムネイル上をドラッグして選択します。Ctrl+クリックで追加、Shift+クリックで範囲選択、Ctrl+A ですべて選択。クリックで選択、ダブルクリックでプレビューに開き、右クリックでメニュー、Delete で選択項目を削除します。", "썸네일 위를 드래그하여 선택합니다. Ctrl+클릭은 추가, Shift+클릭은 범위 선택, Ctrl+A는 모두 선택입니다. 클릭하면 선택, 더블클릭하면 미리보기에서 열리고, 오른쪽 버튼은 메뉴를 열며, Delete는 선택 항목을 제거합니다.") \
     X(UseOwnParams,       "Use own parameters for this file", "此素材使用单独参数", "このファイルに個別のパラメーターを使う", "이 파일에 개별 매개변수 사용") \
     X(OwnParamsHint,      "These values replace the DLSS 5 controls of the sidebar for this file, in the preview and when it is processed.", "此处的数值在预览和处理该素材时代替侧边栏的 DLSS 5 控件。", "ここの値は、このファイルのプレビューと処理でサイドバーの DLSS 5 コントロールの代わりに使われます。", "이 값은 이 파일의 미리보기와 처리에서 사이드바의 DLSS 5 컨트롤을 대신합니다.") \
     X(OwnParamsTitle,     "Parameters: %s", "单独参数：%s", "パラメーター: %s", "매개변수: %s") \

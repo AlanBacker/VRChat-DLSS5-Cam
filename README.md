@@ -29,9 +29,9 @@ disk, one at a time or as a batch. It is a normal Windows program: nothing is in
   from Depth Anything V2, so videos and the live camera are processed the way a game would be. An optional DLAA
   pass cleans up edges first.
 - **Easy to compare.** Wipe, side by side or original view, zoom with the mouse wheel, drag to pan.
-- **Made for everyday use.** Dark and light look (follows Windows by default), undo and redo for every setting,
-  four languages (English, 简体中文, 日本語, 한국어), a smooth interface on its own thread, and a command line for
-  scripted runs.
+- **Made for everyday use.** Dark and light look (follows Windows by default), undo and redo with a full history
+  list, a layout you can resize, an automatic check for new versions, four languages (English, 简体中文, 日本語,
+  한국어), a smooth interface on its own thread, and a command line for scripted runs.
 
 ## What you need
 
@@ -78,10 +78,12 @@ yourself. The *Capture* section shows roughly how long the file will take with t
 ## Many files at once
 
 Every file you open or drop lands in the **library** under the preview (*Add files…* and *Add folder…* add more).
-Click a thumbnail to preview it and tune the sliders on it. Select files by dragging across the thumbnails, with the
-box on each one, with Ctrl+click and Shift+click, or with **Ctrl+A** for all of them. *Process selected* or
-*Process all* then runs the files one after another; a bar on each thumbnail shows the progress and the state stays
-visible afterwards.
+**Double-click** a thumbnail to open that file in the preview and tune the sliders on it. A single click selects it
+alone; **Ctrl+click** adds or removes one file, **Shift+click** extends the selection from the file you clicked last,
+dragging on the empty space draws a selection rectangle, the box on each thumbnail toggles it, and **Ctrl+A** selects
+every readable file. The **Delete** key takes the selected files out of the library while the mouse is over it (or
+after your last click was in it); the files themselves stay on disk. *Process selected* or *Process all* then runs
+the files one after another; a bar on each thumbnail shows the progress and the state stays visible afterwards.
 
 The right mouse button opens a menu on a thumbnail: show the file in Explorer, take it out of the library, or give it
 **its own DLSS 5 parameters** in a separate window. With several files selected the same menu offers *Own parameters
@@ -90,18 +92,27 @@ for N files…*, which sets the values for all of them at once; each file keeps 
 ## Finding your way around
 
 - **Three sections do the everyday work:** *Source* (what comes in), *DLSS 5 Neural Rendering* (how it looks) and
-  *Capture* (where it goes). The *Advanced* switch in the DLSS 5 section shows or hides the tone and structure
-  sliders, the output blend, frame guidance, DLAA and the timers.
+  *Capture* (where it goes), followed by *Display* and *About*. The *Advanced* switch in the DLSS 5 section shows or
+  hides the tone and structure sliders, the output blend, the *Frame guidance* and *DLAA pre-pass* sections after
+  *Capture*, and *Internals* with the timers before *About*.
 - **Compare** with the wipe (drag the handle in the preview), side by side or the original. The mouse wheel over the
   preview zooms around the cursor, dragging pans, a double-click goes back to the fitted view.
 - **Undo and redo** every change to the settings, and every file added to or removed from the library, with
-  **Ctrl+Z** / **Ctrl+Y** or the two arrows in the top bar.
+  **Ctrl+Z** / **Ctrl+Y** or the two arrows in the top bar. The clock button beside them opens the **History**: every
+  recorded change as a list (*Intensity: 1.2*, *Added photo.png*, *Removed 3 files*, *photo.png: own values*), the
+  current state highlighted and the states you undid listed dimmed below it. Click an entry to jump to that state;
+  the later ones stay available until you make a new change, so you can go back and forth freely. Up to 100 steps are
+  kept.
 - **Fullscreen** with the button in the corner of the preview or **F11**: only the picture, over the whole screen.
   The video controls appear while the mouse moves; **Esc** or **F11** leaves.
 - **Dark or light.** *Theme* in the *Display* section: *System* follows the Windows app colour setting, or pick
   *Dark* or *Light*.
-- **The sidebar** slides away behind the handle at its edge. While a file is being processed it is locked and offers
+- **The sidebar** slides away behind the slim handle at its edge: a click hides or shows it, dragging the handle
+  changes its width. The library works the same way — drag its top edge and the thumbnails grow or shrink with it.
+  Both sizes are remembered for the next start. While a file is being processed the sidebar is locked and offers
   *Cancel*.
+- **At start** a small card with the icon, the name, the version, a status line and a moving bar shows what the app
+  is doing; the window itself appears only once its first frame is ready, so there is no blank window at the start.
 
 <p align="center">
   <img src="docs/images/light.png" width="900" alt="The same window in the light theme">
@@ -112,14 +123,34 @@ for N files…*, which sets the values for all of them at once; each file keeps 
 | Keys | What happens |
 |---|---|
 | `Ctrl+Alt+P` | Capture a photo of the live camera, or process the open picture or video (global hotkey, changeable in the *Capture* section) |
-| `Ctrl+Z` · `Ctrl+Y` / `Ctrl+Shift+Z` | Undo · redo a settings change or a library change |
+| `Ctrl+Z` · `Ctrl+Y` / `Ctrl+Shift+Z` | Undo · redo a settings change or a library change (the clock button in the top bar lists them all) |
 | `F11` · `Esc` | Fullscreen preview · leave it |
-| `Ctrl+A` | Select every file in the library (mouse over the library) |
+| `Ctrl+A` · `Delete` | Select every readable file in the library · take the selected ones out of it, keeping the files on disk (mouse over the library) |
 | `Space` | Play / pause the open video |
 | `←` `→` (`Shift`: 10 frames) · `Home` `End` | Step through the video · jump to the ends |
 | `I` · `O` | Set the start · the end of the range to process |
 | Mouse wheel over the preview · drag · double-click | Zoom · pan · back to the fitted view |
-| Drag across thumbnails · `Ctrl`+click · `Shift`+click · right button | Select files · add one · extend · open the menu |
+| Click a thumbnail · double-click · `Ctrl`+click · `Shift`+click · right button | Select only that file · open it in the preview · add or remove one · extend the selection · open the menu |
+| Drag on the library's empty space · drag its top edge · drag the sidebar handle | Selection rectangle · library height · sidebar width |
+
+## Staying up to date
+
+At every start the app asks GitHub for the newest release on the chosen channel and tells you when it is newer than
+the version you run.
+Two channels are offered in the *About* section under *Update channel*: **Stable** (full releases only) and
+**Pre-release** (also the builds published for testing before a full release). *Check for updates at start* switches
+the check off, the *Check for updates* button runs it whenever you like, and the result of the last check is shown
+underneath.
+
+When a newer version exists, a window shows its version, its date and its release notes with three buttons.
+**Update now** downloads the release zip into `%LOCALAPPDATA%\VRChatDLSS5Cam\update`, unpacks it, closes the app,
+replaces the program files and starts the app again; your settings, your library and your own `nvngx_dlssnr.dll` in
+the program folder are left alone. **Release page** opens the release in the browser and **Later** closes the window.
+The program folder has to be writable — a folder under `Program Files` usually is not; the app says so, and you can
+update by hand from the release page instead. A failed check or a failed update is shown as a notification.
+
+This request to `api.github.com` (and the download from `github.com` once you choose to update) is the only network
+access the app ever makes; nothing else is sent anywhere. Headless and `--process` runs never check on their own.
 
 ## Settings explained
 
@@ -147,15 +178,16 @@ for N files…*, which sets the values for all of them at once; each file keeps 
 | DLSS 5 | Input exposure / Tone transfer / Colour strength | Output blend. Input exposure (0.25–4×) scales the picture the network sees and is undone afterwards. Tone transfer and colour strength (0–2) set how much of the neural pass's brightness and colour changes reach the output; 1 / 1 reproduces the neural result exactly, 0 keeps the original. |
 | DLSS 5 | Shadow strength / Highlight & glow strength | Output blend, 0–2: how much of the neural pass's darkening and of its brightening reaches the output. 1 / 1 = as rendered. |
 | DLSS 5 | Neural pass resolution | Runs the neural pass on a smaller picture (25–100 % of the input) and adds its change, upsampled, to the full-resolution picture. Lower values cut the GPU load at the cost of the finest detail. Not used while neural upscaling is on. |
+| Capture | Folder / Keep alpha / Also save the original / Hotkey / Time-lapse | Where and how photos and videos are saved. |
+| Capture | Estimated time | Rough processing time of the open picture or video with the current settings, refined by every run. |
 | Frame guidance | Motion vectors | NVIDIA Optical Flow (with a forward/backward consistency check), GPU block matching, or none. |
 | Frame guidance | Depth | AI estimated (Depth Anything V2 Small on DirectML; update interval and network resolution adjustable), flat, gradient, or zero. |
 | Frame guidance | Auto reset | Clears the temporal history on scene cuts. Off by default. |
 | DLAA pre-pass | Enable / Preset | Optional DLSS anti-aliasing pass at native resolution before neural rendering. |
-| Capture | Folder / Keep alpha / Also save the original / Hotkey / Time-lapse | Where and how photos and videos are saved. |
-| Capture | Estimated time | Rough processing time of the open picture or video with the current settings, refined by every run. |
 | Display | Theme | *System* (follows Windows), *Dark* or *Light*. |
 | Display | Compare / Fit / Zoom / VSync / Overlay / Show the library | Preview options. |
 | Display | Processing rate cap | Live camera: process at most this many frames per second and skip the rest. 0 = every frame. |
+| About | Check for updates at start / Update channel / Check for updates | Look for a newer release at every start (on by default), on the *Stable* or the *Pre-release* channel, or right now with the button. The result of the last check is shown underneath. |
 | About | Open log file / Open settings folder / Project page / Third-party notices / Reset all settings | Version, GPU and driver, and the maintenance buttons. |
 
 Settings are stored in `%LOCALAPPDATA%\VRChatDLSS5Cam\settings.ini`; the log is `log.txt` in the same folder.
@@ -178,6 +210,7 @@ Command-line options (open files, process unattended, screenshots, headless runs
 - **The video preview is black** – many films start with a fade from black; the preview skips those frames and says so under the picture when the frame on show is still dark. Seek forward with the bar or the arrow keys.
 - **Video file does not open / no encoder available** – the formats depend on the codecs installed in Windows. Install the *HEVC Video Extensions* (Microsoft Store) for HEVC files, or the *Media Feature Pack* on Windows N / KN. If the H.264 encoder is missing, choose *PNG sequence* as the output. Switching *Hardware decoding* off helps with files the GPU decoder rejects.
 - **Low frame rate** – switch DLAA off, raise the depth update interval or lower the depth network resolution, lower the neural pass resolution, or set a processing rate cap. Keep the optical-flow grid at 4 px (2 px and 1 px cost far more at 4K). The log prints a `Perf:` line every 15 s with the cost of each stage.
+- **The update cannot be installed** – the program folder has to be writable, which a folder under `Program Files` usually is not. Move the app to a folder of your own, or download the new version from the release page and replace the files by hand; your settings and your library stay where they are.
 
 ## Building from source
 
