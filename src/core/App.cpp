@@ -909,6 +909,7 @@ void App::WorkerMain() {
 
     Settings settings;
     unsigned settingsGen = 0;
+    std::string processingKey;               // Settings::ProcessingText() of the snapshot the still passes ran with
     int      activeMode = -1;
     int      passesLeft = 0;                 // image mode: passes still to run
     bool     imageChanged = false;           // image texture recreated since the last processed frame
@@ -1046,6 +1047,21 @@ void App::WorkerMain() {
                 if (batch.active || videoRun.active) break;
                 WorkerPreviewCommand(c);
                 break;
+            case Command::CloseMedia:
+                if (batch.active || videoRun.active) break;
+                if (c.video) {
+                    if (m_video.Loaded()) {
+                        if (m_preview.running) m_video.StopSequence();
+                        m_preview = VideoPreview{};
+                        m_video.Close(gpu);
+                        videoChanged = true;
+                    }
+                } else if (m_image.Loaded()) {
+                    m_image.Release(gpu);
+                    imageChanged = true;
+                }
+                passesLeft = 0;
+                break;
             }
         }
 
@@ -1127,7 +1143,14 @@ void App::WorkerMain() {
         if (!videoMode && m_preview.running) { m_video.StopSequence(); m_preview.running = false; m_preview.playing = false; }
         const bool previewPlaying = videoMode && !videoRun.active && m_preview.running;
         const bool stillMode = imageMode || (videoMode && !videoRun.active && !previewPlaying);   // convergence passes on one picture
-        if (settingsChanged && !modeChanged) passesLeft = std::max(passesLeft, kImageSettingsPasses);
+        if (settingsChanged && !modeChanged) {
+            // Only a change of what the passes read starts the still passes over. A display, blend or interface
+            // change (the wipe, the theme, the library strip...) composites the existing result once, without
+            // running the picture through the passes again.
+            std::string key = settings.ProcessingText();
+            if (key != processingKey) passesLeft = std::max(passesLeft, kImageSettingsPasses);
+            processingKey = std::move(key);
+        }
         if (modeChanged) passesLeft = kImageConvergePasses;
 
         // Source.
@@ -1598,9 +1621,11 @@ void App::Frame() {
     info.captureFolder = EffectiveCaptureFolder();
     info.hotkeyText = HotkeyText(m_settings);
     info.hasDisplay = display.valid;
+    info.fullscreen = m_fullscreen;
     info.displayTexture = display.valid ? (ImTextureID)display.srv.ptr : (ImTextureID)0;
     info.displayWidth = display.width;
     info.displayHeight = display.height;
+    info.displayWipe = display.wipe;
     info.appVersion = APP_VERSION_STRING;
     info.capturePending = m_capture.Pending() + m_status.capturesInFlight;
     info.lastCapture = m_lastCapture;
@@ -1783,6 +1808,9 @@ void App::HandleEvents(ui::UiEvents& ev) {
     if (ev.openImage) m_pendingBrowseImage = true;
     if (ev.openVideo) m_pendingBrowseVideo = true;
     if (ev.cancelVideo) { Command c; c.type = Command::CancelVideo; PostCommand(std::move(c)); }
+    if (ev.closeMedia) CloseMediaFile();
+    if (ev.fullscreenToggle) SetFullscreen(!m_fullscreen);
+    if (ev.libraryRestore) { RestoreLibrary(ev.libraryRestoreItems); ev.itemParamsChanged = true; }
     if (ev.batchCancel) { Command c; c.type = Command::BatchCancel; PostCommand(std::move(c)); }
     // Video controls.
     if (ev.videoSeek) { Command c; c.type = Command::VideoSeek; c.seconds = ev.videoSeekTo; PostCommand(std::move(c)); }
@@ -1960,6 +1988,44 @@ void App::OpenVideoFile(const std::wstring& path) {
     PostCommand(std::move(c));
 }
 
+void App::CloseMediaFile() {
+    if (m_source.batchRunning || m_libraryBatchRunning) { m_ui.Toast(TR(BatchBusy), true); return; }
+    if (m_source.videoProcessing) { m_ui.Toast(TR(VideoBusy), true); return; }
+    const bool video = m_settings.sourceMode == SourceVideo;
+    if (video ? m_settings.videoPath.empty() : m_settings.imagePath.empty()) return;
+    Log::Info("Closing the %s", video ? "video" : "image");
+    if (video) m_settings.videoPath.clear(); else m_settings.imagePath.clear();
+    MarkSettingsDirty();
+    Command c;
+    c.type = Command::CloseMedia;
+    c.video = video;
+    PostCommand(std::move(c));
+}
+
+// Fullscreen: a borderless window over the monitor the window is on; the placement it had comes back afterwards
+// (and is what gets saved at exit, see SaveWindowPlacement).
+void App::SetFullscreen(bool on) {
+    if (m_headless || !m_hwnd || on == m_fullscreen) return;
+    if (on) {
+        m_fullscreenPlacement = WINDOWPLACEMENT{};
+        m_fullscreenPlacement.length = sizeof(m_fullscreenPlacement);
+        if (!GetWindowPlacement(m_hwnd, &m_fullscreenPlacement)) return;
+        MONITORINFO mi{};
+        mi.cbSize = sizeof(mi);
+        if (!GetMonitorInfoW(MonitorFromWindow(m_hwnd, MONITOR_DEFAULTTONEAREST), &mi)) return;
+        m_fullscreen = true;
+        SetWindowLongPtrW(m_hwnd, GWL_STYLE, (GetWindowLongPtrW(m_hwnd, GWL_STYLE) & ~(LONG_PTR)WS_OVERLAPPEDWINDOW) | WS_POPUP | WS_VISIBLE);
+        SetWindowPos(m_hwnd, HWND_TOP, mi.rcMonitor.left, mi.rcMonitor.top, mi.rcMonitor.right - mi.rcMonitor.left,
+                     mi.rcMonitor.bottom - mi.rcMonitor.top, SWP_FRAMECHANGED | SWP_NOOWNERZORDER);
+    } else {
+        m_fullscreen = false;
+        SetWindowLongPtrW(m_hwnd, GWL_STYLE, (GetWindowLongPtrW(m_hwnd, GWL_STYLE) & ~(LONG_PTR)WS_POPUP) | WS_OVERLAPPEDWINDOW | WS_VISIBLE);
+        SetWindowPlacement(m_hwnd, &m_fullscreenPlacement);
+        SetWindowPos(m_hwnd, nullptr, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+    }
+    Log::Info("Fullscreen %s", on ? "on" : "off");
+}
+
 // One dropped file: the runtime DLL is taken as the runtime, a picture or a video opens (and joins the library).
 void App::OnFileDropped(const std::wstring& path) {
     if (DirectoryExists(path)) { OnFilesDropped({ path }); return; }
@@ -2084,6 +2150,50 @@ const LibraryItem* App::OverrideItem() const {
     for (const LibraryItem& item : m_library)
         if (item.useOwn && item.own && item.isVideo == video && SamePath(item.path, shown)) return &item;
     return nullptr;
+}
+
+// Undo/redo of the library: the list is brought to the given one. Files still in the library keep their item
+// (thumbnail, probe result, batch state); files that left it come back as new items in their old place.
+void App::RestoreLibrary(const std::vector<ui::LibrarySnapshotItem>& wanted) {
+    if (m_libraryBatchRunning || m_source.batchRunning) { m_ui.Toast(TR(BatchBusy), true); return; }
+    std::vector<LibraryItem> next;
+    std::vector<bool> kept(m_library.size(), false);
+    for (const ui::LibrarySnapshotItem& w : wanted) {
+        size_t found = m_library.size();
+        for (size_t i = 0; i < m_library.size(); ++i) {
+            if (!kept[i] && SamePath(m_library[i].path, w.path)) { found = i; break; }
+        }
+        LibraryItem item;
+        if (found < m_library.size()) {
+            kept[found] = true;
+            item = m_library[found];
+        } else {
+            bool isVideo = false;
+            if (!IsLibraryFile(w.path, isVideo)) continue;
+            if (next.size() >= (size_t)kLibraryMax) break;
+            item.id = m_nextItemId++;
+            item.path = w.path;
+            item.name = WideToUtf8(FileNameOf(w.path));
+            item.isVideo = isVideo;
+            item.thumbCell = m_atlas.Ready() ? m_atlas.Alloc() : -1;
+            item.inSec = w.inSec; item.outSec = w.outSec;
+            m_scanner.Probe(item.id, w.path, isVideo, item.thumbCell);
+        }
+        item.useOwn = w.useOwn;
+        if (w.useOwn && !w.own.empty()) {
+            if (!item.own) item.own = std::make_shared<Settings>(m_settings);
+            item.own->ApplyText(w.own);
+            item.own->Clamp();
+        }
+        next.push_back(std::move(item));
+    }
+    for (size_t i = 0; i < m_library.size(); ++i) {
+        if (kept[i]) continue;
+        m_scanner.Forget(m_library[i].id);
+        if (m_library[i].thumbCell >= 0) m_atlas.Free(m_library[i].thumbCell);
+    }
+    m_library = std::move(next);
+    Log::Info("Library: %zu file(s) after undo/redo", m_library.size());
 }
 
 void App::ClearLibrary() {
@@ -2250,7 +2360,9 @@ void App::SaveWindowPlacement() {
     if (m_headless) return;
     WINDOWPLACEMENT wp{};
     wp.length = sizeof(wp);
-    if (!m_hwnd || !GetWindowPlacement(m_hwnd, &wp)) return;
+    if (!m_hwnd) return;
+    if (m_fullscreen) wp = m_fullscreenPlacement;   // the window underneath the fullscreen view
+    else if (!GetWindowPlacement(m_hwnd, &wp)) return;
     m_settings.windowMaximized = (wp.showCmd == SW_SHOWMAXIMIZED);
     m_settings.windowX = wp.rcNormalPosition.left;
     m_settings.windowY = wp.rcNormalPosition.top;

@@ -54,13 +54,14 @@ disk, one at a time or as a batch. It is a normal Windows program: nothing is in
 Tips for the live camera
 
 - VRChat decides the stream resolution. Raise `camera_spout_res_width` / `camera_spout_res_height` in VRChat's `config.json` for a sharper input; the app adapts by itself.
-- If the neural pass is too slow for a live preview on your card, switch on *Neural pass only for captures* in the DLSS 5 section: the preview then shows the plain picture and each capture runs the neural pass just for the photo.
+- If the neural pass is too slow for a live preview on your card, switch on *Neural pass only for captures* in the DLSS 5 section: the preview then shows the plain picture with the neural, motion and depth passes at rest, and each capture runs the neural pass just for the photo.
 - *Processing rate cap* in the *Display* section limits how many camera frames per second are processed, which keeps the GPU free for VRChat.
 
 ## Pictures and videos from disk
 
 Drop a picture or a video onto the window, or use *Open image…* / *Open video…* in the *Source* section. The
-picture appears in the preview and every slider works on it right away. Press **Process & save PNG** (pictures) or
+picture appears in the preview and every slider works on it right away. The ✕ button beside *Open…* closes the
+file again: its processing stops, the preview empties and the file stays in the library. Press **Process & save PNG** (pictures) or
 **Process & save video** (videos), or the hotkey, and the result is written next to your photos as
 `<name>_DLSS5_<w>x<h>.png`, `.mp4` or a folder of PNG frames.
 
@@ -93,7 +94,10 @@ for N files…*, which sets the values for all of them at once; each file keeps 
   sliders, the output blend, frame guidance, DLAA and the timers.
 - **Compare** with the wipe (drag the handle in the preview), side by side or the original. The mouse wheel over the
   preview zooms around the cursor, dragging pans, a double-click goes back to the fitted view.
-- **Undo and redo** every change to the settings with **Ctrl+Z** / **Ctrl+Y** or the two arrows in the top bar.
+- **Undo and redo** every change to the settings, and every file added to or removed from the library, with
+  **Ctrl+Z** / **Ctrl+Y** or the two arrows in the top bar.
+- **Fullscreen** with the button in the corner of the preview or **F11**: only the picture, over the whole screen.
+  The video controls appear while the mouse moves; **Esc** or **F11** leaves.
 - **Dark or light.** *Theme* in the *Display* section: *System* follows the Windows app colour setting, or pick
   *Dark* or *Light*.
 - **The sidebar** slides away behind the handle at its edge. While a file is being processed it is locked and offers
@@ -108,7 +112,8 @@ for N files…*, which sets the values for all of them at once; each file keeps 
 | Keys | What happens |
 |---|---|
 | `Ctrl+Alt+P` | Capture a photo of the live camera, or process the open picture or video (global hotkey, changeable in the *Capture* section) |
-| `Ctrl+Z` · `Ctrl+Y` / `Ctrl+Shift+Z` | Undo · redo a settings change |
+| `Ctrl+Z` · `Ctrl+Y` / `Ctrl+Shift+Z` | Undo · redo a settings change or a library change |
+| `F11` · `Esc` | Fullscreen preview · leave it |
 | `Ctrl+A` | Select every file in the library (mouse over the library) |
 | `Space` | Play / pause the open video |
 | `←` `→` (`Shift`: 10 frames) · `Home` `End` | Step through the video · jump to the ends |
@@ -138,7 +143,7 @@ for N files…*, which sets the values for all of them at once; each file keeps 
 | DLSS 5 | Global tone / Local tone | Global and local tone strength, 0–2, with the same rule above 1 (the highest strength above 1 sets the gain). |
 | DLSS 5 | Local structure / Skin structure | Detail enhancement, 0–2, same rule above 1. Skin structure may be left at the runtime default. |
 | DLSS 5 | Auto mask / UI correction | Automatic subject mask, UI-safe processing. |
-| DLSS 5 | Neural pass only for captures | For cards too slow for live use: the preview bypasses the neural pass, and a capture first runs it for 16 fresh frames, then saves. Still images are not affected. |
+| DLSS 5 | Neural pass only for captures | For cards too slow for live use: between captures the neural, motion and depth passes all rest and the GPU stays nearly idle; a capture first runs the neural pass for 16 fresh frames (after the first depth estimate, when depth guidance is on), then saves. Still images are not affected. |
 | DLSS 5 | Input exposure / Tone transfer / Colour strength | Output blend. Input exposure (0.25–4×) scales the picture the network sees and is undone afterwards. Tone transfer and colour strength (0–2) set how much of the neural pass's brightness and colour changes reach the output; 1 / 1 reproduces the neural result exactly, 0 keeps the original. |
 | DLSS 5 | Shadow strength / Highlight & glow strength | Output blend, 0–2: how much of the neural pass's darkening and of its brightening reaches the output. 1 / 1 = as rendered. |
 | DLSS 5 | Neural pass resolution | Runs the neural pass on a smaller picture (25–100 % of the input) and adds its change, upsampled, to the full-resolution picture. Lower values cut the GPU load at the cost of the finest detail. Not used while neural upscaling is on. |

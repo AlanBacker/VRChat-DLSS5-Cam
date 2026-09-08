@@ -80,6 +80,7 @@ struct PipelineStatus {
 struct DisplayView {
     D3D12_GPU_DESCRIPTOR_HANDLE srv{};
     UINT width = 0, height = 0;
+    float wipe = 0.5f;          // wipe position the composite was made with (the interface draws the handle there)
     bool valid = false;
 };
 
@@ -244,14 +245,16 @@ private:
     Tex            m_displayBuf[kDisplayBuffers];
     DescriptorPair m_displaySrv[kDisplayBuffers];
     int            m_displayTarget = -1;            // buffer written by the frame being recorded
+    float          m_displayWipe = 0.5f;            // wipe position that frame composites with
     struct DisplayShared {
-        struct Pending { int buffer = -1; UINT64 fence = 0; };
+        struct Pending { int buffer = -1; UINT64 fence = 0; float wipe = 0.5f; };
         Pending pending[kDisplayBuffers];           // submitted composites, oldest first, with their processing fence
         UINT   pendingCount = 0;
         bool   starved = false;                     // the last composite found no free buffer (display write skipped)
         UINT   generation = 0;                      // bumped whenever the buffers are recreated
         UINT   width = 0, height = 0;
         int    uiUsing = -1;                        // buffer the UI thread currently samples
+        float  uiWipe = 0.5f;                       // wipe position of that composite
         UINT   uiGeneration = 0;
         UINT64 uiRelease[kDisplayBuffers] = {};     // present-queue fence after which a buffer is free again
     };
@@ -289,6 +292,7 @@ private:
 
     int    m_cur = 0;                 // ping-pong index
     bool   m_haveHistory = false;
+    bool   m_guidanceIdle = false;    // the last fresh frame ran the conversion only (see Render)
     bool   m_hasDisplay = false;
     bool   m_resetRequested = true;
     std::atomic<bool> m_resetReq{false};

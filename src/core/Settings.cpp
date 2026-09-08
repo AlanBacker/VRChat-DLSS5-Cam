@@ -216,6 +216,53 @@ void PutParameters(Writer& w, const Settings& s) {
 }
 } // namespace
 
+std::string Settings::ProcessingText() const {
+    // Everything the processing passes read; not the display and blend values (composite only), not the interface.
+    Writer w;
+    w.Put("sourceMode", sourceMode);
+    w.Put("imagePath", imagePath);
+    w.Put("videoPath", videoPath);
+    w.Put("senderName", senderName);
+    w.Put("videoHardwareDecode", videoHardwareDecode);
+    w.Put("customResolution", customResolution);
+    w.Put("customWidth", customWidth);
+    w.Put("customHeight", customHeight);
+    w.Put("keepAspect", keepAspect);
+    w.Put("hdrPaperWhite", hdrPaperWhite);
+    w.Put("hdrHighlightCompression", hdrHighlightCompression);
+    w.Put("nrEnabled", nrEnabled);
+    w.Put("nrCaptureOnly", nrCaptureOnly);
+    w.Put("nrRoute", nrRoute);
+    w.Put("nrDllPath", nrDllPath);
+    w.Put("nrPreset", nrPreset);
+    w.Put("nrStyle", nrStyle);
+    w.Put("nrIntensity", nrIntensity);
+    w.Put("nrGlobalTone", nrGlobalTone);
+    w.Put("nrLocalTone", nrLocalTone);
+    w.Put("nrLocalStructure", nrLocalStructure);
+    w.Put("nrSkinStructure", nrSkinStructure);
+    w.Put("nrAutoMask", nrAutoMask);
+    w.Put("nrUiCorrection", nrUiCorrection);
+    w.Put("nrUpscale", nrUpscale);
+    w.Put("nrInputExposure", nrInputExposure);
+    w.Put("nrInputScale", nrInputScale);
+    w.Put("motionMode", motionMode);
+    w.Put("depthMode", depthMode);
+    w.Put("searchRadius", searchRadius);
+    w.Put("motionConfidence", motionConfidence);
+    w.Put("nvofGrid", nvofGrid);
+    w.Put("nvofPerf", nvofPerf);
+    w.Put("nvofBidirectional", nvofBidirectional);
+    w.Put("depthInterval", depthInterval);
+    w.Put("depthLongSide", depthLongSide);
+    w.Put("depthModelPath", depthModelPath);
+    w.Put("autoReset", autoReset);
+    w.Put("cutThreshold", cutThreshold);
+    w.Put("dlaaEnabled", dlaaEnabled);
+    w.Put("dlaaPreset", dlaaPreset);
+    return w.out;
+}
+
 std::string Settings::ParameterText() const {
     Writer w;
     PutParameters(w, *this);

@@ -503,6 +503,21 @@ void DrawIcon(ImDrawList* dl, Icon icon, const ImVec2& c, float size, ImU32 col)
                               ImVec2(tip.x - dir.x * h * 0.5f - nrm.x * h * 0.7f, tip.y - dir.y * h * 0.5f - nrm.y * h * 0.7f), col);
         break;
     }
+    case Icon::Fullscreen:
+    case Icon::ExitFullscreen: {
+        // Four corner brackets: at the edges with the legs pointing in for entering, near the middle with the legs
+        // pointing out for leaving.
+        const bool leave = icon == Icon::ExitFullscreen;
+        const float v = leave ? 0.2f : 0.8f;
+        const float e = leave ? 0.72f : 0.3f;
+        for (int sx = -1; sx <= 1; sx += 2) {
+            for (int sy = -1; sy <= 1; sy += 2) {
+                ImVec2 pts[3] = { at(sx * e, sy * v), at(sx * v, sy * v), at(sx * v, sy * e) };
+                dl->AddPolyline(pts, 3, col, thick);
+            }
+        }
+        break;
+    }
     case Icon::Lock: {
         dl->AddRectFilled(at(-0.7f, -0.05f), at(0.7f, 0.85f), col, size * 0.1f);
         ImVec2 pts[14];
@@ -781,26 +796,36 @@ void Hint(const char* text) {
     ImGui::PopStyleColor();
 }
 
+// Inline badges sit on the text baseline of their line, like text does: after a framed control (a toggle, a
+// button) the line's baseline offset moves them down to the control's text, so a row never looks staggered.
 void StatusDot(ImU32 color, const char* text) {
-    ImDrawList* dl = ImGui::GetWindowDrawList();
-    const ImVec2 pos = ImGui::GetCursorScreenPos();
+    ImGuiWindow* window = ImGui::GetCurrentWindow();
+    if (window->SkipItems) return;
+    ImDrawList* dl = window->DrawList;
     const float h = ImGui::GetTextLineHeight();
     const float r = h * 0.26f;
-    dl->AddCircleFilled(ImVec2(pos.x + r + 1.0f, pos.y + h * 0.5f), r, Col(color));
+    const ImVec2 pos = window->DC.CursorPos;
+    const float y = pos.y + window->DC.CurrLineTextBaseOffset + h * 0.5f;
+    dl->AddCircleFilled(ImVec2(pos.x + r + 1.0f, y), r, Col(color));
     ImGui::Dummy(ImVec2(r * 2.0f + 4.0f, h));
     ImGui::SameLine(0.0f, 4.0f);
     ImGui::TextUnformatted(text);
 }
 
 void Pill(const char* text, ImU32 bg, ImU32 fg) {
+    ImGuiWindow* window = ImGui::GetCurrentWindow();
+    if (window->SkipItems) return;
     const ImVec2 size = ImGui::CalcTextSize(text);
     const ImVec2 pad(9.0f, 3.0f);
-    const ImVec2 pos = ImGui::GetCursorScreenPos();
     const ImVec2 box(size.x + pad.x * 2.0f, size.y + pad.y * 2.0f);
-    ImDrawList* dl = ImGui::GetWindowDrawList();
-    dl->AddRectFilled(pos, ImVec2(pos.x + box.x, pos.y + box.y), Col(bg), box.y * 0.5f);
-    dl->AddText(ImVec2(pos.x + pad.x, pos.y + pad.y), Col(fg), text);
-    ImGui::Dummy(box);
+    ImVec2 pos = window->DC.CursorPos;
+    pos.y += ImMax(0.0f, window->DC.CurrLineTextBaseOffset - pad.y);
+    const ImRect bb(pos, ImVec2(pos.x + box.x, pos.y + box.y));
+    ImGui::ItemSize(box, pad.y);
+    if (!ImGui::ItemAdd(bb, 0)) return;
+    ImDrawList* dl = window->DrawList;
+    dl->AddRectFilled(bb.Min, bb.Max, Col(bg), box.y * 0.5f);
+    dl->AddText(ImVec2(bb.Min.x + pad.x, bb.Min.y + pad.y), Col(fg), text);
 }
 
 namespace {

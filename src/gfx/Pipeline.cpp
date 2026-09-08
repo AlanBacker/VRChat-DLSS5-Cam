@@ -488,6 +488,7 @@ DisplayView Pipeline::AcquireDisplay(GpuContext& ui) {
     }
     if (newest >= 0) {
         m_disp.uiUsing = m_disp.pending[newest].buffer;
+        m_disp.uiWipe = m_disp.pending[newest].wipe;
         m_disp.uiGeneration = m_disp.generation;
         const UINT remaining = m_disp.pendingCount - (UINT)newest - 1;
         for (UINT i = 0; i < remaining; ++i) m_disp.pending[i] = m_disp.pending[(UINT)newest + 1 + i];
@@ -498,6 +499,7 @@ DisplayView Pipeline::AcquireDisplay(GpuContext& ui) {
     v.srv = m_displaySrv[m_disp.uiUsing].gpu;
     v.width = m_disp.width;
     v.height = m_disp.height;
+    v.wipe = m_disp.uiWipe;
     v.valid = v.width > 0 && v.height > 0;
     return v;
 }
@@ -1089,6 +1091,7 @@ void Pipeline::RunComposite(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, con
     d.constants.flags = flags;
     d.constants.intA = (UINT)s.compareMode;
     d.constants.paramA = s.wipePosition;
+    m_displayWipe = s.wipePosition;
     d.constants.paramB = kMotionViewScale;
     d.srv[0] = m_color8.srv; d.srv[1] = processed.srv; d.srv[2] = m_mv.srv; d.srv[3] = m_conf.srv; d.srv[4] = m_depth.srv;
     if (flags & 64) { d.srv[5] = neuralBase->srv; d.srv[6] = neuralInput->srv; }
@@ -1226,6 +1229,11 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
     }
     const bool nrWanted = s.nrEnabled && (!captureOnly || m_nrBurst > 0);
     const bool dlaaWanted = s.dlaaEnabled;
+    // Whenever the neural pass does not run (between capture bursts, switched off, failed, runtime not loaded) and
+    // DLAA is off, nothing consumes the motion and depth guidance: those passes rest as well, so the picture only
+    // goes through the conversion and the composite. The compare views of the motion or the depth keep them running.
+    const bool nrRuns = nrWanted && !m_nrFailed && m_ngx.Initialized() && (s.nrRoute == RouteNgxCore || m_nr.RuntimeLoaded());
+    const bool guidanceIdle = !nrRuns && !dlaaWanted && s.compareMode != CompareMotion && s.compareMode != CompareDepth;
     // Neural pass size: below the input resolution when asked for, never while the pass itself upscales.
     const bool nrScaled = !(m_inW != m_outW || m_inH != m_outH) && s.nrInputScale < 100;
     const UINT nrInW = nrScaled ? std::max(64u, Even(m_inW * (UINT)s.nrInputScale / 100u)) : m_inW;
@@ -1240,97 +1248,132 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
         m_lastFreshTime = now;
 
         ReadStats(gpu);
-        bool reset = m_resetRequested || !m_haveHistory;
-        bool sceneCut = false;
-        if (m_haveHistory && m_lastWasBlockMode) {
-            // A cut is a sudden jump of the matching cost, not merely a high value: fast camera motion also raises the
-            // cost and must not clear the temporal history (DLSS 5 recovers on its own, a reset always pops).
-            const float ref = std::max(m_costEma, 0.02f);
-            if (s.autoReset && m_statAvgCost > s.cutThreshold && m_statAvgCost > ref * kSceneCutRatio) { sceneCut = true; reset = true; }
-            m_costEma = sceneCut ? m_statAvgCost : (m_costEma <= 0.0f ? m_statAvgCost : m_costEma * 0.9f + m_statAvgCost * 0.1f);
-        } else {
-            m_costEma = 0.0f;
-        }
-        m_resetRequested = false;
-        if (reset) ++m_status.resets;
-        m_status.sceneCut = sceneCut;
-
-        int motionMode = src.stillImage ? MotionZero : s.motionMode;
-        if (motionMode == MotionNvOpticalFlow && !m_nvofReady) motionMode = MotionCompute;
-        const bool nvofBgra = (motionMode == MotionNvOpticalFlow) && m_nvofFmt == DXGI_FORMAT_B8G8R8A8_UNORM;
-
-        RunConvert(gpu, cmd, src, s, nvofBgra);
-
-        // Depth network input: every depthInterval processed frames, as soon as the worker is free. Not on a frame that
-        // creates an NGX feature and not before that frame has completed, and a running inference is waited for
-        // before such a frame is recorded: the depth network (DirectML, on its own queue) working alongside the
-        // creation and first evaluation of the neural feature leaves some runtime builds with a black picture for
-        // good, which is what a resolution change with the estimator active used to do.
-        const bool depthWanted = s.depthMode == DepthEstimated && m_depthInBuf;
-        const bool featureCreating = FeatureCreatesThisFrame(s, nrWanted, nrInW, nrInH, nrOutW, nrOutH, dlaaWanted);
-        featureCreatedNow = featureCreating;
-        if (depthWanted && featureCreating && !m_depthEst.WaitIdle(2.0))
-            Log::Warn("Depth estimator still busy while a neural feature is created");
-        const bool featureSettling = featureCreating || !gpu.IsFenceComplete(m_featureCreateFence);
-        // A pending (re)start of the depth network worker waits for the same thing (its warm-up inference).
-        if (m_depthRestart && m_depthInBuf && !featureSettling) {
-            m_depthRestart = false;
-            m_depthEst.Start(gpu.Dev(), m_exeDir, m_cfg.depthModel, m_depthInferW, m_depthInferH);
-            m_depthModelExists = FileExists(m_cfg.depthModel);
-            m_depthHaveRaw = false; m_depthHistValid = false; m_depthStillCaptured = false;
-        }
-        if (depthWanted) {
-            ++m_depthFramesSinceCapture;
-            // Live input refreshes the estimate every depthInterval frames. A still picture needs exactly one: the
-            // network is deterministic, and repeating it would keep the GPU busy with identical inferences.
-            const bool due = src.stillImage ? !m_depthStillCaptured : m_depthFramesSinceCapture >= s.depthInterval;
-            if (due && !featureSettling && !m_depthInPending && m_depthEst.Idle()) {
-                RunDepthCapture(gpu, cmd);
-                m_depthStillCaptured = src.stillImage;
+        if (guidanceIdle) {
+            // Conversion only: the plain picture goes to the composite. The temporal state is dropped, so the passes
+            // start afresh (with a reset) when the neural pass or DLAA comes back.
+            RunConvert(gpu, cmd, src, s, false);
+            m_haveHistory = false; m_resetRequested = false; m_costEma = 0.0f; m_lastWasBlockMode = false;
+            m_depthHaveRaw = false; m_depthHistValid = false;
+            m_status.sceneCut = false;
+            m_status.motionModeActive = MotionZero;
+            m_status.depthModeActive = DepthZero;
+            if (m_nr.Created()) m_nrSkipped = true;   // between capture bursts: the history is stale when the pass resumes
+            // A pending (re)start of the depth network worker goes ahead here (no feature is created on an idle
+            // frame), so the network is warmed up by the time a capture wants it.
+            if (m_depthRestart && m_depthInBuf && gpu.IsFenceComplete(m_featureCreateFence)) {
+                m_depthRestart = false;
+                m_depthEst.Start(gpu.Dev(), m_exeDir, m_cfg.depthModel, m_depthInferW, m_depthInferH);
+                m_depthModelExists = FileExists(m_cfg.depthModel);
+                m_depthStillCaptured = false;
             }
-        }
-
-        gpu.TimerBegin(cmd, GpuTimer::Guidance);
-        int densifyMode = MotionZero;
-        if (motionMode != MotionZero) {
-            RunGuidance(gpu, cmd, s, motionMode, m_haveHistory && !reset);
-            RunStats(gpu, cmd);
-            m_lastWasBlockMode = true;
+            m_guidanceIdle = true;
+            ++m_status.processedFrames;
         } else {
-            m_lastWasBlockMode = false;
-        }
-        gpu.TimerEnd(cmd, GpuTimer::Guidance);
-        if (m_haveHistory && !reset) {
-            if (motionMode == MotionNvOpticalFlow) densifyMode = RunOpticalFlow(gpu, cmd, false) ? MotionNvOpticalFlow : MotionZero;
-            else if (motionMode == MotionCompute) densifyMode = MotionCompute;
-        } else if (motionMode == MotionNvOpticalFlow) {
-            // Prime the optical flow reference frame without using its result.
-            RunOpticalFlow(gpu, cmd, true);
-        }
-        gpu.TimerBegin(cmd, GpuTimer::Densify);
-        RunDensify(gpu, cmd, s, densifyMode);
-        const bool depthApplied = depthWanted && RunDepthApply(gpu, cmd, reset);
-        gpu.TimerEnd(cmd, GpuTimer::Densify);
-        m_status.motionModeActive = densifyMode;
-        m_status.depthModeActive = depthApplied ? DepthEstimated : (s.depthMode == DepthEstimated ? DepthZero : s.depthMode);
+            if (m_guidanceIdle) {
+                // Back from idling: a depth estimate the network finished meanwhile belongs to an old frame, and the
+                // first active frame asks for a new one.
+                DepthResult stale;
+                m_depthEst.TryTakeResult(stale);
+                m_depthFramesSinceCapture = 1000; m_depthStillCaptured = false;
+                m_guidanceIdle = false;
+            }
+            bool reset = m_resetRequested || !m_haveHistory;
+            bool sceneCut = false;
+            if (m_haveHistory && m_lastWasBlockMode) {
+                // A cut is a sudden jump of the matching cost, not merely a high value: fast camera motion also raises the
+                // cost and must not clear the temporal history (DLSS 5 recovers on its own, a reset always pops).
+                const float ref = std::max(m_costEma, 0.02f);
+                if (s.autoReset && m_statAvgCost > s.cutThreshold && m_statAvgCost > ref * kSceneCutRatio) { sceneCut = true; reset = true; }
+                m_costEma = sceneCut ? m_statAvgCost : (m_costEma <= 0.0f ? m_statAvgCost : m_costEma * 0.9f + m_statAvgCost * 0.1f);
+            } else {
+                m_costEma = 0.0f;
+            }
+            m_resetRequested = false;
+            if (reset) ++m_status.resets;
+            m_status.sceneCut = sceneCut;
 
-        if (dlaaWanted) {
-            dlaaOk = RunDlaa(gpu, cmd, s, reset);
-            if (dlaaOk) processed = &m_dlaaOut;
+            int motionMode = src.stillImage ? MotionZero : s.motionMode;
+            if (motionMode == MotionNvOpticalFlow && !m_nvofReady) motionMode = MotionCompute;
+            const bool nvofBgra = (motionMode == MotionNvOpticalFlow) && m_nvofFmt == DXGI_FORMAT_B8G8R8A8_UNORM;
+
+            RunConvert(gpu, cmd, src, s, nvofBgra);
+
+            // Depth network input: every depthInterval processed frames, as soon as the worker is free. Not on a frame that
+            // creates an NGX feature and not before that frame has completed, and a running inference is waited for
+            // before such a frame is recorded: the depth network (DirectML, on its own queue) working alongside the
+            // creation and first evaluation of the neural feature leaves some runtime builds with a black picture for
+            // good, which is what a resolution change with the estimator active used to do.
+            const bool depthWanted = s.depthMode == DepthEstimated && m_depthInBuf;
+            const bool featureCreating = FeatureCreatesThisFrame(s, nrWanted, nrInW, nrInH, nrOutW, nrOutH, dlaaWanted);
+            featureCreatedNow = featureCreating;
+            if (depthWanted && featureCreating && !m_depthEst.WaitIdle(2.0))
+                Log::Warn("Depth estimator still busy while a neural feature is created");
+            const bool featureSettling = featureCreating || !gpu.IsFenceComplete(m_featureCreateFence);
+            // A pending (re)start of the depth network worker waits for the same thing (its warm-up inference).
+            if (m_depthRestart && m_depthInBuf && !featureSettling) {
+                m_depthRestart = false;
+                m_depthEst.Start(gpu.Dev(), m_exeDir, m_cfg.depthModel, m_depthInferW, m_depthInferH);
+                m_depthModelExists = FileExists(m_cfg.depthModel);
+                m_depthHaveRaw = false; m_depthHistValid = false; m_depthStillCaptured = false;
+            }
+            if (depthWanted) {
+                ++m_depthFramesSinceCapture;
+                // Live input refreshes the estimate every depthInterval frames. A still picture needs exactly one: the
+                // network is deterministic, and repeating it would keep the GPU busy with identical inferences.
+                const bool due = src.stillImage ? !m_depthStillCaptured : m_depthFramesSinceCapture >= s.depthInterval;
+                if (due && !featureSettling && !m_depthInPending && m_depthEst.Idle()) {
+                    RunDepthCapture(gpu, cmd);
+                    m_depthStillCaptured = src.stillImage;
+                }
+            }
+
+            gpu.TimerBegin(cmd, GpuTimer::Guidance);
+            int densifyMode = MotionZero;
+            if (motionMode != MotionZero) {
+                RunGuidance(gpu, cmd, s, motionMode, m_haveHistory && !reset);
+                RunStats(gpu, cmd);
+                m_lastWasBlockMode = true;
+            } else {
+                m_lastWasBlockMode = false;
+            }
+            gpu.TimerEnd(cmd, GpuTimer::Guidance);
+            if (m_haveHistory && !reset) {
+                if (motionMode == MotionNvOpticalFlow) densifyMode = RunOpticalFlow(gpu, cmd, false) ? MotionNvOpticalFlow : MotionZero;
+                else if (motionMode == MotionCompute) densifyMode = MotionCompute;
+            } else if (motionMode == MotionNvOpticalFlow) {
+                // Prime the optical flow reference frame without using its result.
+                RunOpticalFlow(gpu, cmd, true);
+            }
+            gpu.TimerBegin(cmd, GpuTimer::Densify);
+            RunDensify(gpu, cmd, s, densifyMode);
+            const bool depthApplied = depthWanted && RunDepthApply(gpu, cmd, reset);
+            gpu.TimerEnd(cmd, GpuTimer::Densify);
+            m_status.motionModeActive = densifyMode;
+            m_status.depthModeActive = depthApplied ? DepthEstimated : (s.depthMode == DepthEstimated ? DepthZero : s.depthMode);
+
+            if (dlaaWanted) {
+                dlaaOk = RunDlaa(gpu, cmd, s, reset);
+                if (dlaaOk) processed = &m_dlaaOut;
+            }
+            if (nrWanted && EnsureNeuralTextures(gpu, nrInW, nrInH, nrOutW, nrOutH, nrScaled)) {
+                neuralBase = processed;
+                neuralIn = &PrepareNeuralInput(gpu, cmd, s, *processed);
+                nrOk = RunNeural(gpu, cmd, s, *neuralIn, reset);
+                if (nrOk) { processed = &m_nrOut; RunNeuralCheck(gpu, cmd, *neuralIn); }
+            } else if (m_nr.Created()) {
+                m_nrSkipped = true;   // switch off or between capture bursts: the history is stale when the pass resumes
+            }
+            CopyStats(gpu, cmd);
+            // The burst counts neural frames that had their full guidance: with the depth network on, frames before
+            // its first estimate is applied do not count (the arming time-out above still bounds the wait).
+            const DepthEstimatorState depthState = m_depthEst.State();
+            const bool depthPending = depthWanted && !depthApplied &&
+                                      (depthState == DepthEstimatorState::Ready || depthState == DepthEstimatorState::Initializing);
+            if (captureOnly && m_nrBurst > 0 && nrOk && !depthPending && --m_nrBurst == 0 && m_captureArmed) { m_captureArmed = false; captureNow = true; }
+            m_haveHistory = true;
+            m_cur = 1 - m_cur;
+            ++m_status.processedFrames;
         }
-        if (nrWanted && EnsureNeuralTextures(gpu, nrInW, nrInH, nrOutW, nrOutH, nrScaled)) {
-            neuralBase = processed;
-            neuralIn = &PrepareNeuralInput(gpu, cmd, s, *processed);
-            nrOk = RunNeural(gpu, cmd, s, *neuralIn, reset);
-            if (nrOk) { processed = &m_nrOut; RunNeuralCheck(gpu, cmd, *neuralIn); }
-        } else if (m_nr.Created()) {
-            m_nrSkipped = true;   // switch off or between capture bursts: the history is stale when the pass resumes
-        }
-        CopyStats(gpu, cmd);
-        if (captureOnly && m_nrBurst > 0 && nrOk && --m_nrBurst == 0 && m_captureArmed) { m_captureArmed = false; captureNow = true; }
-        m_haveHistory = true;
-        m_cur = 1 - m_cur;
-        ++m_status.processedFrames;
     } else {
         // No new source frame: keep the last results; re-run the neural pass only if its parameters changed.
         dlaaOk = dlaaWanted && !m_dlaaFailed && m_dlaa.Created();
@@ -1411,7 +1454,7 @@ void Pipeline::AfterSubmit(GpuContext& gpu, UINT64 fenceValue) {
         if (r.inUse && r.fence == 0) r.fence = fence;
     if (m_displayTarget >= 0) {
         std::lock_guard<std::mutex> lock(m_displayMutex);
-        if (m_disp.pendingCount < kDisplayBuffers) m_disp.pending[m_disp.pendingCount++] = { m_displayTarget, fence };
+        if (m_disp.pendingCount < kDisplayBuffers) m_disp.pending[m_disp.pendingCount++] = { m_displayTarget, fence, m_displayWipe };
         m_displayTarget = -1;
     }
 }

@@ -46,6 +46,17 @@ std::string FormatClock(double seconds) {      // mm:ss.hh for the transport: a 
     return StrPrintf("%02d:%02d.%02d", whole / 60, whole % 60, hundredths);
 }
 std::string FormatMsFixed(double ms) { return StrPrintf("%6.2f ms", ms); }   // constant width in the monospace font
+
+// The "Open..." button with, once a file is open, a close button beside it.
+void OpenCloseRow(const char* openLabel, bool loaded, bool& open, bool& close) {
+    const float closeW = ImGui::GetFrameHeight();
+    const float spacing = ImGui::GetStyle().ItemInnerSpacing.x;
+    const float openW = loaded ? std::max(40.0f, ImGui::GetContentRegionAvail().x - closeW - spacing) : -FLT_MIN;
+    if (FlatButton(openLabel, ImVec2(openW, 0))) open = true;
+    if (!loaded) return;
+    ImGui::SameLine(0.0f, spacing);
+    if (IconButton("##closeMedia", Icon::Close, ImVec2(closeW, 0), TR(TipCloseMedia))) close = true;
+}
 constexpr float kZoomMin = 0.1f, kZoomMax = 8.0f;   // preview magnification limits, relative to the picture's pixels
 
 // A dimmed label with its value at the end of the line, in the monospace font and at a fixed column: a figure that
@@ -143,21 +154,38 @@ void MainUI::Draw(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Font
         }
         if (m_themeLight != Colors().light) SetThemeLight(ImGui::GetStyle(), m_themeLight);
     }
-    if (!m_undoInit) { m_undoBase = s.ParameterText(); m_undoInit = true; }
+    if (!m_undoInit) { m_undoBase = { s.ParameterText(), LibrarySnapshot(info) }; m_undoInit = true; }
     if (!io.WantTextInput && io.KeyCtrl && !io.KeyAlt) {
-        if (ImGui::IsKeyPressed(ImGuiKey_Z, false)) ApplyUndo(s, ev, io.KeyShift);
-        else if (ImGui::IsKeyPressed(ImGuiKey_Y, false)) ApplyUndo(s, ev, true);
+        if (ImGui::IsKeyPressed(ImGuiKey_Z, false)) ApplyUndo(s, info, ev, io.KeyShift);
+        else if (ImGui::IsKeyPressed(ImGuiKey_Y, false)) ApplyUndo(s, info, ev, true);
+    }
+    // F11 enters and leaves the fullscreen view, Esc leaves it (unless a popup or a text field takes the key).
+    if (!io.WantTextInput) {
+        if (ImGui::IsKeyPressed(ImGuiKey_F11, false)) ev.fullscreenToggle = true;
+        else if (info.fullscreen && ImGui::IsKeyPressed(ImGuiKey_Escape, false) &&
+                 !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel)) ev.fullscreenToggle = true;
     }
     ImGuiViewport* vp = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(vp->WorkPos);
     ImGui::SetNextWindowSize(vp->WorkSize);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(10, 8));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, info.fullscreen ? ImVec2(0, 0) : ImVec2(10, 8));
+    if (info.fullscreen) ImGui::PushStyleColor(ImGuiCol_WindowBg, IM_COL32(0, 0, 0, 255));
     const ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBringToFrontOnFocus |
                                    ImGuiWindowFlags_NoNavFocus | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoScrollWithMouse;
     ImGui::Begin("##host", nullptr, flags);
+    if (info.fullscreen) ImGui::PopStyleColor();
     ImGui::PopStyleVar(3);
+
+    if (info.fullscreen) {
+        // The picture alone, over the whole screen; no bars, sidebar or library.
+        DrawFullscreen(s, info, ev, fonts);
+        ImGui::End();
+        DrawToasts(fonts);
+        TrackUndo(s, info);
+        return;
+    }
 
     DrawTopBar(s, info, ev, fonts);
 
@@ -212,32 +240,103 @@ void MainUI::Draw(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Font
     if (s.showLog) DrawLogWindow(s, ev, fonts);
     DrawItemParams(s, info, ev, fonts);
     DrawToasts(fonts);
-    TrackUndo(s);
+    TrackUndo(s, info);
+}
+
+// Fullscreen: the picture over the whole screen. The transport bar of a video and the exit button show while the
+// mouse moves and fade away after a few seconds of rest (the keys keep working).
+void MainUI::DrawFullscreen(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts) {
+    const ImVec2 origin = ImGui::GetCursorScreenPos();
+    const ImVec2 region = ImGui::GetContentRegionAvail();
+    if (region.x < 8.0f || region.y < 8.0f) return;
+    const ImGuiStyle& style = ImGui::GetStyle();
+    const float frameH = ImGui::GetFrameHeight();
+    ImGuiIO& io = ImGui::GetIO();
+    const double now = ImGui::GetTime();
+    if (io.MouseDelta.x != 0.0f || io.MouseDelta.y != 0.0f || ImGui::IsAnyMouseDown()) m_fullscreenMouseTime = now;
+    const bool transport = s.sourceMode == SourceVideo && info.videoLoaded;
+    const float transportH = transport ? frameH * 2.0f + style.ItemSpacing.y * 3.0f + 8.0f : 0.0f;
+    const bool overBar = transport && ImGui::IsMousePosValid() && io.MousePos.y >= origin.y + region.y - transportH - 24.0f;
+    const bool wantControls = now - m_fullscreenMouseTime < 2.5 || overBar || m_seekDragging || ImGui::IsAnyItemActive();
+    m_fullscreenControls = Ease(AnimateLinear(ImGui::GetID("##fullscreenControls"), wantControls ? 1.0f : 0.0f, 0.3f));
+
+    DrawPicture(s, info, ev, fonts, origin, region);
+    if (transport) {
+        if (m_fullscreenControls > 0.02f) {
+            ImGui::PushStyleVar(ImGuiStyleVar_Alpha, style.Alpha * m_fullscreenControls);
+            DrawTransport(s, info, ev, fonts, ImVec2(origin.x, origin.y + region.y - transportH), ImVec2(region.x, transportH));
+            ImGui::PopStyleVar();
+        } else {
+            VideoKeys(info, ev);
+        }
+    }
+    if (!wantControls && m_fullscreenControls < 0.02f) ImGui::SetMouseCursor(ImGuiMouseCursor_None);
+}
+
+// The fullscreen switch in the top right corner of the picture (F11 does the same; Esc leaves).
+void MainUI::FullscreenButton(const UiFrameInfo& info, UiEvents& ev, const ImVec2& origin, const ImVec2& region) {
+    const float alpha = info.fullscreen ? m_fullscreenControls : 1.0f;
+    if (alpha < 0.02f) return;
+    const float bsz = ImGui::GetFrameHeight();
+    if (region.x < bsz * 3.0f || region.y < bsz * 3.0f) return;
+    const ImVec2 pos(origin.x + region.x - bsz - 12.0f, origin.y + 12.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * alpha);
+    ImGui::GetWindowDrawList()->AddRectFilled(pos, ImVec2(pos.x + bsz, pos.y + bsz), ImGui::GetColorU32(Colors().overlayBg), 4.0f);
+    ImGui::SetCursorScreenPos(pos);
+    if (IconButton("##fullscreen", info.fullscreen ? Icon::ExitFullscreen : Icon::Fullscreen, ImVec2(bsz, bsz),
+                   info.fullscreen ? TR(TipExitFullscreen) : TR(TipFullscreen), ButtonKind::Plain)) ev.fullscreenToggle = true;
+    ImGui::PopStyleVar();
 }
 
 // Undo ---------------------------------------------------------------------------------------
 
-void MainUI::TrackUndo(const Settings& s) {
+std::vector<LibrarySnapshotItem> MainUI::LibrarySnapshot(const UiFrameInfo& info) {
+    std::vector<LibrarySnapshotItem> out;
+    if (!info.library) return out;
+    out.reserve(info.library->size());
+    for (const LibraryItem& item : *info.library) {
+        LibrarySnapshotItem e;
+        e.path = item.path;
+        e.useOwn = item.useOwn;
+        if (item.useOwn && item.own) e.own = item.own->ParameterText();
+        e.inSec = item.inSec; e.outSec = item.outSec;
+        out.push_back(std::move(e));
+    }
+    return out;
+}
+
+// The files and their own values count; the processing range is carried along without making a step of its own.
+bool MainUI::SameLibrary(const std::vector<LibrarySnapshotItem>& a, const std::vector<LibrarySnapshotItem>& b) {
+    if (a.size() != b.size()) return false;
+    for (size_t i = 0; i < a.size(); ++i) {
+        if (a[i].path != b[i].path || a[i].useOwn != b[i].useOwn || a[i].own != b[i].own) return false;
+    }
+    return true;
+}
+
+void MainUI::TrackUndo(const Settings& s, const UiFrameInfo& info) {
     if (ImGui::IsAnyItemActive()) return;   // a slider is held or a field is being typed in: one step per edit
     std::string cur = s.ParameterText();
-    if (cur == m_undoBase) return;
+    std::vector<LibrarySnapshotItem> lib = LibrarySnapshot(info);
+    if (cur == m_undoBase.params && SameLibrary(lib, m_undoBase.library)) return;
     m_undo.push_back(std::move(m_undoBase));
     if (m_undo.size() > 100) m_undo.erase(m_undo.begin());
     m_redo.clear();
-    m_undoBase = std::move(cur);
+    m_undoBase = { std::move(cur), std::move(lib) };
 }
 
-void MainUI::ApplyUndo(Settings& s, UiEvents& ev, bool redo) {
-    std::vector<std::string>& from = redo ? m_redo : m_undo;
-    std::vector<std::string>& to = redo ? m_undo : m_redo;
+void MainUI::ApplyUndo(Settings& s, const UiFrameInfo& info, UiEvents& ev, bool redo) {
+    std::vector<UndoStep>& from = redo ? m_redo : m_undo;
+    std::vector<UndoStep>& to = redo ? m_undo : m_redo;
     if (from.empty()) return;
-    to.push_back(s.ParameterText());
-    const std::string snapshot = std::move(from.back());
+    to.push_back({ s.ParameterText(), LibrarySnapshot(info) });
+    UndoStep step = std::move(from.back());
     from.pop_back();
     const bool nrWas = s.nrEnabled, dlaaWas = s.dlaaEnabled;
-    s.ApplyText(snapshot);
+    s.ApplyText(step.params);
     s.Clamp();
-    m_undoBase = s.ParameterText();
+    if (!SameLibrary(step.library, to.back().library)) { ev.libraryRestore = true; ev.libraryRestoreItems = step.library; }
+    m_undoBase = std::move(step);
     ev.settingsChanged = true;
     ev.nrChanged = true;
     ev.dlaaChanged = true;
@@ -269,6 +368,8 @@ void MainUI::DrawTopBar(Settings& s, const UiFrameInfo& info, UiEvents& ev, cons
     ImGui::SetScrollY(0.0f);
     const float top = style.WindowPadding.y;
     auto centred = [&](float itemH) { return top + (rowH - itemH) * 0.5f; };
+    // Text items add the line's baseline offset themselves (a badge before them leaves one): taken off here.
+    auto centredText = [&](float itemH) { return centred(itemH) - ImGui::GetCurrentWindow()->DC.CurrLineTextBaseOffset; };
     const bool imageMode = s.sourceMode == SourceImage;
     const bool videoMode = s.sourceMode == SourceVideo;
     const bool busy = info.videoProcessing || info.batchRunning;   // the main button cancels the run
@@ -328,7 +429,7 @@ void MainUI::DrawTopBar(Settings& s, const UiFrameInfo& info, UiEvents& ev, cons
     if (leftW() + gap + rightW() > availW) showTitle = false;
 
     if (showTitle) {
-        ImGui::SetCursorPosY(centred(titleSize.y));
+        ImGui::SetCursorPosY(centredText(titleSize.y));
         ImGui::PushFont(fonts.Bold(), style.FontSizeBase * 1.2f);
         ImGui::TextUnformatted(TR(AppTitle));
         ImGui::PopFont();
@@ -353,7 +454,7 @@ void MainUI::DrawTopBar(Settings& s, const UiFrameInfo& info, UiEvents& ev, cons
 
     ImGui::SameLine(std::max(leftEnd + gap, ImGui::GetWindowWidth() - style.WindowPadding.x - rightW()));
     if (showFps) {
-        ImGui::SetCursorPosY(centred(textH));
+        ImGui::SetCursorPosY(centredText(textH));
         ImGui::PushFont(fonts.Mono(), 0.0f);
         ImGui::TextDisabled("%s", fpsText.c_str());
         ImGui::PopFont();
@@ -363,12 +464,12 @@ void MainUI::DrawTopBar(Settings& s, const UiFrameInfo& info, UiEvents& ev, cons
     if (showUndo) {
         ImGui::SetCursorPosY(centred(frameH));
         ImGui::BeginDisabled(m_undo.empty());
-        if (IconButton("##undo", Icon::Undo, ImVec2(frameH, frameH), TR(TipUndo), ButtonKind::Plain)) ApplyUndo(s, ev, false);
+        if (IconButton("##undo", Icon::Undo, ImVec2(frameH, frameH), TR(TipUndo), ButtonKind::Plain)) ApplyUndo(s, info, ev, false);
         ImGui::EndDisabled();
         ImGui::SameLine(0.0f, style.ItemInnerSpacing.x);
         ImGui::SetCursorPosY(centred(frameH));
         ImGui::BeginDisabled(m_redo.empty());
-        if (IconButton("##redo", Icon::Redo, ImVec2(frameH, frameH), TR(TipRedo), ButtonKind::Plain)) ApplyUndo(s, ev, true);
+        if (IconButton("##redo", Icon::Redo, ImVec2(frameH, frameH), TR(TipRedo), ButtonKind::Plain)) ApplyUndo(s, info, ev, true);
         ImGui::EndDisabled();
         ImGui::SameLine();
     }
@@ -497,7 +598,7 @@ void MainUI::BlockSource(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
     const bool busy = info.videoProcessing || info.batchRunning;
     if (s.sourceMode == SourceVideo) {
         ImGui::BeginDisabled(busy);
-        if (FlatButton(TR(OpenVideo), ImVec2(-FLT_MIN, 0))) ev.openVideo = true;
+        OpenCloseRow(TR(OpenVideo), info.videoLoaded, ev.openVideo, ev.closeMedia);
         ImGui::EndDisabled();
         if (info.videoLoaded) {
             StatusDot(p.good, StrPrintf("%s  %ux%u  %.3g %s  %s", info.videoName.c_str(), info.videoWidth, info.videoHeight, info.videoFps, TR(Fps),
@@ -551,7 +652,7 @@ void MainUI::BlockSource(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
             ImGui::EndDisabled();
         }
     } else if (s.sourceMode == SourceImage) {
-        if (FlatButton(TR(OpenImage), ImVec2(-FLT_MIN, 0))) ev.openImage = true;
+        OpenCloseRow(TR(OpenImage), info.imageLoaded, ev.openImage, ev.closeMedia);
         if (info.imageLoaded) {
             StatusDot(p.good, StrPrintf("%s  %ux%u", info.imageName.c_str(), info.imageOrigWidth, info.imageOrigHeight).c_str());
             if (info.imageWidth != info.imageOrigWidth || info.imageHeight != info.imageOrigHeight)
@@ -1157,8 +1258,10 @@ void MainUI::DrawPicture(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
             ImGui::SetCursorScreenPos(ImVec2(origin.x + (region.x - size.x) * 0.5f, origin.y + (region.y - size.y) * 0.5f));
             ImGui::TextDisabled("%s", text);
             ImGui::Dummy(ImVec2(0, 0));
+            FullscreenButton(info, ev, origin, region);
             return;
         }
+        if (info.fullscreen) FullscreenButton(info, ev, origin, region);   // a way out that is not a key
         // Nothing open yet: the three steps, with the ways to get a picture in.
         const float wrap = std::min(region.x * 0.8f, ImGui::GetFontSize() * 34.0f);
         const float blockH = ImGui::GetFontSize() * 13.0f;
@@ -1209,6 +1312,7 @@ void MainUI::DrawPicture(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
         return ImVec2(origin.x + (region.x - size.x) * 0.5f + m_pan.x, origin.y + (region.y - size.y) * 0.5f + m_pan.y);
     };
 
+    ImGui::SetNextItemAllowOverlap();   // the corner button and the fullscreen transport bar sit on the canvas
     ImGui::InvisibleButton("##canvas", region, ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonMiddle);
     const bool hovered = ImGui::IsItemHovered();
     const bool active = ImGui::IsItemActive();
@@ -1254,8 +1358,11 @@ void MainUI::DrawPicture(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
     const ImVec2 imgMax(imgPos.x + imgSize.x, imgPos.y + imgSize.y);
 
     // Wipe handle.
+    // The handle is drawn where the shown composite splits the picture (the processing thread's latest result), not
+    // at the requested position: while it is dragged the line keeps to the picture instead of running ahead of it.
+    const float shownWipe = info.hasDisplay ? info.displayWipe : s.wipePosition;
     if (s.compareMode == CompareWipe) {
-        const float wipeX = imgPos.x + imgSize.x * s.wipePosition;
+        const float wipeX = imgPos.x + imgSize.x * shownWipe;
         const bool nearHandle = hovered && std::fabs(io.MousePos.x - wipeX) < 8.0f && io.MousePos.y >= imgPos.y && io.MousePos.y <= imgMax.y;
         if (nearHandle && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) m_wipeDragging = true;
         if (m_wipeDragging && !ImGui::IsMouseDown(ImGuiMouseButton_Left)) m_wipeDragging = false;
@@ -1272,7 +1379,7 @@ void MainUI::DrawPicture(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
     dl->PushClipRect(origin, ImVec2(origin.x + region.x, origin.y + region.y), true);
     dl->AddImage(ImTextureRef(info.displayTexture), imgPos, imgMax, ImVec2(0, 0), ImVec2(1, 1), IM_COL32_WHITE);
     if (s.compareMode == CompareWipe) {
-        const float wipeX = imgPos.x + imgSize.x * s.wipePosition;
+        const float wipeX = imgPos.x + imgSize.x * shownWipe;
         dl->AddLine(ImVec2(wipeX, imgPos.y), ImVec2(wipeX, imgMax.y), IM_COL32(255, 255, 255, 220), 2.0f);
         dl->AddCircleFilled(ImVec2(wipeX, imgPos.y + imgSize.y * 0.5f), 9.0f, IM_COL32(255, 255, 255, 235));
         dl->AddCircleFilled(ImVec2(wipeX, imgPos.y + imgSize.y * 0.5f), 6.0f, p.accent);
@@ -1317,8 +1424,9 @@ void MainUI::DrawPicture(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
         ImGui::PushFont(fonts.Mono(), 0.0f);
         const std::string z = StrPrintf("%s %.0f%%", TR(Zoom), m_baseScale * m_zoom * 100.0f);
         const ImVec2 zs = ImGui::CalcTextSize(z.c_str());
-        dl->AddRectFilled(ImVec2(origin.x + region.x - zs.x - 28.0f, origin.y + 12.0f), ImVec2(origin.x + region.x - 12.0f, origin.y + 12.0f + zs.y + 10.0f), p.overlayBg, 4.0f);
-        dl->AddText(ImVec2(origin.x + region.x - zs.x - 20.0f, origin.y + 17.0f), p.text, z.c_str());
+        const float right = origin.x + region.x - ImGui::GetFrameHeight() - 20.0f;   // left of the fullscreen button
+        dl->AddRectFilled(ImVec2(right - zs.x - 16.0f, origin.y + 12.0f), ImVec2(right, origin.y + 12.0f + zs.y + 10.0f), p.overlayBg, 4.0f);
+        dl->AddText(ImVec2(right - zs.x - 8.0f, origin.y + 17.0f), p.text, z.c_str());
         ImGui::PopFont();
     }
     // A video frame that is (almost) black, such as the fade-in at the start of a film: say so, or the user takes the
@@ -1332,9 +1440,32 @@ void MainUI::DrawPicture(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
         dl->AddText(nullptr, 0.0f, ImVec2(bpos.x + pad.x, bpos.y + pad.y), p.text, TR(DarkFrameHint), nullptr, wrap);
     }
     dl->PopClipRect();
+    FullscreenButton(info, ev, origin, region);
 }
 
 // The video controls: seek bar with the in/out range and a hover picture, play/pause, frame steps, range buttons.
+// Keyboard control of a video: space, arrows (shift: ten frames), I / O, Home / End. Not while typing or while a
+// popup is open. Shared by the transport bar and the fullscreen view, whose bar may have faded out.
+void MainUI::VideoKeys(const UiFrameInfo& info, UiEvents& ev) {
+    ImGuiIO& io = ImGui::GetIO();
+    const bool busy = info.videoProcessing || info.batchRunning;
+    if (busy || io.WantTextInput || ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel)) return;
+    const double frame = info.videoFps > 0.0 ? 1.0 / info.videoFps : 1.0 / 30.0;
+    const double duration = std::max(info.videoDurationSeconds, frame);
+    auto sendSeek = [&](double t) {
+        t = std::clamp(t, 0.0, std::max(0.0, duration - frame * 0.5));
+        ev.videoSeek = true; ev.videoSeekTo = t;
+        m_seekTarget = t; m_seekSentTime = ImGui::GetTime();
+    };
+    if (ImGui::IsKeyPressed(ImGuiKey_Space, false)) ev.videoPlayToggle = true;
+    if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow)) ev.videoStep -= io.KeyShift ? 10 : 1;
+    if (ImGui::IsKeyPressed(ImGuiKey_RightArrow)) ev.videoStep += io.KeyShift ? 10 : 1;
+    if (ImGui::IsKeyPressed(ImGuiKey_I, false)) ev.videoSetIn = true;
+    if (ImGui::IsKeyPressed(ImGuiKey_O, false)) ev.videoSetOut = true;
+    if (ImGui::IsKeyPressed(ImGuiKey_Home, false)) sendSeek(0.0);
+    if (ImGui::IsKeyPressed(ImGuiKey_End, false)) sendSeek(duration - frame);
+}
+
 void MainUI::DrawTransport(Settings& /*s*/, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts, const ImVec2& pos, const ImVec2& size) {
     const Palette& p = Colors();
     const ImGuiStyle& style = ImGui::GetStyle();
@@ -1364,16 +1495,7 @@ void MainUI::DrawTransport(Settings& /*s*/, const UiFrameInfo& info, UiEvents& e
     }
     const double shownPos = m_seekDragging ? m_seekDragTime : (m_seekTarget >= 0.0 ? m_seekTarget : info.videoPosition);
 
-    // Keyboard: space, arrows (shift: ten frames), I / O, Home / End. Not while typing or while a popup is open.
-    if (!busy && !io.WantTextInput && !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel)) {
-        if (ImGui::IsKeyPressed(ImGuiKey_Space, false)) ev.videoPlayToggle = true;
-        if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow)) ev.videoStep -= io.KeyShift ? 10 : 1;
-        if (ImGui::IsKeyPressed(ImGuiKey_RightArrow)) ev.videoStep += io.KeyShift ? 10 : 1;
-        if (ImGui::IsKeyPressed(ImGuiKey_I, false)) ev.videoSetIn = true;
-        if (ImGui::IsKeyPressed(ImGuiKey_O, false)) ev.videoSetOut = true;
-        if (ImGui::IsKeyPressed(ImGuiKey_Home, false)) sendSeek(0.0);
-        if (ImGui::IsKeyPressed(ImGuiKey_End, false)) sendSeek(duration - frame);
-    }
+    VideoKeys(info, ev);
 
     // Seek bar.
     const float barH = frameH * 0.9f;

@@ -118,6 +118,9 @@ struct Settings {
     // The adjustable values as "key=value" lines, without paths, window placement and interface state: the undo
     // history keeps these snapshots and ApplyText() restores one.
     std::string ParameterText() const;
+    // The values the processing passes depend on, as text: a still picture is run through the passes again only
+    // when this changes (a display, blend or interface change composites the existing result).
+    std::string ProcessingText() const;
     // Takes the DLSS 5 effect values (preset, style, strengths, blend, pass resolution) from another set: a library
     // item with parameters of its own replaces these while it is previewed or processed.
     void CopyEffects(const Settings& from);

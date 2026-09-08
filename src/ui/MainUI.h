@@ -76,6 +76,8 @@ struct UiFrameInfo {
     ImTextureID           displayTexture = 0;
     UINT                  displayWidth = 0, displayHeight = 0;
     bool                  hasDisplay = false;
+    float                 displayWipe = 0.5f;       // wipe position the shown composite was made with
+    bool                  fullscreen = false;       // the window covers the screen: only the picture is drawn
     std::string           appVersion;
     size_t                capturePending = 0;
     std::string           lastCapture;
@@ -83,8 +85,20 @@ struct UiFrameInfo {
     bool                  systemLight = false;      // Windows uses light app colours (theme "System" follows it)
 };
 
+// What the undo history keeps of a library item (MainUI::TrackUndo): the file, its own effect values, its range.
+struct LibrarySnapshotItem {
+    std::wstring path;
+    bool         useOwn = false;
+    std::string  own;               // the item's own effect values as text (empty: none)
+    double       inSec = 0.0, outSec = 0.0;
+};
+
 struct UiEvents {
     bool captureNow = false;
+    bool closeMedia = false;         // close the opened picture or video
+    bool fullscreenToggle = false;   // enter or leave the fullscreen view (F11, Esc, the corner button)
+    bool libraryRestore = false;     // undo/redo: bring the library to libraryRestoreItems
+    std::vector<LibrarySnapshotItem> libraryRestoreItems;
     bool browseRuntime = false;
     bool browseDepthModel = false;
     bool reloadDepth = false;
@@ -145,6 +159,9 @@ private:
     void DrawPreview(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts);
     void DrawPicture(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts, const ImVec2& pos, const ImVec2& size);
     void DrawTransport(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts, const ImVec2& pos, const ImVec2& size);
+    void DrawFullscreen(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts);   // the picture alone
+    void FullscreenButton(const UiFrameInfo& info, UiEvents& ev, const ImVec2& origin, const ImVec2& region);
+    void VideoKeys(const UiFrameInfo& info, UiEvents& ev);                                        // keyboard control of a video
     void DrawLibrary(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts, const ImVec2& pos, const ImVec2& size);
     void DrawStatusBar(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts);
     void DrawLogWindow(Settings& s, UiEvents& ev, const Fonts& fonts);
@@ -162,8 +179,10 @@ private:
     void EffectControls(Settings& s, UiEvents& ev, bool advanced, bool enabled);   // the DLSS 5 effect controls
     void DrawItemParams(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts);   // a library item's own values
     void DrawLibraryMenu(Settings& s, const UiFrameInfo& info, UiEvents& ev);      // the context menu of a card
-    void TrackUndo(const Settings& s);                                             // records a settings change as an undo step
-    void ApplyUndo(Settings& s, UiEvents& ev, bool redo);
+    void TrackUndo(const Settings& s, const UiFrameInfo& info);                    // records a settings or library change as an undo step
+    void ApplyUndo(Settings& s, const UiFrameInfo& info, UiEvents& ev, bool redo);
+    static std::vector<LibrarySnapshotItem> LibrarySnapshot(const UiFrameInfo& info);
+    static bool SameLibrary(const std::vector<LibrarySnapshotItem>& a, const std::vector<LibrarySnapshotItem>& b);
     void ResetView(bool animate);                                                  // back to the fitted, centred picture
     std::string EstimateText(const Settings& s, const UiFrameInfo& info) const;    // "≈ 2 min 30 s" for the current file
     double BatchRemaining(const UiFrameInfo& info) const;                          // seconds left in the batch (-1: unknown)
@@ -197,10 +216,13 @@ private:
     float  m_baseScale = 1.0f;     // preview pixels per picture pixel at zoom 1, from the last preview draw
     ImVec2 m_pan = ImVec2(0, 0);
     float  m_themeLight = -1.0f;   // the theme blend in use (-1: not set yet)
-    // Undo: a snapshot of the adjustable values is taken whenever they change while no control is held; Ctrl+Z
-    // and the top-bar buttons move through them.
-    std::vector<std::string> m_undo, m_redo;
-    std::string m_undoBase;
+    // Undo: a snapshot of the adjustable values and of the library is taken whenever they change while no control
+    // is held; Ctrl+Z / Ctrl+Y and the top-bar buttons move through them.
+    struct UndoStep { std::string params; std::vector<LibrarySnapshotItem> library; };
+    std::vector<UndoStep> m_undo, m_redo;
+    UndoStep m_undoBase;
+    double m_fullscreenMouseTime = 0.0;   // when the mouse last moved in the fullscreen view
+    float  m_fullscreenControls = 1.0f;   // how far the fullscreen controls are shown (they fade after a rest)
     bool   m_undoInit = false;
     bool   m_wipeDragging = false;
     // Seek bar: while the knob is dragged the bar follows the cursor and seeks are sent a few times per second;

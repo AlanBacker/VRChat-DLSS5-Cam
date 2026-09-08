@@ -115,7 +115,7 @@ private:
     };
     struct Command {
         enum Type { LoadRuntime, LoadImage, CaptureImage, LoadVideo, ProcessVideo, CancelVideo, BatchStart, BatchCancel,
-                    VideoSeek, VideoPlay, VideoPause, VideoStep, VideoSetRange };
+                    VideoSeek, VideoPlay, VideoPause, VideoStep, VideoSetRange, CloseMedia };
         Type         type = LoadRuntime;
         std::wstring path;                       // runtime DLL / image or video file / capture folder
         bool         announce = false;           // LoadRuntime: toast on success and on a missing file
@@ -124,6 +124,7 @@ private:
         double       seconds = 0.0;              // VideoSeek, VideoSetRange (in)
         double       seconds2 = 0.0;             // VideoSetRange (out), ProcessVideo (unused)
         int          step = 0;                   // VideoStep: frames forward (+) or back (-)
+        bool         video = false;              // CloseMedia: the video (else the picture)
         std::vector<BatchItem> items;            // BatchStart
     };
     // A video file being run through the pipeline (processing thread).
@@ -206,6 +207,8 @@ private:
     void RequestRuntimeLoad(bool announce);
     void OpenImageFile(const std::wstring& path);
     void OpenVideoFile(const std::wstring& path);
+    void CloseMediaFile();                 // the opened picture or video: processing stops, the preview empties
+    void SetFullscreen(bool on);           // borderless window over the monitor, the interface reduced to the picture
     void OnFileDropped(const std::wstring& path);
     void OnFilesDropped(const std::vector<std::wstring>& paths);
     void PostCommand(Command&& c);
@@ -230,6 +233,7 @@ private:
     void AddLibraryFiles(const std::vector<std::wstring>& paths, bool announce);
     void RemoveLibraryItem(unsigned id);
     void RemoveSelectedLibraryItems();
+    void RestoreLibrary(const std::vector<ui::LibrarySnapshotItem>& wanted);   // undo/redo of library changes
     void LocateLibraryItem(unsigned id);         // Explorer with the file selected
     const LibraryItem* OverrideItem() const;
     void ReadSystemTheme();
@@ -267,6 +271,8 @@ private:
     HWND          m_hwnd = nullptr;
     bool          m_quit = false;
     bool          m_minimized = false;
+    bool          m_fullscreen = false;
+    WINDOWPLACEMENT m_fullscreenPlacement{};   // the window as it was before going fullscreen
     bool          m_sizing = false;
     bool          m_inFrame = false;
     bool          m_deviceReady = false;
