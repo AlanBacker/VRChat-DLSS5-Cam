@@ -49,7 +49,8 @@ void TooltipShow(ImGuiID key, const char* text);                               /
 
 // Icons drawn from lines and triangles, so they scale with the interface -----------------------------------------
 enum class Icon { Play, Pause, StepBack, StepForward, ChevronDown, ChevronUp, ChevronLeft, ChevronRight,
-                  Reset, Refresh, OpenExternal, Close, Lock, Undo, Redo, Fullscreen, ExitFullscreen, History };
+                  Reset, Refresh, OpenExternal, Close, Lock, Undo, Redo, Fullscreen, ExitFullscreen, History,
+                  Help, Save, Edit, Plus, Search, RotateLeft, RotateRight, FlipH, FlipV, Crop };
 void DrawIcon(ImDrawList* dl, Icon icon, const ImVec2& center, float size, ImU32 color);          // size: side of the icon's box
 void DrawChevron(ImDrawList* dl, const ImVec2& center, float size, float angle, ImU32 color);    // 0 points down, turns clockwise
 
@@ -75,6 +76,16 @@ bool ChevronButton(const char* id, float angle, const ImVec2& size = ImVec2(0, 0
                    ButtonKind kind = ButtonKind::Flat);
 bool Segmented(const char* id, const char* const* labels, int count, int* value, float width = 0.0f);  // one-of-n switch
 void KeyValue(const char* key, const char* value);                                 // two-column line
+
+// Search: between SearchBegin and SearchEnd the labelled widgets that do not match the query are left out, and a
+// section (SectionHeader) whose widgets all missed on the previous frame is left out whole. A section whose title
+// matches shows everything in it. The match is a case-insensitive substring of the label or the tooltip.
+void SearchBegin(const char* query);                                               // empty or null: no filtering
+void SearchEnd();
+bool Searching();                                                                  // a query is set
+bool SearchMatch(const char* label, const char* tooltip = nullptr);               // whether such a widget shows
+bool SearchSkipped();                                                              // the last labelled widget was left out
+int  SearchHits();                                                                 // matches so far in this frame
 void Hint(const char* text);                                                       // wrapped dim paragraph
 
 } // namespace vdc::ui

@@ -15,7 +15,7 @@ namespace vdc {
 class Splash {
 public:
     ~Splash();
-    void Show(HINSTANCE instance, bool light, const std::string& version, const std::string& status);
+    void Show(HINSTANCE instance, bool light, const std::string& version, bool prerelease, const std::string& status);
     void SetStatus(const std::string& utf8);
     void Close();   // starts the fade-out; returns at once
     void Join();    // waits for the thread to finish (after Close)
@@ -33,6 +33,7 @@ private:
     std::mutex  m_mutex;
     std::wstring m_status, m_version;
     bool        m_light = false;
+    bool        m_prerelease = false;
     std::wstring m_dump;
     bool        m_dumped = false;
     std::atomic<bool> m_closing{false};

@@ -24,14 +24,15 @@ disk, one at a time or as a batch. It is a normal Windows program: nothing is in
 - **Pictures and videos from disk.** Drop a screenshot or a recording onto the window, tune the sliders on it and
   save the result: PNG for pictures, MP4 (H.264 / HEVC, audio kept) or a PNG sequence for videos.
 - **Many files at once.** Every file you open lands in a library under the preview. Select some or all and process
-  them in one go, each with the shared settings or with its own.
+  them in one go, each with the shared settings or with its own. Turn, mirror or crop any of them first.
 - **Real DLSS 5 guidance.** The neural network receives motion vectors from NVIDIA Optical Flow and a depth map
   from Depth Anything V2, so videos and the live camera are processed the way a game would be. An optional DLAA
   pass cleans up edges first.
 - **Easy to compare.** Wipe, side by side or original view, zoom with the mouse wheel, drag to pan.
 - **Made for everyday use.** Dark and light look (follows Windows by default), undo and redo with a full history
-  list, a layout you can resize, an automatic check for new versions, four languages (English, 简体中文, 日本語,
-  한국어), a smooth interface on its own thread, and a command line for scripted runs.
+  list, your own named presets, a search field over all the settings, a layout you can resize, an automatic check
+  for new versions, four languages (English, 简体中文, 日本語, 한국어), a smooth interface on its own thread, and a
+  command line for scripted runs.
 
 ## What you need
 
@@ -80,8 +81,8 @@ yourself. The *Capture* section shows roughly how long the file will take with t
 Every file you open or drop lands in the **library** under the preview (*Add files…* and *Add folder…* add more).
 **Double-click** a thumbnail to open that file in the preview and tune the sliders on it. A single click selects it
 alone; **Ctrl+click** adds or removes one file, **Shift+click** extends the selection from the file you clicked last,
-dragging on the empty space draws a selection rectangle, the box on each thumbnail toggles it, and **Ctrl+A** selects
-every readable file. The **Delete** key takes the selected files out of the library while the mouse is over it (or
+dragging on the empty space draws a selection rectangle, a click on it clears the selection, the box on each
+thumbnail toggles it, and **Ctrl+A** selects every readable file. The **Delete** key takes the selected files out of the library while the mouse is over it (or
 after your last click was in it); the files themselves stay on disk. *Process selected* or *Process all* then runs
 the files one after another; a bar on each thumbnail shows the progress and the state stays visible afterwards.
 
@@ -89,14 +90,26 @@ The right mouse button opens a menu on a thumbnail: show the file in Explorer, t
 **its own DLSS 5 parameters** in a separate window. With several files selected the same menu offers *Own parameters
 for N files…*, which sets the values for all of them at once; each file keeps its own copy afterwards.
 
+A small toolbar over the preview of a library file **turns, mirrors and crops** it: a quarter turn to the left or
+right, a horizontal or vertical mirror, or a crop frame whose corners and edges you drag (drag inside it to move it),
+kept with **Enter** or *Apply* and dropped with **Esc**. The last button puts the file back as it came. Every file
+keeps its own orientation and crop, the processing and the saved result use the turned and cropped picture, and each
+step is recorded in the history, so it can be undone.
+
 ## Finding your way around
 
 - **Three sections do the everyday work:** *Source* (what comes in), *DLSS 5 Neural Rendering* (how it looks) and
   *Capture* (where it goes), followed by *Display* and *About*. The *Advanced* switch in the DLSS 5 section shows or
   hides the tone and structure sliders, the output blend, the *Frame guidance* and *DLAA pre-pass* sections after
   *Capture*, and *Internals* with the timers before *About*.
-- **Compare** with the wipe (drag the handle in the preview), side by side or the original. The mouse wheel over the
-  preview zooms around the cursor, dragging pans, a double-click goes back to the fitted view.
+- **Compare** with the wipe (drag the handle in the preview), side by side or the original. The wipe follows the
+  mouse at the interface's own rate, even while a video plays slowly. The mouse wheel over the preview zooms around
+  the cursor, dragging pans, a double-click goes back to the fitted view.
+- **Presets** of your own in the DLSS 5 section: *+* saves the current values under a name, the list applies one with
+  a click, and every entry can be overwritten with the current values, renamed or deleted. They are kept in
+  `presets.txt` in the settings folder.
+- **Search** the settings with the field at the top of the sidebar: only the matching controls and their sections
+  stay visible. **Esc** or the ✕ clears it.
 - **Undo and redo** every change to the settings, and every file added to or removed from the library, with
   **Ctrl+Z** / **Ctrl+Y** or the two arrows in the top bar. The clock button beside them opens the **History**: every
   recorded change as a list (*Intensity: 1.2*, *Added photo.png*, *Removed 3 files*, *photo.png: own values*), the
@@ -104,15 +117,20 @@ for N files…*, which sets the values for all of them at once; each file keeps 
   the later ones stay available until you make a new change, so you can go back and forth freely. Up to 100 steps are
   kept.
 - **Fullscreen** with the button in the corner of the preview or **F11**: only the picture, over the whole screen.
-  The video controls appear while the mouse moves; **Esc** or **F11** leaves.
+  The video controls appear while the mouse moves; **Esc** or **F11** leaves. Entering and leaving fade, and so does
+  the switch between *Live*, *Picture* and *Video*.
 - **Dark or light.** *Theme* in the *Display* section: *System* follows the Windows app colour setting, or pick
   *Dark* or *Light*.
-- **The sidebar** slides away behind the slim handle at its edge: a click hides or shows it, dragging the handle
-  changes its width. The library works the same way — drag its top edge and the thumbnails grow or shrink with it.
-  Both sizes are remembered for the next start. While a file is being processed the sidebar is locked and offers
-  *Cancel*.
-- **At start** a small card with the icon, the name, the version, a status line and a moving bar shows what the app
-  is doing; the window itself appears only once its first frame is ready, so there is no blank window at the start.
+- **The sidebar** slides away behind the slim bar at its edge: a click hides or shows it, dragging the bar changes
+  its width. The library has the same kind of bar above it: a click folds or unfolds it, dragging changes its height
+  and the thumbnails grow or shrink with it. The moving edge of either bar lights up blue under the mouse. Both sizes
+  are remembered for the next start. While a file is being processed the sidebar is locked and offers *Cancel*.
+- **Help** is one click away: the *?* button in the top bar (or *Documentation* in *About*) opens this guide in the
+  interface's language.
+- **At start** a small card with the icon, the name, the version (marked *Pre-release* on pre-release builds), a
+  status line and a moving bar shows what the app is doing; the window itself fades in only once its first frame is
+  ready, so there is no blank window at the start. The file from the last session is opened again only if *Reopen
+  the last file at start* in the *Display* section is on (it is off by default).
 
 <p align="center">
   <img src="docs/images/light.png" width="900" alt="The same window in the light theme">
@@ -131,7 +149,9 @@ for N files…*, which sets the values for all of them at once; each file keeps 
 | `I` · `O` | Set the start · the end of the range to process |
 | Mouse wheel over the preview · drag · double-click | Zoom · pan · back to the fitted view |
 | Click a thumbnail · double-click · `Ctrl`+click · `Shift`+click · right button | Select only that file · open it in the preview · add or remove one · extend the selection · open the menu |
-| Drag on the library's empty space · drag its top edge · drag the sidebar handle | Selection rectangle · library height · sidebar width |
+| Drag on the library's empty space · click on it | Selection rectangle · clear the selection |
+| Click the library bar · drag it · click the sidebar bar · drag it | Fold or unfold the library · its height · hide or show the sidebar · its width |
+| `Enter` · `Esc` while cropping | Apply the crop · cancel it |
 
 ## Staying up to date
 
@@ -169,7 +189,8 @@ access the app ever makes; nothing else is sent anywhere. Headless and `--proces
 | DLSS 5 | Enable DLSS 5 (DLSSNR) | Switches the neural pass on or off. Off releases the runtime; on loads it again from the file. |
 | DLSS 5 | Runtime path / Reload | Where `nvngx_dlssnr.dll` is. *Reload* loads the file again. |
 | DLSS 5 | Host route | *Signed snippet*: host `nvngx_dlssnr.dll` directly. *NGX core*: create the feature through the NGX runtime. |
-| DLSS 5 | Preset / Style | Render preset (0–3) and style (default / natural / cinematic) passed to the runtime. |
+| DLSS 5 | Presets | Your own named sets of the DLSS 5 values: *+* saves the current ones, the list applies one, each entry can be overwritten, renamed or deleted. Kept in `presets.txt` in the settings folder. |
+| DLSS 5 | Style | Render style (default / natural / cinematic) passed to the runtime. |
 | DLSS 5 | Intensity | Overall strength of the neural pass, 0–2. Up to 1 it is the runtime's own strength; above 1 the app amplifies the difference between the neural result and the original (which can exaggerate artifacts). At 0 the picture is left untouched. |
 | DLSS 5 | Global tone / Local tone | Global and local tone strength, 0–2, with the same rule above 1 (the highest strength above 1 sets the gain). |
 | DLSS 5 | Local structure / Skin structure | Detail enhancement, 0–2, same rule above 1. Skin structure may be left at the runtime default. |
@@ -186,9 +207,10 @@ access the app ever makes; nothing else is sent anywhere. Headless and `--proces
 | DLAA pre-pass | Enable / Preset | Optional DLSS anti-aliasing pass at native resolution before neural rendering. |
 | Display | Theme | *System* (follows Windows), *Dark* or *Light*. |
 | Display | Compare / Fit / Zoom / VSync / Overlay / Show the library | Preview options. |
+| Display | Reopen the last file at start | Open the file from the previous session again at the next start. Off by default. |
 | Display | Processing rate cap | Live camera: process at most this many frames per second and skip the rest. 0 = every frame. |
 | About | Check for updates at start / Update channel / Check for updates | Look for a newer release at every start (on by default), on the *Stable* or the *Pre-release* channel, or right now with the button. The result of the last check is shown underneath. |
-| About | Open log file / Open settings folder / Project page / Third-party notices / Reset all settings | Version, GPU and driver, and the maintenance buttons. |
+| About | Open log file / Open settings folder / Documentation / Project page / Third-party notices / Reset all settings | Version, GPU and driver, this guide, and the maintenance buttons. |
 
 Settings are stored in `%LOCALAPPDATA%\VRChatDLSS5Cam\settings.ini`; the log is `log.txt` in the same folder.
 

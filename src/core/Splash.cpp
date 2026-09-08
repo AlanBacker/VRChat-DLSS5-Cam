@@ -52,10 +52,11 @@ inline float Smooth(float t) { t = std::clamp(t, 0.0f, 1.0f); return t * t * (3.
 
 Splash::~Splash() { Close(); Join(); }
 
-void Splash::Show(HINSTANCE instance, bool light, const std::string& version, const std::string& status) {
+void Splash::Show(HINSTANCE instance, bool light, const std::string& version, bool prerelease, const std::string& status) {
     if (m_thread.joinable()) return;
     m_instance = instance;
     m_light = light;
+    m_prerelease = prerelease;
     m_version = Utf8ToWide(version);
     m_status = Utf8ToWide(status);
     m_closing = false;
@@ -209,6 +210,31 @@ void Splash::BuildBase() {
     SetTextColor(m_dc, dim);
     const std::wstring ver = L"Version " + m_version;
     DrawTextW(m_dc, ver.c_str(), -1, &rc, DT_LEFT | DT_TOP | DT_SINGLELINE | DT_NOPREFIX);
+    if (m_prerelease) {
+        // A small rounded badge after the version: this build is a pre-release.
+        RECT measure = rc;
+        DrawTextW(m_dc, ver.c_str(), -1, &measure, DT_LEFT | DT_TOP | DT_SINGLELINE | DT_NOPREFIX | DT_CALCRECT);
+        const wchar_t* tag = L"Pre-release";
+        RECT tagRc{ 0, 0, 0, 0 };
+        DrawTextW(m_dc, tag, -1, &tagRc, DT_LEFT | DT_TOP | DT_SINGLELINE | DT_NOPREFIX | DT_CALCRECT);
+        const int padX = (int)std::lround(6 * m_scale), padY = (int)std::lround(2 * m_scale);
+        RECT badge{ measure.right + (int)std::lround(8 * m_scale), measure.top - padY,
+                    measure.right + (int)std::lround(8 * m_scale) + (tagRc.right - tagRc.left) + padX * 2, measure.bottom + padY };
+        const COLORREF accent = m_light ? RGB(37, 99, 235) : RGB(96, 165, 250);
+        HBRUSH fill = CreateSolidBrush(m_light ? RGB(219, 234, 254) : RGB(30, 58, 138));
+        HPEN pen = CreatePen(PS_SOLID, 1, m_light ? RGB(191, 219, 254) : RGB(59, 130, 246));
+        HGDIOBJ oldBrush = SelectObject(m_dc, fill), oldPen = SelectObject(m_dc, pen);
+        const int r = (int)std::lround(6 * m_scale);
+        RoundRect(m_dc, badge.left, badge.top, badge.right, badge.bottom, r, r);
+        SelectObject(m_dc, oldBrush); SelectObject(m_dc, oldPen);
+        DeleteObject(fill); DeleteObject(pen);
+        SetTextColor(m_dc, accent);
+        RECT tr{ badge.left + padX, measure.top, badge.right - padX, measure.bottom };
+        DrawTextW(m_dc, tag, -1, &tr, DT_LEFT | DT_TOP | DT_SINGLELINE | DT_NOPREFIX);
+        for (int y = badge.top; y < badge.bottom; ++y)
+            for (int x = badge.left; x < badge.right; ++x)
+                if (x >= 0 && y >= 0 && x < m_w && y < m_h) m_inside[(size_t)y * m_w + x] = 255;
+    }
     GdiFlush();
     for (size_t i = 0; i < m_base.size(); ++i) {
         if (m_inside[i]) m_bits[i] |= 0xFF000000u;

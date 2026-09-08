@@ -156,6 +156,7 @@ bool Settings::ApplyText(const std::string& data) {
     r.Get("advancedControls", showAdvanced);
     r.Get("theme", theme);
     r.Get("showLog", showLog);
+    r.Get("reopenLast", reopenLast);
     r.Get("debugLayer", debugLayer);
     Clamp();
     return r.used == keys;
@@ -273,6 +274,25 @@ std::string Settings::ParameterText() const {
     return w.out;
 }
 
+std::string Settings::EffectText() const {
+    Writer w;
+    w.Put("nrStyle", nrStyle);
+    w.Put("nrIntensity", nrIntensity);
+    w.Put("nrGlobalTone", nrGlobalTone);
+    w.Put("nrLocalTone", nrLocalTone);
+    w.Put("nrLocalStructure", nrLocalStructure);
+    w.Put("nrSkinStructure", nrSkinStructure);
+    w.Put("nrAutoMask", nrAutoMask);
+    w.Put("nrUiCorrection", nrUiCorrection);
+    w.Put("nrInputExposure", nrInputExposure);
+    w.Put("nrToneTransfer", nrToneTransfer);
+    w.Put("nrColorStrength", nrColorStrength);
+    w.Put("nrShadowGain", nrShadowGain);
+    w.Put("nrHighlightGain", nrHighlightGain);
+    w.Put("nrInputScale", nrInputScale);
+    return w.out;
+}
+
 bool Settings::Save(const std::wstring& path) const {
     Writer w;
     w.out += "# VRChat DLSS5 Cam settings\n";
@@ -355,6 +375,7 @@ bool Settings::Save(const std::wstring& path) const {
     w.Put("advancedControls", showAdvanced);
     w.Put("theme", theme);
     w.Put("showLog", showLog);
+    w.Put("reopenLast", reopenLast);
     w.Put("debugLayer", debugLayer);
 
     FILE* f = nullptr;

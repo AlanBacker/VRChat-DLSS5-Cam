@@ -13,6 +13,11 @@
 
 namespace vdc::ui {
 
+struct UserPreset {
+    std::string name;
+    std::string text;
+};
+
 struct UiFrameInfo {
     const PipelineStatus* status = nullptr;
     const AdapterInfo*    adapter = nullptr;
@@ -76,9 +81,13 @@ struct UiFrameInfo {
     ImTextureID           displayTexture = 0;
     UINT                  displayWidth = 0, displayHeight = 0;
     bool                  hasDisplay = false;
-    float                 displayWipe = 0.5f;       // wipe position the shown composite was made with
+    bool                  displayWide = false;      // the display holds the original and the output side by side (wipe)
+    unsigned              shownItem = 0;            // the library item in the preview (0: none)
     bool                  fullscreen = false;       // the window covers the screen: only the picture is drawn
+    bool                  windowShown = false;      // the main window is on screen (the start-up card has closed)
     std::string           appVersion;
+    bool                  prerelease = false;       // the build is marked as a pre-release
+    const std::vector<UserPreset>* presets = nullptr;   // the user's presets, in file order
     size_t                capturePending = 0;
     std::string           lastCapture;
     bool                  lastCaptureOk = true;
@@ -102,7 +111,10 @@ struct LibrarySnapshotItem {
     bool         useOwn = false;
     std::string  own;               // the item's own effect values as text (empty: none)
     double       inSec = 0.0, outSec = 0.0;
+    SourceTransform transform;      // orientation and crop
 };
+
+// A user preset: a name and the effect values it holds (Settings::ParameterText() lines of the effect fields).
 
 struct UiEvents {
     bool captureNow = false;
@@ -159,6 +171,14 @@ struct UiEvents {
     unsigned libraryLocate = 0;      // show this item's file in Explorer
     bool libraryDeleteSelected = false;   // drop the selected items from the library
     bool itemParamsChanged = false;  // an item's own effect values were edited
+    bool cropEditing = false;        // the crop of the shown file is being drawn: show the whole turned picture
+    SourceTransform cropPreview;     // its orientation while that lasts
+    bool openDocs = false;           // the documentation in the browser (in the interface's language)
+    // Presets: saved under a name (a new one, or an existing one to replace), renamed, removed.
+    bool        presetSave = false;
+    std::string presetName;          // presetSave / presetRename: the name to store under
+    int         presetRename = -1;   // index of the preset to rename to presetName
+    int         presetDelete = -1;   // index of the preset to remove
 };
 
 class MainUI {
@@ -194,6 +214,11 @@ private:
     void EffectControls(Settings& s, UiEvents& ev, bool advanced, bool enabled);   // the DLSS 5 effect controls
     void DrawItemParams(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts);   // a library item's own values
     void DrawLibraryMenu(Settings& s, const UiFrameInfo& info, UiEvents& ev);      // the context menu of a card
+    void DrawPresetRow(Settings& s, UiEvents& ev);                                   // the user's presets of the effect values
+    void DrawTransformTools(const UiFrameInfo& info, UiEvents& ev, const ImVec2& origin, const ImVec2& region,
+                            const ImVec2& imgPos, const ImVec2& imgSize, bool canvasHovered);   // turn / mirror / crop of the shown file
+    void DrawFades(Settings& s, const UiFrameInfo& info, UiEvents& ev);              // the mode, fullscreen and start-up fades
+    void RequestFullscreen();                                                        // the switch, behind a short dip to black
     void TrackUndo(const Settings& s, const UiFrameInfo& info);                    // records a settings or library change as an undo step
     void ApplyUndo(Settings& s, const UiFrameInfo& info, UiEvents& ev, bool redo);
     void GoToHistory(Settings& s, const UiFrameInfo& info, UiEvents& ev, int index);   // to an entry of the history list
@@ -266,6 +291,32 @@ private:
     double m_seekTarget = -1.0;      // -1: none pending
     unsigned m_logGeneration = 0;
     std::vector<LogEntry> m_logCache;
+    // The library bar (click folds, drag resizes).
+    bool   m_libBarDrag = false, m_libBarMoved = false;
+    // Fades: the source switch waits behind a dip toward the preview's background, the fullscreen switch behind a
+    // dip to black, and the window comes up from its own background after the start-up card.
+    int    m_lastMode = -1;
+    int    m_modePending = -1;
+    double m_modeFadeStart = -1.0;
+    float  m_modeFade = 0.0f;
+    bool   m_fsPending = false, m_fsSent = false, m_fsTarget = false, m_fsRise = false;
+    double m_fsFadeStart = -1.0;
+    int    m_fsFrames = 0;
+    double m_startFade = -1.0;
+    ImVec2 m_previewMin, m_previewMax;   // where the preview fade is painted
+    // Presets.
+    const std::vector<UserPreset>* m_presetList = nullptr;
+    char   m_presetBuf[96] = {};
+    int    m_presetEdit = -1;        // the preset whose name is being typed in the list
+    bool   m_presetFocus = false;
+    // The sidebar search.
+    char   m_searchBuf[128] = {};
+    // Cropping of the shown library file: the rectangle is adjusted on a copy and applied at the end.
+    bool   m_cropEditing = false;
+    unsigned m_cropItem = 0;
+    SourceTransform m_cropWork, m_cropDragBase;
+    int    m_cropHandle = -1;        // 0-7 the handles (clockwise from the top left), 8 the whole rectangle
+    ImVec2 m_cropDragStart;
 };
 
 } // namespace vdc::ui

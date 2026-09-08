@@ -217,7 +217,6 @@ enum class Lang { English = 0, Chinese = 1, Japanese = 2, Korean = 3, Count = 4 
     X(TipLocalTone,       "Local contrast and lighting adjustments (up to 1 in the runtime). Above 1 the app amplifies the difference between the neural result and the original, like the intensity.", "局部对比度与光照调整（运行库内最高 1）。大于 1 时与强度一样，程序放大神经结果与原图之间的差异。", "ローカルコントラストとライティングの調整（ランタイム内では 1 まで）。1 を超えると強度と同様に、アプリがニューラル結果と元画像との差を増幅します。", "로컬 대비와 조명 조정(런타임에서는 1까지). 1을 넘으면 강도와 마찬가지로 앱이 뉴럴 결과와 원본의 차이를 증폭합니다.") \
     X(TipLocalStructure,  "Fine detail and texture enhancement (up to 1 in the runtime). Above 1 the app amplifies the difference between the neural result and the original, like the intensity.", "细节与纹理增强（运行库内最高 1）。大于 1 时与强度一样，程序放大神经结果与原图之间的差异。", "ディテールとテクスチャの強調（ランタイム内では 1 まで）。1 を超えると強度と同様に、アプリがニューラル結果と元画像との差を増幅します。", "세부 묘사와 질감 강조(런타임에서는 1까지). 1을 넘으면 강도와 마찬가지로 앱이 뉴럴 결과와 원본의 차이를 증폭합니다.") \
     X(TipSkinStructure,   "Detail on skin-like surfaces (up to 1 in the runtime). \"Runtime default\" leaves it to the model. Above 1 the app amplifies the difference between the neural result and the original, like the intensity.", "皮肤类表面的细节（运行库内最高 1）。“使用默认值”由模型自行决定。大于 1 时与强度一样，程序放大神经结果与原图之间的差异。", "肌のような表面のディテール（ランタイム内では 1 まで）。「既定値を使用」でモデルに任せます。1 を超えると強度と同様に、アプリがニューラル結果と元画像との差を増幅します。", "피부 같은 표면의 디테일(런타임에서는 1까지). \"기본값 사용\"이면 모델에 맡깁니다. 1을 넘으면 강도와 마찬가지로 앱이 뉴럴 결과와 원본의 차이를 증폭합니다.") \
-    X(TipPreset,          "Model preset 0-3 (0 = default).", "模型预设 0–3（0 = 默认）。", "モデルプリセット 0～3（0 = 既定）。", "모델 프리셋 0~3(0 = 기본).") \
     X(TipStyle,           "Rendering look: Default, Natural or Cinematic.", "渲染风格：默认、自然或电影感。", "レンダリングの雰囲気：既定、ナチュラル、シネマティック。", "렌더링 스타일: 기본, 내추럴, 시네마틱.") \
     X(TipAutoMask,        "Let the runtime mask regions it should not change.", "让运行库自动遮罩不应改变的区域。", "変更すべきでない領域をランタイムに自動でマスクさせます。", "런타임이 변경하지 말아야 할 영역을 자동으로 마스크합니다.") \
     X(TipUiCorrection,    "Protect flat UI-like regions from being altered.", "保护平面 UI 类区域不被改动。", "UI のような平坦な領域を保護します。", "UI 같은 평면 영역을 보호합니다.") \
@@ -371,7 +370,7 @@ enum class Lang { English = 0, Chinese = 1, Japanese = 2, Korean = 3, Count = 4 
     X(TipFullscreen,      "Fullscreen: only the picture, over the whole screen (F11)", "全屏：整个屏幕只显示画面（F11）", "全画面表示：画面全体に映像だけを表示（F11）", "전체 화면: 화면 전체에 영상만 표시 (F11)") \
     X(TipExitFullscreen,  "Leave fullscreen (Esc or F11)", "退出全屏（Esc 或 F11）", "全画面表示を終了（Esc または F11）", "전체 화면 종료 (Esc 또는 F11)") \
     X(TipSidebarDrag,     "Drag to change the sidebar's width; click to hide it", "拖动改变侧栏宽度；点击收起", "ドラッグでサイドバーの幅を変更、クリックで隠す", "드래그하여 사이드바 너비 변경, 클릭하면 숨김") \
-    X(TipLibraryResize,   "Drag to change the library's height", "拖动改变素材库高度", "ドラッグでライブラリの高さを変更", "드래그하여 라이브러리 높이 변경") \
+    X(TipLibraryResize,   "Drag to change the library's height; click to hide it", "拖动改变素材库高度；点击收起", "ドラッグでライブラリの高さを変更、クリックで隠す", "드래그하여 라이브러리 높이 변경, 클릭하면 숨김") \
     X(SecHistory,         "History", "历史记录", "ヒストリー", "히스토리") \
     X(TipHistory,         "History: every change as a list. Click a step to go back to it; the later steps stay until you make a new change (Ctrl+Z / Ctrl+Y).", "历史记录：所有更改按顺序列出。点击某一步即可回到那时；之后的步骤在你做出新更改之前都还可以回去（Ctrl+Z / Ctrl+Y）。", "ヒストリー: すべての変更を一覧にします。ステップをクリックするとその状態に戻り、以降のステップは新しい変更をするまで残ります（Ctrl+Z / Ctrl+Y）。", "히스토리: 모든 변경을 목록으로 보여 줍니다. 단계를 클릭하면 그 상태로 돌아가며, 이후 단계는 새 변경을 하기 전까지 남아 있습니다 (Ctrl+Z / Ctrl+Y).") \
     X(HistoryInitial,     "Opened", "初始状态", "初期状態", "초기 상태") \
@@ -384,6 +383,38 @@ enum class Lang { English = 0, Chinese = 1, Japanese = 2, Korean = 3, Count = 4 
     X(HistoryOn,          "on", "开", "オン", "켬") \
     X(HistoryOff,         "off", "关", "オフ", "끔") \
     X(HistoryDefault,     "default", "默认", "既定", "기본") \
+    X(HistoryOriented,    "%s: as it comes", "%s：恢复原始方向", "%s: 元の向き", "%s: 원래 방향") \
+    X(HistoryTurned,      "%s: turned", "%s：旋转", "%s: 回転", "%s: 회전") \
+    X(HistoryMirrored,    "%s: mirrored", "%s：翻转", "%s: 反転", "%s: 뒤집기") \
+    X(HistoryCropped,     "%s: cropped", "%s：裁切", "%s: 切り抜き", "%s: 자르기") \
+    X(TipRotateLeft,      "Turn left (90°)", "向左旋转 90°", "左に 90° 回転", "왼쪽으로 90° 회전") \
+    X(TipRotateRight,     "Turn right (90°)", "向右旋转 90°", "右に 90° 回転", "오른쪽으로 90° 회전") \
+    X(TipFlipH,           "Mirror left-right", "水平翻转", "左右反転", "좌우 반전") \
+    X(TipFlipV,           "Mirror top-bottom", "垂直翻转", "上下反転", "상하 반전") \
+    X(TipCrop,            "Crop: drag the corners and edges of the rectangle, then apply (Enter) or cancel (Esc)", "裁切：拖动矩形的角和边，然后应用（Enter）或取消（Esc）", "切り抜き: 四角形の角や辺をドラッグし、適用（Enter）またはキャンセル（Esc）", "자르기: 사각형의 모서리와 가장자리를 드래그한 뒤 적용(Enter) 또는 취소(Esc)") \
+    X(TipResetTransform,  "Back to the file as it comes: no turn, mirror or crop", "恢复原样：不旋转、不翻转、不裁切", "元の状態に戻す: 回転・反転・切り抜きなし", "원래대로: 회전·반전·자르기 없음") \
+    X(CropApply,          "Apply", "应用", "適用", "적용") \
+    X(CropHint,           "Drag the corners or edges, or the rectangle itself. Enter applies, Esc cancels.", "拖动角、边或整个矩形。Enter 应用，Esc 取消。", "角や辺、または四角形全体をドラッグ。Enter で適用、Esc でキャンセル。", "모서리나 가장자리, 또는 사각형 전체를 드래그. Enter 적용, Esc 취소.") \
+    X(PresetNone,         "No presets yet", "还没有预设", "プリセットなし", "프리셋 없음") \
+    X(PresetCustom,       "Custom", "自定义", "カスタム", "사용자 지정") \
+    X(PresetEmptyHint,    "Save the current values with the + button.", "用 + 按钮保存当前参数。", "+ ボタンで現在の値を保存できます。", "+ 버튼으로 현재 값을 저장할 수 있습니다.") \
+    X(PresetSaveAs,       "Save the current values as a new preset", "把当前参数保存为新预设", "現在の値を新しいプリセットとして保存", "현재 값을 새 프리셋으로 저장") \
+    X(PresetName,         "Preset name", "预设名称", "プリセット名", "프리셋 이름") \
+    X(PresetOverwrite,    "Overwrite with the current values", "用当前参数覆盖", "現在の値で上書き", "현재 값으로 덮어쓰기") \
+    X(PresetRename,       "Rename", "重命名", "名前を変更", "이름 바꾸기") \
+    X(PresetDelete,       "Delete this preset", "删除此预设", "このプリセットを削除", "이 프리셋 삭제") \
+    X(PresetSaved,        "Preset \"%s\" saved", "已保存预设“%s”", "プリセット「%s」を保存しました", "프리셋 \"%s\" 저장됨") \
+    X(PresetReplaced,     "Preset \"%s\" overwritten", "已覆盖预设“%s”", "プリセット「%s」を上書きしました", "프리셋 \"%s\" 덮어씀") \
+    X(TipPresets,         "Your presets: the DLSS 5 effect values under a name. Click one to apply it; + saves the current values as a new one (a name already in use is overwritten). Each row has overwrite, rename and delete.", "你的预设：以名称保存的一组 DLSS 5 效果参数。点击即可应用；+ 把当前参数存为新预设（同名会覆盖）。每一行都有覆盖、重命名和删除。", "プリセット: DLSS 5 の効果の値に名前を付けて保存したものです。クリックで適用、+ で現在の値を新しく保存（同じ名前は上書き）。各行に上書き・名前の変更・削除があります。", "프리셋: DLSS 5 효과 값을 이름으로 저장한 것입니다. 클릭하면 적용되고, +로 현재 값을 새로 저장합니다(같은 이름은 덮어씀). 각 행에 덮어쓰기·이름 바꾸기·삭제가 있습니다.") \
+    X(Save,               "Save", "保存", "保存", "저장") \
+    X(TipDocs,            "Documentation: the guide opens in your browser", "文档：在浏览器中打开使用指南", "ドキュメント: ガイドをブラウザで開きます", "문서: 안내를 브라우저에서 엽니다") \
+    X(Documentation,      "Documentation", "文档", "ドキュメント", "문서") \
+    X(Prerelease,         "Pre-release", "预发布", "プレリリース", "프리릴리스") \
+    X(ReopenLast,         "Reopen the last file at start", "启动时重新打开上次的文件", "起動時に前回のファイルを開く", "시작할 때 마지막 파일 다시 열기") \
+    X(TipReopenLast,      "The picture or video that was open when the app was closed comes back at the next start.", "关闭时打开着的图片或视频，下次启动时自动重新打开。", "終了時に開いていた画像や動画を、次回の起動時にもう一度開きます。", "종료할 때 열려 있던 사진이나 동영상을 다음 시작 때 다시 엽니다.") \
+    X(SearchHint,         "Search the settings", "搜索设置", "設定を検索", "설정 검색") \
+    X(SearchClear,        "Clear the search", "清除搜索", "検索をクリア", "검색 지우기") \
+    X(SearchNoResults,    "Nothing matches", "没有匹配的设置", "一致する設定はありません", "일치하는 설정이 없습니다") \
     X(UpdateTitle,        "Update available", "有新版本", "アップデートがあります", "업데이트가 있습니다") \
     X(UpdateVersionFmt,   "Version %s is available (you have %s).", "新版本 %s 可用（当前 %s）。", "バージョン %s が利用できます（現在 %s）。", "버전 %s을(를) 사용할 수 있습니다 (현재 %s).") \
     X(UpdatePublished,    "Published %s", "发布于 %s", "%s 公開", "%s 게시") \

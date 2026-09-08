@@ -25,6 +25,9 @@ SamplerState PointClamp  : register(s1);
 // Convert: sender texture -> RGBA8 colour (optionally resampled), luma and NVOF input.
 // Flags: 1 = input is linear (encode to sRGB), 2 = resample, 4 = write NVOF input, 16 = box downsample,
 //        32 = floating-point HDR input: ParamA = 1 / paper white, ParamB = highlight compression (0..1).
+// The picture the passes see is the raw texture turned, mirrored and cropped (SrcWidth x SrcHeight is that
+// picture's size): IntA bits 0-1 = quarter turns clockwise, bit 2 = mirror left-right, bit 3 = mirror top-bottom;
+// Extra2 = raw texture size (x, y) and the crop's top-left corner in the turned picture (z, w).
 
 const char* kConvert = R"HLSL(
 Texture2D<float4>   Src      : register(t0);
@@ -51,6 +54,34 @@ float3 CompressHighlights(float3 c, float strength) {
     return c * lerp(1.0, soft / m, strength);
 }
 
+// Raw texel of a texel of the turned, mirrored, cropped picture.
+int2 RawTexel(int2 t) {
+    int rawW = (int)Extra2.x, rawH = (int)Extra2.y;
+    int2 o = t + int2((int)Extra2.z, (int)Extra2.w);   // in the turned picture
+    uint rot = IntA & 3u;
+    int2 r = o;
+    if (rot == 1u) r = int2(o.y, rawH - 1 - o.x);
+    else if (rot == 2u) r = int2(rawW - 1 - o.x, rawH - 1 - o.y);
+    else if (rot == 3u) r = int2(rawW - 1 - o.y, o.x);
+    if (IntA & 4u) r.x = rawW - 1 - r.x;
+    if (IntA & 8u) r.y = rawH - 1 - r.y;
+    return clamp(r, int2(0, 0), int2(rawW - 1, rawH - 1));
+}
+
+// The same for a continuous position (0..1 in the cropped picture -> 0..1 in the raw texture).
+float2 RawUv(float2 uv) {
+    float rawW = Extra2.x, rawH = Extra2.y;
+    float2 o = uv * float2(SrcWidth, SrcHeight) + Extra2.zw;
+    uint rot = IntA & 3u;
+    float2 r = o;
+    if (rot == 1u) r = float2(o.y, rawH - o.x);
+    else if (rot == 2u) r = float2(rawW - o.x, rawH - o.y);
+    else if (rot == 3u) r = float2(rawW - o.y, o.x);
+    if (IntA & 4u) r.x = rawW - r.x;
+    if (IntA & 8u) r.y = rawH - r.y;
+    return r / float2(rawW, rawH);
+}
+
 float4 SampleCatmullRom(float2 uv) {
     float2 texSize = float2(SrcWidth, SrcHeight);
     float2 samplePos = uv * texSize;
@@ -66,15 +97,15 @@ float4 SampleCatmullRom(float2 uv) {
     float2 texPos3 = (texPos1 + 2.0) / texSize;
     float2 texPos12 = (texPos1 + offset12) / texSize;
     float4 r = 0;
-    r += Src.SampleLevel(LinearClamp, float2(texPos0.x,  texPos0.y), 0) * w0.x  * w0.y;
-    r += Src.SampleLevel(LinearClamp, float2(texPos12.x, texPos0.y), 0) * w12.x * w0.y;
-    r += Src.SampleLevel(LinearClamp, float2(texPos3.x,  texPos0.y), 0) * w3.x  * w0.y;
-    r += Src.SampleLevel(LinearClamp, float2(texPos0.x,  texPos12.y), 0) * w0.x  * w12.y;
-    r += Src.SampleLevel(LinearClamp, float2(texPos12.x, texPos12.y), 0) * w12.x * w12.y;
-    r += Src.SampleLevel(LinearClamp, float2(texPos3.x,  texPos12.y), 0) * w3.x  * w12.y;
-    r += Src.SampleLevel(LinearClamp, float2(texPos0.x,  texPos3.y), 0) * w0.x  * w3.y;
-    r += Src.SampleLevel(LinearClamp, float2(texPos12.x, texPos3.y), 0) * w12.x * w3.y;
-    r += Src.SampleLevel(LinearClamp, float2(texPos3.x,  texPos3.y), 0) * w3.x  * w3.y;
+    r += Src.SampleLevel(LinearClamp, RawUv(float2(texPos0.x,  texPos0.y)), 0) * w0.x  * w0.y;
+    r += Src.SampleLevel(LinearClamp, RawUv(float2(texPos12.x, texPos0.y)), 0) * w12.x * w0.y;
+    r += Src.SampleLevel(LinearClamp, RawUv(float2(texPos3.x,  texPos0.y)), 0) * w3.x  * w0.y;
+    r += Src.SampleLevel(LinearClamp, RawUv(float2(texPos0.x,  texPos12.y)), 0) * w0.x  * w12.y;
+    r += Src.SampleLevel(LinearClamp, RawUv(float2(texPos12.x, texPos12.y)), 0) * w12.x * w12.y;
+    r += Src.SampleLevel(LinearClamp, RawUv(float2(texPos3.x,  texPos12.y)), 0) * w3.x  * w12.y;
+    r += Src.SampleLevel(LinearClamp, RawUv(float2(texPos0.x,  texPos3.y)), 0) * w0.x  * w3.y;
+    r += Src.SampleLevel(LinearClamp, RawUv(float2(texPos12.x, texPos3.y)), 0) * w12.x * w3.y;
+    r += Src.SampleLevel(LinearClamp, RawUv(float2(texPos3.x,  texPos3.y)), 0) * w3.x  * w3.y;
     return r;
 }
 
@@ -91,13 +122,13 @@ void main(uint3 id : SV_DispatchThreadID) {
             int2 hi = min(int2(ceil(srcPos + halfExtent)) - 1, int2(SrcWidth - 1, SrcHeight - 1));
             float4 sum = 0; float n = 0;
             [loop] for (int y = lo.y; y <= hi.y; ++y)
-                [loop] for (int x = lo.x; x <= hi.x; ++x) { sum += Src.Load(int3(x, y, 0)); n += 1.0; }
+                [loop] for (int x = lo.x; x <= hi.x; ++x) { sum += Src.Load(int3(RawTexel(int2(x, y)), 0)); n += 1.0; }
             c = sum / max(n, 1.0);
         } else {
             c = SampleCatmullRom(uv);
         }
     } else {
-        c = Src.Load(int3(id.xy, 0));
+        c = Src.Load(int3(RawTexel(int2(id.xy)), 0));
     }
     if (Flags & 32) {
         c.rgb = max(c.rgb, 0.0) * ParamA;
@@ -572,6 +603,8 @@ void main(uint3 id : SV_DispatchThreadID) {
 //        64 = output blend (ParamC = tone transfer, ParamD = colour strength, ParamE = 1 / input exposure),
 //        128 = strengths above 1: amplify the difference between the result and the original (ParamF = gain).
 // IntA = compare mode (0 output, 1 original, 2 wipe, 3 motion, 4 depth). ParamA = wipe position, ParamB = motion scale.
+// 512 = the display buffer is two pictures wide: the original goes to its left half and the output to its right
+//       half, and the interface draws the wipe between them itself (at its own frame rate).
 
 const char* kComposite = R"HLSL(
 Texture2D<float4>   Original    : register(t0);
@@ -686,10 +719,15 @@ void main(uint3 id : SV_DispatchThreadID) {
         rgb = dz.xxx;
         a = 1.0;
     }
-    if ((Flags & 2) && mode < 3) {
-        float ch = (((id.x >> 4) + (id.y >> 4)) & 1) ? 0.30 : 0.22;
-        rgb = lerp(ch.xxx, rgb, a);
+    float ch = (((id.x >> 4) + (id.y >> 4)) & 1) ? 0.30 : 0.22;
+    if (Flags & 512) {
+        float3 left = orig.rgb, right = outRgb;
+        if (Flags & 2) { left = lerp(ch.xxx, left, orig.a); right = lerp(ch.xxx, right, orig.a); }
+        OutDisplay[id.xy] = float4(left, 1.0);
+        OutDisplay[uint2(id.x + DstWidth, id.y)] = float4(right, 1.0);
+        return;
     }
+    if ((Flags & 2) && mode < 3) rgb = lerp(ch.xxx, rgb, a);
     OutDisplay[id.xy] = float4(rgb, 1.0);
 }
 )HLSL";

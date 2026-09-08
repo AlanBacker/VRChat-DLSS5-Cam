@@ -114,6 +114,7 @@ struct Settings {
     // Misc
     bool showLog = false;
     bool debugLayer = false;
+    bool reopenLast = false;           // open the picture or video of the previous session again at start
 
     bool Load(const std::wstring& path);
     bool Save(const std::wstring& path) const;
@@ -124,6 +125,8 @@ struct Settings {
     // The adjustable values as "key=value" lines, without paths, window placement and interface state: the undo
     // history keeps these snapshots and ApplyText() restores one.
     std::string ParameterText() const;
+    // The effect fields alone (what CopyEffects copies), as "key=value" lines: the user's presets hold these.
+    std::string EffectText() const;
     // The values the processing passes depend on, as text: a still picture is run through the passes again only
     // when this changes (a display, blend or interface change composites the existing result).
     std::string ProcessingText() const;

@@ -1,6 +1,7 @@
 // VRChat DLSS5 Cam - the media library: pictures and videos dropped into the app, with thumbnails and file details
 // read on a background thread, ready to be previewed one by one or processed together.
 #pragma once
+#include "core/SourceFrame.h"
 #include "core/VideoSource.h"
 #include <atomic>
 #include <condition_variable>
@@ -36,6 +37,7 @@ struct LibraryItem {
     double       inSec = 0.0, outSec = 0.0;   // processing range for videos (outSec <= 0: to the end)
     bool         useOwn = false;   // the item is previewed and processed with its own effect values
     std::shared_ptr<Settings> own; // those values (a full settings copy; only the effect fields count)
+    SourceTransform transform;     // how the picture is turned, mirrored and cropped (preview and processing)
 };
 
 // Work for the scanner thread and what comes back.

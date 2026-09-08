@@ -3,6 +3,8 @@
 #include <cfloat>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
+#include <string>
 
 namespace vdc::ui {
 
@@ -526,6 +528,64 @@ void DrawIcon(ImDrawList* dl, Icon icon, const ImVec2& c, float size, ImU32 col)
         }
         break;
     }
+    case Icon::Help: {
+        dl->AddCircle(c, s * 0.82f, col, 0, thick);
+        ImFont* font = ImGui::GetFont();
+        const float fs = size * 0.9f;
+        const ImVec2 ts = font->CalcTextSizeA(fs, FLT_MAX, 0.0f, "?");
+        dl->AddText(font, fs, ImVec2(c.x - ts.x * 0.5f, c.y - ts.y * 0.5f), col, "?");
+        break;
+    }
+    case Icon::Save: {   // the classic disk: a box with a cut corner, the label slot at the top
+        ImVec2 box[6] = { at(-0.75f, -0.75f), at(0.45f, -0.75f), at(0.75f, -0.45f), at(0.75f, 0.75f), at(-0.75f, 0.75f), at(-0.75f, -0.75f) };
+        dl->AddPolyline(box, 6, col, thick);
+        dl->AddRect(at(-0.4f, -0.75f), at(0.3f, -0.2f), col, 0.0f, thick * 0.8f);
+        dl->AddRectFilled(at(-0.4f, 0.2f), at(0.4f, 0.75f), col);
+        break;
+    }
+    case Icon::Edit: {   // a pencil, tip at the lower left
+        ImVec2 body[5] = { at(-0.35f, 0.75f), at(-0.75f, 0.75f), at(-0.75f, 0.35f), at(0.45f, -0.85f), at(0.85f, -0.45f) };
+        dl->AddPolyline(body, 5, col, thick);
+        dl->AddLine(at(-0.35f, 0.75f), at(0.85f, -0.45f), col, thick);
+        dl->AddLine(at(0.2f, -0.6f), at(0.6f, -0.2f), col, thick * 0.8f);
+        break;
+    }
+    case Icon::Plus:
+        dl->AddLine(at(-0.7f, 0.0f), at(0.7f, 0.0f), col, thick);
+        dl->AddLine(at(0.0f, -0.7f), at(0.0f, 0.7f), col, thick);
+        break;
+    case Icon::Search:
+        dl->AddCircle(at(-0.2f, -0.2f), s * 0.5f, col, 0, thick);
+        dl->AddLine(at(0.2f, 0.2f), at(0.8f, 0.8f), col, thick * 1.2f);
+        break;
+    case Icon::RotateLeft:
+    case Icon::RotateRight:   // a small frame with the arc of the turn around it
+        dl->AddRect(at(-0.28f, -0.28f), at(0.28f, 0.28f), col, 1.0f, thick * 0.8f);
+        DrawArcArrow(dl, c, size * 1.15f, icon == Icon::RotateRight, col);
+        break;
+    case Icon::FlipH: {   // two halves about a dashed axis: the mirrored one filled
+        ImVec2 l[3] = { at(-0.15f, -0.7f), at(-0.8f, 0.6f), at(-0.15f, 0.6f) };
+        dl->AddPolyline(l, 3, col, thick);
+        dl->AddLine(l[2], l[0], col, thick);
+        dl->AddTriangleFilled(at(0.15f, -0.7f), at(0.8f, 0.6f), at(0.15f, 0.6f), col);
+        for (int i = 0; i < 4; ++i) dl->AddLine(at(0.0f, -0.9f + 0.5f * i), at(0.0f, -0.9f + 0.5f * i + 0.22f), col, thick * 0.7f);
+        break;
+    }
+    case Icon::FlipV: {
+        ImVec2 u[3] = { at(-0.7f, -0.15f), at(0.6f, -0.8f), at(0.6f, -0.15f) };
+        dl->AddPolyline(u, 3, col, thick);
+        dl->AddLine(u[2], u[0], col, thick);
+        dl->AddTriangleFilled(at(-0.7f, 0.15f), at(0.6f, 0.8f), at(0.6f, 0.15f), col);
+        for (int i = 0; i < 4; ++i) dl->AddLine(at(-0.9f + 0.5f * i, 0.0f), at(-0.9f + 0.5f * i + 0.22f, 0.0f), col, thick * 0.7f);
+        break;
+    }
+    case Icon::Crop: {   // two corner marks that overlap
+        ImVec2 a[3] = { at(-0.45f, -0.9f), at(-0.45f, 0.45f), at(0.9f, 0.45f) };
+        ImVec2 b[3] = { at(-0.9f, -0.45f), at(0.45f, -0.45f), at(0.45f, 0.9f) };
+        dl->AddPolyline(a, 3, col, thick);
+        dl->AddPolyline(b, 3, col, thick);
+        break;
+    }
     case Icon::Lock: {
         dl->AddRectFilled(at(-0.7f, -0.05f), at(0.7f, 0.85f), col, size * 0.1f);
         ImVec2 pts[14];
@@ -539,6 +599,70 @@ void DrawIcon(ImDrawList* dl, Icon icon, const ImVec2& c, float size, ImU32 col)
         break;
     }
     }
+}
+
+// Search ------------------------------------------------------------------------------------
+
+namespace {
+std::string g_query;              // lower-case; empty while nothing is filtered
+bool g_searching = false;
+bool g_searchSkipped = false;      // the last labelled widget was left out
+bool g_sectionAll = false;         // the current section matched by its title: everything in it shows
+ImGuiID g_searchSection = 0;
+int g_searchHitsNow = 0;           // hits of the current section so far
+int g_searchTotal = 0;
+ImGuiStorage g_searchHits;         // hits of every section on the frame it was last drawn
+
+std::string Lower(const char* s, const char* end = nullptr) {
+    std::string out;
+    if (!s) return out;
+    if (!end) end = s + std::strlen(s);
+    out.reserve((size_t)(end - s));
+    for (const char* c = s; c < end; ++c) out.push_back((*c >= 'A' && *c <= 'Z') ? (char)(*c + 32) : *c);
+    return out;
+}
+bool Contains(const char* text) {
+    if (!text || !*text) return false;
+    return Lower(text, ImGui::FindRenderedTextEnd(text)).find(g_query) != std::string::npos;
+}
+void CloseSearchSection() {
+    if (g_searchSection) g_searchHits.SetInt(g_searchSection, g_searchHitsNow);
+    g_searchSection = 0;
+    g_searchHitsNow = 0;
+    g_sectionAll = false;
+}
+}
+
+void SearchBegin(const char* query) {
+    std::string q = Lower(query);
+    while (!q.empty() && q.front() == ' ') q.erase(q.begin());
+    while (!q.empty() && q.back() == ' ') q.pop_back();
+    if (q != g_query) g_searchHits.Clear();   // a new query: every section gets a look
+    g_query = q;
+    g_searching = !g_query.empty();
+    g_searchSkipped = false;
+    g_searchTotal = 0;
+    g_searchSection = 0;
+    g_searchHitsNow = 0;
+    g_sectionAll = false;
+}
+
+void SearchEnd() {
+    CloseSearchSection();
+    g_searching = false;
+    g_searchSkipped = false;
+}
+
+bool Searching() { return g_searching; }
+bool SearchSkipped() { return g_searchSkipped; }
+int SearchHits() { return g_searchTotal; }
+
+bool SearchMatch(const char* label, const char* tooltip) {
+    if (!g_searching) { g_searchSkipped = false; return true; }
+    const bool hit = g_sectionAll || Contains(label) || Contains(tooltip);
+    if (hit) { ++g_searchHitsNow; ++g_searchTotal; }
+    g_searchSkipped = !hit;
+    return hit;
 }
 
 // Buttons -----------------------------------------------------------------------------------
@@ -577,6 +701,7 @@ bool ButtonFrame(ImGuiID id, const ImVec2& size, ImU32 bg, ImU32 bgHover, ImU32 
 bool TextButton(const char* label, const ImVec2& sizeArg, ButtonKind kind) {
     ImGuiWindow* window = ImGui::GetCurrentWindow();
     if (window->SkipItems) return false;
+    if (!SearchMatch(label)) return false;
     const ImGuiStyle& style = ImGui::GetStyle();
     const ImGuiID id = window->GetID(label);
     const ImVec2 labelSize = ImGui::CalcTextSize(label, nullptr, true);
@@ -621,6 +746,7 @@ bool GhostButton(const char* label, const ImVec2& size) { return TextButton(labe
 bool DangerButton(const char* label, const ImVec2& sizeArg) {
     ImGuiWindow* window = ImGui::GetCurrentWindow();
     if (window->SkipItems) return false;
+    if (!SearchMatch(label)) return false;
     const ImGuiStyle& style = ImGui::GetStyle();
     const Palette& p = Colors();
     const ImGuiID id = window->GetID(label);
@@ -657,6 +783,7 @@ bool ChevronButton(const char* id, float angle, const ImVec2& size, const char* 
 bool Toggle(const char* label, bool* v) {
     ImGuiWindow* window = ImGui::GetCurrentWindow();
     if (window->SkipItems) return false;
+    if (!SearchMatch(label)) return false;
     const ImGuiStyle& style = ImGui::GetStyle();
     const float height = ImGui::GetFrameHeight() * 0.86f;
     const float width = height * 1.8f;
@@ -704,6 +831,15 @@ bool SectionHeader(const char* label, const char* id, bool defaultOpen) {
     const ImGuiID hid = window->GetID("##header");
     ImGuiStorage* storage = window->DC.StateStorage;
     bool open = storage->GetBool(hid, defaultOpen);
+    if (g_searching) {
+        // Filtering: the section shows open when its title matches or one of its widgets did on the last frame it was
+        // drawn; a section that showed nothing stays out until the query changes.
+        CloseSearchSection();
+        g_searchSection = hid;
+        g_sectionAll = Contains(label);
+        if (!g_sectionAll && g_searchHits.GetInt(hid, 1) == 0) { ImGui::PopID(); return false; }
+        open = true;
+    }
 
     const ImVec2 pad(8.0f, 7.0f);
     ImGui::PushFont(nullptr, ImGui::GetFontSize() * 1.02f);
@@ -715,7 +851,7 @@ bool SectionHeader(const char* label, const char* id, bool defaultOpen) {
     ImGui::ItemSize(bb, pad.y);
     bool hovered = false, held = false, pressed = false;
     if (ImGui::ItemAdd(bb, hid)) pressed = ImGui::ButtonBehavior(bb, hid, &hovered, &held, ImGuiButtonFlags_PressedOnClick);
-    if (pressed) { open = !open; storage->SetBool(hid, open); }
+    if (pressed && !g_searching) { open = !open; storage->SetBool(hid, open); }
     const float t = AnimateLinear(hid ^ 0x51ED270Bu, open ? 1.0f : 0.0f, 0.2f);
     const float hov = Animate(hid ^ kHoverKey, (hovered || held) ? 1.0f : 0.0f, 16.0f);
 
@@ -758,6 +894,7 @@ void SectionEnd() {
 }
 
 void SectionLabel(const char* text) {
+    if (g_searching && !g_sectionAll) return;   // a group caption without its group would mislead
     const Palette& p = Colors();
     ImGui::Spacing();
     ImGui::PushStyleColor(ImGuiCol_Text, p.textDim);
@@ -771,6 +908,7 @@ void SectionLabel(const char* text) {
 }
 
 void Help(const char* text) {
+    if (g_searchSkipped) return;   // it belongs to a widget that was left out
     ImGui::SameLine();
     ImGuiWindow* window = ImGui::GetCurrentWindow();
     if (window->SkipItems) return;
@@ -797,6 +935,7 @@ void Help(const char* text) {
 }
 
 void Hint(const char* text) {
+    if (g_searching && !g_sectionAll) return;
     ImGui::PushStyleColor(ImGuiCol_Text, Colors().textDim);
     ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x);
     ImGui::TextUnformatted(text);
@@ -846,6 +985,7 @@ bool ResetButton(bool enabled, float size) {
 }
 
 bool SliderReset(const char* label, float* v, float minV, float maxV, float def, const char* fmt, const char* tooltip) {
+    if (!SearchMatch(label, tooltip)) return false;
     ImGui::PushID(label);
     const float resetW = ImGui::GetFrameHeight();
     const ImGuiStyle& style = ImGui::GetStyle();
@@ -861,6 +1001,7 @@ bool SliderReset(const char* label, float* v, float minV, float maxV, float def,
 }
 
 bool SliderIntReset(const char* label, int* v, int minV, int maxV, int def, const char* fmt, const char* tooltip) {
+    if (!SearchMatch(label, tooltip)) return false;
     ImGui::PushID(label);
     const float resetW = ImGui::GetFrameHeight();
     const ImGuiStyle& style = ImGui::GetStyle();
@@ -926,6 +1067,7 @@ bool Segmented(const char* id, const char* const* labels, int count, int* value,
 }
 
 void KeyValue(const char* key, const char* value) {
+    if (!SearchMatch(key, value)) return;
     ImGui::TextDisabled("%s", key);
     ImGui::SameLine(ImGui::GetContentRegionAvail().x * 0.42f + ImGui::GetCursorPosX() * 0.0f);
     ImGui::TextUnformatted(value);

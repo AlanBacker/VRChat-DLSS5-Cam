@@ -80,7 +80,7 @@ struct PipelineStatus {
 struct DisplayView {
     D3D12_GPU_DESCRIPTOR_HANDLE srv{};
     UINT width = 0, height = 0;
-    float wipe = 0.5f;          // wipe position the composite was made with (the interface draws the handle there)
+    bool wide = false;          // two pictures side by side (original, output): the interface draws the wipe itself
     bool valid = false;
 };
 
@@ -148,12 +148,14 @@ private:
         std::wstring path;
     };
     struct Config {
-        UINT srcW = 0, srcH = 0; DXGI_FORMAT srcFmt = DXGI_FORMAT_UNKNOWN;
+        UINT srcW = 0, srcH = 0; DXGI_FORMAT srcFmt = DXGI_FORMAT_UNKNOWN;   // the source as the passes see it (turned, cropped)
+        UINT rawW = 0, rawH = 0, xformBits = 0, cropX0 = 0, cropY0 = 0;      // the texture behind it and the orientation
         UINT inW = 0, inH = 0, outW = 0, outH = 0;
         bool nvof = false; UINT nvofGrid = 2, nvofPerf = 10; bool nvofBidir = true;
         bool depthEst = false; UINT depthLongSide = 336; std::wstring depthModel;
         bool operator==(const Config& o) const {
             return srcW == o.srcW && srcH == o.srcH && srcFmt == o.srcFmt && inW == o.inW && inH == o.inH &&
+                   rawW == o.rawW && rawH == o.rawH && xformBits == o.xformBits && cropX0 == o.cropX0 && cropY0 == o.cropY0 &&
                    outW == o.outW && outH == o.outH && nvof == o.nvof && nvofGrid == o.nvofGrid && nvofPerf == o.nvofPerf &&
                    nvofBidir == o.nvofBidir && depthEst == o.depthEst && depthLongSide == o.depthLongSide && depthModel == o.depthModel;
         }
@@ -169,7 +171,7 @@ private:
     void ReleaseFeatures(GpuContext& gpu);
     void ReleaseDepthResources(GpuContext& gpu);
     bool CreateDepthResources(GpuContext& gpu, const Config& cfg);
-    bool CreateDisplayBuffers(GpuContext& gpu, UINT w, UINT h);
+    bool CreateDisplayBuffers(GpuContext& gpu, UINT w, UINT h, bool wide);
     void RetireDisplayBuffers(GpuContext& gpu);
     Config ComputeConfig(const SourceFrame& src, const Settings& s) const;
     std::wstring DepthModelPath(const Settings& s) const;
@@ -245,16 +247,16 @@ private:
     Tex            m_displayBuf[kDisplayBuffers];
     DescriptorPair m_displaySrv[kDisplayBuffers];
     int            m_displayTarget = -1;            // buffer written by the frame being recorded
-    float          m_displayWipe = 0.5f;            // wipe position that frame composites with
+    bool           m_displayWide = false;           // the buffers hold the original and the output side by side (wipe)
     struct DisplayShared {
-        struct Pending { int buffer = -1; UINT64 fence = 0; float wipe = 0.5f; };
+        struct Pending { int buffer = -1; UINT64 fence = 0; };
         Pending pending[kDisplayBuffers];           // submitted composites, oldest first, with their processing fence
         UINT   pendingCount = 0;
         bool   starved = false;                     // the last composite found no free buffer (display write skipped)
         UINT   generation = 0;                      // bumped whenever the buffers are recreated
         UINT   width = 0, height = 0;
+        bool   wide = false;
         int    uiUsing = -1;                        // buffer the UI thread currently samples
-        float  uiWipe = 0.5f;                       // wipe position of that composite
         UINT   uiGeneration = 0;
         UINT64 uiRelease[kDisplayBuffers] = {};     // present-queue fence after which a buffer is free again
     };

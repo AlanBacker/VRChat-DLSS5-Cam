@@ -24,6 +24,12 @@ namespace vdc {
 using Microsoft::WRL::ComPtr;
 
 namespace {
+std::string Trim(const std::string& s) {
+    size_t a = 0, b = s.size();
+    while (a < b && (s[a] == ' ' || s[a] == '\t' || s[a] == '\r')) ++a;
+    while (b > a && (s[b - 1] == ' ' || s[b - 1] == '\t' || s[b - 1] == '\r')) --b;
+    return s.substr(a, b - a);
+}
 constexpr int      kHotkeyId = 1;
 constexpr UINT_PTR kSizeTimer = 1;
 constexpr const wchar_t* kWindowClass = L"VRChatDLSS5CamWindow";
@@ -273,6 +279,7 @@ bool App::Init(HINSTANCE hInstance, int nCmdShow) {
     m_exeDir = GetExeDir();
     m_appDataDir = GetAppDataDir();
     m_settingsPath = JoinPath(m_appDataDir, L"settings.ini");
+    m_presetsPath = JoinPath(m_appDataDir, L"presets.txt");
     Log::Init(JoinPath(m_appDataDir, L"log.txt"));
     Log::Info("VRChat DLSS5 Cam %s starting%s", APP_VERSION_STRING, m_headless ? " (headless)" : "");
     Log::Info("Executable folder: %s", WideToUtf8(m_exeDir).c_str());
@@ -288,7 +295,8 @@ bool App::Init(HINSTANCE hInstance, int nCmdShow) {
     // The start-up card covers the time until the main window has its first frame.
     ReadSystemTheme();
     if (!m_cli.splashDump.empty()) m_splash.SetDumpPath(m_cli.splashDump);
-    if (!m_headless) m_splash.Show(hInstance, m_settings.theme == 2 || (m_settings.theme == 0 && m_systemLight), APP_VERSION_STRING, TR(SplashStarting));
+    if (!m_headless) m_splash.Show(hInstance, m_settings.theme == 2 || (m_settings.theme == 0 && m_systemLight), APP_VERSION_STRING, APP_PRERELEASE != 0, TR(SplashStarting));
+    LoadPresets();
 
     const HRESULT hrCo = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
     if (FAILED(hrCo)) Log::Hr(LogLevel::Warn, "CoInitializeEx", hrCo);
@@ -348,7 +356,8 @@ bool App::Init(HINSTANCE hInstance, int nCmdShow) {
     PushSettings();
     RequestRuntimeLoad(false);
     if (!m_headless && (m_cli.update || (!m_cli.process && m_settings.updateCheck))) m_updater.Check(APP_VERSION_STRING, m_settings.updateChannel == 1, false);
-    if (m_cli.open.empty()) {
+    // The previous session's file comes back only when the user asked for that.
+    if (m_cli.open.empty() && m_settings.reopenLast) {
         if (m_settings.sourceMode == SourceImage && !m_settings.imagePath.empty()) {
             const std::wstring path = Utf8ToWide(m_settings.imagePath);
             if (FileExists(path)) {
@@ -928,6 +937,7 @@ void App::WorkerMain() {
     bool     imageCapturePending = false;
     Command  imageCapture;
     bool     videoChanged = false;           // video texture recreated since the last processed frame
+    SourceTransform imageXform, videoXform;  // orientation and crop of the loaded picture / video
     int      userMode = SourceSpout;         // the source mode chosen in the interface (a batch overrides it)
     VideoRun videoRun;
     BatchRun batch;
@@ -999,8 +1009,21 @@ void App::WorkerMain() {
             case Command::LoadImage:
                 if (batch.active) break;
                 WorkerLoadImage(gpu, c.path, true);
+                imageXform = c.transform;
                 imageChanged = true;
                 passesLeft = kImageConvergePasses;
+                break;
+            case Command::SetTransform:
+                // For the file that is loaded; one for a file that is not (any more) is stale and dropped.
+                if (batch.active) break;
+                if (c.video ? (m_video.Loaded() && SamePath(m_video.Path(), c.path)) : (m_image.Loaded() && SamePath(m_image.Path(), c.path))) {
+                    SourceTransform& x = c.video ? videoXform : imageXform;
+                    if (x != c.transform) {
+                        x = c.transform;
+                        if (c.video) videoChanged = true; else imageChanged = true;
+                        passesLeft = kImageConvergePasses;
+                    }
+                }
                 break;
             case Command::CaptureImage:
                 if (batch.active) break;
@@ -1010,6 +1033,7 @@ void App::WorkerMain() {
             case Command::LoadVideo:
                 if (batch.active || videoRun.active) break;
                 WorkerLoadVideo(gpu, c.path, settings.videoHardwareDecode, true);
+                videoXform = c.transform;
                 videoChanged = true;
                 passesLeft = kImageConvergePasses;
                 break;
@@ -1035,6 +1059,8 @@ void App::WorkerMain() {
                 batch.saveOriginal = c.saveOriginal;
                 batch.restoreImage = m_image.Path();
                 batch.restoreVideo = m_video.Path();
+                batch.restoreImageXform = imageXform;
+                batch.restoreVideoXform = videoXform;
                 batch.active = true;
                 imageCapturePending = false;
                 if (m_preview.running) m_video.StopSequence();
@@ -1097,6 +1123,8 @@ void App::WorkerMain() {
                 else if (m_image.Loaded()) m_image.Release(gpu);
                 if (!ended.restoreVideo.empty()) { if (!SamePath(m_video.Path(), ended.restoreVideo)) WorkerLoadVideo(gpu, ended.restoreVideo, settings.videoHardwareDecode, false); }
                 else if (m_video.Loaded()) m_video.Close(gpu);
+                imageXform = ended.restoreImageXform;
+                videoXform = ended.restoreVideoXform;
                 imageChanged = videoChanged = true;
                 passesLeft = kImageConvergePasses;
                 PostBatchEvent(0, LibraryItem::Idle, "", "");   // the batch is over
@@ -1115,6 +1143,7 @@ void App::WorkerMain() {
             PostBatchEvent(item.id, LibraryItem::Processing, "", "");
             if (item.isVideo) {
                 WorkerLoadVideo(gpu, item.path, settings.videoHardwareDecode, false);
+                videoXform = item.transform;
                 std::string err;
                 if (!m_video.Loaded() || !SamePath(m_video.Path(), item.path) ||
                     !WorkerStartVideo(settings, videoRun, batch.folder, item.inSec, item.outSec, err)) {
@@ -1127,6 +1156,7 @@ void App::WorkerMain() {
                 passesLeft = 0;
             } else {
                 WorkerLoadImage(gpu, item.path, false);
+                imageXform = item.transform;
                 if (!m_image.Loaded() || !SamePath(m_image.Path(), item.path)) {
                     PostBatchEvent(item.id, LibraryItem::Failed, "", m_workerLastError);
                     ++batch.failed; ++batch.index;
@@ -1293,6 +1323,8 @@ void App::WorkerMain() {
             const double tRecord = NowSeconds();
             if (imageMode) { m_image.Upload(cmd, gpu); src = m_image.Frame(); imageChanged = false; }
             else if (videoMode) { m_video.Upload(cmd, gpu); src = m_video.Frame(!videoRun.active && !m_preview.running); videoChanged = false; }
+            if (imageMode) src.transform = imageXform;
+            else if (videoMode) src.transform = videoXform;
             m_pipeline.Render(gpu, src, settings, cmd, fresh, changed);
             const double tSubmit = NowSeconds();
             const UINT64 fence = gpu.EndFrame();
@@ -1645,8 +1677,12 @@ void App::Frame() {
     info.displayTexture = display.valid ? (ImTextureID)display.srv.ptr : (ImTextureID)0;
     info.displayWidth = display.width;
     info.displayHeight = display.height;
-    info.displayWipe = display.wipe;
+    info.displayWide = display.wide;
+    if (const LibraryItem* shown = ShownItem()) info.shownItem = shown->id;
     info.appVersion = APP_VERSION_STRING;
+    info.prerelease = APP_PRERELEASE != 0;
+    info.windowShown = m_mainShown;
+    info.presets = &m_presets;
     {
         const Updater::Status us = m_updater.Get();
         info.updateState = (int)us.state;
@@ -1898,6 +1934,7 @@ void App::HandleEvents(ui::UiEvents& ev) {
     }
     if (ev.libraryAddFiles) m_pendingBrowseLibraryFiles = true;
     if (ev.libraryAddFolder) m_pendingBrowseLibraryFolder = true;
+    SyncTransform(ev);
 
     if (ev.reloadDepth) { m_pipeline.RestartDepthEstimator(); WakeWorker(); }
     if (ev.browseFolder) m_pendingBrowseFolder = true;
@@ -1909,6 +1946,27 @@ void App::HandleEvents(ui::UiEvents& ev) {
     if (ev.openLogFile) OpenPath(Log::FilePath());
     if (ev.openSettingsFolder) OpenPath(m_appDataDir);
     if (ev.openProjectPage) OpenPath(kProjectUrl);
+    if (ev.openDocs) OpenPath(DocsUrl());
+    // Presets.
+    if (ev.presetSave) {
+        const std::string name = Trim(ev.presetName);
+        if (!name.empty()) {
+            const std::string text = m_settings.EffectText();
+            bool replaced = false;
+            for (ui::UserPreset& pr : m_presets) if (pr.name == name) { pr.text = text; replaced = true; }
+            if (!replaced) m_presets.push_back({ name, text });
+            SavePresets();
+            m_ui.Toast(StrPrintf(replaced ? TR(PresetReplaced) : TR(PresetSaved), name.c_str()), false);
+        }
+    }
+    if (ev.presetRename >= 0 && ev.presetRename < (int)m_presets.size()) {
+        const std::string name = Trim(ev.presetName);
+        if (!name.empty()) { m_presets[(size_t)ev.presetRename].name = name; SavePresets(); }
+    }
+    if (ev.presetDelete >= 0 && ev.presetDelete < (int)m_presets.size()) {
+        m_presets.erase(m_presets.begin() + ev.presetDelete);
+        SavePresets();
+    }
     if (ev.updateCheckNow) m_updater.Check(APP_VERSION_STRING, m_settings.updateChannel == 1, true);
     if (ev.updateStart) m_updater.Download(m_exeDir, JoinPath(m_appDataDir, L"update"));
     if (ev.updateCancel) m_updater.Cancel();
@@ -2028,6 +2086,8 @@ void App::OpenImageFile(const std::wstring& path) {
     Command c;
     c.type = Command::LoadImage;
     c.path = path;
+    c.transform = LibraryTransform(path, false);
+    m_sentTransform = c.transform; m_sentTransformPath = path; m_sentTransformVideo = false;
     PostCommand(std::move(c));
 }
 
@@ -2042,6 +2102,93 @@ void App::OpenVideoFile(const std::wstring& path) {
     Command c;
     c.type = Command::LoadVideo;
     c.path = path;
+    c.transform = LibraryTransform(path, true);
+    m_sentTransform = c.transform; m_sentTransformPath = path; m_sentTransformVideo = true;
+    PostCommand(std::move(c));
+}
+
+// presets.txt: "[preset]" opens an entry, "name=" gives its name, the other lines are its effect values.
+void App::LoadPresets() {
+    m_presets.clear();
+    FILE* f = nullptr;
+    if (_wfopen_s(&f, m_presetsPath.c_str(), L"rb") != 0 || !f) return;
+    std::string data;
+    char buf[4096];
+    size_t n;
+    while ((n = fread(buf, 1, sizeof(buf), f)) > 0) data.append(buf, n);
+    fclose(f);
+    ui::UserPreset* cur = nullptr;
+    size_t pos = 0;
+    while (pos <= data.size()) {
+        size_t eol = data.find('\n', pos);
+        if (eol == std::string::npos) eol = data.size();
+        const std::string line = Trim(data.substr(pos, eol - pos));
+        pos = eol + 1;
+        if (line.empty() || line[0] == '#') continue;
+        if (line == "[preset]") { m_presets.push_back({}); cur = &m_presets.back(); continue; }
+        if (!cur) continue;
+        if (line.rfind("name=", 0) == 0) cur->name = Trim(line.substr(5));
+        else if (line.find('=') != std::string::npos) cur->text += line + "\n";
+    }
+    // Entries without a name are of no use.
+    m_presets.erase(std::remove_if(m_presets.begin(), m_presets.end(), [](const ui::UserPreset& pr) { return pr.name.empty(); }), m_presets.end());
+    Log::Info("Presets: %zu loaded", m_presets.size());
+}
+
+void App::SavePresets() const {
+    std::string out = "# VRChat DLSS5 Cam presets\n";
+    for (const ui::UserPreset& pr : m_presets) {
+        out += "\n[preset]\nname=" + pr.name + "\n" + pr.text;
+    }
+    FILE* f = nullptr;
+    if (_wfopen_s(&f, m_presetsPath.c_str(), L"wb") != 0 || !f) { Log::Warn("Presets: cannot write %s", WideToUtf8(m_presetsPath).c_str()); return; }
+    fwrite(out.data(), 1, out.size(), f);
+    fclose(f);
+}
+
+std::wstring App::DocsUrl() const {
+    switch (I18n::Current()) {
+        case Lang::Chinese:  return std::wstring(kProjectUrl) + L"/blob/main/docs/README.zh-CN.md";
+        case Lang::Japanese: return std::wstring(kProjectUrl) + L"/blob/main/docs/README.ja.md";
+        case Lang::Korean:   return std::wstring(kProjectUrl) + L"/blob/main/docs/README.ko.md";
+        default:             return std::wstring(kProjectUrl) + L"/blob/main/README.md";
+    }
+}
+
+// The orientation and crop a file has in the library (as it comes, for a file that is not in it).
+SourceTransform App::LibraryTransform(const std::wstring& path, bool video) const {
+    for (const LibraryItem& item : m_library)
+        if (item.isVideo == video && SamePath(item.path, path)) return item.transform;
+    return SourceTransform{};
+}
+
+// The library item shown in the preview (null: none, or a file that is not in the library).
+const LibraryItem* App::ShownItem() const {
+    const bool video = m_settings.sourceMode == SourceVideo, image = m_settings.sourceMode == SourceImage;
+    if (!video && !image) return nullptr;
+    const std::wstring& shown = video ? m_source.videoPath : m_source.imagePath;
+    if (shown.empty() || (video && !m_source.videoLoaded) || (image && !m_source.imageLoaded)) return nullptr;
+    for (const LibraryItem& item : m_library)
+        if (item.isVideo == video && SamePath(item.path, shown)) return &item;
+    return nullptr;
+}
+
+// The shown file's orientation follows its library item (edits, undo, a restore) or, while its crop is being
+// drawn, the whole turned picture; the processing thread is told whenever that differs from what it was last sent.
+void App::SyncTransform(const ui::UiEvents& ev) {
+    const bool video = m_settings.sourceMode == SourceVideo, image = m_settings.sourceMode == SourceImage;
+    if (!video && !image) return;
+    const std::wstring& shown = video ? m_source.videoPath : m_source.imagePath;
+    if (shown.empty() || (video && !m_source.videoLoaded) || (image && !m_source.imageLoaded)) return;
+    SourceTransform want = LibraryTransform(shown, video);
+    if (ev.cropEditing) { want = ev.cropPreview; want.cropX = want.cropY = 0.0f; want.cropW = want.cropH = 1.0f; }
+    if (m_sentTransformVideo == video && SamePath(m_sentTransformPath, shown) && m_sentTransform == want) return;
+    m_sentTransform = want; m_sentTransformPath = shown; m_sentTransformVideo = video;
+    Command c;
+    c.type = Command::SetTransform;
+    c.path = shown;
+    c.video = video;
+    c.transform = want;
     PostCommand(std::move(c));
 }
 
@@ -2242,6 +2389,7 @@ void App::RestoreLibrary(const std::vector<ui::LibrarySnapshotItem>& wanted) {
             item.own->ApplyText(w.own);
             item.own->Clamp();
         }
+        item.transform = w.transform;
         next.push_back(std::move(item));
     }
     for (size_t i = 0; i < m_library.size(); ++i) {
@@ -2286,6 +2434,7 @@ void App::StartLibraryProcessing(bool selectedOnly) {
         if (item.probe == 2) continue;   // unreadable
         BatchItem b;
         b.id = item.id; b.path = item.path; b.isVideo = item.isVideo; b.inSec = item.inSec; b.outSec = item.outSec;
+        b.transform = item.transform;
         if (item.useOwn && item.own) b.own = std::make_shared<Settings>(*item.own);
         items.push_back(b);
     }

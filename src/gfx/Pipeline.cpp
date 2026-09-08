@@ -159,8 +159,10 @@ void Pipeline::ReleaseResources(GpuContext& gpu, bool shutdown) {
 
 Pipeline::Config Pipeline::ComputeConfig(const SourceFrame& src, const Settings& s) const {
     Config c;
-    c.srcW = src.width; c.srcH = src.height; c.srcFmt = src.format;
-    if (!c.srcW || !c.srcH) return c;
+    c.rawW = src.width; c.rawH = src.height; c.srcFmt = src.format;
+    if (!c.rawW || !c.rawH) return c;
+    src.transform.Resolve(c.rawW, c.rawH, c.srcW, c.srcH, c.cropX0, c.cropY0);
+    c.xformBits = src.transform.Bits();
     c.outW = c.srcW; c.outH = c.srcH;
     if (s.customResolution) {
         c.outW = Even((UINT)s.customWidth);
@@ -267,7 +269,7 @@ bool Pipeline::Rebuild(GpuContext& gpu, const Config& cfg) {
     ok &= CreateTex(gpu, m_nrIn, m_inW, m_inH, DXGI_FORMAT_R8G8B8A8_UNORM, true, L"nrIn");
     m_nrInW = m_inW; m_nrInH = m_inH; m_nrOutW = m_outW; m_nrOutH = m_outH; m_nrScaled = false;
     ok &= CreateTex(gpu, m_final, m_outW, m_outH, DXGI_FORMAT_R8G8B8A8_UNORM, true, L"final");
-    ok &= CreateDisplayBuffers(gpu, m_outW, m_outH);
+    ok &= CreateDisplayBuffers(gpu, m_displayWide ? m_outW * 2 : m_outW, m_outH, m_displayWide);
     if (!ok) { ReleaseResources(gpu); return false; }
 
     // Stats buffer + readbacks.
@@ -436,7 +438,7 @@ void Pipeline::StatusSnapshot(PipelineStatus& out) const {
 
 // --- preview hand-off -------------------------------------------------------------------------
 
-bool Pipeline::CreateDisplayBuffers(GpuContext& gpu, UINT w, UINT h) {
+bool Pipeline::CreateDisplayBuffers(GpuContext& gpu, UINT w, UINT h, bool wide) {
     RetireDisplayBuffers(gpu);
     GpuContext& ui = gpu.Dev().Ui();
     ID3D12Device* dev = gpu.Dev().D3D12();
@@ -451,7 +453,7 @@ bool Pipeline::CreateDisplayBuffers(GpuContext& gpu, UINT w, UINT h) {
         dev->CreateShaderResourceView(m_displayBuf[i].res.Get(), &sd, m_displaySrv[i].cpu);
     }
     std::lock_guard<std::mutex> lock(m_displayMutex);
-    m_disp.width = w; m_disp.height = h;
+    m_disp.width = w; m_disp.height = h; m_disp.wide = wide;
     return true;
 }
 
@@ -488,7 +490,6 @@ DisplayView Pipeline::AcquireDisplay(GpuContext& ui) {
     }
     if (newest >= 0) {
         m_disp.uiUsing = m_disp.pending[newest].buffer;
-        m_disp.uiWipe = m_disp.pending[newest].wipe;
         m_disp.uiGeneration = m_disp.generation;
         const UINT remaining = m_disp.pendingCount - (UINT)newest - 1;
         for (UINT i = 0; i < remaining; ++i) m_disp.pending[i] = m_disp.pending[(UINT)newest + 1 + i];
@@ -499,7 +500,7 @@ DisplayView Pipeline::AcquireDisplay(GpuContext& ui) {
     v.srv = m_displaySrv[m_disp.uiUsing].gpu;
     v.width = m_disp.width;
     v.height = m_disp.height;
-    v.wipe = m_disp.uiWipe;
+    v.wide = m_disp.wide;
     v.valid = v.width > 0 && v.height > 0;
     return v;
 }
@@ -521,6 +522,10 @@ void Pipeline::RunConvert(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const
     d.id = ShaderId::Convert;
     d.constants.srcWidth = m_srcW; d.constants.srcHeight = m_srcH;
     d.constants.dstWidth = m_inW; d.constants.dstHeight = m_inH;
+    // Orientation and crop of the file (see the shader): the raw texture's size and the crop's corner.
+    d.constants.intA = m_cfg.xformBits;
+    d.constants.extra2[0] = (float)src.width; d.constants.extra2[1] = (float)src.height;
+    d.constants.extra2[2] = (float)m_cfg.cropX0; d.constants.extra2[3] = (float)m_cfg.cropY0;
     UINT flags = 0;
     if (src.linear) flags |= 1;
     if (m_inW != m_srcW || m_inH != m_srcH) {
@@ -1088,10 +1093,10 @@ void Pipeline::RunComposite(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, con
         flags |= 128;
         d.constants.paramF = std::min(gain, 2.0f);
     }
+    if (display && m_displayWide) flags |= 512;   // original left, output right; the interface draws the wipe
     d.constants.flags = flags;
     d.constants.intA = (UINT)s.compareMode;
     d.constants.paramA = s.wipePosition;
-    m_displayWipe = s.wipePosition;
     d.constants.paramB = kMotionViewScale;
     d.srv[0] = m_color8.srv; d.srv[1] = processed.srv; d.srv[2] = m_mv.srv; d.srv[3] = m_conf.srv; d.srv[4] = m_depth.srv;
     if (flags & 64) { d.srv[5] = neuralBase->srv; d.srv[6] = neuralInput->srv; }
@@ -1171,9 +1176,18 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
         return;
     }
     const Config cfg = ComputeConfig(src, s);
+    // The wipe shows the original and the output side by side in one double-width display buffer, so the interface
+    // can move the split at its own frame rate. The buffers change shape when the compare mode enters or leaves
+    // the wipe; a rebuild makes them in the right shape from the start.
+    const bool wide = s.compareMode == CompareWipe;
     if (!m_built || !(cfg == m_cfg) || sourceChanged) {
+        m_displayWide = wide;
         if (!Rebuild(gpu, cfg)) { m_hasDisplay = false; return; }
         fresh = src.hasFrame;
+    } else if (wide != m_displayWide) {
+        m_displayWide = wide;
+        gpu.WaitIdle();   // no composite may still be writing the old buffers
+        if (!CreateDisplayBuffers(gpu, wide ? m_outW * 2 : m_outW, m_outH, wide)) { m_hasDisplay = false; return; }
     }
     m_status.srcWidth = m_srcW; m_status.srcHeight = m_srcH;
     m_status.inWidth = m_inW; m_status.inHeight = m_inH;
@@ -1454,7 +1468,7 @@ void Pipeline::AfterSubmit(GpuContext& gpu, UINT64 fenceValue) {
         if (r.inUse && r.fence == 0) r.fence = fence;
     if (m_displayTarget >= 0) {
         std::lock_guard<std::mutex> lock(m_displayMutex);
-        if (m_disp.pendingCount < kDisplayBuffers) m_disp.pending[m_disp.pendingCount++] = { m_displayTarget, fence, m_displayWipe };
+        if (m_disp.pendingCount < kDisplayBuffers) m_disp.pending[m_disp.pendingCount++] = { m_displayTarget, fence };
         m_displayTarget = -1;
     }
 }

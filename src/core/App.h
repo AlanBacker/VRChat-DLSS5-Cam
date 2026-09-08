@@ -110,6 +110,7 @@ private:
         bool         isVideo = false;
         double       inSec = 0.0, outSec = 0.0;
         std::shared_ptr<Settings> own;           // the item's own effect values (a copy), or null
+        SourceTransform transform;               // the item's orientation and crop
     };
     struct BatchEvent {
         unsigned    id = 0;
@@ -119,9 +120,10 @@ private:
     };
     struct Command {
         enum Type { LoadRuntime, LoadImage, CaptureImage, LoadVideo, ProcessVideo, CancelVideo, BatchStart, BatchCancel,
-                    VideoSeek, VideoPlay, VideoPause, VideoStep, VideoSetRange, CloseMedia };
+                    VideoSeek, VideoPlay, VideoPause, VideoStep, VideoSetRange, CloseMedia, SetTransform };
         Type         type = LoadRuntime;
-        std::wstring path;                       // runtime DLL / image or video file / capture folder
+        std::wstring path;                       // runtime DLL / image or video file / capture folder / SetTransform: the file it is for
+        SourceTransform transform;               // LoadImage, LoadVideo, SetTransform: orientation and crop of the file
         bool         announce = false;           // LoadRuntime: toast on success and on a missing file
         bool         keepAlpha = true;           // CaptureImage, BatchStart
         bool         saveOriginal = false;       // CaptureImage, BatchStart
@@ -178,6 +180,7 @@ private:
         std::wstring folder;
         bool         keepAlpha = true, saveOriginal = false;
         std::wstring restoreImage, restoreVideo; // the user's own files, reopened afterwards
+        SourceTransform restoreImageXform, restoreVideoXform;
     };
     struct Shared {
         std::mutex               mutex;
@@ -239,7 +242,14 @@ private:
     void RemoveSelectedLibraryItems();
     void RestoreLibrary(const std::vector<ui::LibrarySnapshotItem>& wanted);   // undo/redo of library changes
     void LocateLibraryItem(unsigned id);         // Explorer with the file selected
+    // The user's presets: a file of named effect values in the data folder.
+    void LoadPresets();
+    void SavePresets() const;
+    std::wstring DocsUrl() const;                 // the README in the interface's language
     const LibraryItem* OverrideItem() const;
+    const LibraryItem* ShownItem() const;
+    SourceTransform LibraryTransform(const std::wstring& path, bool video) const;
+    void SyncTransform(const ui::UiEvents& ev);
     void ReadSystemTheme();
     void UpdateTitleBar();                 // dark or light title bar to match the interface theme    // the library item whose own effect values apply to the shown file
     void ClearLibrary();
@@ -349,6 +359,11 @@ private:
     // Interface-thread copies of the shared state.
     PipelineStatus m_status;
     SourceInfo     m_source;
+    std::vector<ui::UserPreset> m_presets;
+    std::wstring   m_presetsPath;
+    SourceTransform m_sentTransform;              // orientation last sent for the shown file (SyncTransform)
+    std::wstring   m_sentTransformPath;
+    bool           m_sentTransformVideo = false;
     std::vector<std::string> m_senders;
     unsigned       m_sendersSeen = 0;
     double         m_settingsDirtyTime = -1.0;
