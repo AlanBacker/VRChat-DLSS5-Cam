@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(VRChatDLSS5Cam VERSION 1.2.0 LANGUAGES CXX)
+project(VRChatDLSS5Cam VERSION 1.2.1 LANGUAGES CXX)
 
 if(NOT WIN32)
   message(FATAL_ERROR "VRChat DLSS5 Cam targets Windows only.")
@@ -12,7 +12,7 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # A build published as a pre-release says so on its start-up card and in About. Switch it off for a full release.
-option(APP_PRERELEASE "Mark the build as a pre-release" ON)
+option(APP_PRERELEASE "Mark the build as a pre-release" OFF)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)

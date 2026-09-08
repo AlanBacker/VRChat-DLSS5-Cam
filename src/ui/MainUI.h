@@ -269,7 +269,6 @@ private:
     float  m_fullscreenControls = 1.0f;   // how far the fullscreen controls are shown (they fade after a rest)
     bool   m_undoInit = false;
     bool   m_undoHold = false;       // skip one TrackUndo: the library restore of an undo lands after this frame
-    bool   m_sidebarDrag = false, m_sidebarDragMoved = false;   // the sidebar handle is held / has moved
     float  m_sidebarDragW = 0.0f;
     float  m_libraryDragH = 0.0f;
     float  m_thumbH = 0.0f;          // thumbnail height of the library cards, from the library's height
@@ -292,7 +291,6 @@ private:
     unsigned m_logGeneration = 0;
     std::vector<LogEntry> m_logCache;
     // The library bar (click folds, drag resizes).
-    bool   m_libBarDrag = false, m_libBarMoved = false;
     // Fades: the source switch waits behind a dip toward the preview's background, the fullscreen switch behind a
     // dip to black, and the window comes up from its own background after the start-up card.
     int    m_lastMode = -1;

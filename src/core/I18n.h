@@ -348,6 +348,7 @@ enum class Lang { English = 0, Chinese = 1, Japanese = 2, Korean = 3, Count = 4 
     X(WelcomeLive,        "Live: start VRChat, open the camera, switch to Stream mode and enable Spout Stream. The picture appears here.", "实时：启动 VRChat，打开相机，切换到 Stream 模式并开启 Spout Stream，画面会显示在这里。", "ライブ：VRChat を起動し、カメラを開いて Stream モードに切り替え、Spout Stream を有効にすると、ここに映像が表示されます。", "라이브: VRChat를 실행하고 카메라를 열어 Stream 모드로 전환한 뒤 Spout Stream을 켜면 여기에 화면이 표시됩니다.") \
     X(WelcomeFiles,       "Pictures and videos: drop them onto this window or use Open. They appear in the library below, one click previews them.", "图片和视频：拖进这个窗口或点“打开”。它们会出现在下方的素材库中，点一下即可预览。", "画像と動画：このウィンドウにドロップするか「開く」を使ってください。下のライブラリに表示され、クリックでプレビューできます。", "이미지와 동영상: 이 창에 끌어다 놓거나 열기를 사용하세요. 아래 라이브러리에 나타나며 클릭하면 미리 봅니다.") \
     X(ShowLibrary,        "Show the library", "显示素材库", "ライブラリを表示", "라이브러리 표시") \
+    X(HideLibrary,        "Hide the library", "收起素材库", "ライブラリを隠す", "라이브러리 숨기기") \
     X(Thumbnails,         "Thumbnails", "缩略图", "サムネイル", "썸네일") \
     X(NrStrengthHint,     "1.00 is the runtime's own look. Below it the effect fades out, above it the change is amplified.", "1.00 为运行库的原始效果；小于 1 逐渐减弱，大于 1 会放大变化。", "1.00 がランタイム本来の仕上がりです。これより小さいと効果が弱まり、大きいと変化が強調されます。", "1.00이 런타임 본래의 결과입니다. 이보다 작으면 효과가 약해지고, 크면 변화가 강조됩니다.") \
     X(OutputHint,         "Where the results go. Pictures are saved as lossless PNG, videos as MP4 or a PNG sequence.", "结果保存的位置。图片保存为无损 PNG，视频保存为 MP4 或 PNG 序列。", "結果の保存先です。画像はロスレス PNG、動画は MP4 または PNG 連番として保存されます。", "결과가 저장되는 위치입니다. 이미지는 무손실 PNG로, 동영상은 MP4 또는 PNG 시퀀스로 저장됩니다.") \
@@ -369,8 +370,8 @@ enum class Lang { English = 0, Chinese = 1, Japanese = 2, Korean = 3, Count = 4 
     X(TipCloseMedia,      "Close the file: its processing stops and the preview empties. The file stays in the library.", "关闭文件：停止处理并清空预览，文件仍保留在素材库中。", "ファイルを閉じます：処理を止めてプレビューを空にします。ファイルはライブラリに残ります。", "파일을 닫습니다: 처리를 멈추고 미리보기를 비웁니다. 파일은 라이브러리에 남습니다.") \
     X(TipFullscreen,      "Fullscreen: only the picture, over the whole screen (F11)", "全屏：整个屏幕只显示画面（F11）", "全画面表示：画面全体に映像だけを表示（F11）", "전체 화면: 화면 전체에 영상만 표시 (F11)") \
     X(TipExitFullscreen,  "Leave fullscreen (Esc or F11)", "退出全屏（Esc 或 F11）", "全画面表示を終了（Esc または F11）", "전체 화면 종료 (Esc 또는 F11)") \
-    X(TipSidebarDrag,     "Drag to change the sidebar's width; click to hide it", "拖动改变侧栏宽度；点击收起", "ドラッグでサイドバーの幅を変更、クリックで隠す", "드래그하여 사이드바 너비 변경, 클릭하면 숨김") \
-    X(TipLibraryResize,   "Drag to change the library's height; click to hide it", "拖动改变素材库高度；点击收起", "ドラッグでライブラリの高さを変更、クリックで隠す", "드래그하여 라이브러리 높이 변경, 클릭하면 숨김") \
+    X(TipSidebarDrag,     "Drag this line to change the sidebar's width", "拖动这条线改变侧栏宽度", "この線をドラッグしてサイドバーの幅を変更", "이 선을 드래그하여 사이드바 너비 변경") \
+    X(TipLibraryResize,   "Drag this line to change the library's height", "拖动这条线改变素材库高度", "この線をドラッグしてライブラリの高さを変更", "이 선을 드래그하여 라이브러리 높이 변경") \
     X(SecHistory,         "History", "历史记录", "ヒストリー", "히스토리") \
     X(TipHistory,         "History: every change as a list. Click a step to go back to it; the later steps stay until you make a new change (Ctrl+Z / Ctrl+Y).", "历史记录：所有更改按顺序列出。点击某一步即可回到那时；之后的步骤在你做出新更改之前都还可以回去（Ctrl+Z / Ctrl+Y）。", "ヒストリー: すべての変更を一覧にします。ステップをクリックするとその状態に戻り、以降のステップは新しい変更をするまで残ります（Ctrl+Z / Ctrl+Y）。", "히스토리: 모든 변경을 목록으로 보여 줍니다. 단계를 클릭하면 그 상태로 돌아가며, 이후 단계는 새 변경을 하기 전까지 남아 있습니다 (Ctrl+Z / Ctrl+Y).") \
     X(HistoryInitial,     "Opened", "初始状态", "初期状態", "초기 상태") \

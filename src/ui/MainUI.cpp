@@ -96,6 +96,9 @@ bool ComboIds(const char* label, int* value, const char* const* items, int count
 
 void Tip(const char* text) { if (!SearchSkipped()) Tooltip(text); }
 
+// The hit width of the line that resizes the sidebar or the library, at the edge of their bars.
+constexpr float kBarGrip = 6.0f;
+
 // "2 min 05 s" style text of a duration estimate.
 std::string FormatEstimate(double seconds) {
     const int t = (int)(std::max(0.0, seconds) + 0.5);
@@ -208,49 +211,60 @@ void MainUI::Draw(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Font
     const float sidebarW = std::max(50.0f, std::min(std::clamp((s.sidebarWidth > 0.0f ? s.sidebarWidth : 24.0f) * em, sidebarMin, sidebarMax), avail.x * 0.6f));
     // The sidebar slides in and out behind a slim handle on the edge of the preview; the preview takes the room it
     // frees while it moves.
-    const float handleW = 14.0f;
+    const float handleW = 18.0f;
     const float sideT = Ease(AnimateLinear(ImGui::GetID("##sidebarSlide"), s.sidebarVisible ? 1.0f : 0.0f, 0.22f));
     const float shownW = sidebarW * sideT;
     const float previewW = std::max(50.0f, avail.x - shownW - handleW - style.ItemSpacing.x * sideT);
     const ImVec2 bodyOrigin = ImGui::GetCursorScreenPos();
-    m_previewMin = bodyOrigin;
+    m_previewMin = bodyOrigin;   // the fade's rectangle, narrowed to the picture in DrawPreview
     m_previewMax = ImVec2(bodyOrigin.x + previewW, bodyOrigin.y + bodyH);
 
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+    ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 0.0f);
     ImGui::PushStyleColor(ImGuiCol_ChildBg, Colors().surface);
     ImGui::BeginChild("##preview", ImVec2(previewW, bodyH), ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     ImGui::PopStyleColor();
-    ImGui::PopStyleVar();
+    ImGui::PopStyleVar(2);
     DrawPreview(s, info, ev, fonts);
     ImGui::EndChild();
 
     ImGui::SameLine(0.0f, 0.0f);
     {
+        // Two zones, so a click and a drag never share the same spot: the bar itself folds the sidebar (hand cursor,
+        // chevron), the thin line along its sidebar-side edge resizes it (resize cursor, blue under the mouse).
         const Palette& p = Colors();
         const ImVec2 hpos = ImGui::GetCursorScreenPos();
-        ImGui::InvisibleButton("##sidebarHandle", ImVec2(handleW, bodyH));
-        // A press that moves drags the sidebar's edge; one that does not toggles the sidebar.
-        if (ImGui::IsItemActivated()) { m_sidebarDrag = s.sidebarVisible; m_sidebarDragMoved = false; m_sidebarDragW = sidebarW; }
-        if (ImGui::IsItemActive() && m_sidebarDrag) {
-            const float dx = ImGui::GetMouseDragDelta(ImGuiMouseButton_Left, 0.0f).x;
-            if (!m_sidebarDragMoved && std::fabs(dx) > 4.0f) m_sidebarDragMoved = true;
-            if (m_sidebarDragMoved) s.sidebarWidth = std::clamp(m_sidebarDragW - dx, sidebarMin, sidebarMax) / em;
+        const bool canResize = s.sidebarVisible && sideT > 0.99f;
+        const float gripW = canResize ? kBarGrip : 0.0f;
+        ImGui::InvisibleButton("##sidebarFold", ImVec2(handleW - gripW, bodyH));
+        const bool foldLit = ImGui::IsItemHovered() || ImGui::IsItemActive();
+        if (foldLit) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+        if (ImGui::IsItemDeactivated() && ImGui::IsItemHovered()) { s.sidebarVisible = !s.sidebarVisible; ev.settingsChanged = true; }
+        Tip(s.sidebarVisible ? TR(SidebarHide) : TR(SidebarShow));
+        bool gripLit = false;
+        if (gripW > 0.0f) {
+            ImGui::SameLine(0.0f, 0.0f);
+            ImGui::InvisibleButton("##sidebarResize", ImVec2(gripW, bodyH));
+            if (ImGui::IsItemActivated()) m_sidebarDragW = sidebarW;
+            if (ImGui::IsItemActive()) {
+                const float dx = ImGui::GetMouseDragDelta(ImGuiMouseButton_Left, 0.0f).x;
+                s.sidebarWidth = std::clamp(m_sidebarDragW - dx, sidebarMin, sidebarMax) / em;
+            }
+            if (ImGui::IsItemDeactivated()) ev.settingsChanged = true;
+            gripLit = ImGui::IsItemHovered() || ImGui::IsItemActive();
+            if (gripLit) ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+            if (!ImGui::IsItemActive()) Tip(TR(TipSidebarDrag));
         }
-        if (ImGui::IsItemDeactivated()) {
-            if (m_sidebarDragMoved) ev.settingsChanged = true;
-            else if (ImGui::IsItemHovered()) { s.sidebarVisible = !s.sidebarVisible; ev.settingsChanged = true; }
-            m_sidebarDrag = false;
-            m_sidebarDragMoved = false;
-        }
-        const bool handleLit = ImGui::IsItemHovered() || ImGui::IsItemActive();
-        if (handleLit) ImGui::SetMouseCursor(s.sidebarVisible ? ImGuiMouseCursor_ResizeEW : ImGuiMouseCursor_Hand);
-        if (!ImGui::IsItemActive()) Tip(s.sidebarVisible ? TR(TipSidebarDrag) : TR(SidebarShow));
-        const float hov = Animate(ImGui::GetID("##sidebarHandleHover"), handleLit ? 1.0f : 0.0f, 16.0f);
+        const float hov = Animate(ImGui::GetID("##sidebarHandleHover"), foldLit ? 1.0f : 0.0f, 16.0f);
+        const float grip = Animate(ImGui::GetID("##sidebarGripHover"), gripLit ? 1.0f : 0.0f, 16.0f);
         ImDrawList* dl = ImGui::GetWindowDrawList();
-        dl->AddRectFilled(hpos, ImVec2(hpos.x + handleW, hpos.y + bodyH), Mix(p.panel, p.controlHover, hov), 3.0f);
-        // The blue edge on the sidebar's side says what a drag moves.
-        if (hov > 0.01f) dl->AddRectFilled(ImVec2(hpos.x + handleW - 2.0f, hpos.y), ImVec2(hpos.x + handleW, hpos.y + bodyH), WithAlpha(p.accent, 0.9f * hov), 1.0f);
-        DrawChevron(dl, ImVec2(hpos.x + handleW * 0.5f, hpos.y + bodyH * 0.5f), 8.0f, IM_PI * 0.5f - IM_PI * sideT, Mix(p.textDim, p.text, hov));
+        // Square corners: the bar meets the library's bar and the panels around it without a seam.
+        dl->AddRectFilled(hpos, ImVec2(hpos.x + handleW, hpos.y + bodyH), Mix(p.panel, p.controlHover, std::max(hov, grip * 0.35f)), 0.0f);
+        if (canResize) {   // the line a drag moves: always drawn so it can be found, blue under the mouse
+            const float w = 1.0f + 2.0f * grip;
+            dl->AddRectFilled(ImVec2(hpos.x + handleW - w, hpos.y), ImVec2(hpos.x + handleW, hpos.y + bodyH), Mix(p.panelBorder, p.accent, grip), 0.0f);
+        }
+        DrawChevron(dl, ImVec2(hpos.x + (handleW - gripW) * 0.5f, hpos.y + bodyH * 0.5f), 8.0f, IM_PI * 0.5f - IM_PI * sideT, Mix(p.textDim, p.text, hov));
     }
 
     if (shownW > 0.5f) {
@@ -1557,8 +1571,12 @@ void MainUI::DrawPreview(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
     m_libraryFold = Ease(AnimateLinear(ImGui::GetID("##libraryFold"), s.libraryVisible ? 1.0f : 0.0f, 0.2f));
     const float libraryClosedH = frameH + 12.0f;
     const float libraryH = libraryClosedH + (libraryOpenH - libraryClosedH) * m_libraryFold;
-    const float barH = 14.0f;   // the bar above the library: like the sidebar's handle, laid flat
+    const float barH = 18.0f;   // the bar above the library: like the sidebar's, laid flat
     const float pictureH = std::max(60.0f, region.y - transportH - barH - libraryH);
+
+    // The mode fade covers the picture and the video controls under it; the library below stays as it is.
+    m_previewMin = origin;
+    m_previewMax = ImVec2(origin.x + region.x, origin.y + pictureH + transportH);
 
     DrawPicture(s, info, ev, fonts, origin, ImVec2(region.x, pictureH));
     float y = origin.y + pictureH;
@@ -1567,31 +1585,41 @@ void MainUI::DrawPreview(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
         y += transportH;
     }
     {
-        // The library's bar: a press that moves drags the library's top edge, one that does not folds or unfolds it.
+        // The library's bar, with the same two zones as the sidebar's: the bar folds the library, the line along its
+        // bottom edge (the one a drag moves) changes its height.
         const Palette& p = Colors();
         const ImVec2 bpos(origin.x, y);
+        const bool canResize = s.libraryVisible && m_libraryFold > 0.99f;
+        const float gripH = canResize ? kBarGrip : 0.0f;
         ImGui::SetCursorScreenPos(bpos);
-        ImGui::InvisibleButton("##libraryBar", ImVec2(region.x, barH));
-        if (ImGui::IsItemActivated()) { m_libBarDrag = s.libraryVisible; m_libBarMoved = false; m_libraryDragH = libraryOpenH; }
-        if (ImGui::IsItemActive() && m_libBarDrag) {
-            const float dy = ImGui::GetMouseDragDelta(ImGuiMouseButton_Left, 0.0f).y;
-            if (!m_libBarMoved && std::fabs(dy) > 4.0f) m_libBarMoved = true;
-            if (m_libBarMoved) s.libraryHeight = std::clamp(m_libraryDragH - dy, libraryMinH, libraryMaxH) / em;
+        ImGui::InvisibleButton("##libraryFold", ImVec2(region.x, barH - gripH));
+        const bool foldLit = ImGui::IsItemHovered() || ImGui::IsItemActive();
+        if (foldLit) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+        if (ImGui::IsItemDeactivated() && ImGui::IsItemHovered()) { s.libraryVisible = !s.libraryVisible; ev.settingsChanged = true; }
+        Tip(s.libraryVisible ? TR(HideLibrary) : TR(ShowLibrary));
+        bool gripLit = false;
+        if (gripH > 0.0f) {
+            ImGui::SetCursorScreenPos(ImVec2(bpos.x, bpos.y + barH - gripH));
+            ImGui::InvisibleButton("##libraryResize", ImVec2(region.x, gripH));
+            if (ImGui::IsItemActivated()) m_libraryDragH = libraryOpenH;
+            if (ImGui::IsItemActive()) {
+                const float dy = ImGui::GetMouseDragDelta(ImGuiMouseButton_Left, 0.0f).y;
+                s.libraryHeight = std::clamp(m_libraryDragH - dy, libraryMinH, libraryMaxH) / em;
+            }
+            if (ImGui::IsItemDeactivated()) ev.settingsChanged = true;
+            gripLit = ImGui::IsItemHovered() || ImGui::IsItemActive();
+            if (gripLit) ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNS);
+            if (!ImGui::IsItemActive()) Tip(TR(TipLibraryResize));
         }
-        if (ImGui::IsItemDeactivated()) {
-            if (m_libBarMoved) ev.settingsChanged = true;
-            else if (ImGui::IsItemHovered()) { s.libraryVisible = !s.libraryVisible; ev.settingsChanged = true; }
-            m_libBarDrag = false;
-            m_libBarMoved = false;
-        }
-        const bool lit = ImGui::IsItemHovered() || ImGui::IsItemActive();
-        if (lit) ImGui::SetMouseCursor(s.libraryVisible ? ImGuiMouseCursor_ResizeNS : ImGuiMouseCursor_Hand);
-        if (!ImGui::IsItemActive()) Tip(s.libraryVisible ? TR(TipLibraryResize) : TR(ShowLibrary));
-        const float hov = Animate(ImGui::GetID("##libraryBarHover"), lit ? 1.0f : 0.0f, 16.0f);
+        const float hov = Animate(ImGui::GetID("##libraryBarHover"), foldLit ? 1.0f : 0.0f, 16.0f);
+        const float grip = Animate(ImGui::GetID("##libraryGripHover"), gripLit ? 1.0f : 0.0f, 16.0f);
         ImDrawList* dl = ImGui::GetWindowDrawList();
-        dl->AddRectFilled(bpos, ImVec2(bpos.x + region.x, bpos.y + barH), Mix(p.panel, p.controlHover, hov), 3.0f);
-        if (hov > 0.01f) dl->AddRectFilled(ImVec2(bpos.x, bpos.y + barH - 2.0f), ImVec2(bpos.x + region.x, bpos.y + barH), WithAlpha(p.accent, 0.9f * hov), 1.0f);
-        DrawChevron(dl, ImVec2(bpos.x + region.x * 0.5f, bpos.y + barH * 0.5f), 8.0f, IM_PI * (1.0f - m_libraryFold), Mix(p.textDim, p.text, hov));
+        dl->AddRectFilled(bpos, ImVec2(bpos.x + region.x, bpos.y + barH), Mix(p.panel, p.controlHover, std::max(hov, grip * 0.35f)), 0.0f);
+        if (canResize) {
+            const float h = 1.0f + 2.0f * grip;
+            dl->AddRectFilled(ImVec2(bpos.x, bpos.y + barH - h), ImVec2(bpos.x + region.x, bpos.y + barH), Mix(p.panelBorder, p.accent, grip), 0.0f);
+        }
+        DrawChevron(dl, ImVec2(bpos.x + region.x * 0.5f, bpos.y + (barH - gripH) * 0.5f), 8.0f, IM_PI * (1.0f - m_libraryFold), Mix(p.textDim, p.text, hov));
         y += barH;
     }
     const float remaining = origin.y + region.y - y;
@@ -2019,8 +2047,9 @@ void MainUI::DrawLibrary(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
     ImGui::SetCursorScreenPos(pos);
     ImGui::PushStyleColor(ImGuiCol_ChildBg, p.panel);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(12, 6));
+    ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 0.0f);   // flush with the bar above and the sidebar's bar
     ImGui::BeginChild("##library", size, ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-    ImGui::PopStyleVar();
+    ImGui::PopStyleVar(2);
     ImGui::PopStyleColor();
     std::vector<LibraryItem>* lib = info.library;
     const int count = lib ? (int)lib->size() : 0;

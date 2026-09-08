@@ -121,10 +121,11 @@ step is recorded in the history, so it can be undone.
   the switch between *Live*, *Picture* and *Video*.
 - **Dark or light.** *Theme* in the *Display* section: *System* follows the Windows app colour setting, or pick
   *Dark* or *Light*.
-- **The sidebar** slides away behind the slim bar at its edge: a click hides or shows it, dragging the bar changes
-  its width. The library has the same kind of bar above it: a click folds or unfolds it, dragging changes its height
-  and the thumbnails grow or shrink with it. The moving edge of either bar lights up blue under the mouse. Both sizes
-  are remembered for the next start. While a file is being processed the sidebar is locked and offers *Cancel*.
+- **The sidebar** slides away behind the slim bar at its edge, and the library has the same kind of bar above it.
+  A **click on a bar** folds or unfolds the panel; the **thin line along the bar's inner edge** — the one that turns
+  blue under the mouse, where the pointer becomes a resize arrow — is what you **drag** to change the sidebar's width
+  or the library's height, and the thumbnails grow or shrink with it. Both sizes are remembered for the next start.
+  While a file is being processed the sidebar is locked and offers *Cancel*.
 - **Help** is one click away: the *?* button in the top bar (or *Documentation* in *About*) opens this guide in the
   interface's language.
 - **At start** a small card with the icon, the name, the version (marked *Pre-release* on pre-release builds), a
@@ -150,7 +151,7 @@ step is recorded in the history, so it can be undone.
 | Mouse wheel over the preview · drag · double-click | Zoom · pan · back to the fitted view |
 | Click a thumbnail · double-click · `Ctrl`+click · `Shift`+click · right button | Select only that file · open it in the preview · add or remove one · extend the selection · open the menu |
 | Drag on the library's empty space · click on it | Selection rectangle · clear the selection |
-| Click the library bar · drag it · click the sidebar bar · drag it | Fold or unfold the library · its height · hide or show the sidebar · its width |
+| Click a bar · drag the thin line at its edge | Fold or unfold the library or the sidebar · change its height or width |
 | `Enter` · `Esc` while cropping | Apply the crop · cancel it |
 
 ## Staying up to date
