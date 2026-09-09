@@ -99,7 +99,7 @@ weights) and **R** removes it. An installation made before this version is recog
 
 On this route the strengths of the neural pass up to 1 belong to DLSS-NR-on-AMD and are set in its own overlay (**End** key; it also holds its
 *Mode*, inline or async, worth switching when a still picture comes back unchanged); this application's *Preset*, *Style* and strength values
-are not passed to it. The controls that act after the pass (*Output blend*, strengths above 1) work as usual.
+are not passed to it. The controls that act after the pass (*Output blend*, strengths above 1, *Neural pass resolution*) work as usual.
 DLSS-NR-on-AMD needs Windows 11, a Radeon RX 7000 or RX 9000 card and Adrenalin 26.1.1 or newer; its release page states the current
 requirements. *Host route* under *Advanced* selects the route by hand (*Automatic* picks the FSR host on a Radeon card and the direct route on
 a GeForce card).
@@ -253,6 +253,7 @@ own.
 | DLSS 5 | Neural pass only for captures | For cards too slow for live use: between captures the neural, motion and depth passes all rest and the GPU stays nearly idle; a capture first runs the neural pass for 16 fresh frames (after the first depth estimate, when depth guidance is on), then saves. Still images are not affected. |
 | DLSS 5 | Input exposure / Tone transfer / Colour strength | Output blend. Input exposure (0.25–4×) scales the picture the network sees and is undone afterwards. Tone transfer and colour strength (0–2) set how much of the neural pass's brightness and colour changes reach the output; 1 / 1 reproduces the neural result exactly, 0 keeps the original. |
 | DLSS 5 | Shadow strength / Highlight & glow strength | Output blend, 0–2: how much of the neural pass's darkening and of its brightening reaches the output. 1 / 1 = as rendered. |
+| DLSS 5 | Neural pass resolution | Sizes the neural pass at or below the input, by *Percentage* (25–100 % of the input) or as a *Maximum resolution* that caps its long edge, so a large source (for example 8K) is processed at a fixed, smaller size. Its change is upsampled onto the full-resolution picture. Lower values cut the GPU load at the cost of the finest detail. Not used while neural upscaling is on. |
 | Capture | Folder / Keep alpha / Also save the original / Hotkey / Time-lapse | Where and how photos and videos are saved. |
 | Capture | Estimated time | Rough processing time of the open image or video with the current settings, refined by every run. |
 | Frame guidance | Motion vectors | NVIDIA Optical Flow (with a forward/backward consistency check), GPU block matching, or none. |
@@ -287,7 +288,7 @@ Command-line options (open files, process unattended, screenshots, headless runs
 - **Optical flow unavailable** – when `log.txt` says "NVOF unavailable, falling back to block matching", the GeForce driver needs an update; block matching is used until then. The status dot under *Frame guidance* shows which source is active.
 - **The video preview is black** – many films start with a fade from black; the preview skips those frames and says so under the picture while the frame on show is still dark. Seeking forward with the bar or the arrow keys moves past them.
 - **Video file does not open / no encoder available** – the formats depend on the codecs installed in Windows. HEVC files need the *HEVC Video Extensions* (Microsoft Store), and Windows N / KN needs the *Media Feature Pack*. When the H.264 encoder is missing, *PNG sequence* is the alternative output. Switching *Hardware decoding* off helps with files the GPU decoder rejects.
-- **Low frame rate** – switch DLAA off, raise the depth update interval or lower the depth network resolution, or set a processing rate cap. The optical-flow grid is best left at 4 px (2 px and 1 px cost far more at 4K). The log prints a `Perf:` line every 15 s with the cost of each stage.
+- **Low frame rate** – switch DLAA off, raise the depth update interval or lower the depth network resolution, lower the neural pass resolution, or set a processing rate cap. The optical-flow grid is best left at 4 px (2 px and 1 px cost far more at 4K). The log prints a `Perf:` line every 15 s with the cost of each stage.
 - **The update cannot be installed** – the program folder has to be writable, which a folder under `Program Files` usually is not. Moving the application to a user-owned folder, or downloading the new version from the release page and replacing the files by hand, both work; settings and library stay where they are.
 
 ## Sharing results

@@ -70,6 +70,9 @@ struct Settings {
     float       nrColorStrength = 1.0f; // 0..2: share of the neural pass's colour change that reaches the output
     float       nrShadowGain = 1.0f;    // 0..2: how much of the neural pass's darkening reaches the output (output blend)
     float       nrHighlightGain = 1.0f; // 0..2: how much of its brightening (highlights, reflections, glow) reaches the output
+    int         nrInputScale = 100;     // 25..100 %: neural pass resolution as a share of the input (percentage mode)
+    int         nrScaleMode = 0;        // 0 = percentage (nrInputScale), 1 = maximum resolution (nrMaxLongEdge cap)
+    int         nrMaxLongEdge = 2160;   // resolution mode: cap the neural pass long edge; the pass never exceeds the input
 
     // Frame guidance (motion vectors / depth)
     int   motionMode = MotionNvOpticalFlow;   // falls back to block matching when the hardware engine is unavailable
@@ -145,7 +148,7 @@ struct Settings {
     // The values the processing passes depend on, as text: a still picture is run through the passes again only
     // when this changes (a display, blend or interface change composites the existing result).
     std::string ProcessingText() const;
-    // Takes the DLSS 5 effect values (preset, style, strengths, blend) from another set: a library
+    // Takes the DLSS 5 effect values (preset, style, strengths, blend, pass resolution) from another set: a library
     // item with parameters of its own replaces these while it is previewed or processed.
     void CopyEffects(const Settings& from);
 };

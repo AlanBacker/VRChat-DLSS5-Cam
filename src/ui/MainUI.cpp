@@ -483,7 +483,7 @@ std::string MainUI::StepLabel(const UndoStep& from, const UndoStep& to) {
     VDC_KEY("nrSkinStructure", SkinStructure, false) VDC_KEY("nrAutoMask", AutoMask, true) VDC_KEY("nrUiCorrection", UiCorrection, true)
     VDC_KEY("nrUpscale", NrUpscale, true) VDC_KEY("nrInputExposure", InputExposure, false) VDC_KEY("nrToneTransfer", ToneTransfer, false)
     VDC_KEY("nrColorStrength", ColorStrength, false) VDC_KEY("nrShadowGain", ShadowGain, false) VDC_KEY("nrHighlightGain", HighlightGain, false)
-    VDC_KEY("hdrPaperWhite", PaperWhite, false) VDC_KEY("hdrHighlightCompression", HighlightCompression, false)
+    VDC_KEY("nrScaleMode", NrScaleMode, false) VDC_KEY("nrInputScale", NrScaleModePercent, false) VDC_KEY("nrMaxLongEdge", NrScaleModeFixed, false) VDC_KEY("hdrPaperWhite", PaperWhite, false) VDC_KEY("hdrHighlightCompression", HighlightCompression, false)
     VDC_KEY("motionMode", MotionSource, false) VDC_KEY("depthMode", DepthSource, false) VDC_KEY("searchRadius", SearchRadius, false)
     VDC_KEY("motionConfidence", MotionConfidence, false) VDC_KEY("nvofGrid", NvofGrid, false) VDC_KEY("nvofPerf", NvofPerf, false)
     VDC_KEY("nvofBidirectional", NvofBidirectional, true) VDC_KEY("depthInterval", DepthInterval, false) VDC_KEY("depthLongSide", DepthResolution, false)
@@ -1135,6 +1135,22 @@ void MainUI::EffectControls(Settings& s, UiEvents& ev, bool advanced, bool enabl
             if (Toggle(TR(NrUpscale), &s.nrUpscale)) ch = true;
             Help(TR(TipUpscale));
         }
+        {
+            // Neural pass resolution: a share of the input, or a cap on the long edge; the change is upsampled onto the full picture.
+            ImGui::BeginDisabled(s.customResolution && s.nrUpscale);
+            const char* nrModes[] = { TR(NrScaleModePercent), TR(NrScaleModeFixed) };
+            ch |= ComboIds(TR(NrScaleMode), &s.nrScaleMode, nrModes, 2, TR(TipNrScaleMode));
+            if (s.nrScaleMode == 1) {
+                static const int kNrEdges[] = { 720, 1080, 1440, 2160, 2880, 3840 };
+                const char* nrEdges[] = { "720 px", "1080 px", "1440 px", "2160 px", "2880 px", "3840 px" };
+                int nrSel = 3;
+                for (int i = 0; i < 6; ++i) if (s.nrMaxLongEdge == kNrEdges[i]) nrSel = i;
+                if (ComboIds(TR(NrScaleModeFixed), &nrSel, nrEdges, 6, TR(TipNrMaxResolution))) { s.nrMaxLongEdge = kNrEdges[nrSel]; ch = true; }
+            } else {
+                ch |= SliderIntReset(TR(NrScaleModePercent), &s.nrInputScale, 25, 100, 100, "%d%%", TR(TipNrScalePercent));
+            }
+            ImGui::EndDisabled();
+        }
         ImGui::Spacing();
         ImGui::TextUnformatted(TR(OutputBlend));
         // The exposure changes what the network sees (neural pass re-run); the strengths only change the composite.
@@ -1154,7 +1170,7 @@ void MainUI::EffectControls(Settings& s, UiEvents& ev, bool advanced, bool enabl
         s.nrPreset = 0; s.nrStyle = 0; s.nrIntensity = 1.0f; s.nrGlobalTone = 1.0f; s.nrLocalTone = 1.0f;
         s.nrLocalStructure = 1.0f; s.nrSkinStructure = -1.0f; s.nrAutoMask = false; s.nrUiCorrection = false;
         s.nrInputExposure = 1.0f; s.nrToneTransfer = 1.0f; s.nrColorStrength = 1.0f;
-        s.nrShadowGain = 1.0f; s.nrHighlightGain = 1.0f;
+        s.nrShadowGain = 1.0f; s.nrHighlightGain = 1.0f; s.nrInputScale = 100; s.nrScaleMode = 0; s.nrMaxLongEdge = 2160;
         ev.nrChanged = true; ev.settingsChanged = true;
     }
 }
