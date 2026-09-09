@@ -37,21 +37,21 @@ VRChat DLSS5 Cam 将 VRChat 相机的画面接入 GeForce RTX 显卡上的 NVIDI
 | | |
 |---|---|
 | Windows | Windows 10 21H2 或 Windows 11，64 位 |
-| 显卡 | NVIDIA GeForce RTX。**RTX 50** 系列与 **RTX 40 / 30 / 20** 系列各有一份对应的运行库随压缩包附带（见下一行），任何一代都无需额外准备文件。其他厂商的显卡不会被拒绝：程序可作为查看器和录制工具使用，把为该厂商适配的运行库放入 `runtimes\other\` 后神经渲染即可运行（未附带这样的文件）。DLAA 与硬件光流仍仅限 NVIDIA，运动向量会改由块匹配提供。 |
+| 显卡 | NVIDIA GeForce RTX。**RTX 50** 系列与 **RTX 40 / 30 / 20** 系列各有一份对应的运行库随压缩包附带（见下一行），任何一代都无需额外准备文件。**AMD Radeon RX 7000 / 9000** 使用 Radeon 版（`VRChatDLSS5Cam-win64-amd.zip`），神经渲染经由 DLSS-NR-on-AMD 完成——它是一个独立项目，可从程序内一键安装（见*AMD Radeon 显卡*）。其他厂商的显卡不会被拒绝：程序可作为查看器和录制工具使用。DLAA 与硬件光流仍仅限 NVIDIA，运动向量会改由块匹配提供。 |
 | DLSS 5 运行库 | 已附带。压缩包内含两份 `nvngx_dlssnr.dll` 310.8.0.0：`runtimes\blackwell\` 是随游戏发布的原版（RTX 50），`runtimes\universal\` 是社区为 RTX 40 / 30 / 20 适配的同一运行库。程序启动时选择与所装显卡对应的一份，失败时改试另一份。这两个文件是 NVIDIA 的软件，受 NVIDIA 的条款约束，不属于本项目 MIT 许可的源代码（见 `THIRD_PARTY_NOTICES.md`）；无需再从其他地方获取任何文件。 |
 | VRChat | 任何带有 Stream 相机 *Spout Stream* 选项的版本（桌面或 VR）。仅实时相机功能需要。 |
 | 视频文件 | Windows Media Foundation（Windows 自带）。N / KN 版本需要安装 *Media Feature Pack*；HEVC 文件可能需要 Microsoft Store 里的 *HEVC 视频扩展*。 |
 
 ## 安装与启动
 
-1. 从[最新版本](https://github.com/AlanBacker/VRChat-DLSS5-Cam/releases/latest)下载 `VRChatDLSS5Cam-win64.zip`，解压到任意位置。
+1. 从[最新版本](https://github.com/AlanBacker/VRChat-DLSS5-Cam/releases/latest)下载 `VRChatDLSS5Cam-win64.zip`，解压到任意位置。（Radeon 显卡请改下载 `VRChatDLSS5Cam-win64-amd.zip`，见下方*AMD Radeon 显卡*。）
 2. 无需再复制任何文件。DLSS 5 运行库位于压缩包的 `runtimes\` 下，分为 RTX 50 一份与 RTX 40 / 30 / 20 一份；程序启动时选择与所装显卡对应的一份，失败时切换到另一份。正在使用的版本显示在 DLSS 5 分节的*运行库*旁，路径记录在 `log.txt` 中。
 
    ```
    VRChatDLSS5Cam.exe
    runtimes\blackwell\nvngx_dlssnr.dll   RTX 50
    runtimes\universal\nvngx_dlssnr.dll   RTX 40 / 30 / 20
-   runtimes\other\nvngx_dlssnr.dll       其他厂商的显卡（未附带）
+   runtimes\other\nvngx_dlssnr.dll       其他厂商的运行库（未附带；Radeon 显卡请使用 Radeon 版）
    ```
 
    也可以改用自己的文件：与 `VRChatDLSS5Cam.exe` 同级的 `nvngx_dlssnr.dll` 会在对应显卡的版本之后被尝试，任意文件都可以在 *DLSS 5 神经渲染 → 运行库路径* 中选择。
@@ -64,6 +64,28 @@ VRChat DLSS5 Cam 将 VRChat 相机的画面接入 GeForce RTX 显卡上的 NVIDI
 - 串流分辨率由 VRChat 决定。在 VRChat 的 `config.json` 中调高 `camera_spout_res_width` / `camera_spout_res_height` 可获得更清晰的输入，程序会自动适应。
 - 若某块显卡运行实时预览过慢，可打开 DLSS 5 分节中的 *仅拍照时运行神经渲染*：预览保持原始画面，神经渲染、运动与深度三步全部停下，仅在每次拍照时运行神经渲染。
 - *显示* 分节中的 *处理帧率上限* 限制每秒处理的相机帧数，从而把 GPU 留给 VRChat。
+
+## AMD Radeon 显卡
+
+Radeon 版（`VRChatDLSS5Cam-win64-amd.zip`）通过 [DLSS-NR-on-AMD](https://github.com/danielblnc/DLSS-NR-on-AMD) 在 Radeon 显卡上运行神经渲染。DLSS-NR-on-AMD 是一个独立项目，
+它把 DLSS 5 神经渲染带到 AMD 硬件上，方式是挂接到使用 FSR 的程序。本程序不包含该项目的任何内容：Radeon 版托管一个 FSR 3.1 上下文
+（AMD 的 FidelityFX API，`amd_fidelityfx_dx12.dll`，MIT 许可）供它挂接，并在你点击按钮时从该项目自己的发布页安装它。
+
+1. 从[最新版本](https://github.com/AlanBacker/VRChat-DLSS5-Cam/releases/latest)下载 `VRChatDLSS5Cam-win64-amd.zip`，解压到任意位置。压缩包在可执行文件旁带有 `amd_fidelityfx_dx12.dll` 和
+   RTX 50 版的 `nvngx_dlssnr.dll`（第 2 步的安装器会把后者转换成它自己的权重文件）；仅 NVIDIA 需要的文件（`nvngx_dlss.dll`、`runtimes\`）不在其中。
+2. 运行 `VRChatDLSS5Cam.exe`，在 DLSS 5 分节点击 **安装 DLSS-NR-on-AMD…**。程序会从该项目的最新发布下载 `dlssnr_on_amd_setup.exe`
+   到程序目录并启动它。在安装器窗口中按 **Enter** 接受它提议的 DLL 名称；它可能会请求管理员权限。
+3. 点击 **立即重启**（或重新启动程序）。此时 DLSS 5 分节显示 *运行库：已加载 FSR 3.1.4 · FSR 宿主* 与 *DLSS-NR-on-AMD：已加载（version.dll）*，
+   *启用 DLSS 5* 开关旁的标记显示为 *运行中*。
+
+在这种方式下，神经渲染 1 以内的强度由 DLSS-NR-on-AMD 掌管，在它自己的叠加层（**End** 键）中设置；本程序的*预设*、*风格*和各强度值不会传给它。
+在神经渲染之后起作用的控件（*输出混合*、超过 1 的强度、*神经渲染尺寸*）照常有效。DLSS-NR-on-AMD 需要 Windows 11、Radeon RX 7000 或 RX 9000
+显卡以及 Adrenalin 26.1.1 或更新版本；当前要求以它的发布页为准。加载成功后同一个按钮变为 **更新 DLSS-NR-on-AMD…**，会重新获取其最新安装器并
+就地更新；手动运行 `dlssnr_on_amd_setup.exe` 同样可以更新或移除。*高级*中的*加载方式*可手动选择方式（*自动*在 Radeon 显卡上选 FSR 宿主，
+在 GeForce 显卡上选直接加载）。
+
+作者手头没有 Radeon 显卡，Radeon 版尚未在 Radeon 硬件上运行过。欢迎在 issue 中附上 `log.txt`（`%LOCALAPPDATA%\VRChatDLSS5Cam\`）和
+DLSS-NR-on-AMD 自己的日志反馈结果。
 
 ## 图片与视频文件
 
@@ -96,6 +118,7 @@ VRChat DLSS5 Cam 将 VRChat 相机的画面接入 GeForce RTX 显卡上的 NVIDI
 预览素材库中的文件时，画面上会出现一个小工具条，用于**旋转、镜像与裁切**：向左或向右旋转 90 度，水平或垂直镜像，
 或拉出裁切框并拖动其角与边（在框内拖动可移动整个框），按 **Enter** 或 *应用* 确认，按 **Esc** 取消。最后一个按钮
 可将文件恢复原状。每个文件各自记录方向与裁切，处理和保存结果均使用旋转裁切后的画面，每一步都会记入历史记录，可以撤销。
+实时画面也有同样的工具条（不含裁切）：对 VRChat 相机画面的旋转或镜像同时作用于预览、拍照与延时拍摄，并在下次启动时保留。
 
 ## 界面说明
 
@@ -175,7 +198,7 @@ VRChat DLSS5 Cam 将 VRChat 相机的画面接入 GeForce RTX 显卡上的 NVIDI
 | 视频源 | 白点 / 高光压缩 | 仅在浮点（HDR）Spout 纹理时显示：神经渲染之前的曝光基准和柔和的高光滚降。 |
 | DLSS 5 | 启用 DLSS 5（DLSSNR） | 打开或关闭神经渲染。关闭会释放运行库，打开时重新从文件加载。 |
 | DLSS 5 | 运行库路径 / 重新加载 | 正在使用的运行库文件；留空表示附带的、与所装显卡对应的版本。*重新加载* 重新开始选择并重新读取文件。 |
-| DLSS 5 | 加载方式 | *直接加载（signed snippet）*：直接托管 `nvngx_dlssnr.dll`。*NGX 核心*：通过 NGX 运行时创建功能。 |
+| DLSS 5 | 加载方式 | *自动*：GeForce 显卡走直接加载，Radeon 显卡走 FSR 宿主。*直接加载*：直接托管 `nvngx_dlssnr.dll`。*NGX 核心*：通过 NGX 运行时创建功能。*FSR 宿主*：以原生尺寸运行一个 FSR 3.1 上下文供 DLSS-NR-on-AMD 挂接（`amd_fidelityfx_dx12.dll` 存在时显示）。 |
 | DLSS 5 | 预设 | 自定义命名的 DLSS 5 参数组合：*+* 保存当前参数，点击列表应用，每一项都可覆盖、重命名或删除。保存在设置文件夹的 `presets.txt` 中。 |
 | DLSS 5 | 风格 | 传给运行库的渲染风格（默认 / 自然 / 电影）。 |
 | DLSS 5 | 强度 | 神经渲染的整体强度，0–2。1 以内为运行库自身的强度；超过 1 时程序会放大神经结果与原图的差异（也可能放大瑕疵）。为 0 时画面保持不变。 |
@@ -209,7 +232,9 @@ VRChat DLSS5 Cam 将 VRChat 相机的画面接入 GeForce RTX 显卡上的 NVIDI
 
 - **"等待 VRChat Spout 串流…"** – 需要在 VRChat 的 Stream 相机上启用 *Spout Stream*，且相机必须处于打开状态。其他 Spout 发送端会列在 *Spout 发送端* 框中。
 - **"运行库文件缺失"** – 压缩包没有完整解压：`runtimes\blackwell\nvngx_dlssnr.dll` 与 `runtimes\universal\nvngx_dlssnr.dll` 应位于 `VRChatDLSS5Cam.exe` 旁边。重新解压，或在*运行库路径*中选择一个运行库文件。
-- **神经渲染失败** – 程序会自行切换到另一份附带的运行库并弹出提示。两份都无法启动时，错误下方会有说明；首先应尝试更新显卡驱动，`log.txt` 中记录有 NGX 结果代码，也可以尝试 *预设* 0 与 *NGX 核心* 加载方式。在其他厂商的显卡上，附带的运行库无法启动：神经渲染需要为该厂商适配的运行库，放在 `runtimes\other\` 下。
+- **神经渲染失败** – 程序会自行切换到另一份附带的运行库并弹出提示。两份都无法启动时，错误下方会有说明；首先应尝试更新显卡驱动，`log.txt` 中记录有 NGX 结果代码，也可以尝试 *预设* 0 与 *NGX 核心* 加载方式。在 Radeon 显卡上，神经渲染改由 Radeon 版配合 DLSS-NR-on-AMD 完成（见*AMD Radeon 显卡*）。
+- **FSR 宿主在运行，但画面没有变化** – DLSS-NR-on-AMD 没有挂接到本进程：DLSS 5 分节显示 *DLSS-NR-on-AMD：未加载*。运行它的安装器（**安装 DLSS-NR-on-AMD…**），接受提议的 DLL 名称并重启程序。若已加载却仍无变化，应查看它自己的日志与叠加层（**End** 键）；该移植版是独立项目，有自己的要求。
+- **缺少 amd_fidelityfx_dx12.dll** – FSR 宿主方式需要该文件位于可执行文件旁；Radeon 版（`VRChatDLSS5Cam-win64-amd.zip`）自带它。
 - **神经渲染运行中，但画面全黑或没有变化** – 程序会将每一帧神经结果与输入对比，当运行库报告成功却输出黑屏或与输入相同的画面时发出警告（`log.txt`："DLSSNR output check"）。将 DLSS 5 关闭再打开即可重新开始。若问题依旧，说明该运行库版本在这块 GPU 上无法产生画面。（*强度* 为 0 时画面不变属于正常情况，不会显示警告。）
 - **程序无法启动 / 立即关闭** – `%LOCALAPPDATA%\VRChatDLSS5Cam\` 中保存有 `log.txt`（最后一行即失败的步骤）和 `crash.txt`，提交 issue 时请附上这两个文件。
 - **NGX 未初始化 / DLAA 不支持** – NGX 运行时需要 NVIDIA GPU 和较新的驱动。DLSS 5 仍可通过 *直接加载（signed snippet）* 方式工作。
@@ -239,7 +264,9 @@ cmake --build build --config Release --parallel
 配置阶段会从 NVIDIA 的公开 GitHub 仓库下载 NVIDIA DLSS SDK（头文件、`nvsdk_ngx_s.lib`、`nvngx_dlss.dll`），从 NuGet 下载
 ONNX Runtime（DirectML 版本）和 DirectML，从 Hugging Face 下载 Depth Anything V2 Small FP16 模型
 （`-DVDC_FETCH_DEPTH_MODEL=OFF` 可跳过模型）。所有下载都经过哈希校验。着色器在运行时编译，不需要着色器工具链。
-DLSS 5 运行库永远不是构建或发布包的一部分。
+FidelityFX SDK v1.1.4 的头文件及其签名的 `amd_fidelityfx_dx12.dll`（MIT）以同样方式从 AMD 的 GitHub 仓库下载。
+`-DAPP_EDITION_AMD=ON` 构建 Radeon 版（FSR 宿主方式，发布包中不含仅 NVIDIA 需要的文件），默认构建 GeForce 版。DLSS 5 运行库不属于构建：
+发布工作流从 `runtime-310.8` 发布中取出两份运行库放入压缩包。
 
 ## 架构与实现
 
@@ -261,6 +288,9 @@ VRChat Stream 相机 ──Spout──▶ D3D11on12 接收 ──▶ 转换（sR
 按 2% / 98% 分位归一化为反转的相对深度，并在两次推理之间沿运动矢量传递；不做逐帧历史重置。所有这些都是独立的 MIT 实现
 （`src/gfx/Pipeline.cpp`、`src/gfx/DepthEstimator.cpp`、`src/gfx/Shaders.cpp`）。光流引擎运行在一个私有的原生 D3D11 设备上；
 帧和矢量通过 NT 句柄共享纹理传到 D3D12，并由共享栅栏保证顺序（`src/gfx/NvOpticalFlow.cpp`）。
+
+在 Radeon 显卡上，FSR 宿主方式（`src/gfx/FsrHost.cpp`）取代 DLSS 5 功能：一个 FidelityFX API 的 FSR 3.1 上采样上下文以原生尺寸运行，
+输入同样的颜色、深度和运动矢量；DLSS-NR-on-AMD 作为独立程序从外部挂接到该上下文，把神经渲染应用到它的输出上。
 
 两个线程共享 GPU：处理线程拥有 Spout 接收器（或文件）、管线和自己的 D3D12 队列；界面线程拥有窗口、ImGui 和一个高优先级的
 呈现队列。完成的画面通过显示缓冲区交接，跨队列用栅栏等待，因此预览始终显示最新完成的一帧，窗口从不等待神经渲染

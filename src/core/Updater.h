@@ -49,4 +49,43 @@ private:
     std::atomic<bool>  m_busy{false};
 };
 
+// The DLSS-NR-on-AMD installer (Radeon edition): a separate program under its own terms, nothing of it is part of
+// this project. On request its installer is fetched from that project's latest GitHub release into the program
+// folder and started there; it finds the executable and nvngx_dlssnr.dll next to it and installs its DLL. Runs on
+// its own thread; Get() hands back a copy of the state.
+class PortSetup {
+public:
+    enum class State { Idle, Checking, Ready, Downloading, Launched, Finished, Failed };
+    struct Status {
+        State       state = State::Idle;
+        std::string tag, date, pageUrl, assetUrl;   // the latest release, once looked up
+        unsigned long long assetSize = 0;
+        std::string error;                          // Failed: what went wrong
+        double      downloadedMb = 0.0, totalMb = 0.0;
+        std::wstring setupPath;                     // the installer file, once downloaded
+        unsigned long exitCode = 0;                 // Finished
+        unsigned    generation = 0;                 // counts state changes, so the interface announces each once
+    };
+    static constexpr const char* kPageUrl = "https://github.com/danielblnc/DLSS-NR-on-AMD/releases/latest";
+
+    ~PortSetup();
+    void   Check();                                 // look up the latest release (tag, date, installer)
+    void   Install(const std::wstring& exeDir);     // download the installer next to the executable and start it
+    Status Get() const;
+    bool   Busy() const;
+    void   Cancel();
+
+private:
+    void SetState(State st, const std::string& error = std::string());
+    void Join();
+    bool RunCheck(std::string& error);
+    bool RunInstall(const std::wstring& exeDir, std::string& error);
+
+    mutable std::mutex m_mutex;
+    Status             m_status;
+    std::thread        m_thread;
+    std::atomic<bool>  m_cancel{false};
+    std::atomic<bool>  m_busy{false};
+};
+
 } // namespace vdc

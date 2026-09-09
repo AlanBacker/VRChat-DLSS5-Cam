@@ -8,13 +8,17 @@
 
 namespace vdc {
 
-// How a file's picture is turned, mirrored and cropped before the passes see it (library files only; the live feed
-// is always shown as it comes). The crop is kept in fractions of the turned picture, so it survives a different
-// decode size of the same file.
+// How the picture is turned, mirrored and cropped before the passes see it: a library file keeps its own, the live
+// feed takes its turn and mirrors from the settings (Turned). The crop is kept in fractions of the turned picture,
+// so it survives a different decode size of the same file.
 struct SourceTransform {
     int   rotate = 0;                  // quarter turns clockwise, 0..3
     bool  flipH = false, flipV = false;
     float cropX = 0.0f, cropY = 0.0f, cropW = 1.0f, cropH = 1.0f;
+
+    static SourceTransform Turned(int rotate, bool flipH, bool flipV) {
+        SourceTransform x; x.rotate = rotate & 3; x.flipH = flipH; x.flipV = flipV; return x;
+    }
 
     bool Cropped() const { return cropX > 0.0005f || cropY > 0.0005f || cropW < 0.9995f || cropH < 0.9995f; }
     bool Identity() const { return rotate == 0 && !flipH && !flipV && !Cropped(); }

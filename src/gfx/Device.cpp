@@ -3,6 +3,7 @@
 #include <d3d11.h>
 #include <algorithm>
 #include <cstring>
+#include <vector>
 
 namespace vdc {
 
@@ -716,7 +717,38 @@ bool Device::TypedUavStoreSupported(DXGI_FORMAT fmt) const {
 
 // ---------------------------------------------------------------------------
 
+// With the debug layer on, its stored messages are written to the log at shutdown (they otherwise go only to a debugger):
+// the errors and warnings, up to a few dozen, and their count.
+void Device::LogDebugMessages() {
+    if (!m_device) return;
+    ComPtr<ID3D12InfoQueue> iq;
+    if (FAILED(m_device.As(&iq))) return;
+    const UINT64 stored = iq->GetNumStoredMessages();
+    if (!stored) return;
+    UINT64 shown = 0, errors = 0, warnings = 0;
+    std::vector<char> buf;
+    for (UINT64 i = 0; i < stored; ++i) {
+        SIZE_T len = 0;
+        if (FAILED(iq->GetMessage(i, nullptr, &len)) || len == 0) continue;
+        buf.resize(len);
+        D3D12_MESSAGE* m = reinterpret_cast<D3D12_MESSAGE*>(buf.data());
+        if (FAILED(iq->GetMessage(i, m, &len))) continue;
+        const bool err = m->Severity == D3D12_MESSAGE_SEVERITY_CORRUPTION || m->Severity == D3D12_MESSAGE_SEVERITY_ERROR;
+        const bool warn = m->Severity == D3D12_MESSAGE_SEVERITY_WARNING;
+        if (!err && !warn) continue;
+        if (err) ++errors; else ++warnings;
+        if (shown < 40) {
+            ++shown;
+            if (err) Log::Error("D3D12 debug layer: %s", m->pDescription ? m->pDescription : "");
+            else Log::Warn("D3D12 debug layer: %s", m->pDescription ? m->pDescription : "");
+        }
+    }
+    Log::Info("D3D12 debug layer: %llu messages stored, %llu errors, %llu warnings", (unsigned long long)stored, (unsigned long long)errors, (unsigned long long)warnings);
+    iq->ClearStoredMessages();
+}
+
 void Device::Shutdown() {
+    LogDebugMessages();
     m_ui.WaitIdle();
     m_proc.WaitIdle();
     if (m_context11) { m_context11->ClearState(); m_context11->Flush(); }

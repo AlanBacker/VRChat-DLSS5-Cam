@@ -26,6 +26,7 @@ struct AdapterInfo {
     std::wstring nvidiaDriverVersion; // "566.14" (NVIDIA only)
     LUID         luid{};
     bool IsNvidia() const { return vendorId == 0x10DE; }
+    bool IsAmd() const { return vendorId == 0x1002; }
     int  RtxGeneration() const;      // from the name: 2 = RTX 20 (Turing) ... 5 = RTX 50 (Blackwell), 0 = unknown
 };
 
@@ -159,6 +160,7 @@ public:
     // headless: no swap chain; the frames are drawn into offscreen textures of width x height (automated runs on a
     // machine without a desktop session, screenshots through BeginScreenshot/FinishScreenshot).
     bool Init(HWND hwnd, bool debugLayer, std::wstring& error, bool headless = false, UINT width = 0, UINT height = 0);
+    void LogDebugMessages();   // the debug layer's stored errors and warnings into the log (called at shutdown)
     void Shutdown();
     bool Headless() const { return m_headless; }
 

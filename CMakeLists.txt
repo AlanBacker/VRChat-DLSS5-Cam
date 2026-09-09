@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(VRChatDLSS5Cam VERSION 1.3.0 LANGUAGES CXX)
+project(VRChatDLSS5Cam VERSION 1.4.0 LANGUAGES CXX)
 
 if(NOT WIN32)
   message(FATAL_ERROR "VRChat DLSS5 Cam targets Windows only.")
@@ -13,6 +13,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # A build published as a pre-release says so on its start-up card and in About. Switch it off for a full release.
 option(APP_PRERELEASE "Mark the build as a pre-release" ON)
+option(APP_EDITION_AMD "Build the Radeon edition (FSR host route for DLSS-NR-on-AMD, none of the NVIDIA-only files in the package)" OFF)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
@@ -23,6 +24,7 @@ endif()
 # Downloaded at configure time from NVIDIA's public GitHub repository. The
 # leaked DLSS 5 runtime (nvngx_dlssnr.dll) is NEVER downloaded or shipped.
 include(cmake/FetchNGX.cmake)
+include(cmake/FetchFidelityFX.cmake)
 
 # --- ONNX Runtime (DirectML) + Depth Anything V2 Small ------------------------
 # Monocular depth estimation for the frame-guidance stage (the neural renderer
@@ -73,6 +75,7 @@ set(APP_SOURCES
   src/gfx/ThumbnailAtlas.cpp
   src/gfx/Shaders.cpp
   src/gfx/Pipeline.cpp
+  src/gfx/FsrHost.cpp
   src/gfx/NvOpticalFlow.cpp
   src/gfx/DepthEstimator.cpp
   src/ngx/NgxCore.cpp
@@ -84,14 +87,15 @@ set(APP_SOURCES
 
 # The .manifest source is merged by CMake into the linker-generated manifest (per-monitor DPI, UTF-8 code page).
 add_executable(VRChatDLSS5Cam WIN32 ${APP_SOURCES} resources/app.rc resources/app.manifest)
-target_include_directories(VRChatDLSS5Cam PRIVATE src third_party/nvof ${NGX_INCLUDE_DIR} ${ORT_INCLUDE_DIR} ${DML_INCLUDE_DIR})
+target_include_directories(VRChatDLSS5Cam PRIVATE src third_party/nvof ${NGX_INCLUDE_DIR} ${FFX_INCLUDE_DIR} ${ORT_INCLUDE_DIR} ${DML_INCLUDE_DIR})
 target_compile_definitions(VRChatDLSS5Cam PRIVATE
   UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX _CRT_SECURE_NO_WARNINGS
   APP_VERSION_STRING="${PROJECT_VERSION}"
   APP_VERSION_MAJOR=${PROJECT_VERSION_MAJOR}
   APP_VERSION_MINOR=${PROJECT_VERSION_MINOR}
   APP_VERSION_PATCH=${PROJECT_VERSION_PATCH}
-  APP_PRERELEASE=$<BOOL:${APP_PRERELEASE}>)
+  APP_PRERELEASE=$<BOOL:${APP_PRERELEASE}>
+  APP_EDITION_AMD=$<BOOL:${APP_EDITION_AMD}>)
 target_compile_options(VRChatDLSS5Cam PRIVATE /W4 /MP /utf-8 /permissive- /EHsc /wd4100 /wd4201 /wd4324)
 target_link_libraries(VRChatDLSS5Cam PRIVATE
   imgui spout ${NGX_STATIC_LIB}
@@ -120,10 +124,18 @@ if(VDC_FETCH_DEPTH_MODEL)
     COMMENT "Copying the Depth Anything V2 Small model")
 endif()
 
+# The FidelityFX API runtime (FSR host route) and its license next to the executable.
+add_custom_command(TARGET VRChatDLSS5Cam POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different "${FFX_DX12_DLL}" "$<TARGET_FILE_DIR:VRChatDLSS5Cam>/amd_fidelityfx_dx12.dll"
+  COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:VRChatDLSS5Cam>/licenses"
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different "${FFX_LICENSE_FILE}" "$<TARGET_FILE_DIR:VRChatDLSS5Cam>/licenses/FidelityFX-SDK-LICENSE.txt")
+
 # --- Packaging -----------------------------------------------------------------
 install(TARGETS VRChatDLSS5Cam RUNTIME DESTINATION .)
 install(FILES "${NGX_DLSS_DLL}" "${ORT_DLL}" "${ORT_PROVIDERS_SHARED_DLL}" "${DML_DLL}" DESTINATION .)
 install(DIRECTORY "${ORT_LICENSE_DIR}/" DESTINATION licenses)
+install(FILES "${FFX_DX12_DLL}" DESTINATION .)
+install(FILES "${FFX_LICENSE_FILE}" DESTINATION licenses RENAME FidelityFX-SDK-LICENSE.txt)
 if(VDC_FETCH_DEPTH_MODEL)
   install(FILES "${DEPTH_MODEL_FILE}" DESTINATION models)
 endif()

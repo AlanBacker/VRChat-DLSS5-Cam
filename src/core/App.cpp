@@ -282,7 +282,7 @@ bool App::Init(HINSTANCE hInstance, int nCmdShow) {
     m_settingsPath = JoinPath(m_appDataDir, L"settings.ini");
     m_presetsPath = JoinPath(m_appDataDir, L"presets.txt");
     Log::Init(JoinPath(m_appDataDir, L"log.txt"));
-    Log::Info("VRChat DLSS5 Cam %s starting%s", APP_VERSION_STRING, m_headless ? " (headless)" : "");
+    Log::Info("VRChat DLSS5 Cam %s%s starting%s", APP_VERSION_STRING, APP_EDITION_AMD ? " Radeon edition" : "", m_headless ? " (headless)" : "");
     Log::Info("Executable folder: %s", WideToUtf8(m_exeDir).c_str());
     Log::Info("Command line: %s", WideToUtf8(GetCommandLineW()).c_str());
     if (!m_cli.error.empty()) Log::Warn("Command line: %s", m_cli.error.c_str());
@@ -355,7 +355,11 @@ bool App::Init(HINSTANCE hInstance, int nCmdShow) {
 
     m_wake = CreateEventW(nullptr, FALSE, FALSE, nullptr);
     PushSettings();
-    RequestRuntimeLoad(false);
+    // On the FSR host route the NVIDIA runtime stays unloaded; the pipeline loads the FSR runtime itself.
+    if (EffectiveRoute() != RouteFsrHost) RequestRuntimeLoad(false);
+#if APP_EDITION_AMD
+    if (!m_headless && !m_cli.process && m_settings.updateCheck) m_portSetup.Check();
+#endif
     if (!m_headless && (m_cli.update || (!m_cli.process && m_settings.updateCheck))) m_updater.Check(APP_VERSION_STRING, m_settings.updateChannel == 1, false);
     // The previous session's file comes back only when the user asked for that.
     if (m_cli.open.empty() && m_settings.reopenLast) {
@@ -444,7 +448,7 @@ bool App::CreateMainWindow(HINSTANCE hInstance, int nCmdShow) {
         x = work.left + ((work.right - work.left) - w) / 2;
         y = work.top + ((work.bottom - work.top) - h) / 2;
     }
-    m_hwnd = CreateWindowExW(0, kWindowClass, L"VRChat DLSS5 Cam", WS_OVERLAPPEDWINDOW, x, y, w, h, nullptr, nullptr, hInstance, this);
+    m_hwnd = CreateWindowExW(0, kWindowClass, APP_EDITION_AMD ? L"VRChat DLSS5 Cam (Radeon)" : L"VRChat DLSS5 Cam", WS_OVERLAPPEDWINDOW, x, y, w, h, nullptr, nullptr, hInstance, this);
     if (!m_hwnd) {
         Log::Error("CreateWindowExW failed: %s", LastErrorText().c_str());
         return false;
@@ -1326,6 +1330,7 @@ void App::WorkerMain() {
             else if (videoMode) { m_video.Upload(cmd, gpu); src = m_video.Frame(!videoRun.active && !m_preview.running); videoChanged = false; }
             if (imageMode) src.transform = imageXform;
             else if (videoMode) src.transform = videoXform;
+            else src.transform = SourceTransform::Turned(settings.spoutRotate, settings.spoutFlipH, settings.spoutFlipV);
             m_pipeline.Render(gpu, src, settings, cmd, fresh, changed);
             const double tSubmit = NowSeconds();
             const UINT64 fence = gpu.EndFrame();
@@ -1674,6 +1679,10 @@ void App::Frame() {
     info.nrRuntimeExists = FileExists(info.nrRuntimePath);
     info.nrRuntimeBuild = RuntimeBuildName(m_status.nrRuntimePath);
     info.nrRuntimeExhausted = m_runtimeExhausted;
+    info.fsrDllExists = FileExists(JoinPath(m_exeDir, L"amd_fidelityfx_dx12.dll"));
+    PollPortSetup();
+    info.portSetup = &m_portStatus;
+    info.portRestartHint = m_portRestartHint;
     info.captureFolder = EffectiveCaptureFolder();
     info.hotkeyText = HotkeyText(m_settings);
     info.hasDisplay = display.valid;
@@ -2002,7 +2011,7 @@ void App::HandleEvents(ui::UiEvents& ev) {
         m_pipeline.MarkDlaaDirty();
         if (!m_headless) RegisterHotkey();
         RestartRuntimeChoice();
-        RequestRuntimeLoad(false);
+        if (EffectiveRoute() != RouteFsrHost) RequestRuntimeLoad(false);
         m_ui.Toast(TR(SettingsReset));
         ev.settingsChanged = true;
     }
@@ -2017,12 +2026,26 @@ void App::HandleEvents(ui::UiEvents& ev) {
         MarkSettingsDirty();
     }
     if (ev.hotkeyChanged && !m_headless) RegisterHotkey();
-    if (ev.nrChanged) { m_pipeline.MarkNrDirty(); WakeWorker(); }
+    if (ev.nrChanged) {
+        m_pipeline.MarkNrDirty();
+        // A switch from the FSR host to an NGX route needs the NVIDIA runtime, which that route left unloaded at start.
+        if (EffectiveRoute() != RouteFsrHost && m_runtimeRequested.empty() && !m_status.nrRuntimeLoaded && !m_status.nrRuntimeIdle) RequestRuntimeLoad(false);
+        WakeWorker();
+    }
     if (ev.dlaaChanged) { m_pipeline.MarkDlaaDirty(); WakeWorker(); }
     if (ev.resetHistory) { m_pipeline.RequestReset(); WakeWorker(); m_ui.Toast(TR(HistoryReset)); }
     if (ev.senderChanged) { m_spout.SetRequestedSender(m_settings.senderName); WakeWorker(); }
     if (ev.refreshSenders) { m_refreshSenders = true; WakeWorker(); }
-    if (ev.reloadRuntime) { RestartRuntimeChoice(); RequestRuntimeLoad(true); }
+    if (ev.reloadRuntime) {
+        if (EffectiveRoute() == RouteFsrHost) { m_pipeline.RetryFsrHost(); m_pipeline.MarkNrDirty(); WakeWorker(); }
+        else { RestartRuntimeChoice(); RequestRuntimeLoad(true); }
+    }
+    if (ev.portInstall) { m_portRestartHint = false; m_portSetup.Install(m_exeDir); }
+    if (ev.portOpenPage) {
+        const std::wstring url = Utf8ToWide(m_portStatus.pageUrl.empty() ? std::string(PortSetup::kPageUrl) : m_portStatus.pageUrl);
+        ShellExecuteW(nullptr, L"open", url.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+    }
+    if (ev.restartApp) RelaunchSelf();
 }
 
 void App::CaptureNow() {
@@ -2630,6 +2653,33 @@ const char* App::RuntimeBuildName(const std::wstring& path) const {
         return TR(RuntimeBuildExe);
     }
     return nullptr;
+}
+
+int App::EffectiveRoute() const { return EffectiveNrRoute(m_settings.nrRoute, m_device.Info().IsAmd()); }
+
+// The installer runs in its own window; each state change is told once. It leaves its weights file next to the
+// executable when it installed, which is what the restart hint goes by.
+void App::PollPortSetup() {
+    m_portStatus = m_portSetup.Get();
+    if (m_portStatus.generation == m_portGenSeen) return;
+    m_portGenSeen = m_portStatus.generation;
+    switch (m_portStatus.state) {
+        case PortSetup::State::Launched: m_ui.Toast(TR(AmdPortInstallerRunning)); break;
+        case PortSetup::State::Finished:
+            if (FileExists(JoinPath(m_exeDir, L"dlssnr_on_amd_weights.bin"))) { m_portRestartHint = true; m_ui.Toast(TR(AmdPortInstalled)); }
+            else m_ui.Toast(TR(AmdPortNotInstalled), true);
+            break;
+        case PortSetup::State::Failed: m_ui.Toast(StrPrintf("%s: %s", TR(AmdPortFailed), m_portStatus.error.c_str()), true); break;
+        default: break;
+    }
+}
+
+void App::RelaunchSelf() {
+    wchar_t exe[MAX_PATH * 2] = {};
+    GetModuleFileNameW(nullptr, exe, (DWORD)(sizeof(exe) / sizeof(exe[0])));
+    Log::Info("Restarting %s", WideToUtf8(exe).c_str());
+    ShellExecuteW(nullptr, L"open", exe, nullptr, m_exeDir.c_str(), SW_SHOWNORMAL);
+    if (m_hwnd) PostMessageW(m_hwnd, WM_CLOSE, 0, 0);
 }
 
 void App::RestartRuntimeChoice() {

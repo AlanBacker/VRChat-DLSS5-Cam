@@ -437,7 +437,7 @@ std::string MainUI::StepLabel(const UndoStep& from, const UndoStep& to) {
                 const char* what = y.Identity() ? TR(HistoryOriented)
                                  : x.rotate != y.rotate ? TR(HistoryTurned)
                                  : (x.flipH != y.flipH || x.flipV != y.flipV) ? TR(HistoryMirrored) : TR(HistoryCropped);
-                return StrPrintf("%s: %s", fileName(b.path).c_str(), what);
+                return StrPrintf(what, fileName(b.path).c_str());
             }
         }
         return TR(SecLibrary);
@@ -467,6 +467,12 @@ std::string MainUI::StepLabel(const UndoStep& from, const UndoStep& to) {
         if (changed++ == 0) { firstKey = kv.first; firstValue = kv.second; }
     }
     if (changed == 0) return "\xE2\x80\xA6";
+    // The live picture's orientation, in the words a file's uses.
+    if (firstKey == "spoutRotate" || firstKey == "spoutFlipH" || firstKey == "spoutFlipV") {
+        auto value = [&](const char* k) { for (const auto& kv : after) if (kv.first == k) return kv.second; return std::string("0"); };
+        const bool asItComes = value("spoutRotate") == "0" && value("spoutFlipH") == "0" && value("spoutFlipV") == "0";
+        return StrPrintf(asItComes ? TR(HistoryOriented) : firstKey == "spoutRotate" ? TR(HistoryTurned) : TR(HistoryMirrored), TR(TopSpout));
+    }
     // The key's name in the interface and a readable value.
     const char* label = nullptr;
     bool isBool = false;
@@ -832,7 +838,9 @@ void MainUI::DrawSidebar(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
     if (adv > 0.001f) {
         ImGui::PushStyleVar(ImGuiStyleVar_Alpha, style.Alpha * adv);
         if (SectionHeader(TR(SecGuidance), "guidance", false)) { BlockGuidance(s, info, ev); SectionEnd(); }
+#if !APP_EDITION_AMD   // DLAA is NVIDIA-only
         if (SectionHeader(TR(SecDlaa), "dlaa", false)) { BlockDlaa(s, info, ev); SectionEnd(); }
+#endif
         ImGui::PopStyleVar();
     }
     if (SectionHeader(TR(SecDisplay), "view", false)) { BlockView(s, info, ev); SectionEnd(); }
@@ -1061,77 +1069,17 @@ void MainUI::BlockNeural(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
 
     // Runtime.
     ImGui::Spacing();
-    if (st && st->nrRuntimeLoaded) {
-        // The bundled build in use is named after the version (or the file next to the executable).
-        if (info.nrRuntimeBuild) StatusDot(p.good, StrPrintf("%s: %s %s \xC2\xB7 %s", TR(Runtime), TR(Loaded), st->nrRuntimeVersion.c_str(), info.nrRuntimeBuild).c_str());
-        else StatusDot(p.good, StrPrintf("%s: %s %s", TR(Runtime), TR(Loaded), st->nrRuntimeVersion.c_str()).c_str());
-    } else if (st && st->nrRuntimeIdle) {
-        StatusDot(p.muted, StrPrintf("%s: %s %s", TR(Runtime), st->nrRuntimeVersion.c_str(), TR(RuntimeIdle)).c_str());
-    } else if (st && !st->ngxInitialized && s.nrRoute == RouteNgxCore) {
-        // Only the core route depends on the NGX runtime; the snippet route reports on the DLL itself.
-        StatusDot(p.bad, StrPrintf("%s: %s", TR(NgxStatus), st->ngxStatus.c_str()).c_str());
-    } else {
-        StatusDot(p.warn, StrPrintf("%s: %s", TR(Runtime), TR(NotLoaded)).c_str());
-        if (!info.nrRuntimeExists) {
-            if (info.adapter && !info.adapter->IsNvidia()) {
-                // The bundled builds are not even tried on another vendor's card: say what would run here.
-                ImGui::PushStyleColor(ImGuiCol_Text, p.muted);
-                ImGui::TextWrapped("%s", TR(NrOtherVendorHint));
-                ImGui::PopStyleColor();
-            } else {
-                ImGui::PushStyleColor(ImGuiCol_Text, p.warn);
-                ImGui::TextWrapped("%s", TR(RuntimeMissing));
-                ImGui::PopStyleColor();
-                ImGui::PushStyleColor(ImGuiCol_Text, p.muted);
-                ImGui::TextWrapped("%s", TR(RuntimeVariants));
-                ImGui::PopStyleColor();
-            }
-        }
-    }
-    // A failed feature, or a failed load (the runtime is neither loaded nor resting).
-    if (st && !st->nrError.empty() && (st->nrFailed || (!st->nrRuntimeLoaded && !st->nrRuntimeIdle))) {
-        ImGui::PushStyleColor(ImGuiCol_Text, p.bad);
-        ImGui::TextWrapped("%s", st->nrError.c_str());
-        ImGui::PopStyleColor();
-        // The RTX 50 build only carries Blackwell code: say so on an older card instead of leaving a bare NGX code.
-        // The build under runtimes\universal\ is the one for those cards, so nothing is added when it is loaded.
-        const int gen = info.adapter ? info.adapter->RtxGeneration() : 0;
-        const bool universal = st->nrRuntimePath.find(L"\\universal\\") != std::wstring::npos;
-        if (gen >= 2 && gen <= 4 && !universal && (st->nrRuntimeVersion.empty() || st->nrRuntimeVersion.rfind("310.8", 0) == 0)) {
-            ImGui::PushStyleColor(ImGuiCol_Text, p.warn);
-            ImGui::TextWrapped("%s", TR(NrArchHint));
-            ImGui::PopStyleColor();
-        }
-    }
-    if (info.nrRuntimeExhausted) {
-        ImGui::PushStyleColor(ImGuiCol_Text, p.warn);
-        ImGui::TextWrapped("%s", TR(NrAllBuildsFailed));
-        ImGui::PopStyleColor();
-    }
-    if (st && st->nrActive && (st->nrOutState == 2 || (st->nrOutState == 3 && s.nrIntensity > 0.05f))) {
-        // The runtime reports success but the output check found a black or unchanged picture.
-        ImGui::PushStyleColor(ImGuiCol_Text, p.bad);
-        ImGui::TextWrapped("%s", I18n::T(st->nrOutState == 2 ? Str::NrOutBlack : Str::NrOutSame));
-        ImGui::PopStyleColor();
-    }
-    {
-        SyncBuffer(m_runtimeBuf, sizeof(m_runtimeBuf), s.nrDllPath, m_runtimeEditing);
-        const float btnW = ImGui::GetFrameHeight() * 1.6f;
-        ImGui::SetNextItemWidth(ImGui::CalcItemWidth() - btnW - ImGui::GetStyle().ItemInnerSpacing.x);
-        const std::string hint = WideToUtf8(info.nrRuntimePath);
-        ImGui::InputTextWithHint("##nrpath", hint.c_str(), m_runtimeBuf, sizeof(m_runtimeBuf));
-        m_runtimeEditing = ImGui::IsItemActive();
-        if (ImGui::IsItemDeactivatedAfterEdit()) { s.nrDllPath = m_runtimeBuf; ev.reloadRuntime = true; ev.settingsChanged = true; }
-        ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
-        if (FlatButton("...##runtime", ImVec2(btnW, 0))) ev.browseRuntime = true;
-        Tip(TR(Browse));
-        ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
-        ImGui::TextUnformatted(TR(RuntimePath));
-        if (ImGui::SmallButton(TR(Reload))) ev.reloadRuntime = true;
-    }
+    // The runtime rows differ by route: the NVIDIA runtime file, or the FSR host that DLSS-NR-on-AMD attaches to.
+    const int route = st ? st->nrRoute : EffectiveNrRoute(s.nrRoute, info.adapter && info.adapter->IsAmd());
+    if (route == RouteFsrHost) BlockFsrHost(s, info, ev);
+    else BlockNgxRuntime(s, info, ev);
     if (s.showAdvanced) {
-        const char* routes[] = { TR(RouteSnippet), TR(RouteCore) };
-        if (ComboIds(TR(Route), &s.nrRoute, routes, 2, TR(TipRoute))) { ev.nrChanged = true; ev.settingsChanged = true; }
+        // The FSR host entry is always there in the Radeon edition; elsewhere only when its runtime is present or
+        // the route is already chosen.
+        const bool fsrEntry = APP_EDITION_AMD || info.fsrDllExists || route == RouteFsrHost;
+        const char* routes[] = { TR(RouteAuto), TR(RouteSnippet), TR(RouteCore), TR(RouteFsr) };
+        int idx = std::clamp(s.nrRoute + 1, 0, 3);
+        if (ComboIds(TR(Route), &idx, routes, fsrEntry ? 4 : 3, TR(TipRoute))) { s.nrRoute = idx - 1; ev.nrChanged = true; ev.settingsChanged = true; }
     }
     ImGui::Spacing();
     EffectControls(s, ev, s.showAdvanced, s.nrEnabled);
@@ -1444,6 +1392,160 @@ void MainUI::BlockGuidance(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
     ImGui::Spacing();
 }
 
+// The NVIDIA runtime rows of the DLSS 5 section: which build is loaded, what failed, the path of the file.
+void MainUI::BlockNgxRuntime(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
+    const Palette& p = Colors();
+    const PipelineStatus* st = info.status;
+    if (st && st->nrRuntimeLoaded) {
+        // The bundled build in use is named after the version (or the file next to the executable).
+        if (info.nrRuntimeBuild) StatusDot(p.good, StrPrintf("%s: %s %s \xC2\xB7 %s", TR(Runtime), TR(Loaded), st->nrRuntimeVersion.c_str(), info.nrRuntimeBuild).c_str());
+        else StatusDot(p.good, StrPrintf("%s: %s %s", TR(Runtime), TR(Loaded), st->nrRuntimeVersion.c_str()).c_str());
+    } else if (st && st->nrRuntimeIdle) {
+        StatusDot(p.muted, StrPrintf("%s: %s %s", TR(Runtime), st->nrRuntimeVersion.c_str(), TR(RuntimeIdle)).c_str());
+    } else if (st && !st->ngxInitialized && st->nrRoute == RouteNgxCore) {
+        // Only the core route depends on the NGX runtime; the snippet route reports on the DLL itself.
+        StatusDot(p.bad, StrPrintf("%s: %s", TR(NgxStatus), st->ngxStatus.c_str()).c_str());
+    } else {
+        StatusDot(p.warn, StrPrintf("%s: %s", TR(Runtime), TR(NotLoaded)).c_str());
+        if (!info.nrRuntimeExists) {
+            if (info.adapter && !info.adapter->IsNvidia()) {
+                // The bundled builds are not even tried on another vendor's card: say what would run here.
+                ImGui::PushStyleColor(ImGuiCol_Text, p.muted);
+                ImGui::TextWrapped("%s", TR(NrOtherVendorHint));
+                ImGui::PopStyleColor();
+            } else {
+                ImGui::PushStyleColor(ImGuiCol_Text, p.warn);
+                ImGui::TextWrapped("%s", TR(RuntimeMissing));
+                ImGui::PopStyleColor();
+                ImGui::PushStyleColor(ImGuiCol_Text, p.muted);
+                ImGui::TextWrapped("%s", TR(RuntimeVariants));
+                ImGui::PopStyleColor();
+            }
+        }
+    }
+    // A failed feature, or a failed load (the runtime is neither loaded nor resting).
+    if (st && !st->nrError.empty() && (st->nrFailed || (!st->nrRuntimeLoaded && !st->nrRuntimeIdle))) {
+        ImGui::PushStyleColor(ImGuiCol_Text, p.bad);
+        ImGui::TextWrapped("%s", st->nrError.c_str());
+        ImGui::PopStyleColor();
+        // The RTX 50 build only carries Blackwell code: say so on an older card instead of leaving a bare NGX code.
+        // The build under runtimes\universal\ is the one for those cards, so nothing is added when it is loaded.
+        const int gen = info.adapter ? info.adapter->RtxGeneration() : 0;
+        const bool universal = st->nrRuntimePath.find(L"\\universal\\") != std::wstring::npos;
+        if (gen >= 2 && gen <= 4 && !universal && (st->nrRuntimeVersion.empty() || st->nrRuntimeVersion.rfind("310.8", 0) == 0)) {
+            ImGui::PushStyleColor(ImGuiCol_Text, p.warn);
+            ImGui::TextWrapped("%s", TR(NrArchHint));
+            ImGui::PopStyleColor();
+        }
+    }
+    if (info.nrRuntimeExhausted) {
+        ImGui::PushStyleColor(ImGuiCol_Text, p.warn);
+        ImGui::TextWrapped("%s", TR(NrAllBuildsFailed));
+        ImGui::PopStyleColor();
+    }
+    if (st && st->nrActive && (st->nrOutState == 2 || (st->nrOutState == 3 && s.nrIntensity > 0.05f))) {
+        // The runtime reports success but the output check found a black or unchanged picture.
+        ImGui::PushStyleColor(ImGuiCol_Text, p.bad);
+        ImGui::TextWrapped("%s", I18n::T(st->nrOutState == 2 ? Str::NrOutBlack : Str::NrOutSame));
+        ImGui::PopStyleColor();
+    }
+    {
+        SyncBuffer(m_runtimeBuf, sizeof(m_runtimeBuf), s.nrDllPath, m_runtimeEditing);
+        const float btnW = ImGui::GetFrameHeight() * 1.6f;
+        ImGui::SetNextItemWidth(ImGui::CalcItemWidth() - btnW - ImGui::GetStyle().ItemInnerSpacing.x);
+        const std::string hint = WideToUtf8(info.nrRuntimePath);
+        ImGui::InputTextWithHint("##nrpath", hint.c_str(), m_runtimeBuf, sizeof(m_runtimeBuf));
+        m_runtimeEditing = ImGui::IsItemActive();
+        if (ImGui::IsItemDeactivatedAfterEdit()) { s.nrDllPath = m_runtimeBuf; ev.reloadRuntime = true; ev.settingsChanged = true; }
+        ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
+        if (FlatButton("...##runtime", ImVec2(btnW, 0))) ev.browseRuntime = true;
+        Tip(TR(Browse));
+        ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
+        ImGui::TextUnformatted(TR(RuntimePath));
+        if (ImGui::SmallButton(TR(Reload))) ev.reloadRuntime = true;
+    }
+}
+
+// The FSR host rows: the FSR runtime the app hosts, whether DLSS-NR-on-AMD is attached to the process, and the
+// download of its installer (the Radeon edition's one-click install). The installer is that project's own program
+// under its own terms; nothing of it is part of this application.
+void MainUI::BlockFsrHost(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
+    (void)s;
+    const Palette& p = Colors();
+    const PipelineStatus* st = info.status;
+    const bool fsrLoaded = st && st->nrFsrLoaded;
+    const bool portLoaded = st && !st->nrAmdPort.empty();
+    if (fsrLoaded) {
+        StatusDot(p.good, StrPrintf("%s: %s FSR %s \xC2\xB7 %s", TR(Runtime), TR(Loaded), st->nrFsrVersion.c_str(), TR(FsrHostName)).c_str());
+    } else {
+        StatusDot(p.warn, StrPrintf("%s: %s \xC2\xB7 %s", TR(Runtime), TR(NotLoaded), TR(FsrHostName)).c_str());
+        if (!info.fsrDllExists) {
+            ImGui::PushStyleColor(ImGuiCol_Text, p.warn);
+            ImGui::TextWrapped("%s", TR(FsrDllMissing));
+            ImGui::PopStyleColor();
+        } else if (st && !st->nrFsrError.empty()) {
+            ImGui::PushStyleColor(ImGuiCol_Text, p.bad);
+            ImGui::TextWrapped("%s", st->nrFsrError.c_str());
+            ImGui::PopStyleColor();
+        }
+    }
+    if (portLoaded) {
+        StatusDot(p.good, StrPrintf(TR(AmdPortDetected), st->nrAmdPort.c_str()).c_str());
+    } else {
+        StatusDot(p.warn, TR(AmdPortNotFound));
+        ImGui::PushStyleColor(ImGuiCol_Text, p.muted);
+        ImGui::TextWrapped("%s", TR(AmdPortMissing));
+        ImGui::PopStyleColor();
+    }
+    if (st && st->nrFailed && !st->nrError.empty()) {
+        ImGui::PushStyleColor(ImGuiCol_Text, p.bad);
+        ImGui::TextWrapped("%s", st->nrError.c_str());
+        ImGui::PopStyleColor();
+    }
+    if (st && st->nrActive && (st->nrOutState == 2 || (st->nrOutState == 3 && s.nrIntensity > 0.05f))) {
+        // The FSR pass ran, but the picture came back black or unchanged: without the port attached, an unchanged
+        // picture is the expected outcome (FSR at native size with zero motion is close to a copy).
+        ImGui::PushStyleColor(ImGuiCol_Text, st->nrOutState == 2 ? p.bad : p.warn);
+        ImGui::TextWrapped("%s", st->nrOutState == 2 ? TR(NrOutBlack) : (portLoaded ? TR(NrOutSame) : TR(FsrNoEffect)));
+        ImGui::PopStyleColor();
+    }
+    // The installer: its state, then the buttons.
+    const PortSetup::Status* ps = info.portSetup;
+    const bool busy = ps && (ps->state == PortSetup::State::Checking || ps->state == PortSetup::State::Downloading || ps->state == PortSetup::State::Launched);
+    if (ps) {
+        switch (ps->state) {
+            case PortSetup::State::Checking: StatusDot(p.muted, TR(AmdPortChecking)); break;
+            case PortSetup::State::Downloading: StatusDot(p.accent, StrPrintf(TR(AmdPortDownloading), ps->downloadedMb, ps->totalMb).c_str()); break;
+            case PortSetup::State::Launched: StatusDot(p.accent, TR(AmdPortInstallerRunning)); break;
+            case PortSetup::State::Failed:
+                ImGui::PushStyleColor(ImGuiCol_Text, p.bad);
+                ImGui::TextWrapped("%s: %s", TR(AmdPortFailed), ps->error.c_str());
+                ImGui::PopStyleColor();
+                break;
+            default:
+                if (!ps->tag.empty()) StatusDot(p.muted, StrPrintf(TR(AmdPortLatest), ps->tag.c_str(), ps->date.c_str()).c_str());
+                break;
+        }
+    }
+    if (info.portRestartHint) {
+        ImGui::PushStyleColor(ImGuiCol_Text, p.good);
+        ImGui::TextWrapped("%s", TR(AmdPortRestartHint));
+        ImGui::PopStyleColor();
+        if (FlatButton(TR(RestartNow))) ev.restartApp = true;
+    }
+    ImGui::BeginDisabled(busy);
+    if (FlatButton(portLoaded ? TR(AmdPortUpdate) : TR(AmdPortInstall))) ev.portInstall = true;
+    ImGui::EndDisabled();
+    Tip(TR(TipAmdPortInstall));
+    ImGui::SameLine();
+    if (FlatButton(TR(AmdPortPage))) ev.portOpenPage = true;
+    ImGui::SameLine();
+    if (FlatButton(TR(Reload))) ev.reloadRuntime = true;
+    ImGui::PushStyleColor(ImGuiCol_Text, p.muted);
+    ImGui::TextWrapped("%s", TR(AmdPortRequirements));
+    ImGui::PopStyleColor();
+}
+
 void MainUI::BlockDlaa(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
     const Palette& p = Colors();
     const PipelineStatus* st = info.status;
@@ -1510,6 +1612,7 @@ void MainUI::BlockAbout(Settings& s, const UiFrameInfo& info, UiEvents& ev, cons
     ImGui::Text("%s %s", TR(AppTitle), info.appVersion.c_str());
     ImGui::PopFont();
     if (info.prerelease) { ImGui::SameLine(0.0f, 8.0f); Pill(TR(Prerelease), WithAlpha(Colors().accent, 0.2f), Colors().accentHover); }
+    if (APP_EDITION_AMD) { ImGui::SameLine(0.0f, 8.0f); Pill(TR(EditionAmd), WithAlpha(Colors().accent, 0.2f), Colors().accentHover); }
     Hint(TR(AboutText));
     if (info.adapter) {
         ImGui::TextDisabled("%s:", TR(Gpu)); ImGui::SameLine(); ImGui::TextWrapped("%s", WideToUtf8(info.adapter->name).c_str());
@@ -1855,7 +1958,7 @@ void MainUI::DrawPicture(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
         dl->AddText(nullptr, 0.0f, ImVec2(bpos.x + pad.x, bpos.y + pad.y), p.text, TR(DarkFrameHint), nullptr, wrap);
     }
     dl->PopClipRect();
-    DrawTransformTools(info, ev, origin, region, imgPos, imgSize, hovered);
+    DrawTransformTools(s, info, ev, origin, region, imgPos, imgSize, hovered);
     FullscreenButton(info, ev, origin, region);
 }
 
@@ -2673,15 +2776,17 @@ void MirrorTransform(SourceTransform& x, bool horizontal) {
 
 // A translucent row of tools at the bottom of the picture for the library file that is shown: turn left and right,
 // mirror, crop and back to the file as it comes. Cropping darkens the outside of a rectangle with eight handles on
-// the full picture; Apply (Enter) keeps it, Cancel (Esc) drops it.
-void MainUI::DrawTransformTools(const UiFrameInfo& info, UiEvents& ev, const ImVec2& origin, const ImVec2& region,
+// the full picture; Apply (Enter) keeps it, Cancel (Esc) drops it. The live picture has the same row without the
+// crop; its turn and mirrors are settings, so the preview, the captures and the timelapse all follow them.
+void MainUI::DrawTransformTools(Settings& s, const UiFrameInfo& info, UiEvents& ev, const ImVec2& origin, const ImVec2& region,
                                 const ImVec2& imgPos, const ImVec2& imgSize, bool canvasHovered) {
     LibraryItem* item = nullptr;
     if (info.shownItem && info.library) for (auto& it : *info.library) if (it.id == info.shownItem) { item = &it; break; }
+    const bool live = !item && s.sourceMode == SourceSpout && info.sourceConnected;
     const bool locked = info.batchRunning || info.videoProcessing || info.videoFinishing;
     const float bsz = ImGui::GetFrameHeight();
-    if (!item || info.fullscreen || locked || region.x < bsz * 9.0f || region.y < bsz * 4.0f) { m_cropEditing = false; m_cropHandle = -1; return; }
-    if (m_cropEditing && m_cropItem != item->id) m_cropEditing = false;
+    if ((!item && !live) || info.fullscreen || locked || region.x < bsz * 9.0f || region.y < bsz * 4.0f) { m_cropEditing = false; m_cropHandle = -1; return; }
+    if (m_cropEditing && (!item || m_cropItem != item->id)) m_cropEditing = false;
     const Palette& p = Colors();
     const ImGuiStyle& style = ImGui::GetStyle();
     ImGuiIO& io = ImGui::GetIO();
@@ -2775,7 +2880,7 @@ void MainUI::DrawTransformTools(const UiFrameInfo& info, UiEvents& ev, const ImV
     }
 
     // The tool row: a translucent pill that comes forward under the mouse.
-    const int nBtn = 6;
+    const int nBtn = item ? 6 : 5;
     const float pillW = nBtn * bsz + (nBtn - 1) * gap + pad * 2.0f, pillH = bsz + pad * 2.0f;
     const ImVec2 pill(origin.x + (region.x - pillW) * 0.5f, origin.y + region.y - pillH - 12.0f);
     const bool over = ImGui::IsMousePosValid() && io.MousePos.x >= pill.x - 12.0f && io.MousePos.x <= pill.x + pillW + 12.0f
@@ -2783,7 +2888,7 @@ void MainUI::DrawTransformTools(const UiFrameInfo& info, UiEvents& ev, const ImV
     const float lift = Animate(ImGui::GetID("##xformTools"), over ? 1.0f : 0.0f, 14.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_Alpha, style.Alpha * (0.55f + 0.45f * lift));
     dl->AddRectFilled(pill, ImVec2(pill.x + pillW, pill.y + pillH), ImGui::GetColorU32(p.overlayBg), 6.0f);
-    SourceTransform x = item->transform;
+    SourceTransform x = item ? item->transform : SourceTransform::Turned(s.spoutRotate, s.spoutFlipH, s.spoutFlipV);
     bool changed = false;
     ImGui::SetCursorScreenPos(ImVec2(pill.x + pad, pill.y + pad));
     if (IconButton("##turnL", Icon::RotateLeft, ImVec2(bsz, bsz), TR(TipRotateLeft), ButtonKind::Plain)) { TurnTransform(x, false); changed = true; }
@@ -2793,16 +2898,20 @@ void MainUI::DrawTransformTools(const UiFrameInfo& info, UiEvents& ev, const ImV
     if (IconButton("##flipH", Icon::FlipH, ImVec2(bsz, bsz), TR(TipFlipH), ButtonKind::Plain)) { MirrorTransform(x, true); changed = true; }
     ImGui::SameLine(0.0f, gap);
     if (IconButton("##flipV", Icon::FlipV, ImVec2(bsz, bsz), TR(TipFlipV), ButtonKind::Plain)) { MirrorTransform(x, false); changed = true; }
-    ImGui::SameLine(0.0f, gap);
-    if (IconButton("##crop", Icon::Crop, ImVec2(bsz, bsz), TR(TipCrop), ButtonKind::Plain)) {
-        m_cropEditing = true; m_cropItem = item->id; m_cropWork = item->transform; m_cropHandle = -1;
+    if (item) {
+        ImGui::SameLine(0.0f, gap);
+        if (IconButton("##crop", Icon::Crop, ImVec2(bsz, bsz), TR(TipCrop), ButtonKind::Plain)) {
+            m_cropEditing = true; m_cropItem = item->id; m_cropWork = item->transform; m_cropHandle = -1;
+        }
     }
     ImGui::SameLine(0.0f, gap);
     ImGui::BeginDisabled(x.Identity());
     if (IconButton("##asItComes", Icon::Reset, ImVec2(bsz, bsz), TR(TipResetTransform), ButtonKind::Plain)) { x = SourceTransform(); changed = true; }
     ImGui::EndDisabled();
     ImGui::PopStyleVar();
-    if (changed) item->transform = x;
+    if (!changed) return;
+    if (item) item->transform = x;
+    else { s.spoutRotate = x.rotate; s.spoutFlipH = x.flipH; s.spoutFlipV = x.flipV; ev.settingsChanged = true; }
 }
 
 // Fades --------------------------------------------------------------------------------------

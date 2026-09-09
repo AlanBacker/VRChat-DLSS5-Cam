@@ -3,6 +3,7 @@
 #pragma once
 #include "core/Settings.h"
 #include "core/MediaLibrary.h"
+#include "core/Updater.h"
 #include "gfx/Pipeline.h"
 #include "gfx/ThumbnailAtlas.h"
 #include "ui/Fonts.h"
@@ -78,6 +79,9 @@ struct UiFrameInfo {
     bool                  nrRuntimeExists = false;
     const char*           nrRuntimeBuild = nullptr;   // translated name of the loaded build (bundled, or the file next to the executable)
     bool                  nrRuntimeExhausted = false; // every runtime build failed on this adapter
+    bool                  fsrDllExists = false;       // amd_fidelityfx_dx12.dll next to the executable (FSR host route)
+    const PortSetup::Status* portSetup = nullptr;     // the DLSS-NR-on-AMD installer (Radeon edition)
+    bool                  portRestartHint = false;    // the installer ran: DLSS-NR-on-AMD loads with the next start
     std::wstring          captureFolder;      // effective folder
     std::string           hotkeyText;
     ImTextureID           displayTexture = 0;
@@ -147,6 +151,9 @@ struct UiEvents {
     bool refreshSenders = false;
     bool resetDefaults = false;
     bool reloadRuntime = false;
+    bool portInstall = false;        // download and start the DLSS-NR-on-AMD installer
+    bool portOpenPage = false;       // open its release page
+    bool restartApp = false;
     bool openImage = false;          // browse for a picture
     bool openVideo = false;          // browse for a video
     bool cancelVideo = false;        // stop the running video
@@ -211,13 +218,15 @@ private:
     void BlockView(Settings& s, const UiFrameInfo& info, UiEvents& ev);
     void BlockGuidance(Settings& s, const UiFrameInfo& info, UiEvents& ev);
     void BlockDlaa(Settings& s, const UiFrameInfo& info, UiEvents& ev);
+    void BlockNgxRuntime(Settings& s, const UiFrameInfo& info, UiEvents& ev);   // the NVIDIA runtime rows of the DLSS 5 section
+    void BlockFsrHost(Settings& s, const UiFrameInfo& info, UiEvents& ev);      // the FSR host rows (Radeon)
     void BlockInternals(Settings& s, const UiFrameInfo& info, UiEvents& ev);
     void BlockAbout(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts);
     void EffectControls(Settings& s, UiEvents& ev, bool advanced, bool enabled);   // the DLSS 5 effect controls
     void DrawItemParams(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts);   // a library item's own values
     void DrawLibraryMenu(Settings& s, const UiFrameInfo& info, UiEvents& ev);      // the context menu of a card
     void DrawPresetRow(Settings& s, UiEvents& ev);                                   // the user's presets of the effect values
-    void DrawTransformTools(const UiFrameInfo& info, UiEvents& ev, const ImVec2& origin, const ImVec2& region,
+    void DrawTransformTools(Settings& s, const UiFrameInfo& info, UiEvents& ev, const ImVec2& origin, const ImVec2& region,
                             const ImVec2& imgPos, const ImVec2& imgSize, bool canvasHovered);   // turn / mirror / crop of the shown file
     void DrawFades(Settings& s, const UiFrameInfo& info, UiEvents& ev);              // the mode, fullscreen and start-up fades
     void RequestFullscreen();                                                        // the switch, behind a short dip to black

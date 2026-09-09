@@ -2,6 +2,7 @@
 #include "core/Log.h"
 #include "core/Util.h"
 #include <winhttp.h>
+#include <shellapi.h>
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
@@ -17,7 +18,10 @@ namespace vdc {
 namespace {
 
 constexpr const wchar_t* kReleasesUrl = L"https://api.github.com/repos/AlanBacker/VRChat-DLSS5-Cam/releases?per_page=20";
-constexpr const char*    kAssetName   = "VRChatDLSS5Cam-win64.zip";
+// Each edition updates itself with its own archive.
+constexpr const char*    kAssetName   = APP_EDITION_AMD ? "VRChatDLSS5Cam-win64-amd.zip" : "VRChatDLSS5Cam-win64.zip";
+constexpr const wchar_t* kPortReleaseUrl = L"https://api.github.com/repos/danielblnc/DLSS-NR-on-AMD/releases/latest";
+constexpr const char*    kPortSetupName  = "dlssnr_on_amd_setup.exe";
 constexpr const wchar_t* kExeName     = L"VRChatDLSS5Cam.exe";
 
 std::string WinHttpErrorText(const char* where) {
@@ -544,6 +548,151 @@ bool Updater::RunDownload(const std::wstring& exeDir, const std::wstring& stagin
     CloseHandle(pi.hThread);
     CloseHandle(pi.hProcess);
     Log::Info("Update: %s is unpacked; the program closes and the files are swapped by %s", rel.tag.c_str(), WideToUtf8(script).c_str());
+    return true;
+}
+
+// ---- DLSS-NR-on-AMD installer ------------------------------------------------------------------------------------
+
+PortSetup::~PortSetup() { Cancel(); Join(); }
+
+void PortSetup::Join() { if (m_thread.joinable()) m_thread.join(); }
+
+void PortSetup::Cancel() { m_cancel = true; }
+
+bool PortSetup::Busy() const { return m_busy; }
+
+PortSetup::Status PortSetup::Get() const { std::lock_guard<std::mutex> lock(m_mutex); return m_status; }
+
+void PortSetup::SetState(State st, const std::string& error) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_status.state = st;
+    m_status.error = error;
+    ++m_status.generation;
+}
+
+bool PortSetup::RunCheck(std::string& error) {
+    std::string body;
+    if (!HttpGet(kPortReleaseUrl, true, m_cancel, [&](const char* data, DWORD n, unsigned long long) {
+            if (body.size() + n > 4u * 1024u * 1024u) return false;
+            body.append(data, n);
+            return true;
+        }, error)) {
+        Log::Warn("DLSS-NR-on-AMD: release lookup failed: %s", error.c_str());
+        return false;
+    }
+    Json root;
+    if (!JsonReader(body).Parse(root) || root.type != Json::Object) {
+        error = "unexpected answer from GitHub";
+        return false;
+    }
+    Status st;
+    st.tag = root.Str("tag_name");
+    st.date = root.Str("published_at").substr(0, 10);
+    st.pageUrl = root.Str("html_url");
+    if (const Json* assets = root.Find("assets")) {
+        if (assets->type == Json::Array) {
+            for (const Json& a : assets->arr) {
+                if (a.Str("name") != kPortSetupName) continue;
+                st.assetUrl = a.Str("browser_download_url");
+                st.assetSize = (unsigned long long)a.Num("size");
+            }
+        }
+    }
+    if (st.tag.empty() || st.assetUrl.empty()) {
+        error = StrPrintf("the latest release carries no %s", kPortSetupName);
+        return false;
+    }
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_status.tag = st.tag; m_status.date = st.date; m_status.pageUrl = st.pageUrl;
+        m_status.assetUrl = st.assetUrl; m_status.assetSize = st.assetSize;
+    }
+    Log::Info("DLSS-NR-on-AMD: latest release %s (%s), %s %.1f MB", st.tag.c_str(), st.date.c_str(), kPortSetupName, st.assetSize / (1024.0 * 1024.0));
+    return true;
+}
+
+void PortSetup::Check() {
+    if (m_busy) return;
+    Join();
+    m_cancel = false;
+    m_busy = true;
+    SetState(State::Checking);
+    m_thread = std::thread([this] {
+        std::string err;
+        if (RunCheck(err)) SetState(State::Ready);
+        else SetState(State::Failed, err);
+        m_busy = false;
+    });
+}
+
+void PortSetup::Install(const std::wstring& exeDir) {
+    if (m_busy) return;
+    Join();
+    m_cancel = false;
+    m_busy = true;
+    m_thread = std::thread([this, exeDir] {
+        std::string err;
+        bool known;
+        { std::lock_guard<std::mutex> lock(m_mutex); known = !m_status.assetUrl.empty(); }
+        if (!known) {
+            SetState(State::Checking);
+            if (!RunCheck(err)) { SetState(State::Failed, err); m_busy = false; return; }
+        }
+        { std::lock_guard<std::mutex> lock(m_mutex); m_status.downloadedMb = 0.0; m_status.totalMb = m_status.assetSize / (1024.0 * 1024.0); }
+        SetState(State::Downloading);
+        if (!RunInstall(exeDir, err)) { SetState(State::Failed, err); m_busy = false; return; }
+        m_busy = false;
+    });
+}
+
+bool PortSetup::RunInstall(const std::wstring& exeDir, std::string& error) {
+    std::string url;
+    { std::lock_guard<std::mutex> lock(m_mutex); url = m_status.assetUrl; }
+    const std::wstring path = JoinPath(exeDir, Utf8ToWide(kPortSetupName));
+    const std::wstring part = path + L".part";
+    Log::Info("DLSS-NR-on-AMD: downloading %s", url.c_str());
+    FILE* f = nullptr;
+    if (_wfopen_s(&f, part.c_str(), L"wb") != 0 || !f) { error = "the installer could not be written next to the executable"; return false; }
+    unsigned long long got = 0;
+    const bool ok = HttpGet(Utf8ToWide(url), false, m_cancel, [&](const char* data, DWORD n, unsigned long long total) {
+        if (fwrite(data, 1, n, f) != n) return false;
+        got += n;
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_status.downloadedMb = got / (1024.0 * 1024.0);
+        if (total) m_status.totalMb = total / (1024.0 * 1024.0);
+        return true;
+    }, error);
+    fclose(f);
+    if (!ok) { DeleteFileW(part.c_str()); return false; }
+    if (!MoveFileExW(part.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING)) {
+        error = "the installer could not be placed: " + LastErrorText();
+        DeleteFileW(part.c_str());
+        return false;
+    }
+    { std::lock_guard<std::mutex> lock(m_mutex); m_status.setupPath = path; }
+    // Its own console window, started in the program folder: there it finds the executable and nvngx_dlssnr.dll.
+    SHELLEXECUTEINFOW sei{};
+    sei.cbSize = sizeof(sei);
+    sei.fMask = SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NOASYNC | SEE_MASK_FLAG_NO_UI;
+    sei.lpVerb = L"open";
+    sei.lpFile = path.c_str();
+    sei.lpDirectory = exeDir.c_str();
+    sei.nShow = SW_SHOWNORMAL;
+    if (!ShellExecuteExW(&sei) || !sei.hProcess) {
+        error = "the installer could not be started: " + LastErrorText();
+        return false;
+    }
+    Log::Info("DLSS-NR-on-AMD: installer started (%s)", WideToUtf8(path).c_str());
+    SetState(State::Launched);
+    while (WaitForSingleObject(sei.hProcess, 500) == WAIT_TIMEOUT) {
+        if (m_cancel) { CloseHandle(sei.hProcess); return true; }   // the app is closing; the installer goes on by itself
+    }
+    DWORD code = 0;
+    GetExitCodeProcess(sei.hProcess, &code);
+    CloseHandle(sei.hProcess);
+    { std::lock_guard<std::mutex> lock(m_mutex); m_status.exitCode = code; }
+    Log::Info("DLSS-NR-on-AMD: installer finished with code %lu", (unsigned long)code);
+    SetState(State::Finished);
     return true;
 }
 

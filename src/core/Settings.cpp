@@ -71,6 +71,9 @@ bool Settings::ApplyText(const std::string& data) {
     r.Get("language", language);
     r.Get("senderName", senderName);
     r.Get("sourceMode", sourceMode);
+    r.Get("spoutRotate", spoutRotate);
+    r.Get("spoutFlipH", spoutFlipH);
+    r.Get("spoutFlipV", spoutFlipV);
     r.Get("imagePath", imagePath);
     r.Get("videoPath", videoPath);
     r.Get("videoMatchSource", videoMatchSource);
@@ -126,6 +129,11 @@ bool Settings::ApplyText(const std::string& data) {
         depthMode = Settings().depthMode;
         autoReset = Settings().autoReset;
     }
+    if (fileVersion < 4 && nrRoute == RouteSignedSnippet) {
+        // 1.4.0 added the automatic route choice (the FSR host on a Radeon card); files that kept the old default
+        // move to it, an explicit NGX core choice stays.
+        nrRoute = RouteAuto;
+    }
     settingsVersion = Settings().settingsVersion;
     r.Get("dlaaEnabled", dlaaEnabled);
     r.Get("dlaaPreset", dlaaPreset);
@@ -171,6 +179,9 @@ void PutParameters(Writer& w, const Settings& s) {
     w.Put("videoBitrateMbps", s.videoBitrateMbps);
     w.Put("videoKeepAudio", s.videoKeepAudio);
     w.Put("videoHardwareDecode", s.videoHardwareDecode);
+    w.Put("spoutRotate", s.spoutRotate);
+    w.Put("spoutFlipH", s.spoutFlipH);
+    w.Put("spoutFlipV", s.spoutFlipV);
     w.Put("customResolution", s.customResolution);
     w.Put("customWidth", s.customWidth);
     w.Put("customHeight", s.customHeight);
@@ -301,6 +312,9 @@ bool Settings::Save(const std::wstring& path) const {
     w.Put("language", language);
     w.Put("senderName", senderName);
     w.Put("sourceMode", sourceMode);
+    w.Put("spoutRotate", spoutRotate);
+    w.Put("spoutFlipH", spoutFlipH);
+    w.Put("spoutFlipV", spoutFlipV);
     w.Put("imagePath", imagePath);
     w.Put("videoPath", videoPath);
     w.Put("videoMatchSource", videoMatchSource);
@@ -392,7 +406,7 @@ void Settings::Clamp() {
     language = std::clamp(language, 0, 4);
     customWidth = std::clamp(customWidth, 256, 7680);
     customHeight = std::clamp(customHeight, 256, 4320);
-    nrRoute = std::clamp(nrRoute, 0, 1);
+    nrRoute = std::clamp(nrRoute, -1, 2);
     if (nrRuntimeBuild != "blackwell" && nrRuntimeBuild != "universal" && nrRuntimeBuild != "other" && nrRuntimeBuild != "exe") nrRuntimeBuild.clear();
     nrPreset = std::clamp(nrPreset, 0, 3);
     if (sidebarWidth != 0.0f) sidebarWidth = std::clamp(sidebarWidth, 16.0f, 48.0f);
@@ -400,6 +414,7 @@ void Settings::Clamp() {
     updateChannel = std::clamp(updateChannel, 0, 1);
     nrStyle = std::clamp(nrStyle, 0, 2);
     sourceMode = std::clamp(sourceMode, 0, 2);
+    spoutRotate = std::clamp(spoutRotate, 0, 3);
     videoOutput = std::clamp(videoOutput, 0, 2);
     videoBitrateMbps = std::clamp(videoBitrateMbps, 5, 200);
     nrIntensity = std::clamp(nrIntensity, 0.0f, 2.0f);

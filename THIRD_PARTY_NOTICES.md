@@ -22,6 +22,27 @@ not covered by this project's MIT License; this project claims no rights in them
 workflow fetches them from the `runtime-310.8` release of this repository and verifies their
 SHA-256 checksums before packaging; the source tree itself contains no runtime file.
 
+## AMD FidelityFX SDK (FidelityFX API, `amd_fidelityfx_dx12.dll`)
+
+The FSR host route runs an FSR 3.1 upscaling context at native size through the FidelityFX API. Its headers
+(`ffx_api.h`, `ffx_api_types.h`, `ffx_api_loader.h`, `ffx_upscale.h`, `dx12/ffx_api_dx12.h`) and the prebuilt,
+signed `amd_fidelityfx_dx12.dll` are fetched at configure time from the FidelityFX SDK v1.1.4 (`cmake/FetchFidelityFX.cmake`,
+SHA-256 pinned) and the DLL is shipped next to the executable; the Radeon edition (`VRChatDLSS5Cam-win64-amd.zip`)
+carries it, the GeForce edition does not.
+
+- Source: https://github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK (tag v1.1.4)
+- License: MIT, Copyright (C) 2024 Advanced Micro Devices, Inc. — shipped as `licenses/FidelityFX-SDK-LICENSE.txt`
+
+## DLSS-NR-on-AMD (not included)
+
+DLSS-NR-on-AMD (https://github.com/danielblnc/DLSS-NR-on-AMD) runs the DLSS 5 neural rendering pass on Radeon cards
+by attaching to a process that uses FSR; the FSR host route of this application exists for it to attach to. It is a
+separate program under its own terms: nothing of it is bundled, linked or derived from here. On the user's request
+(the "Install DLSS-NR-on-AMD…" button of the Radeon edition) the application downloads that project's installer from
+its own GitHub release page into the program folder and starts it; the installer converts the `nvngx_dlssnr.dll`
+next to the executable (the Radeon edition carries the RTX 50 build there for this purpose) into its weights file and
+installs its DLL.
+
 ## Spout2 (SpoutDX)
 
 `third_party/spout` is a subset of Spout2 by Lynn Jarvis and Leading Edge

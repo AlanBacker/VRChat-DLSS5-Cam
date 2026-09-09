@@ -233,6 +233,9 @@ private:
     const char* RuntimeBuildName(const std::wstring& path) const;   // translated name of a candidate, null for another file
     void CheckRuntimeFallback();           // interface thread, after the status snapshot
     void RestartRuntimeChoice();           // forget the failures and the kept build: the next load starts over
+    int  EffectiveRoute() const;           // the neural route in effect (Settings::nrRoute with the automatic choice resolved)
+    void PollPortSetup();                  // DLSS-NR-on-AMD installer progress (Radeon edition), told once per state
+    void RelaunchSelf();                   // start the executable again and close this instance
     static std::wstring EffectiveCaptureFolder(const Settings& s);
     std::wstring EffectiveCaptureFolder() const { return EffectiveCaptureFolder(m_settings); }
     void BrowseRuntime();
@@ -349,6 +352,10 @@ private:
     ui::Fonts     m_fonts;
     ui::MainUI    m_ui;
     Updater       m_updater;               // looks for and installs a newer version
+    PortSetup     m_portSetup;             // Radeon edition: fetches and starts the DLSS-NR-on-AMD installer on request
+    PortSetup::Status m_portStatus;        // its state as last polled (the interface reads it)
+    unsigned      m_portGenSeen = 0;
+    bool          m_portRestartHint = false;   // the installer ran: DLSS-NR-on-AMD loads with the next start
     Splash        m_splash;                // the start-up card
     bool          m_mainShown = false;     // the main window has been shown (after its first frame)
     int           m_nCmdShow = SW_SHOWNORMAL;

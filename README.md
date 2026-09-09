@@ -41,14 +41,14 @@ as a batch. It is an ordinary Windows application: the VRChat process is never t
 | | |
 |---|---|
 | Windows | Windows 10 21H2 or Windows 11, 64-bit |
-| Graphics card | NVIDIA GeForce RTX. The **RTX 50** series and the **RTX 40 / 30 / 20** series each have a build of the runtime in the archive (next row), so nothing has to be added for any of them. Cards from other vendors are not refused: the application works as a viewer and recorder on them, and the neural pass runs once a runtime adapted for that vendor is placed under `runtimes\other\` (none is included). DLAA and the hardware optical flow stay NVIDIA-only, and block matching takes over as the motion source. |
+| Graphics card | NVIDIA GeForce RTX. The **RTX 50** series and the **RTX 40 / 30 / 20** series each have a build of the runtime in the archive (next row), so nothing has to be added for any of them. **AMD Radeon RX 7000 / 9000** with the Radeon edition (`VRChatDLSS5Cam-win64-amd.zip`), which runs the neural pass through DLSS-NR-on-AMD, a separate project installed from the application (see *AMD Radeon cards*). Cards from other vendors are not refused: the application works as a viewer and recorder on them. DLAA and the hardware optical flow stay NVIDIA-only, and block matching takes over as the motion source. |
 | DLSS 5 runtime | Included. The archive carries `nvngx_dlssnr.dll` 310.8.0.0 in two builds: `runtimes\blackwell\` holds the build as shipped with games (RTX 50) and `runtimes\universal\` a community-adapted build of the same runtime for RTX 40 / 30 / 20. The build for the installed card is chosen at start and the other is tried when it fails. Both files are NVIDIA's software under NVIDIA's terms and are not part of this project's MIT-licensed source (see `THIRD_PARTY_NOTICES.md`); nothing has to be obtained from anywhere else. |
 | VRChat | Any build with the Stream Camera *Spout Stream* option (desktop or VR). Required for the live camera only. |
 | Video files | Windows Media Foundation (part of Windows). The N / KN editions require the *Media Feature Pack*; HEVC files may require the *HEVC Video Extensions* from the Microsoft Store. |
 
 ## Getting started
 
-1. Download `VRChatDLSS5Cam-win64.zip` from the [latest release](https://github.com/AlanBacker/VRChat-DLSS5-Cam/releases/latest) and extract it to any location.
+1. Download `VRChatDLSS5Cam-win64.zip` from the [latest release](https://github.com/AlanBacker/VRChat-DLSS5-Cam/releases/latest) and extract it to any location. (Radeon card: `VRChatDLSS5Cam-win64-amd.zip` instead, see *AMD Radeon cards* below.)
 2. Nothing else has to be copied. The DLSS 5 runtime is in the archive under `runtimes\`, in one build for RTX 50
    and one for RTX 40 / 30 / 20; the application picks the build for the installed card at start and switches to the
    other one when that fails. The build in use is named next to *Runtime* in the DLSS 5 section, and the path is
@@ -58,7 +58,7 @@ as a batch. It is an ordinary Windows application: the VRChat process is never t
    VRChatDLSS5Cam.exe
    runtimes\blackwell\nvngx_dlssnr.dll   RTX 50
    runtimes\universal\nvngx_dlssnr.dll   RTX 40 / 30 / 20
-   runtimes\other\nvngx_dlssnr.dll       cards from another vendor (not included)
+   runtimes\other\nvngx_dlssnr.dll       a runtime for another vendor (not included; Radeon cards use the Radeon edition)
    ```
 
    A file of your own can be used instead: `nvngx_dlssnr.dll` next to `VRChatDLSS5Cam.exe` is tried after the build
@@ -72,6 +72,33 @@ Notes on the live camera
 - The stream resolution is decided by VRChat. Raising `camera_spout_res_width` / `camera_spout_res_height` in VRChat's `config.json` produces a sharper input, and the application adapts to it automatically.
 - When the neural pass is too slow for a live preview on a given card, *Neural pass only for captures* in the DLSS 5 section keeps the preview on the plain picture with the neural, motion and depth passes at rest, and runs the neural pass for each capture only.
 - *Processing rate cap* in the *Display* section limits how many camera frames per second are processed, which keeps the GPU free for VRChat.
+
+## AMD Radeon cards
+
+The Radeon edition, `VRChatDLSS5Cam-win64-amd.zip`, runs the neural pass on Radeon cards through
+[DLSS-NR-on-AMD](https://github.com/danielblnc/DLSS-NR-on-AMD), a separate project that brings DLSS 5 neural rendering to AMD hardware by attaching to programs
+that use FSR. Nothing of that project is included here: the edition hosts an FSR 3.1 context (AMD's FidelityFX API,
+`amd_fidelityfx_dx12.dll`, MIT) for it to attach to, and installs it from that project's own release page at your request.
+
+1. Download `VRChatDLSS5Cam-win64-amd.zip` from the [latest release](https://github.com/AlanBacker/VRChat-DLSS5-Cam/releases/latest) and extract it to any location. It carries
+   `amd_fidelityfx_dx12.dll` and the RTX 50 build of `nvngx_dlssnr.dll` next to the executable (the installer of step 2
+   converts that file into its own weights); the NVIDIA-only files (`nvngx_dlss.dll`, `runtimes\`) are not in it.
+2. Start `VRChatDLSS5Cam.exe` and press **Install DLSS-NR-on-AMD…** in the DLSS 5 section. The application downloads
+   `dlssnr_on_amd_setup.exe` from that project's latest release into the program folder and starts it. In the installer's
+   window, press **Enter** to accept the DLL name it proposes; it may ask for elevation.
+3. Press **Restart now** (or start the application again). The DLSS 5 section then reads *Runtime: Loaded FSR 3.1.4 ·
+   FSR host* and *DLSS-NR-on-AMD: loaded (version.dll)*, and the badge next to *Enable DLSS 5* reads *Active*.
+
+On this route the strengths of the neural pass up to 1 belong to DLSS-NR-on-AMD and are set in its own overlay (**End**
+key); this application's *Preset*, *Style* and strength values are not passed to it. The controls that act after the
+pass (*Output blend*, strengths above 1, *Neural pass resolution*) work as usual. DLSS-NR-on-AMD needs Windows 11, a
+Radeon RX 7000 or RX 9000 card and Adrenalin 26.1.1 or newer; its release page states the current requirements. Once
+it is loaded the same button reads **Update DLSS-NR-on-AMD…** and fetches its latest installer again, which updates the
+installation in place; running `dlssnr_on_amd_setup.exe` by hand offers update and removal too. *Host route* under
+*Advanced* selects the route by hand (*Automatic* picks the FSR host on a Radeon card and the direct route on a GeForce card).
+
+The Radeon edition has not been run on Radeon hardware by the author (no such card was available). Reports with
+`log.txt` (`%LOCALAPPDATA%\VRChatDLSS5Cam\`) and DLSS-NR-on-AMD's own log are welcome in the issues.
 
 ## Images and video files
 
@@ -110,7 +137,9 @@ A small toolbar over the preview of a library file **turns, mirrors and crops** 
 right, a horizontal or vertical mirror, or a crop frame whose corners and edges are dragged (dragging inside the
 frame moves it), confirmed with **Enter** or *Apply* and dropped with **Esc**. The last button restores the file to
 its original state. Each file keeps its own orientation and crop, processing and the saved result use the turned
-and cropped picture, and every step is recorded in the history and can be undone.
+and cropped picture, and every step is recorded in the history and can be undone. The live picture has the same
+toolbar without the crop: a turn or mirror of the VRChat camera picture applies to the preview, the captures and the
+timelapse alike, and is kept across sessions.
 
 ## Working with the interface
 
@@ -206,7 +235,7 @@ own.
 | Source | Paper white / Highlight compression | Shown only for floating-point (HDR) Spout textures: exposure reference and soft highlight roll-off before the neural pass. |
 | DLSS 5 | Enable DLSS 5 (DLSSNR) | Switches the neural pass on or off. Off releases the runtime; on loads it again from the file. |
 | DLSS 5 | Runtime path / Reload | The runtime file in use; empty means the bundled build for the installed card. *Reload* starts that choice over and loads the file again. |
-| DLSS 5 | Host route | *Signed snippet*: host `nvngx_dlssnr.dll` directly. *NGX core*: create the feature through the NGX runtime. |
+| DLSS 5 | Host route | *Automatic*: the direct route on a GeForce card, the FSR host on a Radeon card. *Direct*: host `nvngx_dlssnr.dll` itself. *NGX core*: create the feature through the NGX runtime. *FSR host*: run an FSR 3.1 context at native size for DLSS-NR-on-AMD to attach to (shown when `amd_fidelityfx_dx12.dll` is present). |
 | DLSS 5 | Presets | Named sets of the DLSS 5 values: *+* saves the current ones, the list applies one, each entry can be overwritten, renamed or deleted. Kept in `presets.txt` in the settings folder. |
 | DLSS 5 | Style | Render style (default / natural / cinematic) passed to the runtime. |
 | DLSS 5 | Intensity | Overall strength of the neural pass, 0–2. Up to 1 it is the runtime's own strength; above 1 the application amplifies the difference between the neural result and the original (which can exaggerate artifacts). At 0 the picture is left untouched. |
@@ -241,7 +270,9 @@ Command-line options (open files, process unattended, screenshots, headless runs
 
 - **"Waiting for VRChat Spout stream…"** – *Spout Stream* has to be enabled on VRChat's Stream camera, and the camera must be open. Other Spout senders are listed in the *Sender* box.
 - **"The runtime files are missing"** – the archive was not extracted completely: `runtimes\blackwell\nvngx_dlssnr.dll` and `runtimes\universal\nvngx_dlssnr.dll` belong next to `VRChatDLSS5Cam.exe`. Extract it again, or select a runtime file under *Runtime path*.
-- **Neural rendering failed** – the application switches to the other bundled build by itself and says so in a notice. When neither build starts, the message under the error says so; a newer graphics driver is the first thing to try, `log.txt` carries the NGX result code, and *Preset* 0 together with the *NGX core* route is worth trying. On a card from another vendor the bundled builds do not start: the neural pass needs a runtime adapted for that vendor under `runtimes\other\`.
+- **Neural rendering failed** – the application switches to the other bundled build by itself and says so in a notice. When neither build starts, the message under the error says so; a newer graphics driver is the first thing to try, `log.txt` carries the NGX result code, and *Preset* 0 together with the *NGX core* route is worth trying. On a Radeon card the neural pass runs through the Radeon edition and DLSS-NR-on-AMD instead (see *AMD Radeon cards*).
+- **FSR host runs, but the picture is unchanged** – DLSS-NR-on-AMD is not attached to the process: the DLSS 5 section reads *DLSS-NR-on-AMD: not loaded*. Run its installer (**Install DLSS-NR-on-AMD…**), accept the proposed DLL name and restart the application. When it is loaded but nothing changes, its own log and overlay (**End** key) are the place to look; the port is a separate project with its own requirements.
+- **amd_fidelityfx_dx12.dll is missing** – the FSR host route needs that file next to the executable; the Radeon edition (`VRChatDLSS5Cam-win64-amd.zip`) carries it.
 - **Neural pass active, but the picture is black or unchanged** – every neural frame is compared with its input, and a warning appears when the runtime reports success but delivers a black or unchanged picture (`log.txt`: "DLSSNR output check"). Switching DLSS 5 off and on again starts it fresh. If it persists, that runtime build does not produce a picture on this GPU. (With *Intensity* at 0 an unchanged picture is normal and no warning is shown.)
 - **The application does not start / closes immediately** – `%LOCALAPPDATA%\VRChatDLSS5Cam\` holds `log.txt` (its last line is the step that failed) and `crash.txt`. Both files belong in the issue report.
 - **NGX not initialized / DLAA unsupported** – the NGX runtime needs an NVIDIA GPU and a current driver. DLSS 5 still works through the *Signed snippet* route.
@@ -272,7 +303,10 @@ cmake --build build --config Release --parallel
 The configure step downloads the NVIDIA DLSS SDK (headers, `nvsdk_ngx_s.lib`, `nvngx_dlss.dll`) from NVIDIA's public
 GitHub repository, ONNX Runtime (DirectML build) and DirectML from NuGet, and the Depth Anything V2 Small FP16 model
 from Hugging Face (`-DVDC_FETCH_DEPTH_MODEL=OFF` skips the model). All downloads are hash-checked. Shaders are compiled
-at run time, so no shader toolchain is needed. The DLSS 5 runtime is never part of the build or the package.
+at run time, so no shader toolchain is needed. The FidelityFX SDK v1.1.4 headers and its signed `amd_fidelityfx_dx12.dll`
+(MIT) are downloaded from AMD's GitHub repository in the same way. `-DAPP_EDITION_AMD=ON` builds the Radeon edition
+(FSR host route, no NVIDIA-only files in the package); the default is the GeForce edition. The DLSS 5 runtime is not
+part of the build: the release workflow places its two builds into the archives from the `runtime-310.8` release.
 
 ## Architecture
 
@@ -297,6 +331,10 @@ percentile) to inverted relative depth and carried along the motion vectors betw
 history resets. Everything is an independent MIT implementation (`src/gfx/Pipeline.cpp`, `src/gfx/DepthEstimator.cpp`,
 `src/gfx/Shaders.cpp`). The optical flow engine runs on a private native D3D11 device; frames and vectors cross to
 D3D12 through NT-handle shared textures ordered by a shared fence (`src/gfx/NvOpticalFlow.cpp`).
+
+On a Radeon card the FSR host route (`src/gfx/FsrHost.cpp`) takes the place of the DLSS 5 feature: an FSR 3.1 upscaling
+context of the FidelityFX API runs at native size with the same colour, depth and motion inputs, and DLSS-NR-on-AMD, a
+separate program, attaches to that context from the outside and applies the neural pass to its output.
 
 Two threads share the GPU: the processing thread owns the Spout receiver (or the file), the pipeline and a D3D12
 queue of its own; the interface thread owns the window, ImGui and a high-priority present queue. Finished pictures

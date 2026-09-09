@@ -111,9 +111,10 @@ void Pipeline::Transition(ID3D12GraphicsCommandList* cmd, Tex& t, D3D12_RESOURCE
 }
 
 void Pipeline::ReleaseFeatures(GpuContext& gpu) {
-    if (m_nr.Created() || m_dlaa.Created()) gpu.WaitIdle();
+    if (m_nr.Created() || m_dlaa.Created() || m_fsr.Created()) gpu.WaitIdle();
     m_nr.Release(m_ngx);
     m_dlaa.Release(m_ngx);
+    m_fsr.Release();
     m_nrCreatedPreset = -1;
     m_dlaaCreatedPreset = -1;
 }
@@ -368,6 +369,7 @@ bool Pipeline::Rebuild(GpuContext& gpu, const Config& cfg) {
 bool Pipeline::Init(Device& device, const std::wstring& exeDir, const std::wstring& appDataDir, std::wstring& error) {
     m_exeDir = exeDir;
     m_appDataDir = appDataDir;
+    m_isAmd = device.Info().IsAmd();
     if (!m_shaders.Init(device, error)) return false;
     m_ngx.Init(device, exeDir, appDataDir);   // failure is non-fatal: the app still works as a viewer
     m_status.nvofAvailable = NvOpticalFlow::LibraryAvailable();
@@ -381,6 +383,7 @@ void Pipeline::Shutdown(Device& device) {
     UnloadNrRuntime(gpu);
     device.Ui().WaitIdle();
     gpu.WaitIdle();
+    m_fsr.Release();
     m_ngx.Shutdown();
     m_shaders.Shutdown();
 }
@@ -889,6 +892,7 @@ bool Pipeline::EnsureNeuralTextures(GpuContext& gpu, UINT inW, UINT inH, UINT ou
     if (inW == m_nrInW && inH == m_nrInH && outW == m_nrOutW && outH == m_nrOutH && scaled == m_nrScaled) return true;
     gpu.WaitIdle();
     if (m_nr.Created()) { m_nr.Release(m_ngx); m_nrCreatedPreset = -1; }
+    m_fsr.Release();
     bool ok = true;
     ok &= CreateTex(gpu, m_nrIn, inW, inH, DXGI_FORMAT_R8G8B8A8_UNORM, true, L"nrIn");
     ok &= CreateTex(gpu, m_nrOut, outW, outH, DXGI_FORMAT_R8G8B8A8_UNORM, true, L"nrOut");
@@ -942,16 +946,21 @@ Pipeline::Tex& Pipeline::PrepareNeuralInput(GpuContext& gpu, ID3D12GraphicsComma
 }
 
 bool Pipeline::NeuralNeedsCreate(const Settings& s, UINT inW, UINT inH, UINT outW, UINT outH) const {
-    const bool useCore = s.nrRoute == RouteNgxCore;
+    const int route = Route(s);
+    if (route == RouteFsrHost)
+        return !m_fsr.Created() || m_fsr.InputWidth() != inW || m_fsr.InputHeight() != inH || m_fsr.OutputWidth() != outW ||
+               m_fsr.OutputHeight() != outH || m_nrCreatedRoute != route;
     return !m_nr.Created() || m_nr.InputWidth() != inW || m_nr.InputHeight() != inH || m_nr.OutputWidth() != outW ||
-           m_nr.OutputHeight() != outH || m_nrCreatedUseCore != useCore || m_nrCreatedPreset != s.nrPreset;
+           m_nr.OutputHeight() != outH || m_nrCreatedRoute != route || m_nrCreatedPreset != s.nrPreset;
 }
 
 // What the chosen route needs to be there. The core route goes through the NGX runtime; the snippet route hosts the
 // runtime DLL itself and only falls back to the core for the parameter block, so a runtime that brings its own runs
-// on an adapter the NGX core refuses.
+// on an adapter the NGX core refuses. The FSR host route needs its own runtime (FsrHost::Load).
 bool Pipeline::NeuralRouteReady(const Settings& s) const {
-    if (s.nrRoute == RouteNgxCore) return m_ngx.Initialized();
+    const int route = Route(s);
+    if (route == RouteFsrHost) return m_fsr.Loaded();
+    if (route == RouteNgxCore) return m_ngx.Initialized();
     return m_nr.RuntimeLoaded() && (m_nr.SelfContained() || m_ngx.Initialized());
 }
 
@@ -969,9 +978,11 @@ bool Pipeline::FeatureCreatesThisFrame(const Settings& s, bool nrWanted, UINT nr
 
 bool Pipeline::RunNeural(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const Settings& s, Tex& input, bool reset) {
     if (m_nrFailed || !NeuralRouteReady(s)) return false;
-    const bool useCore = s.nrRoute == RouteNgxCore;
+    const int route = Route(s);
+    if (route == RouteFsrHost) return RunFsrHost(gpu, cmd, s, input, reset);
+    const bool useCore = route == RouteNgxCore;
     if (NeuralNeedsCreate(s, m_nrInW, m_nrInH, m_nrOutW, m_nrOutH)) {
-        if (m_nr.Created()) { gpu.WaitIdle(); m_nr.Release(m_ngx); }
+        if (m_nr.Created() || m_fsr.Created()) { gpu.WaitIdle(); m_nr.Release(m_ngx); m_fsr.Release(); }
         std::string err;
         const bool created = m_nr.Create(m_ngx, cmd, m_nrInW, m_nrInH, m_nrOutW, m_nrOutH, s.nrPreset, useCore, err);
         gpu.BindHeaps(cmd);   // the runtime records with its own heaps: back to ours before the next dispatch
@@ -981,7 +992,7 @@ bool Pipeline::RunNeural(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const 
             LogRuntimeGenerationHint(gpu, m_nr.RuntimeVersion(), m_nr.RuntimePath());
             return false;
         }
-        m_nrCreatedUseCore = useCore;
+        m_nrCreatedRoute = route;
         m_featureCreated = true;
         m_nrCreatedPreset = s.nrPreset;
         m_nrOutState = 0; m_nrOutDelta = -1.0f;   // the output check reports again for the new instance
@@ -1015,6 +1026,54 @@ bool Pipeline::RunNeural(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const 
         m_nrFailed = true; m_nrError = err;
         Log::Error("DLSSNR: %s", err.c_str());
         LogRuntimeGenerationHint(gpu, m_nr.RuntimeVersion(), m_nr.RuntimePath());
+    }
+    m_nrDirty = false;
+    return ok;
+}
+
+// The FSR host route: the same inputs go to an FSR context instead of the NVIDIA runtime (see FsrHost.h). The
+// strengths are not handed over, DLSS-NR-on-AMD keeps its own in its overlay; the composite pass still applies
+// the part above 1 as on the other routes.
+bool Pipeline::RunFsrHost(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const Settings& s, Tex& input, bool reset) {
+    if (NeuralNeedsCreate(s, m_nrInW, m_nrInH, m_nrOutW, m_nrOutH)) {
+        gpu.WaitIdle();
+        if (m_nr.Created()) m_nr.Release(m_ngx);   // the feature of an NGX route used before the switch
+        m_fsr.Release();
+        std::string err;
+        if (!m_fsr.Create(gpu.Dev().D3D12(), m_nrInW, m_nrInH, m_nrOutW, m_nrOutH, err)) {
+            m_nrFailed = true; m_nrError = err;
+            Log::Error("FSR host: %s", err.c_str());
+            return false;
+        }
+        m_nrCreatedRoute = RouteFsrHost;
+        m_nrCreatedPreset = s.nrPreset;
+        m_featureCreated = true;
+        m_nrOutState = 0; m_nrOutDelta = -1.0f;   // the output check reports again for the new context
+        reset = true;
+    }
+    if (m_nrSkipped) { reset = true; m_nrSkipped = false; }
+    gpu.TimerBegin(cmd, GpuTimer::Neural);
+    Tex& mv = m_nrScaled ? m_nrMv : m_mv;
+    Tex& depth = m_nrScaled ? m_nrDepth : m_depth;
+    Transition(cmd, input, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    Transition(cmd, mv, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    Transition(cmd, depth, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    Transition(cmd, m_nrOut, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+    FsrHost::Inputs in;
+    in.color = input.res.Get(); in.depth = depth.res.Get(); in.mvec = mv.res.Get(); in.output = m_nrOut.res.Get();
+    in.reset = reset;
+    in.frameTimeMs = (float)m_frameIntervalMs;
+    const float skin = s.nrSkinStructure < 0.0f ? 1.0f : std::min(s.nrSkinStructure, 1.0f);
+    m_nrMaxStrength = std::max({ std::min(s.nrIntensity, 1.0f), std::min(s.nrGlobalTone, 1.0f), std::min(s.nrLocalTone, 1.0f),
+                                 std::min(s.nrLocalStructure, 1.0f), skin });
+    m_nrIntensity = s.nrIntensity;
+    std::string err;
+    const bool ok = m_fsr.Dispatch(cmd, in, err);
+    gpu.TimerEnd(cmd, GpuTimer::Neural);
+    gpu.BindHeaps(cmd);   // the runtime records with its own heaps: back to ours before the next dispatch
+    if (!ok) {
+        m_nrFailed = true; m_nrError = err;
+        Log::Error("FSR host: %s", err.c_str());
     }
     m_nrDirty = false;
     return ok;
@@ -1164,6 +1223,29 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
     m_displayRetryReq.exchange(false);   // this frame composites in any case
     m_displayTarget = -1;
 
+    if (m_fsrRetryReq.exchange(false)) { m_fsrLoadFailed = false; m_fsrError.clear(); }
+    if (s.nrEnabled && Route(s) == RouteFsrHost) {
+        // The FSR host route: its runtime is loaded on first use and stays for the process (FsrHost::Load).
+        if (!m_fsr.Loaded() && !m_fsrLoadFailed) {
+            std::string err;
+            if (!m_fsr.Load(gpu.Dev().D3D12(), m_exeDir, err)) {
+                m_fsrLoadFailed = true; m_fsrError = err;
+                Log::Error("FSR host: %s", err.c_str());
+            }
+        }
+        // DLSS-NR-on-AMD shows by its module in the process: looked up now and then for the status.
+        const double now = NowSeconds();
+        if (now - m_fsrPortCheckTime > 5.0) {
+            m_fsrPortCheckTime = now;
+            const std::string port = FsrHost::PortModule(m_exeDir);
+            if (port != m_fsrPortModule) {
+                if (port.empty()) Log::Info("FSR host: DLSS-NR-on-AMD is not loaded in this process");
+                else Log::Info("FSR host: DLSS-NR-on-AMD is loaded as %s", port.c_str());
+            }
+            m_fsrPortModule = port;
+        }
+    }
+
     m_status.ngxInitialized = m_ngx.Initialized();
     m_status.dlssAvailable = m_ngx.DlssAvailable();
     m_status.ngxStatus = m_ngx.Status();
@@ -1172,6 +1254,11 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
     m_status.nrRuntimeVersion = m_nrRuntimeIdle ? m_nrIdleVersion : m_nr.RuntimeVersion();
     m_status.nrRuntimePath = m_nr.RuntimePath();
     m_status.nrRequestedPath = m_nrDllPath;
+    m_status.nrRoute = Route(s);
+    m_status.nrFsrLoaded = m_fsr.Loaded();
+    m_status.nrFsrVersion = m_fsr.Version();
+    m_status.nrFsrError = m_fsrError;
+    m_status.nrAmdPort = m_fsrPortModule;
     m_status.sourceConnected = src.Connected() && src.hasFrame;
     CountCaptures();
 
@@ -1224,7 +1311,7 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
     // Capture requests. With "neural pass only for captures" on a live source, a request arms the capture and starts
     // a warm-up burst of fresh frames with the neural pass running, so its temporal history has converged when the
     // picture is saved on the burst's last frame. Otherwise the capture happens on this frame.
-    if (s.nrEnabled && m_nrRuntimeIdle) {
+    if (s.nrEnabled && m_nrRuntimeIdle && Route(s) != RouteFsrHost) {
         // Switch on: the runtime comes back from the file (see the switch-off branch below).
         std::string err;
         if (LoadNrRuntime(gpu, m_nrDllPath, err)) Log::Info("DLSS 5 runtime reloaded from %s", WideToUtf8(m_nrDllPath).c_str());
@@ -1278,7 +1365,7 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
             m_status.sceneCut = false;
             m_status.motionModeActive = MotionZero;
             m_status.depthModeActive = DepthZero;
-            if (m_nr.Created()) m_nrSkipped = true;   // between capture bursts: the history is stale when the pass resumes
+            if (NeuralCreated()) m_nrSkipped = true;   // between capture bursts: the history is stale when the pass resumes
             // A pending (re)start of the depth network worker goes ahead here (no feature is created on an idle
             // frame), so the network is warmed up by the time a capture wants it.
             if (m_depthRestart && m_depthInBuf && gpu.IsFenceComplete(m_featureCreateFence)) {
@@ -1381,7 +1468,7 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
                 neuralIn = &PrepareNeuralInput(gpu, cmd, s, *processed);
                 nrOk = RunNeural(gpu, cmd, s, *neuralIn, reset);
                 if (nrOk) { processed = &m_nrOut; RunNeuralCheck(gpu, cmd, *neuralIn); }
-            } else if (m_nr.Created()) {
+            } else if (NeuralCreated()) {
                 m_nrSkipped = true;   // switch off or between capture bursts: the history is stale when the pass resumes
             }
             CopyStats(gpu, cmd);
@@ -1399,7 +1486,7 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
         // No new source frame: keep the last results; re-run the neural pass only if its parameters changed.
         dlaaOk = dlaaWanted && !m_dlaaFailed && m_dlaa.Created();
         if (dlaaOk) processed = &m_dlaaOut;
-        if (nrWanted && !m_nrFailed && m_nr.Created() && EnsureNeuralTextures(gpu, nrInW, nrInH, nrOutW, nrOutH, nrScaled)) {
+        if (nrWanted && !m_nrFailed && NeuralCreated() && EnsureNeuralTextures(gpu, nrInW, nrInH, nrOutW, nrOutH, nrScaled)) {
             neuralBase = processed;
             if (m_nrDirty) {
                 neuralIn = &PrepareNeuralInput(gpu, cmd, s, *processed);
@@ -1420,6 +1507,11 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
         if (m_nr.RuntimeLoaded()) { m_nrIdleVersion = m_nr.RuntimeVersion(); m_nrRuntimeIdle = true; }
         UnloadNrRuntime(gpu);
         Log::Info("DLSS 5 switched off: neural feature%s released", m_nrRuntimeIdle ? " and runtime" : "");
+    }
+    if (!s.nrEnabled && m_fsr.Created()) {
+        gpu.WaitIdle();
+        m_fsr.Release();
+        Log::Info("DLSS 5 switched off: FSR context released");
     }
     if (!dlaaWanted && m_dlaa.Created()) { gpu.WaitIdle(); m_dlaa.Release(m_ngx); m_dlaaCreatedPreset = -1; }
 
@@ -1456,7 +1548,7 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
     m_status.nrStandby = captureOnly && !nrOk && !m_nrFailed;
     m_status.nrFailed = m_nrFailed;
     m_status.nrError = m_nrError;
-    m_status.nrEvaluations = m_nr.EvaluateCount();
+    m_status.nrEvaluations = m_nr.EvaluateCount() + m_fsr.DispatchCount();
     m_status.nrOutDelta = m_nrOutDelta; m_status.nrOutLuma = m_nrOutLuma; m_status.nrInLuma = m_nrInLuma; m_status.nrOutState = m_nrOutState;
     m_status.dlaaActive = dlaaOk;
     m_status.dlaaFailed = m_dlaaFailed;

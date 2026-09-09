@@ -16,11 +16,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Two editions from one source: the GeForce edition (default) and the Radeon edition (APP_EDITION_AMD).
       - name: Configure
-        run: cmake -S . -B build -A x64 -DCMAKE_BUILD_TYPE=Release
+        run: |
+          cmake -S . -B build -A x64 -DCMAKE_BUILD_TYPE=Release
+          cmake -S . -B build-amd -A x64 -DCMAKE_BUILD_TYPE=Release -DAPP_EDITION_AMD=ON
 
       - name: Build
-        run: cmake --build build --config Release --parallel
+        run: |
+          cmake --build build --config Release --parallel
+          cmake --build build-amd --config Release --parallel
 
       # The DLSS 5 runtime builds are assets of the runtime-310.8 release (too large for the tree): fetched here and
       # checked against the published checksums before they go into the archive.
@@ -47,21 +52,33 @@ jobs:
       - name: Package
         shell: pwsh
         run: |
+          function Pack($build, $out) {
+            New-Item -ItemType Directory -Force -Path $out | Out-Null
+            Copy-Item "$build/Release/VRChatDLSS5Cam.exe" $out
+            Copy-Item "$build/Release/onnxruntime.dll", "$build/Release/onnxruntime_providers_shared.dll", "$build/Release/DirectML.dll" $out
+            Copy-Item -Recurse "$build/Release/models" "$out/models"
+            Copy-Item -Recurse "$build/Release/licenses" "$out/licenses"
+            Copy-Item README.md, LICENSE, THIRD_PARTY_NOTICES.md $out
+            Copy-Item "$build/ngx_sdk/NVIDIA_LICENSE.txt" $out
+            Copy-Item -Recurse docs "$out/docs"
+          }
+          # GeForce edition: the DLAA runtime and both DLSS 5 runtime builds, no FidelityFX files.
           $out = "dist/VRChatDLSS5Cam"
-          New-Item -ItemType Directory -Force -Path $out | Out-Null
-          Copy-Item build/Release/VRChatDLSS5Cam.exe $out
+          Pack "build" $out
           Copy-Item build/Release/nvngx_dlss.dll $out
-          Copy-Item build/Release/onnxruntime.dll, build/Release/onnxruntime_providers_shared.dll, build/Release/DirectML.dll $out
-          Copy-Item -Recurse build/Release/models "$out/models"
-          Copy-Item -Recurse build/Release/licenses "$out/licenses"
-          Copy-Item README.md, LICENSE, THIRD_PARTY_NOTICES.md $out
-          Copy-Item build/ngx_sdk/NVIDIA_LICENSE.txt $out
-          Copy-Item -Recurse docs "$out/docs"
-          foreach ($build in "blackwell", "universal") {
-            New-Item -ItemType Directory -Force -Path "$out/runtimes/$build" | Out-Null
-            Copy-Item "runtime/nvngx_dlssnr-310.8-$build.dll" "$out/runtimes/$build/nvngx_dlssnr.dll"
+          Remove-Item "$out/licenses/FidelityFX-SDK-LICENSE.txt"
+          foreach ($rt in "blackwell", "universal") {
+            New-Item -ItemType Directory -Force -Path "$out/runtimes/$rt" | Out-Null
+            Copy-Item "runtime/nvngx_dlssnr-310.8-$rt.dll" "$out/runtimes/$rt/nvngx_dlssnr.dll"
           }
           Compress-Archive -Path "$out/*" -DestinationPath "dist/VRChatDLSS5Cam-win64.zip"
+          # Radeon edition: the FidelityFX API runtime for the FSR host route, and the RTX 50 build of the DLSS 5
+          # runtime next to the executable, where the DLSS-NR-on-AMD installer looks for it.
+          $amd = "dist-amd/VRChatDLSS5Cam"
+          Pack "build-amd" $amd
+          Copy-Item build-amd/Release/amd_fidelityfx_dx12.dll $amd
+          Copy-Item runtime/nvngx_dlssnr-310.8-blackwell.dll "$amd/nvngx_dlssnr.dll"
+          Compress-Archive -Path "$amd/*" -DestinationPath "dist-amd/VRChatDLSS5Cam-win64-amd.zip"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -72,9 +89,20 @@ jobs:
             !dist/VRChatDLSS5Cam/runtimes/**
           retention-days: 7
 
+      - name: Upload artifact (Radeon edition)
+        uses: actions/upload-artifact@v4
+        with:
+          name: VRChatDLSS5Cam-win64-amd
+          path: |
+            dist-amd/VRChatDLSS5Cam
+            !dist-amd/VRChatDLSS5Cam/nvngx_dlssnr.dll
+          retention-days: 7
+
       - name: Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/VRChatDLSS5Cam-win64.zip
+          files: |
+            dist/VRChatDLSS5Cam-win64.zip
+            dist-amd/VRChatDLSS5Cam-win64-amd.zip
           generate_release_notes: true

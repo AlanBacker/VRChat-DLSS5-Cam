@@ -9,14 +9,24 @@ enum MotionMode  { MotionZero = 0, MotionCompute = 1, MotionNvOpticalFlow = 2 };
 enum DepthMode   { DepthFlat = 0, DepthGradient = 1, DepthZero = 2, DepthEstimated = 3 };
 enum CompareMode { CompareOutput = 0, CompareOriginal = 1, CompareWipe = 2, CompareMotion = 3, CompareDepth = 4 };
 enum FitMode     { FitWindow = 0, FitOneToOne = 1 };
-enum NrRoute     { RouteSignedSnippet = 0, RouteNgxCore = 1 };
+enum NrRoute     { RouteAuto = -1, RouteSignedSnippet = 0, RouteNgxCore = 1, RouteFsrHost = 2 };
 enum SourceMode  { SourceSpout = 0, SourceImage = 1, SourceVideo = 2 };
+
+// The route the automatic choice takes: NVIDIA's runtime hosted directly on a GeForce card, the FSR host on a
+// Radeon card (where DLSS-NR-on-AMD attaches to the process), the direct route elsewhere so that its message says
+// what is missing.
+inline int EffectiveNrRoute(int route, bool amdCard) { return route == RouteAuto ? (amdCard ? RouteFsrHost : RouteSignedSnippet) : route; }
 
 struct Settings {
     // General
     int         language = 0;          // 0 = auto, 1 = English, 2 = Chinese, 3 = Japanese, 4 = Korean
     std::string senderName;            // UTF-8, empty = automatic (prefers VRCSender1)
     int         sourceMode = SourceSpout;   // Spout stream or a still image file
+    // Live source: the Spout picture turned and mirrored before the passes see it (a file keeps its own orientation
+    // in the library). Quarter turns clockwise and mirrors of the raw picture, as SourceTransform holds them.
+    int         spoutRotate = 0;       // 0..3
+    bool        spoutFlipH = false;
+    bool        spoutFlipV = false;
     std::string imagePath;             // UTF-8, the picture opened in image mode (reopened at startup)
     std::string videoPath;             // UTF-8, the video opened in video mode (reopened at startup)
     bool videoMatchSource = true;      // output codec and bitrate follow the opened file (the frame rate always does)
@@ -38,7 +48,7 @@ struct Settings {
     // DLSS 5 neural rendering (DLSSNR)
     bool        nrEnabled = true;
     bool        nrCaptureOnly = false;  // live source: the neural pass idles for the preview and runs for a burst before each capture
-    int         nrRoute = RouteSignedSnippet;
+    int         nrRoute = RouteAuto;         // NrRoute; -1 = the choice for the adapter (EffectiveNrRoute)
     std::string nrDllPath;             // UTF-8, empty = the bundled build for the adapter (runtimes\<build>\nvngx_dlssnr.dll)
     std::string nrRuntimeBuild;        // the build that took over after a failure: blackwell, universal, other or exe (the file
                                        // next to the executable); empty = the one for the adapter. Reload starts over.
@@ -75,7 +85,7 @@ struct Settings {
     std::string depthModelPath;        // UTF-8, empty = <exe folder>\models\depth_anything_v2_small_fp16.onnx
     bool  autoReset = false;           // reset the temporal history on detected scene cuts (DLSS 5 recovers by itself)
     float cutThreshold = 0.10f;
-    int   settingsVersion = 3;         // bumped when defaults change; older files are migrated in Load()
+    int   settingsVersion = 4;         // bumped when defaults change; older files are migrated in Load()
 
     // DLAA pre-pass (DLSS super resolution at native resolution)
     bool dlaaEnabled = false;

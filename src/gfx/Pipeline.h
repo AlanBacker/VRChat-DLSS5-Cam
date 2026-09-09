@@ -6,6 +6,7 @@
 #include "gfx/DepthEstimator.h"
 #include "ngx/NgxCore.h"
 #include "ngx/DlssnrFeature.h"
+#include "gfx/FsrHost.h"
 #include "ngx/DlaaFeature.h"
 #include "core/Settings.h"
 #include "core/SourceFrame.h"
@@ -36,6 +37,11 @@ struct PipelineStatus {
     std::string nrRuntimeVersion;
     std::wstring nrRuntimePath;
     std::wstring nrRequestedPath;              // the file the last LoadNrRuntime was asked for, loaded or not
+    int         nrRoute = RouteSignedSnippet;   // the route in effect (the automatic choice resolved)
+    bool        nrFsrLoaded = false;            // FSR host route: amd_fidelityfx_dx12.dll is loaded
+    std::string nrFsrVersion;                   // "FSR 3.1.4"
+    std::string nrFsrError;                     // why the FSR runtime did not load
+    std::string nrAmdPort;                      // DLSS-NR-on-AMD module loaded in this process (file name), empty = none
     bool        nrActive = false;
     bool        nrStandby = false;              // "neural pass only for captures": idle until a capture is requested
     bool        nrFailed = false;
@@ -117,6 +123,7 @@ public:
     void RestartDepthEstimator() { m_depthRestartReq = true; }
     void MarkNrDirty() { m_nrDirtyReq = true; }
     void MarkDlaaDirty() { m_dlaaDirtyReq = true; }
+    void RetryFsrHost() { m_fsrRetryReq = true; }   // FSR host route: load amd_fidelityfx_dx12.dll again after a failure
     // baseName: empty = timestamped VRChat_DLSS5_... name; else "<baseName>_DLSS5_<w>x<h>.png" (still images).
     void RequestCapture(const std::wstring& folder, bool keepAlpha, bool saveOriginal, const std::wstring& baseName);
     bool CapturePending() const;
@@ -192,6 +199,9 @@ private:
     Tex& PrepareNeuralInput(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const Settings& s, Tex& base);
     bool EnsureNeuralTextures(GpuContext& gpu, UINT inW, UINT inH, UINT outW, UINT outH, bool scaled);
     bool RunNeural(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const Settings& s, Tex& input, bool reset);
+    bool RunFsrHost(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const Settings& s, Tex& input, bool reset);
+    int  Route(const Settings& s) const { return EffectiveNrRoute(s.nrRoute, m_isAmd); }
+    bool NeuralCreated() const { return m_nr.Created() || m_fsr.Created(); }   // the feature or the FSR context
     bool NeuralNeedsCreate(const Settings& s, UINT inW, UINT inH, UINT outW, UINT outH) const;
     bool NeuralRouteReady(const Settings& s) const;
     bool FeatureCreatesThisFrame(const Settings& s, bool nrWanted, UINT nrInW, UINT nrInH, UINT nrOutW, UINT nrOutH,
@@ -205,6 +215,7 @@ private:
     NgxCore        m_ngx;
     DlssnrFeature  m_nr;
     DlaaFeature    m_dlaa;
+    FsrHost        m_fsr;
     NvOpticalFlow  m_nvof;
     DepthEstimator m_depthEst;
     std::wstring   m_exeDir, m_appDataDir;
@@ -303,14 +314,20 @@ private:
     std::atomic<bool> m_depthRestartReq{false};
     std::atomic<bool> m_nrDirtyReq{false};
     std::atomic<bool> m_dlaaDirtyReq{false};
+    std::atomic<bool> m_fsrRetryReq{false};
     bool   m_nrDirty = false;
     bool   m_nrFailed = false;
     std::string m_nrError;
-    bool   m_nrCreatedUseCore = false;
+    int    m_nrCreatedRoute = -1;     // the route the neural feature or the FSR context was created for
     int    m_nrCreatedPreset = -1;
     bool   m_nrRuntimeIdle = false;   // runtime released by the DLSS 5 switch; reloaded from m_nrDllPath when it comes back on
     std::string  m_nrIdleVersion;     // version of the released runtime, still shown while idle
     std::wstring m_nrDllPath;         // last path handed to LoadNrRuntime
+    bool   m_isAmd = false;           // a Radeon adapter: the automatic route choice takes the FSR host
+    bool   m_fsrLoadFailed = false;   // FSR host route: amd_fidelityfx_dx12.dll did not load (RetryFsrHost starts over)
+    std::string m_fsrError;
+    std::string m_fsrPortModule;      // DLSS-NR-on-AMD module seen in the process (looked up every few seconds)
+    double m_fsrPortCheckTime = 0.0;
     bool   m_dlaaFailed = false;
     std::string m_dlaaError;
     int    m_dlaaCreatedPreset = -1;
