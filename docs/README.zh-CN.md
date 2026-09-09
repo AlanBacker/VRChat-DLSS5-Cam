@@ -67,25 +67,29 @@ VRChat DLSS5 Cam 将 VRChat 相机的画面接入 GeForce RTX 显卡上的 NVIDI
 
 ## AMD Radeon 显卡
 
-Radeon 版（`VRChatDLSS5Cam-win64-amd.zip`）通过 [DLSS-NR-on-AMD](https://github.com/danielblnc/DLSS-NR-on-AMD) 在 Radeon 显卡上运行神经渲染。DLSS-NR-on-AMD 是一个独立项目，
-它把 DLSS 5 神经渲染带到 AMD 硬件上，方式是挂接到使用 FSR 的程序。本程序不包含该项目的任何内容：Radeon 版托管一个 FSR 3.1 上下文
-（AMD 的 FidelityFX API，`amd_fidelityfx_dx12.dll`，MIT 许可）供它挂接，并在你点击按钮时从该项目自己的发布页安装它。
+Radeon 版（`VRChatDLSS5Cam-win64-amd.zip`）通过 [DLSS-NR-on-AMD](https://github.com/danielblnc/DLSS-NR-on-AMD) 在 Radeon 显卡上运行神经渲染。DLSS-NR-on-AMD 是 Daniel Blanco 的独立项目，
+它把 DLSS 5 神经渲染带到 AMD 硬件上，方式是挂接到使用 FSR 的程序。本程序不包含该项目的任何内容：Radeon 版托管一个 FSR 上下文
+（AMD 的 FidelityFX API，`amd_fidelityfx_dx12.dll`，MIT 许可）供它挂接，并在你按下按钮时从该项目自己的发布页获取它的安装器。该项目的
+[许可](https://github.com/danielblnc/DLSS-NR-on-AMD/blob/master/LICENSE)允许个人非商业使用，不允许再分发或修改，因此其安装器绝不会放进本程序的压缩包。
 
 1. 从[最新版本](https://github.com/AlanBacker/VRChat-DLSS5-Cam/releases/latest)下载 `VRChatDLSS5Cam-win64-amd.zip`，解压到任意位置。压缩包在可执行文件旁带有 `amd_fidelityfx_dx12.dll` 和
    RTX 50 版的 `nvngx_dlssnr.dll`（第 2 步的安装器会把后者转换成它自己的权重文件）；仅 NVIDIA 需要的文件（`nvngx_dlss.dll`、`runtimes\`）不在其中。
-2. 运行 `VRChatDLSS5Cam.exe`，在 DLSS 5 分节点击 **安装 DLSS-NR-on-AMD…**。程序会从该项目的最新发布下载 `dlssnr_on_amd_setup.exe`
-   到程序目录并启动它。在安装器窗口中按 **Enter** 接受它提议的 DLL 名称；它可能会请求管理员权限。
-3. 点击 **立即重启**（或重新启动程序）。此时 DLSS 5 分节显示 *运行库：已加载 FSR 3.1.4 · FSR 宿主* 与 *DLSS-NR-on-AMD：已加载（version.dll）*，
+   GeForce 版在 Radeon 显卡上运行时会提供 **获取 Radeon 版…**（命令行 `--edition amd` 效果相同），像更新一样替换自己的文件。
+2. 运行 `VRChatDLSS5Cam.exe`。启动卡片和 DLSS 5 分节都会提供 **安装 DLSS-NR-on-AMD…**，旁边链接着它的许可。按一下即可把
+   `dlssnr_on_amd_setup.exe` 下载到程序目录并在它自己的窗口中启动；在那里按 **Enter** 接受它提议的 DLL 名称（它可能会请求管理员权限）。
+   安装器结束后本程序会自动重启；此时 DLSS 5 分节显示 *运行库：已加载 FSR … · FSR 宿主* 与 *DLSS-NR-on-AMD v…：已加载（version.dll）· 已是最新*，
    *启用 DLSS 5* 开关旁的标记显示为 *运行中*。
 
-在这种方式下，神经渲染 1 以内的强度由 DLSS-NR-on-AMD 掌管，在它自己的叠加层（**End** 键）中设置；本程序的*预设*、*风格*和各强度值不会传给它。
-在神经渲染之后起作用的控件（*输出混合*、超过 1 的强度、*神经渲染尺寸*）照常有效。DLSS-NR-on-AMD 需要 Windows 11、Radeon RX 7000 或 RX 9000
-显卡以及 Adrenalin 26.1.1 或更新版本；当前要求以它的发布页为准。加载成功后同一个按钮变为 **更新 DLSS-NR-on-AMD…**，会重新获取其最新安装器并
-就地更新；手动运行 `dlssnr_on_amd_setup.exe` 同样可以更新或移除。*高级*中的*加载方式*可手动选择方式（*自动*在 Radeon 显卡上选 FSR 宿主，
-在 GeForce 显卡上选直接加载）。
+DLSS 5 分节会把已安装的版本和最新版本放在一起显示。DLSS-NR-on-AMD 发布新版本时，分节会说明，按钮变为 **更新到 …**：它获取新的安装器，
+由安装器完成更新（**U**）。**再次运行安装器…** 随时可以做同样的事，用于更新或移除（**R**）。在本版本之前完成的安装，会通过可执行文件旁的安装器文件被识别。
 
-作者手头没有 Radeon 显卡，Radeon 版尚未在 Radeon 硬件上运行过。欢迎在 issue 中附上 `log.txt`（`%LOCALAPPDATA%\VRChatDLSS5Cam\`）和
-DLSS-NR-on-AMD 自己的日志反馈结果。
+在这种方式下，神经渲染 1 以内的强度由 DLSS-NR-on-AMD 掌管，在它自己的叠加层（**End** 键）中设置；叠加层里还有它的 *Mode*（inline / async），
+静态图片没有变化时值得切换试试。本程序的*预设*、*风格*和各强度值不会传给它。在神经渲染之后起作用的控件（*输出混合*、超过 1 的强度、
+*神经渲染尺寸*）照常有效。DLSS-NR-on-AMD 需要 Windows 11、Radeon RX 7000 或 RX 9000 显卡以及 Adrenalin 26.1.1 或更新版本；当前要求以它的发布页为准。
+*高级*中的*加载方式*可手动选择方式（*自动*在 Radeon 显卡上选 FSR 宿主，在 GeForce 显卡上选直接加载）。
+
+作者手头没有 Radeon 显卡，Radeon 版尚未在 Radeon 硬件上运行过。`log.txt`（`%LOCALAPPDATA%\VRChatDLSS5Cam\`）会列出可执行文件旁的
+DLSS-NR-on-AMD 文件，并在结尾附上该项目自己的日志（程序目录中的 `dlssnr_on_amd.log`）的最后几行；欢迎在 issue 中附上它反馈结果。
 
 ## 图片与视频文件
 
@@ -233,7 +237,7 @@ DLSS-NR-on-AMD 自己的日志反馈结果。
 - **"等待 VRChat Spout 串流…"** – 需要在 VRChat 的 Stream 相机上启用 *Spout Stream*，且相机必须处于打开状态。其他 Spout 发送端会列在 *Spout 发送端* 框中。
 - **"运行库文件缺失"** – 压缩包没有完整解压：`runtimes\blackwell\nvngx_dlssnr.dll` 与 `runtimes\universal\nvngx_dlssnr.dll` 应位于 `VRChatDLSS5Cam.exe` 旁边。重新解压，或在*运行库路径*中选择一个运行库文件。
 - **神经渲染失败** – 程序会自行切换到另一份附带的运行库并弹出提示。两份都无法启动时，错误下方会有说明；首先应尝试更新显卡驱动，`log.txt` 中记录有 NGX 结果代码，也可以尝试 *预设* 0 与 *NGX 核心* 加载方式。在 Radeon 显卡上，神经渲染改由 Radeon 版配合 DLSS-NR-on-AMD 完成（见*AMD Radeon 显卡*）。
-- **FSR 宿主在运行，但画面没有变化** – DLSS-NR-on-AMD 没有挂接到本进程：DLSS 5 分节显示 *DLSS-NR-on-AMD：未加载*。运行它的安装器（**安装 DLSS-NR-on-AMD…**），接受提议的 DLL 名称并重启程序。若已加载却仍无变化，应查看它自己的日志与叠加层（**End** 键）；该移植版是独立项目，有自己的要求。
+- **FSR 宿主在运行，但画面没有变化** – DLSS-NR-on-AMD 没有挂接到本进程：DLSS 5 分节显示 *DLSS-NR-on-AMD：未加载*。在那里安装它（**安装 DLSS-NR-on-AMD…**）；安装器结束后程序会自动重启。若已安装却未加载，再次运行它的安装器。若已加载却仍无变化，打开它的叠加层（**End** 键）确认它已启用，并试试另一种 *Mode*；它自己的日志（程序目录中的 `dlssnr_on_amd.log`，其最后几行也附在 `log.txt` 结尾）会说明它做了什么。该移植版是独立项目，有自己的要求。
 - **缺少 amd_fidelityfx_dx12.dll** – FSR 宿主方式需要该文件位于可执行文件旁；Radeon 版（`VRChatDLSS5Cam-win64-amd.zip`）自带它。
 - **神经渲染运行中，但画面全黑或没有变化** – 程序会将每一帧神经结果与输入对比，当运行库报告成功却输出黑屏或与输入相同的画面时发出警告（`log.txt`："DLSSNR output check"）。将 DLSS 5 关闭再打开即可重新开始。若问题依旧，说明该运行库版本在这块 GPU 上无法产生画面。（*强度* 为 0 时画面不变属于正常情况，不会显示警告。）
 - **程序无法启动 / 立即关闭** – `%LOCALAPPDATA%\VRChatDLSS5Cam\` 中保存有 `log.txt`（最后一行即失败的步骤）和 `crash.txt`，提交 issue 时请附上这两个文件。

@@ -17,6 +17,8 @@ public:
         std::string tag, version, date, notes, assetUrl, pageUrl;
         unsigned long long assetSize = 0;
         bool prerelease = false;
+        std::string assetName;              // the archive the release was looked up for (this edition's, or the other one's)
+        bool edition = false;               // an edition switch: the other edition of this program, this version or newer
     };
     struct Status {
         State       state = State::Idle;
@@ -30,7 +32,8 @@ public:
     };
 
     ~Updater();
-    void   Check(const std::string& currentVersion, bool includePrerelease, bool manual);
+    // otherEdition: look for the other edition of this program instead (its archive, this version or newer).
+    void   Check(const std::string& currentVersion, bool includePrerelease, bool manual, bool otherEdition = false);
     void   Download(const std::wstring& exeDir, const std::wstring& stagingDir);
     Status Get() const;
     bool   Busy() const;
@@ -39,7 +42,7 @@ public:
 private:
     void SetState(State st, const std::string& error = std::string());
     void Join();
-    bool RunCheck(const std::string& currentVersion, bool includePrerelease, Release& out, bool& newer, std::string& error);
+    bool RunCheck(const std::string& currentVersion, bool includePrerelease, bool otherEdition, Release& out, bool& newer, std::string& error);
     bool RunDownload(const std::wstring& exeDir, const std::wstring& stagingDir, std::string& error);
 
     mutable std::mutex m_mutex;
@@ -67,6 +70,11 @@ public:
         unsigned    generation = 0;                 // counts state changes, so the interface announces each once
     };
     static constexpr const char* kPageUrl = "https://github.com/danielblnc/DLSS-NR-on-AMD/releases/latest";
+    static constexpr const char* kLicenseUrl = "https://github.com/danielblnc/DLSS-NR-on-AMD/blob/master/LICENSE";
+    // Its files next to the executable: the weights its installer makes from nvngx_dlssnr.dll, the installer, its log.
+    static constexpr const wchar_t* kWeightsFile = L"dlssnr_on_amd_weights.bin";
+    static constexpr const wchar_t* kSetupFile   = L"dlssnr_on_amd_setup.exe";
+    static constexpr const wchar_t* kLogFile     = L"dlssnr_on_amd.log";
 
     ~PortSetup();
     void   Check();                                 // look up the latest release (tag, date, installer)

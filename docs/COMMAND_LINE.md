@@ -25,6 +25,7 @@ A bare `file` argument (what Windows passes for *Open with*) opens that picture 
 | `--headless` | No window: everything is drawn into an off-screen buffer. Screenshots and processing work as usual, and the program exits by itself when its work is done. Meant for scripted tests and for sessions without a desktop (services, SSH). |
 | `--data-dir <folder>` | Keep `settings.ini`, `presets.txt`, `log.txt` and `crash.txt` in this folder instead of `%LOCALAPPDATA%\VRChatDLSS5Cam`. |
 | `--update` | Look for a newer version on the chosen channel and, if there is one, download and install it: the app closes, replaces its files and starts again. Without a newer version it simply carries on. The check that normally runs at every start is skipped in `--process` runs, so this switch is the way to ask for it there; a `--headless` run never updates. |
+| `--edition <geforce\|amd>` | Fetch that edition of this program from the release page (this version or newer, pre-releases included) and swap to it the way an update does. The GeForce edition on a Radeon card offers the same as a button (**Get the Radeon edition…**), the Radeon edition on a GeForce card the reverse. Nothing happens when this is that edition already. |
 
 Exit codes: `0` when everything succeeded, `1` when a file failed to process (or the process ended with an unhandled
 C++ exception), `2` after a crash (`crash.txt` is written). A run without `--process`, `--headless` or `--exit-after`

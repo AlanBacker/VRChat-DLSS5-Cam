@@ -122,6 +122,10 @@ struct Settings {
     // Updates
     bool updateCheck = true;           // look for a new version at every start
     int  updateChannel = 0;            // 0 = stable releases only, 1 = pre-releases too
+    // DLSS-NR-on-AMD (Radeon edition): a separate program under its own licence, fetched from its own release page
+    // at the user's request (PortSetup).
+    bool        portConsent = false;   // the user agreed once to fetching and running its installer
+    std::string portInstalledTag;      // the release its installer came from, recorded when its weights file appeared
 
     // Misc
     bool showLog = false;

@@ -82,6 +82,10 @@ struct UiFrameInfo {
     bool                  fsrDllExists = false;       // amd_fidelityfx_dx12.dll next to the executable (FSR host route)
     const PortSetup::Status* portSetup = nullptr;     // the DLSS-NR-on-AMD installer (Radeon edition)
     bool                  portRestartHint = false;    // the installer ran: DLSS-NR-on-AMD loads with the next start
+    bool                  portWeightsExist = false;   // its weights file lies next to the executable (installed)
+    bool                  portConsent = false;        // the user agreed to fetching and running its installer
+    int                   portRestartIn = -1;         // seconds until the automatic restart after its installer, -1 = none
+    std::string           portInstalledTag;           // the release its installer came from, empty = unknown
     std::wstring          captureFolder;      // effective folder
     std::string           hotkeyText;
     ImTextureID           displayTexture = 0;
@@ -102,6 +106,7 @@ struct UiFrameInfo {
     int                   updateState = 0;          // UpdateState
     std::string           updateVersion, updateDate, updateNotes, updateError;
     bool                  updatePrerelease = false;
+    bool                  updateEdition = false;    // the release found is the other edition of this program
     bool                  updateHasAsset = false;   // the release carries the win64 zip
     bool                  updateWritable = true;    // the program folder takes new files
     bool                  updateShow = false;       // open the update popup (set for one frame)
@@ -153,6 +158,9 @@ struct UiEvents {
     bool reloadRuntime = false;
     bool portInstall = false;        // download and start the DLSS-NR-on-AMD installer
     bool portOpenPage = false;       // open its release page
+    bool portOpenLicense = false;    // open its licence in the browser
+    bool portRestartCancel = false;  // keep running: no automatic restart after its installer
+    bool editionSwitch = false;      // fetch the other edition of this program (GeForce <-> Radeon) and swap to it
     bool restartApp = false;
     bool openImage = false;          // browse for a picture
     bool openVideo = false;          // browse for a video
@@ -220,6 +228,7 @@ private:
     void BlockDlaa(Settings& s, const UiFrameInfo& info, UiEvents& ev);
     void BlockNgxRuntime(Settings& s, const UiFrameInfo& info, UiEvents& ev);   // the NVIDIA runtime rows of the DLSS 5 section
     void BlockFsrHost(Settings& s, const UiFrameInfo& info, UiEvents& ev);      // the FSR host rows (Radeon)
+    void PortActions(const UiFrameInfo& info, UiEvents& ev, bool portLoaded, bool card);   // DLSS-NR-on-AMD: installer state, restart, buttons
     void BlockInternals(Settings& s, const UiFrameInfo& info, UiEvents& ev);
     void BlockAbout(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts);
     void EffectControls(Settings& s, UiEvents& ev, bool advanced, bool enabled);   // the DLSS 5 effect controls

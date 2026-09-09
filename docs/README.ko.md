@@ -72,28 +72,34 @@ VRChat DLSS5 Cam은 VRChat 카메라의 화면에 GeForce RTX에서 NVIDIA **DLS
 ## AMD Radeon 카드
 
 Radeon 에디션(`VRChatDLSS5Cam-win64-amd.zip`)은 [DLSS-NR-on-AMD](https://github.com/danielblnc/DLSS-NR-on-AMD)를 통해 Radeon 카드에서 뉴럴 패스를 실행합니다. DLSS-NR-on-AMD는
-FSR을 쓰는 프로그램에 붙어 DLSS 5 뉴럴 렌더링을 AMD 하드웨어에서 동작시키는 별도 프로젝트입니다. 이 앱에는 그 프로젝트의 내용이 전혀
-포함되어 있지 않습니다. Radeon 에디션은 그것이 붙을 FSR 3.1 컨텍스트(AMD의 FidelityFX API, `amd_fidelityfx_dx12.dll`, MIT)를 호스팅하고,
-요청 시 그 프로젝트 자체의 릴리스 페이지에서 설치합니다.
+Daniel Blanco의 별도 프로젝트로, FSR을 쓰는 프로그램에 붙어 DLSS 5 뉴럴 렌더링을 AMD 하드웨어에서 동작시킵니다. 이 앱에는 그 프로젝트의 내용이 전혀
+포함되어 있지 않습니다. Radeon 에디션은 그것이 붙을 FSR 컨텍스트(AMD의 FidelityFX API, `amd_fidelityfx_dx12.dll`, MIT)를 호스팅하고,
+버튼을 누르면 그 프로젝트 자체의 릴리스 페이지에서 설치 프로그램을 받아 옵니다. 그 프로젝트의
+[라이선스](https://github.com/danielblnc/DLSS-NR-on-AMD/blob/master/LICENSE)는 개인·비상업 용도의 사용을 허용하고 재배포와 수정을 금지하므로,
+설치 프로그램은 이 앱의 압축 파일에 절대 들어가지 않습니다.
 
 1. [최신 릴리스](https://github.com/AlanBacker/VRChat-DLSS5-Cam/releases/latest)에서 `VRChatDLSS5Cam-win64-amd.zip`을 내려받아 원하는 위치에 압축을 풉니다. 실행 파일 옆에
    `amd_fidelityfx_dx12.dll`과 RTX 50용 빌드의 `nvngx_dlssnr.dll`이 들어 있습니다(2단계의 설치 프로그램이 후자를 자체 가중치로 변환합니다).
-   NVIDIA 전용 파일(`nvngx_dlss.dll`, `runtimes\`)은 들어 있지 않습니다.
-2. `VRChatDLSS5Cam.exe`를 실행하고 DLSS 5 섹션의 **DLSS-NR-on-AMD 설치…**를 누릅니다. 앱이 그 프로젝트의 최신 릴리스에서
-   `dlssnr_on_amd_setup.exe`를 프로그램 폴더에 내려받아 실행합니다. 설치 프로그램 창에서 **Enter**를 눌러 제안된 DLL 이름을 수락하세요.
-   관리자 권한을 요청할 수 있습니다.
-3. **지금 다시 시작**을 누릅니다(또는 앱을 다시 실행합니다). DLSS 5 섹션에 *런타임: 로드됨 FSR 3.1.4 · FSR 호스트*와
-   *DLSS-NR-on-AMD: 로드됨(version.dll)*이 표시되고, *DLSS 5 켜기* 스위치 옆의 배지가 *활성*으로 바뀝니다.
+   NVIDIA 전용 파일(`nvngx_dlss.dll`, `runtimes\`)은 들어 있지 않습니다. GeForce 에디션은 Radeon 카드에서 실행되면 **Radeon 에디션 받기…**를
+   보여 주며(명령줄의 `--edition amd`도 같은 일을 합니다), 업데이트와 같은 방식으로 자신의 파일을 바꿉니다.
+2. `VRChatDLSS5Cam.exe`를 실행합니다. 시작 카드와 DLSS 5 섹션에 **DLSS-NR-on-AMD 설치…**가 라이선스 링크와 함께 나타납니다. 한 번 누르면
+   `dlssnr_on_amd_setup.exe`를 프로그램 폴더에 내려받아 자체 창에서 실행합니다. 거기서 **Enter**를 눌러 제안된 DLL 이름을 수락하세요(관리자 권한을
+   요청할 수 있습니다). 설치 프로그램이 끝나면 앱이 스스로 다시 시작되고, DLSS 5 섹션에 *런타임: 로드됨 FSR … · FSR 호스트*와
+   *DLSS-NR-on-AMD v…: 로드됨(version.dll) · 최신 버전*이 표시되며 *DLSS 5 켜기* 스위치 옆의 배지가 *활성*으로 바뀝니다.
 
-이 방식에서는 1까지의 뉴럴 패스 강도가 DLSS-NR-on-AMD의 것이며 자체 오버레이(**End** 키)에서 설정합니다. 이 앱의 *프리셋*, *스타일*, 강도 값은
-전달되지 않습니다. 패스 뒤에서 작용하는 컨트롤(*출력 블렌드*, 1을 넘는 강도, *뉴럴 패스* 해상도)은 평소처럼 동작합니다. DLSS-NR-on-AMD에는
-Windows 11, Radeon RX 7000 또는 RX 9000 카드, Adrenalin 26.1.1 이상이 필요합니다. 최신 요구 사항은 그 릴리스 페이지를 참고하세요. 로드된 뒤에는
-같은 버튼이 **DLSS-NR-on-AMD 업데이트…**로 바뀌어 최신 설치 프로그램을 다시 받아 제자리에서 업데이트합니다. `dlssnr_on_amd_setup.exe`를 직접
-실행해도 업데이트와 제거가 가능합니다. *고급*의 *호스트 방식*에서 방식을 직접 고를 수 있습니다(*자동*은 Radeon에서 FSR 호스트, GeForce에서 직접
-방식을 선택합니다).
+DLSS 5 섹션은 설치된 릴리스와 최신 릴리스를 나란히 보여 줍니다. DLSS-NR-on-AMD의 새 릴리스가 나오면 섹션이 이를 알리고 버튼이
+**…(으)로 업데이트**로 바뀝니다. 누르면 새 설치 프로그램을 받아 오고, 업데이트(**U**)는 설치 프로그램이 수행합니다. **설치 프로그램 다시 실행…**은
+언제든 같은 일을 하며 업데이트나 제거(**R**)에 쓸 수 있습니다. 이 버전 이전에 한 설치는 실행 파일 옆의 설치 프로그램 파일로 인식됩니다.
 
-작성자에게 Radeon 카드가 없어 Radeon 에디션은 Radeon 하드웨어에서 실행해 보지 못했습니다. `log.txt`(`%LOCALAPPDATA%\VRChatDLSS5Cam\`)와
-DLSS-NR-on-AMD 자체 로그를 첨부한 보고를 이슈에서 기다립니다.
+이 방식에서는 1까지의 뉴럴 패스 강도가 DLSS-NR-on-AMD의 것이며 자체 오버레이(**End** 키)에서 설정합니다. 오버레이에는 *Mode*(inline / async)도
+있어 정지 이미지가 그대로일 때 바꿔 볼 만합니다. 이 앱의 *프리셋*, *스타일*, 강도 값은 전달되지 않습니다. 패스 뒤에서 작용하는 컨트롤(*출력 블렌드*,
+1을 넘는 강도, *뉴럴 패스* 해상도)은 평소처럼 동작합니다. DLSS-NR-on-AMD에는 Windows 11, Radeon RX 7000 또는 RX 9000 카드, Adrenalin 26.1.1 이상이
+필요합니다. 최신 요구 사항은 그 릴리스 페이지를 참고하세요. *고급*의 *호스트 방식*에서 방식을 직접 고를 수 있습니다(*자동*은 Radeon에서 FSR 호스트,
+GeForce에서 직접 방식을 선택합니다).
+
+작성자에게 Radeon 카드가 없어 Radeon 에디션은 Radeon 하드웨어에서 실행해 보지 못했습니다. `log.txt`(`%LOCALAPPDATA%\VRChatDLSS5Cam\`)에는
+실행 파일 옆의 DLSS-NR-on-AMD 파일이 기록되고 끝에는 그 프로젝트 자체 로그(프로그램 폴더의 `dlssnr_on_amd.log`)의 마지막 몇 줄이 붙습니다.
+이를 첨부한 보고를 이슈에서 기다립니다.
 
 ## 이미지와 동영상 파일
 
@@ -258,7 +264,7 @@ DLSS-NR-on-AMD 자체 로그를 첨부한 보고를 이슈에서 기다립니다
 - **"VRChat Spout 스트림 대기 중…"** – VRChat의 Stream 카메라에서 *Spout Stream*이 켜져 있어야 하고, 카메라도 열려 있어야 합니다. 다른 Spout 송신자는 *Spout 송신자* 상자에 표시됩니다.
 - **"런타임 파일이 없습니다"** – 압축 파일이 완전히 풀리지 않았습니다. `runtimes\blackwell\nvngx_dlssnr.dll`과 `runtimes\universal\nvngx_dlssnr.dll`은 `VRChatDLSS5Cam.exe` 옆에 있어야 합니다. 다시 풀거나 *런타임 경로*에서 런타임 파일을 선택하면 됩니다.
 - **뉴럴 렌더링 실패** – 앱이 스스로 다른 내장 빌드로 전환하고 알림으로 알려 줍니다. 두 빌드 모두 시작되지 않으면 오류 아래에 그렇게 표시됩니다. 먼저 더 새로운 그래픽 드라이버를 시도해 볼 만하고, `log.txt`에 NGX 결과 코드가 남으며, *프리셋* 0과 *NGX 코어* 방식도 시도해 볼 수 있습니다. Radeon 카드에서는 뉴럴 패스가 Radeon 에디션과 DLSS-NR-on-AMD로 동작합니다(*AMD Radeon 카드* 참고).
-- **FSR 호스트는 동작하는데 화면이 그대로임** – DLSS-NR-on-AMD가 이 프로세스에 붙어 있지 않습니다. DLSS 5 섹션에 *DLSS-NR-on-AMD: 로드되지 않음*이 표시됩니다. 설치 프로그램(**DLSS-NR-on-AMD 설치…**)을 실행하고 제안된 DLL 이름을 수락한 뒤 앱을 다시 시작하세요. 로드되었는데도 변화가 없다면 그 자체 로그와 오버레이(**End** 키)를 확인하세요. 이 포트는 자체 요구 사항을 가진 별도 프로젝트입니다.
+- **FSR 호스트는 동작하는데 화면이 그대로임** – DLSS-NR-on-AMD가 이 프로세스에 붙어 있지 않습니다. DLSS 5 섹션에 *DLSS-NR-on-AMD: 로드되지 않음*이 표시됩니다. 거기서 설치하세요(**DLSS-NR-on-AMD 설치…**). 설치 프로그램이 끝나면 앱이 스스로 다시 시작됩니다. 설치되어 있는데 로드되지 않으면 설치 프로그램을 다시 실행하세요. 로드되었는데도 변화가 없다면 오버레이(**End** 키)를 열어 켜져 있는지 확인하고 다른 *Mode*를 시도해 보세요. 자체 로그(프로그램 폴더의 `dlssnr_on_amd.log`, 마지막 몇 줄은 `log.txt` 끝에도 붙습니다)에 무엇을 했는지 적혀 있습니다. 이 포트는 자체 요구 사항을 가진 별도 프로젝트입니다.
 - **amd_fidelityfx_dx12.dll이 없음** – FSR 호스트 방식에는 실행 파일 옆에 그 파일이 필요합니다. Radeon 에디션(`VRChatDLSS5Cam-win64-amd.zip`)에 들어 있습니다.
 - **뉴럴 패스는 동작 중인데 화면이 검거나 변화가 없음** – 앱은 모든 뉴럴 프레임을 입력과 비교하며, 런타임이 성공을 보고하면서 검은 화면이나 변화 없는 화면을 내놓으면 경고합니다(`log.txt`: "DLSSNR output check"). DLSS 5를 껐다가 다시 켜면 새로 시작합니다. 그래도 계속되면 그 런타임 빌드는 이 GPU에서 화면을 만들지 못하는 것입니다. (*강도*가 0이면 화면에 변화가 없는 것이 정상이며 경고도 표시되지 않습니다.)
 - **앱이 시작되지 않음 / 바로 종료됨** – `%LOCALAPPDATA%\VRChatDLSS5Cam\`에 `log.txt`(마지막 줄이 실패한 단계)와 `crash.txt`가 있습니다. 이슈에는 두 파일을 함께 첨부하면 됩니다.

@@ -20,6 +20,7 @@ namespace {
 constexpr const wchar_t* kReleasesUrl = L"https://api.github.com/repos/AlanBacker/VRChat-DLSS5-Cam/releases?per_page=20";
 // Each edition updates itself with its own archive.
 constexpr const char*    kAssetName   = APP_EDITION_AMD ? "VRChatDLSS5Cam-win64-amd.zip" : "VRChatDLSS5Cam-win64.zip";
+constexpr const char*    kOtherAssetName = APP_EDITION_AMD ? "VRChatDLSS5Cam-win64.zip" : "VRChatDLSS5Cam-win64-amd.zip";   // an edition switch
 constexpr const wchar_t* kPortReleaseUrl = L"https://api.github.com/repos/danielblnc/DLSS-NR-on-AMD/releases/latest";
 constexpr const char*    kPortSetupName  = "dlssnr_on_amd_setup.exe";
 constexpr const wchar_t* kExeName     = L"VRChatDLSS5Cam.exe";
@@ -333,7 +334,7 @@ void Updater::SetState(State st, const std::string& error) {
     ++m_status.generation;
 }
 
-void Updater::Check(const std::string& currentVersion, bool includePrerelease, bool manual) {
+void Updater::Check(const std::string& currentVersion, bool includePrerelease, bool manual, bool otherEdition) {
     if (m_busy) return;
     Join();
     m_cancel = false;
@@ -346,11 +347,12 @@ void Updater::Check(const std::string& currentVersion, bool includePrerelease, b
         m_status.state = State::Checking;
         ++m_status.generation;
     }
-    m_thread = std::thread([this, currentVersion, includePrerelease]() {
+    m_thread = std::thread([this, currentVersion, includePrerelease, otherEdition]() {
         Release rel;
+        rel.edition = otherEdition;   // kept when nothing is found, so the answer is told as the edition's
         bool newer = false;
         std::string error;
-        if (RunCheck(currentVersion, includePrerelease, rel, newer, error)) {
+        if (RunCheck(currentVersion, includePrerelease, otherEdition, rel, newer, error)) {
             {
                 std::lock_guard<std::mutex> lock(m_mutex);
                 m_status.release = rel;
@@ -363,7 +365,7 @@ void Updater::Check(const std::string& currentVersion, bool includePrerelease, b
     });
 }
 
-bool Updater::RunCheck(const std::string& currentVersion, bool includePrerelease, Release& out, bool& newer, std::string& error) {
+bool Updater::RunCheck(const std::string& currentVersion, bool includePrerelease, bool otherEdition, Release& out, bool& newer, std::string& error) {
     std::string body;
     if (!HttpGet(kReleasesUrl, true, m_cancel, [&](const char* data, DWORD n, unsigned long long) {
             if (body.size() + n > 8u * 1024u * 1024u) return false;
@@ -381,6 +383,7 @@ bool Updater::RunCheck(const std::string& currentVersion, bool includePrerelease
     }
     int cur[3] = {};
     ParseVersion(currentVersion, cur);
+    const char* asset = otherEdition ? kOtherAssetName : kAssetName;
     int best[3] = { -1, -1, -1 };
     bool found = false;
     for (const Json& r : root.arr) {
@@ -390,6 +393,19 @@ bool Updater::RunCheck(const std::string& currentVersion, bool includePrerelease
         int v[3] = {};
         if (!ParseVersion(r.Str("tag_name"), v)) continue;
         if (found && CompareVersion(v, best) <= 0) continue;
+        std::string assetUrl;
+        unsigned long long assetSize = 0;
+        if (const Json* assets = r.Find("assets")) {
+            if (assets->type == Json::Array) {
+                for (const Json& a : assets->arr) {
+                    if (a.Str("name") == asset) {
+                        assetUrl = a.Str("browser_download_url");
+                        assetSize = (unsigned long long)a.Num("size");
+                    }
+                }
+            }
+        }
+        if (otherEdition && assetUrl.empty()) continue;   // an edition switch needs the archive: a release without it does not count
         found = true;
         for (int k = 0; k < 3; ++k) best[k] = v[k];
         out = Release();
@@ -399,21 +415,17 @@ bool Updater::RunCheck(const std::string& currentVersion, bool includePrerelease
         out.notes = PlainNotes(r.Str("body"));
         out.pageUrl = r.Str("html_url");
         out.prerelease = pre;
-        if (const Json* assets = r.Find("assets")) {
-            if (assets->type == Json::Array) {
-                for (const Json& a : assets->arr) {
-                    if (a.Str("name") == kAssetName) {
-                        out.assetUrl = a.Str("browser_download_url");
-                        out.assetSize = (unsigned long long)a.Num("size");
-                    }
-                }
-            }
-        }
+        out.assetUrl = assetUrl;
+        out.assetSize = assetSize;
+        out.assetName = asset;
+        out.edition = otherEdition;
     }
-    newer = found && CompareVersion(best, cur) > 0;
-    if (found) Log::Info("Update check: newest %s release is %s (this is %s)%s", includePrerelease ? "stable or pre-" : "stable",
-                         out.tag.c_str(), currentVersion.c_str(), newer ? ": newer" : "");
-    else Log::Info("Update check: no release found on the %s channel", includePrerelease ? "pre-release" : "stable");
+    // An edition switch takes this version again in the other edition; an update needs a newer one.
+    newer = found && CompareVersion(best, cur) >= (otherEdition ? 0 : 1);
+    if (found) Log::Info("Update check: newest %s release%s is %s (this is %s)%s", includePrerelease ? "stable or pre-" : "stable",
+                         otherEdition ? " of the other edition" : "", out.tag.c_str(), currentVersion.c_str(),
+                         newer ? (otherEdition ? ": available" : ": newer") : "");
+    else Log::Info("Update check: no release%s found on the %s channel", otherEdition ? " of the other edition" : "", includePrerelease ? "pre-release" : "stable");
     return true;
 }
 
@@ -458,7 +470,7 @@ bool Updater::RunDownload(const std::wstring& exeDir, const std::wstring& stagin
     }
     RemoveTree(stagingDir);
     if (!CreateDirectories(stagingDir)) { error = "the update folder could not be created"; return false; }
-    const std::wstring zipPath = JoinPath(stagingDir, Utf8ToWide(kAssetName));
+    const std::wstring zipPath = JoinPath(stagingDir, Utf8ToWide(rel.assetName.empty() ? std::string(kAssetName) : rel.assetName));
     const std::wstring filesDir = JoinPath(stagingDir, L"files");
     Log::Info("Update: downloading %s", rel.assetUrl.c_str());
     FILE* f = nullptr;

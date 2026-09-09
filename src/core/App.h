@@ -42,6 +42,7 @@ struct CommandLine {
     std::wstring splashDump;              // --splash-dump <bmp> (development: a frame of the start-up card)
     double       exitAfter = -1.0;        // --exit-after <seconds>
     bool         update = false;          // --update: install a newer version from the chosen channel if there is one
+    int          edition = 0;             // --edition geforce|amd: fetch that edition of this program (1 GeForce, 2 Radeon) and swap to it
     std::vector<std::pair<std::string, std::string>> sets;      // --set key=value (settings)
     std::wstring dataDir;                 // --data-dir <folder>
     std::string  error;                   // the first unknown option
@@ -235,6 +236,8 @@ private:
     void RestartRuntimeChoice();           // forget the failures and the kept build: the next load starts over
     int  EffectiveRoute() const;           // the neural route in effect (Settings::nrRoute with the automatic choice resolved)
     void PollPortSetup();                  // DLSS-NR-on-AMD installer progress (Radeon edition), told once per state
+    void RecordPortVersion();              // an installation from before the record: taken as the latest when its installer file is the latest one
+    void LogPortState(bool tail);          // its files next to the executable; tail: the last lines of its own log too
     void RelaunchSelf();                   // start the executable again and close this instance
     static std::wstring EffectiveCaptureFolder(const Settings& s);
     std::wstring EffectiveCaptureFolder() const { return EffectiveCaptureFolder(m_settings); }
@@ -356,6 +359,9 @@ private:
     PortSetup::Status m_portStatus;        // its state as last polled (the interface reads it)
     unsigned      m_portGenSeen = 0;
     bool          m_portRestartHint = false;   // the installer ran: DLSS-NR-on-AMD loads with the next start
+    double        m_portRestartAt = -1.0;      // the automatic restart after its installer (NowSeconds), -1 = none
+    bool          m_portWeightsExist = false;  // its weights file lies next to the executable (looked at now and then)
+    double        m_portWeightsTime = -1.0;
     Splash        m_splash;                // the start-up card
     bool          m_mainShown = false;     // the main window has been shown (after its first frame)
     int           m_nCmdShow = SW_SHOWNORMAL;

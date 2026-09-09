@@ -205,6 +205,14 @@ CommandLine CommandLine::Parse() {
         }
         else if (a == L"--exit-after") cl.exitAfter = ParseSeconds(next(i));
         else if (a == L"--update") cl.update = true;
+        else if (a == L"--edition") {
+            const wchar_t* v = next(i);
+            std::wstring e = v ? v : L"";
+            for (wchar_t& c : e) if (c >= L'A' && c <= L'Z') c = (wchar_t)(c + 32);
+            if (e == L"amd" || e == L"radeon") cl.edition = 2;
+            else if (e == L"geforce" || e == L"nvidia") cl.edition = 1;
+            else if (cl.error.empty()) cl.error = "--edition expects geforce or amd";
+        }
         else if (a == L"--splash-dump") { if (const wchar_t* v = next(i)) cl.splashDump = v; }
         else if (a == L"--set") {
             const wchar_t* v = next(i);
@@ -360,7 +368,12 @@ bool App::Init(HINSTANCE hInstance, int nCmdShow) {
 #if APP_EDITION_AMD
     if (!m_headless && !m_cli.process && m_settings.updateCheck) m_portSetup.Check();
 #endif
-    if (!m_headless && (m_cli.update || (!m_cli.process && m_settings.updateCheck))) m_updater.Check(APP_VERSION_STRING, m_settings.updateChannel == 1, false);
+    if (EffectiveRoute() == RouteFsrHost) LogPortState(false);
+    // --edition: the other edition of this program is fetched and swapped in like an update, without a click.
+    const bool otherEdition = m_cli.edition == (APP_EDITION_AMD ? 1 : 2);
+    if (m_cli.edition && !otherEdition) Log::Info("--edition: this is the %s edition already", APP_EDITION_AMD ? "Radeon" : "GeForce");
+    if (!m_headless && otherEdition) m_updater.Check(APP_VERSION_STRING, true, true, true);
+    else if (!m_headless && (m_cli.update || (!m_cli.process && m_settings.updateCheck))) m_updater.Check(APP_VERSION_STRING, m_settings.updateChannel == 1, false);
     // The previous session's file comes back only when the user asked for that.
     if (m_cli.open.empty() && m_settings.reopenLast) {
         if (m_settings.sourceMode == SourceImage && !m_settings.imagePath.empty()) {
@@ -517,6 +530,7 @@ void App::ApplyDpi(float scale) {
 }
 
 void App::Shutdown() {
+    if (m_deviceReady && EffectiveRoute() == RouteFsrHost) LogPortState(true);
     m_updater.Cancel();
     m_splash.Close();
     StopWorker();
@@ -1683,6 +1697,16 @@ void App::Frame() {
     PollPortSetup();
     info.portSetup = &m_portStatus;
     info.portRestartHint = m_portRestartHint;
+    // The automatic restart after its installer: not in the middle of a batch or an update (the hint stays then).
+    if (m_portRestartAt >= 0.0) {
+        if (m_source.batchRunning || m_libraryBatchRunning || m_updater.Busy()) m_portRestartAt = -1.0;
+        else if (NowSeconds() >= m_portRestartAt) { m_portRestartAt = -1.0; RelaunchSelf(); }
+    }
+    info.portRestartIn = m_portRestartAt >= 0.0 ? (int)std::ceil(m_portRestartAt - NowSeconds()) : -1;
+    if (NowSeconds() - m_portWeightsTime > 2.0) { m_portWeightsTime = NowSeconds(); m_portWeightsExist = FileExists(JoinPath(m_exeDir, PortSetup::kWeightsFile)); }
+    info.portWeightsExist = m_portWeightsExist;
+    info.portConsent = m_settings.portConsent;
+    info.portInstalledTag = m_settings.portInstalledTag;
     info.captureFolder = EffectiveCaptureFolder();
     info.hotkeyText = HotkeyText(m_settings);
     info.hasDisplay = display.valid;
@@ -1703,6 +1727,7 @@ void App::Frame() {
         info.updateDate = us.release.date;
         info.updateNotes = us.release.notes;
         info.updatePrerelease = us.release.prerelease;
+        info.updateEdition = us.release.edition;
         info.updateHasAsset = !us.release.assetUrl.empty();
         info.updateError = us.error;
         info.updateWritable = us.writable;
@@ -1714,9 +1739,12 @@ void App::Frame() {
             switch (us.state) {
             case Updater::State::Available:
                 info.updateShow = true;
-                if (m_cli.update) m_updater.Download(m_exeDir, JoinPath(m_appDataDir, L"update"));   // --update: no click needed
+                if (m_cli.update || (us.release.edition && m_cli.edition)) m_updater.Download(m_exeDir, JoinPath(m_appDataDir, L"update"));   // --update / --edition: no click needed
                 break;
-            case Updater::State::UpToDate: if (us.manual) m_ui.Toast(StrPrintf(TR(UpdateUpToDate), APP_VERSION_STRING)); break;
+            case Updater::State::UpToDate:
+                if (us.release.edition) m_ui.Toast(StrPrintf(TR(EditionNotFound), APP_EDITION_AMD ? TR(EditionGeforce) : TR(EditionAmd), APP_VERSION_STRING), true);
+                else if (us.manual) m_ui.Toast(StrPrintf(TR(UpdateUpToDate), APP_VERSION_STRING));
+                break;
             case Updater::State::Failed:
                 if (us.download) m_ui.Toast(us.writable ? StrPrintf(TR(UpdateFailed), us.error.c_str()) : std::string(TR(UpdateNotWritable)), true);
                 else m_ui.Toast(StrPrintf(TR(UpdateCheckFailed), us.error.c_str()), true);
@@ -2040,7 +2068,15 @@ void App::HandleEvents(ui::UiEvents& ev) {
         if (EffectiveRoute() == RouteFsrHost) { m_pipeline.RetryFsrHost(); m_pipeline.MarkNrDirty(); WakeWorker(); }
         else { RestartRuntimeChoice(); RequestRuntimeLoad(true); }
     }
-    if (ev.portInstall) { m_portRestartHint = false; m_portSetup.Install(m_exeDir); }
+    if (ev.portInstall) {
+        // The first press is the consent to fetching and running that project's installer under its own licence.
+        if (!m_settings.portConsent) { m_settings.portConsent = true; MarkSettingsDirty(); }
+        m_portRestartHint = false; m_portRestartAt = -1.0;
+        m_portSetup.Install(m_exeDir);
+    }
+    if (ev.portOpenLicense) ShellExecuteW(nullptr, L"open", Utf8ToWide(PortSetup::kLicenseUrl).c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+    if (ev.portRestartCancel) m_portRestartAt = -1.0;
+    if (ev.editionSwitch) m_updater.Check(APP_VERSION_STRING, true, true, true);
     if (ev.portOpenPage) {
         const std::wstring url = Utf8ToWide(m_portStatus.pageUrl.empty() ? std::string(PortSetup::kPageUrl) : m_portStatus.pageUrl);
         ShellExecuteW(nullptr, L"open", url.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
@@ -2658,20 +2694,76 @@ const char* App::RuntimeBuildName(const std::wstring& path) const {
 int App::EffectiveRoute() const { return EffectiveNrRoute(m_settings.nrRoute, m_device.Info().IsAmd()); }
 
 // The installer runs in its own window; each state change is told once. It leaves its weights file next to the
-// executable when it installed, which is what the restart hint goes by.
+// executable when it installed: then the release it came from is recorded and the application restarts by itself
+// (DLSS-NR-on-AMD attaches at process start), unless work is running.
 void App::PollPortSetup() {
+    static constexpr double kRestartDelay = 4.0;   // seconds between the installer's end and the restart
     m_portStatus = m_portSetup.Get();
     if (m_portStatus.generation == m_portGenSeen) return;
     m_portGenSeen = m_portStatus.generation;
     switch (m_portStatus.state) {
+        case PortSetup::State::Ready: RecordPortVersion(); break;
         case PortSetup::State::Launched: m_ui.Toast(TR(AmdPortInstallerRunning)); break;
-        case PortSetup::State::Finished:
-            if (FileExists(JoinPath(m_exeDir, L"dlssnr_on_amd_weights.bin"))) { m_portRestartHint = true; m_ui.Toast(TR(AmdPortInstalled)); }
+        case PortSetup::State::Finished: {
+            m_portWeightsTime = -1.0;   // looked at again on the next frame
+            const bool weights = FileExists(JoinPath(m_exeDir, PortSetup::kWeightsFile));
+            const std::string tag = weights ? m_portStatus.tag : std::string();   // removed: no release any more
+            if (m_settings.portInstalledTag != tag) { m_settings.portInstalledTag = tag; MarkSettingsDirty(); }
+            if (weights) { m_portRestartHint = true; m_portRestartAt = NowSeconds() + kRestartDelay; m_ui.Toast(TR(AmdPortInstalled)); }
             else m_ui.Toast(TR(AmdPortNotInstalled), true);
             break;
+        }
         case PortSetup::State::Failed: m_ui.Toast(StrPrintf("%s: %s", TR(AmdPortFailed), m_portStatus.error.c_str()), true); break;
         default: break;
     }
+}
+
+// An installation made before the record existed (or by hand): when the installer file next to the executable is
+// the latest release's one (same size), the installation counts as that release.
+void App::RecordPortVersion() {
+    if (!m_settings.portInstalledTag.empty() || m_portStatus.tag.empty() || m_portStatus.assetSize == 0) return;
+    if (!FileExists(JoinPath(m_exeDir, PortSetup::kWeightsFile))) return;
+    if (GetFileSizeBytes(JoinPath(m_exeDir, PortSetup::kSetupFile)) != m_portStatus.assetSize) return;
+    m_settings.portInstalledTag = m_portStatus.tag;
+    MarkSettingsDirty();
+    Log::Info("DLSS-NR-on-AMD: the installer next to the executable is the %s one; the installation is taken as %s", m_portStatus.tag.c_str(), m_portStatus.tag.c_str());
+}
+
+// What of DLSS-NR-on-AMD lies next to the executable and, at the end, the last lines of its own log: one log.txt
+// then tells the whole story of a report.
+void App::LogPortState(bool tail) {
+    const wchar_t* names[] = { PortSetup::kWeightsFile, PortSetup::kSetupFile, PortSetup::kLogFile, L"version.dll", L"winmm.dll",
+                               L"dbghelp.dll", L"wininet.dll", L"winhttp.dll", L"dxgi.dll" };
+    std::string found;
+    for (const wchar_t* n : names) {
+        const std::wstring p = JoinPath(m_exeDir, n);
+        if (!FileExists(p)) continue;
+        found += StrPrintf("%s%s (%llu bytes)", found.empty() ? "" : ", ", WideToUtf8(n).c_str(), (unsigned long long)GetFileSizeBytes(p));
+    }
+    Log::Info("DLSS-NR-on-AMD files next to the executable: %s", found.empty() ? "none" : found.c_str());
+    if (!tail) return;
+    // Its log may still be open for writing: read with every share mode.
+    HANDLE h = CreateFileW(JoinPath(m_exeDir, PortSetup::kLogFile).c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                           nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (h == INVALID_HANDLE_VALUE) return;
+    LARGE_INTEGER size{};
+    GetFileSizeEx(h, &size);
+    const DWORD take = (DWORD)std::min<LONGLONG>(size.QuadPart, 3000);
+    LARGE_INTEGER pos{};
+    pos.QuadPart = size.QuadPart - take;
+    SetFilePointerEx(h, pos, nullptr, FILE_BEGIN);
+    std::string text((size_t)take, '\0');
+    DWORD got = 0;
+    if (!ReadFile(h, text.data(), take, &got, nullptr)) got = 0;
+    CloseHandle(h);
+    text.resize(got);
+    if (take < (DWORD)size.QuadPart) {   // from a whole line on
+        const size_t nl = text.find('\n');
+        text = nl == std::string::npos ? std::string() : text.substr(nl + 1);
+    }
+    for (char& c : text) if (c == '\r') c = ' ';
+    while (!text.empty() && (text.back() == '\n' || text.back() == ' ')) text.pop_back();
+    Log::Info("DLSS-NR-on-AMD log (%s, %lld bytes), last lines:\n%s", WideToUtf8(PortSetup::kLogFile).c_str(), (long long)size.QuadPart, text.c_str());
 }
 
 void App::RelaunchSelf() {

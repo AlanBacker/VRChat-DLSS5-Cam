@@ -558,10 +558,16 @@ void MainUI::DrawUpdatePopup(Settings& /*s*/, const UiFrameInfo& info, UiEvents&
     const int st = info.updateState;
     const bool busy = st == UpDownloading || st == UpExtracting || st == UpRestarting;
     ImGui::PushFont(fonts.Bold(), ImGui::GetStyle().FontSizeBase * 1.15f);
-    ImGui::TextUnformatted(TR(UpdateTitle));
+    ImGui::TextUnformatted(info.updateEdition ? TR(UpdateEditionTitle) : TR(UpdateTitle));
     ImGui::PopFont();
     if (info.updatePrerelease) { ImGui::SameLine(0.0f, 10.0f); Pill(TR(ChannelPreview), WithAlpha(p.warn, 0.2f), p.warn); }
-    ImGui::TextUnformatted(StrPrintf(TR(UpdateVersionFmt), info.updateVersion.c_str(), info.appVersion.c_str()).c_str());
+    if (info.updateEdition) {
+        const char* thisEdition = APP_EDITION_AMD ? TR(EditionAmd) : TR(EditionGeforce);
+        const char* otherEdition = APP_EDITION_AMD ? TR(EditionGeforce) : TR(EditionAmd);
+        ImGui::TextUnformatted(StrPrintf(TR(UpdateEditionFmt), otherEdition, info.updateVersion.c_str(), thisEdition, info.appVersion.c_str()).c_str());
+    } else {
+        ImGui::TextUnformatted(StrPrintf(TR(UpdateVersionFmt), info.updateVersion.c_str(), info.appVersion.c_str()).c_str());
+    }
     if (!info.updateDate.empty()) ImGui::TextDisabled("%s", StrPrintf(TR(UpdatePublished), info.updateDate.c_str()).c_str());
     if (!info.updateNotes.empty()) {
         ImGui::Spacing();
@@ -1464,13 +1470,22 @@ void MainUI::BlockNgxRuntime(Settings& s, const UiFrameInfo& info, UiEvents& ev)
         ImGui::TextUnformatted(TR(RuntimePath));
         if (ImGui::SmallButton(TR(Reload))) ev.reloadRuntime = true;
     }
+#if APP_EDITION_AMD
+    // The Radeon edition on a GeForce card: the GeForce edition is the one with the runtime builds.
+    if (info.adapter && info.adapter->IsNvidia()) {
+        ImGui::PushStyleColor(ImGuiCol_Text, p.muted);
+        ImGui::TextWrapped("%s", TR(EditionHintAmdOnGeforce));
+        ImGui::PopStyleColor();
+        if (FlatButton(TR(EditionGetGeforce))) ev.editionSwitch = true;
+        Tip(TR(TipEditionSwitch));
+    }
+#endif
 }
 
 // The FSR host rows: the FSR runtime the app hosts, whether DLSS-NR-on-AMD is attached to the process, and the
 // download of its installer (the Radeon edition's one-click install). The installer is that project's own program
 // under its own terms; nothing of it is part of this application.
 void MainUI::BlockFsrHost(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
-    (void)s;
     const Palette& p = Colors();
     const PipelineStatus* st = info.status;
     const bool fsrLoaded = st && st->nrFsrLoaded;
@@ -1483,19 +1498,45 @@ void MainUI::BlockFsrHost(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
             ImGui::PushStyleColor(ImGuiCol_Text, p.warn);
             ImGui::TextWrapped("%s", TR(FsrDllMissing));
             ImGui::PopStyleColor();
+#if !APP_EDITION_AMD
+            if (FlatButton(TR(EditionGetAmd))) ev.editionSwitch = true;
+            Tip(TR(TipEditionSwitch));
+#endif
         } else if (st && !st->nrFsrError.empty()) {
             ImGui::PushStyleColor(ImGuiCol_Text, p.bad);
             ImGui::TextWrapped("%s", st->nrFsrError.c_str());
             ImGui::PopStyleColor();
         }
     }
+    // The port: loaded, with its release when that is known and whether a newer one is out; or not loaded, with
+    // what that means here.
+    const PortSetup::Status* ps = info.portSetup;
+    const bool latestKnown = ps && !ps->tag.empty();
+    const bool newer = latestKnown && !info.portInstalledTag.empty() && ps->tag != info.portInstalledTag;
     if (portLoaded) {
-        StatusDot(p.good, StrPrintf(TR(AmdPortDetected), st->nrAmdPort.c_str()).c_str());
+        if (info.portInstalledTag.empty()) {
+            StatusDot(p.good, StrPrintf(TR(AmdPortDetected), st->nrAmdPort.c_str()).c_str());
+            if (latestKnown) {
+                ImGui::PushStyleColor(ImGuiCol_Text, p.muted);
+                ImGui::TextWrapped("%s", StrPrintf(TR(AmdPortVersionUnknown), ps->tag.c_str(), ps->date.c_str()).c_str());
+                ImGui::PopStyleColor();
+            }
+        } else {
+            StatusDot(p.good, StrPrintf(latestKnown && !newer ? TR(AmdPortLoadedCurrent) : TR(AmdPortLoadedVersion),
+                                        info.portInstalledTag.c_str(), st->nrAmdPort.c_str()).c_str());
+        }
+        if (newer) StatusDot(p.accent, StrPrintf(TR(AmdPortNewer), ps->tag.c_str(), ps->date.c_str()).c_str());
     } else {
         StatusDot(p.warn, TR(AmdPortNotFound));
-        ImGui::PushStyleColor(ImGuiCol_Text, p.muted);
-        ImGui::TextWrapped("%s", TR(AmdPortMissing));
-        ImGui::PopStyleColor();
+        if (info.portWeightsExist && !info.portRestartHint) {
+            ImGui::PushStyleColor(ImGuiCol_Text, p.warn);
+            ImGui::TextWrapped("%s", TR(AmdPortWeightsNotLoaded));
+            ImGui::PopStyleColor();
+        } else if (!info.portRestartHint && info.fsrDllExists) {
+            ImGui::PushStyleColor(ImGuiCol_Text, p.muted);
+            ImGui::TextWrapped("%s", TR(AmdPortOffer));
+            ImGui::PopStyleColor();
+        }
     }
     if (st && st->nrFailed && !st->nrError.empty()) {
         ImGui::PushStyleColor(ImGuiCol_Text, p.bad);
@@ -1509,9 +1550,22 @@ void MainUI::BlockFsrHost(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         ImGui::TextWrapped("%s", st->nrOutState == 2 ? TR(NrOutBlack) : (portLoaded ? TR(NrOutSame) : TR(FsrNoEffect)));
         ImGui::PopStyleColor();
     }
-    // The installer: its state, then the buttons.
+    if (info.fsrDllExists) PortActions(info, ev, portLoaded, false);
+    if (FlatButton(TR(Reload))) ev.reloadRuntime = true;   // on its own line: the port's buttons fill the sidebar's width
+    ImGui::PushStyleColor(ImGuiCol_Text, p.muted);
+    ImGui::TextWrapped("%s", TR(AmdPortRequirements));
+    ImGui::PopStyleColor();
+}
+
+// The installer's state, the restart after it, and the buttons: install (the first press is the consent), update to
+// a newer release, or the installer again (update or removal); its licence and its release page. Shared by the DLSS 5
+// section and the start-up card.
+void MainUI::PortActions(const UiFrameInfo& info, UiEvents& ev, bool portLoaded, bool card) {
+    const Palette& p = Colors();
     const PortSetup::Status* ps = info.portSetup;
     const bool busy = ps && (ps->state == PortSetup::State::Checking || ps->state == PortSetup::State::Downloading || ps->state == PortSetup::State::Launched);
+    const bool latestKnown = ps && !ps->tag.empty();
+    const bool newer = latestKnown && !info.portInstalledTag.empty() && ps->tag != info.portInstalledTag;
     if (ps) {
         switch (ps->state) {
             case PortSetup::State::Checking: StatusDot(p.muted, TR(AmdPortChecking)); break;
@@ -1522,28 +1576,34 @@ void MainUI::BlockFsrHost(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
                 ImGui::TextWrapped("%s: %s", TR(AmdPortFailed), ps->error.c_str());
                 ImGui::PopStyleColor();
                 break;
-            default:
-                if (!ps->tag.empty()) StatusDot(p.muted, StrPrintf(TR(AmdPortLatest), ps->tag.c_str(), ps->date.c_str()).c_str());
-                break;
+            default: break;
         }
     }
     if (info.portRestartHint) {
         ImGui::PushStyleColor(ImGuiCol_Text, p.good);
-        ImGui::TextWrapped("%s", TR(AmdPortRestartHint));
+        if (info.portRestartIn >= 0) ImGui::TextWrapped("%s", StrPrintf(TR(AmdPortRestartIn), info.portRestartIn).c_str());
+        else ImGui::TextWrapped("%s", TR(AmdPortRestartHint));
         ImGui::PopStyleColor();
-        if (FlatButton(TR(RestartNow))) ev.restartApp = true;
+        if (AccentButton(TR(RestartNow))) ev.restartApp = true;
+        if (info.portRestartIn >= 0) { ImGui::SameLine(); if (FlatButton(TR(Cancel))) ev.portRestartCancel = true; }
+        return;
     }
     ImGui::BeginDisabled(busy);
-    if (FlatButton(portLoaded ? TR(AmdPortUpdate) : TR(AmdPortInstall))) ev.portInstall = true;
+    if (!portLoaded && !info.portWeightsExist) {
+        if (card ? AccentButton(TR(AmdPortInstall)) : FlatButton(TR(AmdPortInstall))) ev.portInstall = true;
+        Tip(TR(TipAmdPortInstall));
+    } else if (newer) {
+        if (AccentButton(StrPrintf(TR(AmdPortUpdateTo), ps->tag.c_str()).c_str())) ev.portInstall = true;
+        Tip(TR(TipAmdPortInstall));
+    } else {
+        if (FlatButton(TR(AmdPortRerun))) ev.portInstall = true;
+        Tip(TR(TipAmdPortRerun));
+    }
     ImGui::EndDisabled();
-    Tip(TR(TipAmdPortInstall));
+    ImGui::SameLine();
+    if (FlatButton(TR(AmdPortLicense))) ev.portOpenLicense = true;
     ImGui::SameLine();
     if (FlatButton(TR(AmdPortPage))) ev.portOpenPage = true;
-    ImGui::SameLine();
-    if (FlatButton(TR(Reload))) ev.reloadRuntime = true;
-    ImGui::PushStyleColor(ImGuiCol_Text, p.muted);
-    ImGui::TextWrapped("%s", TR(AmdPortRequirements));
-    ImGui::PopStyleColor();
 }
 
 void MainUI::BlockDlaa(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
@@ -1769,15 +1829,35 @@ void MainUI::DrawPicture(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
             return;
         }
         if (info.fullscreen) FullscreenButton(info, ev, origin, region);   // a way out that is not a key
-        // Nothing open yet: the three steps, with the ways to get a picture in.
+        // Nothing open yet: the three steps, with the ways to get a picture in. On the FSR host route without
+        // DLSS-NR-on-AMD its installation (or, in the GeForce edition, the Radeon edition) comes first.
+        const int route = info.status ? info.status->nrRoute : EffectiveNrRoute(s.nrRoute, info.adapter && info.adapter->IsAmd());
+        const bool portStep = route == RouteFsrHost && !(info.status && !info.status->nrAmdPort.empty());
         const float wrap = std::min(region.x * 0.8f, ImGui::GetFontSize() * 34.0f);
-        const float blockH = ImGui::GetFontSize() * 13.0f;
+        const float blockH = ImGui::GetFontSize() * (portStep ? 21.0f : 13.0f);
         const float x = origin.x + (region.x - wrap) * 0.5f;
         const float fade = AnimateFrom(ImGui::GetID("##welcome"), 0.0f, 1.0f, 5.0f);
         ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * fade);
         ImGui::SetCursorScreenPos(ImVec2(x, origin.y + std::max(12.0f, (region.y - blockH) * 0.5f) + (1.0f - fade) * 12.0f));
         ImGui::BeginGroup();
         ImGui::PushTextWrapPos(x + wrap);
+        if (portStep) {
+            ImGui::PushFont(fonts.Bold(), ImGui::GetStyle().FontSizeBase * 1.15f);
+            ImGui::TextUnformatted(TR(AmdWelcomeTitle));
+            ImGui::PopFont();
+            ImGui::PushStyleColor(ImGuiCol_Text, p.textDim);
+            if (!info.fsrDllExists) ImGui::TextUnformatted(TR(FsrDllMissing));
+            else if (info.portWeightsExist && !info.portRestartHint) ImGui::TextUnformatted(TR(AmdPortWeightsNotLoaded));
+            else if (!info.portRestartHint) ImGui::TextUnformatted(TR(AmdPortOffer));
+            ImGui::PopStyleColor();
+            ImGui::Spacing();
+            if (info.fsrDllExists) PortActions(info, ev, false, true);
+#if !APP_EDITION_AMD
+            else { if (AccentButton(TR(EditionGetAmd))) ev.editionSwitch = true; Tip(TR(TipEditionSwitch)); }
+#endif
+            ImGui::Spacing();
+            ImGui::Spacing();
+        }
         ImGui::PushFont(fonts.Bold(), ImGui::GetStyle().FontSizeBase * 1.15f);
         ImGui::Text("1  %s", TR(StepOne));
         ImGui::PopFont();

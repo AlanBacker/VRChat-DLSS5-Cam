@@ -162,6 +162,8 @@ bool Settings::ApplyText(const std::string& data) {
     r.Get("libraryHeight", libraryHeight);
     r.Get("updateCheck", updateCheck);
     r.Get("updateChannel", updateChannel);
+    r.Get("portConsent", portConsent);
+    r.Get("portInstalledTag", portInstalledTag);
     r.Get("advancedControls", showAdvanced);
     r.Get("theme", theme);
     r.Get("showLog", showLog);
@@ -389,6 +391,8 @@ bool Settings::Save(const std::wstring& path) const {
     w.Put("libraryHeight", libraryHeight);
     w.Put("updateCheck", updateCheck);
     w.Put("updateChannel", updateChannel);
+    w.Put("portConsent", portConsent);
+    w.Put("portInstalledTag", portInstalledTag);
     w.Put("advancedControls", showAdvanced);
     w.Put("theme", theme);
     w.Put("showLog", showLog);
