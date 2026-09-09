@@ -41,28 +41,28 @@ as a batch. It is an ordinary Windows application: the VRChat process is never t
 | | |
 |---|---|
 | Windows | Windows 10 21H2 or Windows 11, 64-bit |
-| Graphics card | NVIDIA GeForce RTX. The **RTX 50** series runs the neural pass with the regular runtime. **RTX 40 / 30 / 20** require a runtime build adapted for those generations (see the next row); with the regular build the application reports the failure and continues with the neural pass disabled. Cards from other vendors are no longer refused: the neural pass runs whenever the runtime supplied for them carries its own NGX parameter block. DLAA and the hardware optical flow stay NVIDIA-only, and block matching takes over as the motion source. |
-| DLSS 5 runtime | A copy of `nvngx_dlssnr.dll`, supplied by the user. **It is not included here and is never downloaded by this project.** The file is shared on the [RenoDX Discord server](https://discord.com/invite/renodx), where a build adapted for cards other than the RTX 50 series is available as well. That server belongs to the RenoDX project and is **not** this project's Discord; this project has no Discord server of its own. |
+| Graphics card | NVIDIA GeForce RTX. The **RTX 50** series and the **RTX 40 / 30 / 20** series each have a build of the runtime in the archive (next row), so nothing has to be added for any of them. Cards from other vendors are not refused: the application works as a viewer and recorder on them, and the neural pass runs once a runtime adapted for that vendor is placed under `runtimes\other\` (none is included). DLAA and the hardware optical flow stay NVIDIA-only, and block matching takes over as the motion source. |
+| DLSS 5 runtime | Included. The archive carries `nvngx_dlssnr.dll` 310.8.0.0 in two builds: `runtimes\blackwell\` holds the build as shipped with games (RTX 50) and `runtimes\universal\` a community-adapted build of the same runtime for RTX 40 / 30 / 20. The build for the installed card is chosen at start and the other is tried when it fails. Both files are NVIDIA's software under NVIDIA's terms and are not part of this project's MIT-licensed source (see `THIRD_PARTY_NOTICES.md`); nothing has to be obtained from anywhere else. |
 | VRChat | Any build with the Stream Camera *Spout Stream* option (desktop or VR). Required for the live camera only. |
 | Video files | Windows Media Foundation (part of Windows). The N / KN editions require the *Media Feature Pack*; HEVC files may require the *HEVC Video Extensions* from the Microsoft Store. |
 
 ## Getting started
 
 1. Download `VRChatDLSS5Cam-win64.zip` from the [latest release](https://github.com/AlanBacker/VRChat-DLSS5-Cam/releases/latest) and extract it to any location.
-2. Copy `nvngx_dlssnr.dll` into that folder, next to `VRChatDLSS5Cam.exe`. A different location can also be selected later under *DLSS 5 Neural Rendering → Runtime path*.
-
-   Builds for several architectures can be kept side by side instead, and the one matching the installed card is then
-   chosen at start-up:
+2. Nothing else has to be copied. The DLSS 5 runtime is in the archive under `runtimes\`, in one build for RTX 50
+   and one for RTX 40 / 30 / 20; the application picks the build for the installed card at start and switches to the
+   other one when that fails. The build in use is named next to *Runtime* in the DLSS 5 section, and the path is
+   recorded in `log.txt`.
 
    ```
    VRChatDLSS5Cam.exe
    runtimes\blackwell\nvngx_dlssnr.dll   RTX 50
    runtimes\universal\nvngx_dlssnr.dll   RTX 40 / 30 / 20
-   runtimes\other\nvngx_dlssnr.dll       cards from another vendor
+   runtimes\other\nvngx_dlssnr.dll       cards from another vendor (not included)
    ```
 
-   A file next to the executable is still used when the folder for this card holds nothing. The path that was picked
-   is shown under *Runtime path* and recorded in `log.txt`.
+   A file of your own can be used instead: `nvngx_dlssnr.dll` next to `VRChatDLSS5Cam.exe` is tried after the build
+   for the card, and any file can be selected under *DLSS 5 Neural Rendering → Runtime path*.
 3. In VRChat, open the **Camera**, switch it to **Stream** mode and enable **Spout Stream** in its settings.
 4. Start `VRChatDLSS5Cam.exe`. The camera picture appears in the preview with DLSS 5 applied, and the badge next to the *Enable DLSS 5* switch reads *Active*.
 5. Frame the shot in VRChat and press **Ctrl+Alt+P** (or use the *Capture photo* button). The PNG is written to `Pictures\VRChat DLSS5 Cam`.
@@ -180,9 +180,9 @@ last check is shown underneath.
 
 When a newer version exists, a window shows its version, its date and its release notes with three buttons.
 **Update now** downloads the release zip into `%LOCALAPPDATA%\VRChatDLSS5Cam\update`, unpacks it, closes the
-application, replaces the program files and starts it again; the settings, the library and the copy of
-`nvngx_dlssnr.dll` in the program folder are left alone. **Release page** opens the release in the browser and
-**Later** closes the window. The program folder has to be writable, which a folder under `Program Files` usually is
+application, replaces the program files and starts it again; the settings and the library are left alone, the
+bundled runtime builds under `runtimes\` are replaced with the release's, and a runtime file of your own next to the
+executable stays in place. **Release page** opens the release in the browser and **Later** closes the window. The program folder has to be writable, which a folder under `Program Files` usually is
 not; the application says so, and the update can be applied by hand from the release page instead. A failed check or
 a failed update is shown as a notification.
 
@@ -205,7 +205,7 @@ own.
 | Source | Hardware decoding | Decode the video on the GPU. Best switched off when a file shows wrong colours or fails to open. |
 | Source | Paper white / Highlight compression | Shown only for floating-point (HDR) Spout textures: exposure reference and soft highlight roll-off before the neural pass. |
 | DLSS 5 | Enable DLSS 5 (DLSSNR) | Switches the neural pass on or off. Off releases the runtime; on loads it again from the file. |
-| DLSS 5 | Runtime path / Reload | Where `nvngx_dlssnr.dll` is. *Reload* loads the file again. |
+| DLSS 5 | Runtime path / Reload | The runtime file in use; empty means the bundled build for the installed card. *Reload* starts that choice over and loads the file again. |
 | DLSS 5 | Host route | *Signed snippet*: host `nvngx_dlssnr.dll` directly. *NGX core*: create the feature through the NGX runtime. |
 | DLSS 5 | Presets | Named sets of the DLSS 5 values: *+* saves the current ones, the list applies one, each entry can be overwritten, renamed or deleted. Kept in `presets.txt` in the settings folder. |
 | DLSS 5 | Style | Render style (default / natural / cinematic) passed to the runtime. |
@@ -240,8 +240,8 @@ Command-line options (open files, process unattended, screenshots, headless runs
 ## Troubleshooting
 
 - **"Waiting for VRChat Spout stream…"** – *Spout Stream* has to be enabled on VRChat's Stream camera, and the camera must be open. Other Spout senders are listed in the *Sender* box.
-- **"nvngx_dlssnr.dll not found"** – copy the runtime next to `VRChatDLSS5Cam.exe`, or select its path in the DLSS 5 section.
-- **Neural rendering failed** – on RTX 40 / 30 / 20 with the regular runtime this is expected: that build only contains RTX 50 code, and the application says so under the error. The modified build is available from the RenoDX Discord server (see *Requirements*; not affiliated with this project). Otherwise some runtime builds need a newer driver; `log.txt` carries the NGX result code, and *Preset* 0 together with the *NGX core* route is worth trying.
+- **"The runtime files are missing"** – the archive was not extracted completely: `runtimes\blackwell\nvngx_dlssnr.dll` and `runtimes\universal\nvngx_dlssnr.dll` belong next to `VRChatDLSS5Cam.exe`. Extract it again, or select a runtime file under *Runtime path*.
+- **Neural rendering failed** – the application switches to the other bundled build by itself and says so in a notice. When neither build starts, the message under the error says so; a newer graphics driver is the first thing to try, `log.txt` carries the NGX result code, and *Preset* 0 together with the *NGX core* route is worth trying. On a card from another vendor the bundled builds do not start: the neural pass needs a runtime adapted for that vendor under `runtimes\other\`.
 - **Neural pass active, but the picture is black or unchanged** – every neural frame is compared with its input, and a warning appears when the runtime reports success but delivers a black or unchanged picture (`log.txt`: "DLSSNR output check"). Switching DLSS 5 off and on again starts it fresh. If it persists, that runtime build does not produce a picture on this GPU. (With *Intensity* at 0 an unchanged picture is normal and no warning is shown.)
 - **The application does not start / closes immediately** – `%LOCALAPPDATA%\VRChatDLSS5Cam\` holds `log.txt` (its last line is the step that failed) and `crash.txt`. Both files belong in the issue report.
 - **NGX not initialized / DLAA unsupported** – the NGX runtime needs an NVIDIA GPU and a current driver. DLSS 5 still works through the *Signed snippet* route.

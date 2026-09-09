@@ -86,6 +86,7 @@ bool Settings::ApplyText(const std::string& data) {
     r.Get("nrCaptureOnly", nrCaptureOnly);
     r.Get("nrRoute", nrRoute);
     r.Get("nrDllPath", nrDllPath);
+    r.Get("nrRuntimeBuild", nrRuntimeBuild);
     r.Get("nrPreset", nrPreset);
     r.Get("nrStyle", nrStyle);
     r.Get("nrIntensity", nrIntensity);
@@ -239,6 +240,7 @@ std::string Settings::ProcessingText() const {
     w.Put("nrCaptureOnly", nrCaptureOnly);
     w.Put("nrRoute", nrRoute);
     w.Put("nrDllPath", nrDllPath);
+    w.Put("nrRuntimeBuild", nrRuntimeBuild);
     w.Put("nrPreset", nrPreset);
     w.Put("nrStyle", nrStyle);
     w.Put("nrIntensity", nrIntensity);
@@ -314,6 +316,7 @@ bool Settings::Save(const std::wstring& path) const {
     w.Put("nrCaptureOnly", nrCaptureOnly);
     w.Put("nrRoute", nrRoute);
     w.Put("nrDllPath", nrDllPath);
+    w.Put("nrRuntimeBuild", nrRuntimeBuild);
     w.Put("nrPreset", nrPreset);
     w.Put("nrStyle", nrStyle);
     w.Put("nrIntensity", nrIntensity);
@@ -390,6 +393,7 @@ void Settings::Clamp() {
     customWidth = std::clamp(customWidth, 256, 7680);
     customHeight = std::clamp(customHeight, 256, 4320);
     nrRoute = std::clamp(nrRoute, 0, 1);
+    if (nrRuntimeBuild != "blackwell" && nrRuntimeBuild != "universal" && nrRuntimeBuild != "other" && nrRuntimeBuild != "exe") nrRuntimeBuild.clear();
     nrPreset = std::clamp(nrPreset, 0, 3);
     if (sidebarWidth != 0.0f) sidebarWidth = std::clamp(sidebarWidth, 16.0f, 48.0f);
     if (libraryHeight != 0.0f) libraryHeight = std::clamp(libraryHeight, 7.0f, 30.0f);

@@ -22,6 +22,28 @@ jobs:
       - name: Build
         run: cmake --build build --config Release --parallel
 
+      # The DLSS 5 runtime builds are assets of the runtime-310.8 release (too large for the tree): fetched here and
+      # checked against the published checksums before they go into the archive.
+      - name: Fetch the DLSS 5 runtime builds
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download runtime-310.8 --repo ${{ github.repository }} --dir runtime --pattern "nvngx_dlssnr-310.8-*.dll" --pattern "SHA256SUMS.txt"
+          $verified = 0
+          foreach ($line in Get-Content runtime/SHA256SUMS.txt) {
+            if ($line -notmatch '^([0-9a-fA-F]{64})\s+\*?(\S+)$') { continue }
+            $expected = $Matches[1].ToLower(); $name = $Matches[2]
+            $actual = (Get-FileHash "runtime/$name" -Algorithm SHA256).Hash.ToLower()
+            if ($actual -ne $expected) { throw "SHA-256 mismatch for ${name}: $actual, expected $expected" }
+            Write-Host "$name verified ($actual)"
+            $verified++
+          }
+          foreach ($build in "blackwell", "universal") {
+            if (-not (Test-Path "runtime/nvngx_dlssnr-310.8-$build.dll")) { throw "runtime build missing: $build" }
+          }
+          if ($verified -lt 2) { throw "expected two verified runtime builds, got $verified" }
+
       - name: Package
         shell: pwsh
         run: |
@@ -35,14 +57,20 @@ jobs:
           Copy-Item README.md, LICENSE, THIRD_PARTY_NOTICES.md $out
           Copy-Item build/ngx_sdk/NVIDIA_LICENSE.txt $out
           Copy-Item -Recurse docs "$out/docs"
-          Set-Content -Path "$out/PLACE_nvngx_dlssnr.dll_HERE.txt" -Value "Copy your own nvngx_dlssnr.dll (DLSS 5 neural rendering runtime) into this folder. It is not distributed with this application."
+          foreach ($build in "blackwell", "universal") {
+            New-Item -ItemType Directory -Force -Path "$out/runtimes/$build" | Out-Null
+            Copy-Item "runtime/nvngx_dlssnr-310.8-$build.dll" "$out/runtimes/$build/nvngx_dlssnr.dll"
+          }
           Compress-Archive -Path "$out/*" -DestinationPath "dist/VRChatDLSS5Cam-win64.zip"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: VRChatDLSS5Cam-win64
-          path: dist/VRChatDLSS5Cam
+          path: |
+            dist/VRChatDLSS5Cam
+            !dist/VRChatDLSS5Cam/runtimes/**
+          retention-days: 7
 
       - name: Release
         if: startsWith(github.ref, 'refs/tags/v')

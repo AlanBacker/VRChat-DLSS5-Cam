@@ -22,11 +22,13 @@ constexpr int   kNeuralWarmupFrames = 16;     // capture-only mode: fresh frames
 constexpr double kNeuralWarmupTimeout = 3.0;  // ... and the longest wait for them (source stalled) in seconds
 constexpr UINT  kNeuralCheckGridW = 480, kNeuralCheckGridH = 270;   // sample grid of the neural output check
 
-// The 310.8 runtime build only carries code for RTX 50 (Blackwell): name the likely cause on older cards.
-void LogRuntimeGenerationHint(const GpuContext& gpu, const std::string& runtimeVersion) {
+// The RTX 50 build of the 310.8 runtime only carries code for Blackwell: name the likely cause on older cards. The
+// build under runtimes\universal\ is the one adapted for them, so nothing is said when that one is loaded.
+void LogRuntimeGenerationHint(const GpuContext& gpu, const std::string& runtimeVersion, const std::wstring& runtimePath) {
     const int gen = gpu.Dev().Info().RtxGeneration();
-    if (gen >= 2 && gen <= 4 && (runtimeVersion.empty() || runtimeVersion.rfind("310.8", 0) == 0))
-        Log::Warn("DLSSNR: %s is an RTX %d0 series GPU; the 310.8 runtime build only contains code for RTX 50 (Blackwell), so the neural pass cannot start on it",
+    const bool universal = runtimePath.find(L"\\universal\\") != std::wstring::npos;
+    if (gen >= 2 && gen <= 4 && !universal && (runtimeVersion.empty() || runtimeVersion.rfind("310.8", 0) == 0))
+        Log::Warn("DLSSNR: %s is an RTX %d0 series GPU; the RTX 50 build of the 310.8 runtime only contains code for Blackwell, so the neural pass cannot start on it (the build under runtimes\\universal\\ is the one for this generation)",
                   WideToUtf8(gpu.Dev().Info().name).c_str(), gen);
 }
 
@@ -401,6 +403,7 @@ bool Pipeline::LoadNrRuntime(GpuContext& gpu, const std::wstring& dllPath, std::
 void Pipeline::UnloadNrRuntime(GpuContext& gpu) {
     if (m_nr.Created()) { gpu.WaitIdle(); m_nr.Release(m_ngx); m_nrCreatedPreset = -1; }
     if (m_nr.RuntimeLoaded()) { gpu.WaitIdle(); m_nr.UnloadRuntime(); }
+    m_nrOutState = 0; m_nrOutDelta = -1.0f;   // the output check's verdict belonged to the released instance
 }
 
 void Pipeline::RequestCapture(const std::wstring& folder, bool keepAlpha, bool saveOriginal, const std::wstring& baseName) {
@@ -975,7 +978,7 @@ bool Pipeline::RunNeural(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const 
         if (!created) {
             m_nrFailed = true; m_nrError = err;
             Log::Error("DLSSNR: %s", err.c_str());
-            LogRuntimeGenerationHint(gpu, m_nr.RuntimeVersion());
+            LogRuntimeGenerationHint(gpu, m_nr.RuntimeVersion(), m_nr.RuntimePath());
             return false;
         }
         m_nrCreatedUseCore = useCore;
@@ -1011,7 +1014,7 @@ bool Pipeline::RunNeural(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const 
     if (!ok) {
         m_nrFailed = true; m_nrError = err;
         Log::Error("DLSSNR: %s", err.c_str());
-        LogRuntimeGenerationHint(gpu, m_nr.RuntimeVersion());
+        LogRuntimeGenerationHint(gpu, m_nr.RuntimeVersion(), m_nr.RuntimePath());
     }
     m_nrDirty = false;
     return ok;
@@ -1168,6 +1171,7 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
     m_status.nrRuntimeIdle = m_nrRuntimeIdle;
     m_status.nrRuntimeVersion = m_nrRuntimeIdle ? m_nrIdleVersion : m_nr.RuntimeVersion();
     m_status.nrRuntimePath = m_nr.RuntimePath();
+    m_status.nrRequestedPath = m_nrDllPath;
     m_status.sourceConnected = src.Connected() && src.hasFrame;
     CountCaptures();
 

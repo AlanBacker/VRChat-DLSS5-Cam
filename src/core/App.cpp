@@ -13,6 +13,7 @@
 #include <timeapi.h>
 #include <wrl/client.h>
 #include <algorithm>
+#include <cstring>
 #include <cmath>
 #include <cstdlib>
 #include <cwctype>
@@ -1596,6 +1597,7 @@ void App::Frame() {
     m_atlas.Upload(cmd, m_device.Ui());
     const DisplayView display = m_pipeline.AcquireDisplay(m_device.Ui());
     m_pipeline.StatusSnapshot(m_status);
+    CheckRuntimeFallback();
     {
         std::lock_guard<std::mutex> lock(m_shared.mutex);
         m_source = m_shared.source;
@@ -1670,6 +1672,8 @@ void App::Frame() {
     info.hoverCellTime = m_hoverCellTime;
     info.nrRuntimePath = EffectiveRuntimePath();
     info.nrRuntimeExists = FileExists(info.nrRuntimePath);
+    info.nrRuntimeBuild = RuntimeBuildName(m_status.nrRuntimePath);
+    info.nrRuntimeExhausted = m_runtimeExhausted;
     info.captureFolder = EffectiveCaptureFolder();
     info.hotkeyText = HotkeyText(m_settings);
     info.hasDisplay = display.valid;
@@ -1997,6 +2001,7 @@ void App::HandleEvents(ui::UiEvents& ev) {
         m_pipeline.MarkNrDirty();
         m_pipeline.MarkDlaaDirty();
         if (!m_headless) RegisterHotkey();
+        RestartRuntimeChoice();
         RequestRuntimeLoad(false);
         m_ui.Toast(TR(SettingsReset));
         ev.settingsChanged = true;
@@ -2017,7 +2022,7 @@ void App::HandleEvents(ui::UiEvents& ev) {
     if (ev.resetHistory) { m_pipeline.RequestReset(); WakeWorker(); m_ui.Toast(TR(HistoryReset)); }
     if (ev.senderChanged) { m_spout.SetRequestedSender(m_settings.senderName); WakeWorker(); }
     if (ev.refreshSenders) { m_refreshSenders = true; WakeWorker(); }
-    if (ev.reloadRuntime) RequestRuntimeLoad(true);
+    if (ev.reloadRuntime) { RestartRuntimeChoice(); RequestRuntimeLoad(true); }
 }
 
 void App::CaptureNow() {
@@ -2072,6 +2077,8 @@ void App::RequestRuntimeLoad(bool announce) {
     c.type = Command::LoadRuntime;
     c.path = EffectiveRuntimePath();
     c.announce = announce;
+    m_runtimeRequested = c.path;
+    m_runtimeBlackSince = -1.0;
     PostCommand(std::move(c));
 }
 
@@ -2576,36 +2583,102 @@ void App::SaveWindowPlacement() {
     m_settings.windowHeight = std::max(300L, wp.rcNormalPosition.bottom - wp.rcNormalPosition.top);
 }
 
-// Runtime builds differ per architecture: the one that carries Blackwell code cannot start on an RTX 40/30/20 card,
-// and a build adapted for another vendor is a third file, all under the same name. With no path set in the settings,
-// several builds may therefore sit side by side under runtimes\ and the one for this adapter is picked here.
+// The release archive carries the runtime in two builds under the same file name: runtimes\blackwell\ as shipped
+// with games, which only carries code for RTX 50, and runtimes\universal\, adapted for RTX 40/30/20. A build for
+// another vendor would be a third file under runtimes\other\, and a file next to the executable is honoured too.
+// The order below is the order they are tried in; the generation read from the adapter name decides the first one,
+// and a build that took over in an earlier session (Settings::nrRuntimeBuild) moves to the front.
+std::vector<App::RuntimeCandidate> App::RuntimeCandidates() const {
+    static constexpr wchar_t kName[] = L"nvngx_dlssnr.dll";
+    const std::wstring runtimes = JoinPath(m_exeDir, L"runtimes");
+    const RuntimeCandidate blackwell{ JoinPath(JoinPath(runtimes, L"blackwell"), kName), "blackwell" };
+    const RuntimeCandidate universal{ JoinPath(JoinPath(runtimes, L"universal"), kName), "universal" };
+    const RuntimeCandidate other{ JoinPath(JoinPath(runtimes, L"other"), kName), "other" };
+    const RuntimeCandidate exe{ JoinPath(m_exeDir, kName), "exe" };
+    const AdapterInfo& ai = m_device.Info();
+    std::vector<RuntimeCandidate> order;
+    if (!ai.IsNvidia())               order = { other, exe };   // NVIDIA's builds do not start elsewhere: no point trying
+    else if (ai.RtxGeneration() >= 5) order = { blackwell, exe, universal, other };
+    else                              order = { universal, exe, blackwell, other };   // 0: unknown name, older than RTX 50 in all likelihood
+    if (!m_settings.nrRuntimeBuild.empty()) {
+        const auto it = std::find_if(order.begin(), order.end(), [&](const RuntimeCandidate& c) { return m_settings.nrRuntimeBuild == c.build; });
+        if (it != order.end()) std::rotate(order.begin(), it, it + 1);
+    }
+    return order;
+}
+
 std::wstring App::EffectiveRuntimePath() const {
     if (!m_settings.nrDllPath.empty()) return Utf8ToWide(m_settings.nrDllPath);
-
-    static constexpr wchar_t kName[] = L"nvngx_dlssnr.dll";
-    const std::wstring generic = JoinPath(m_exeDir, kName);
-    const std::wstring runtimes = JoinPath(m_exeDir, L"runtimes");
-    const AdapterInfo& ai = m_device.Info();
-    const int gen = ai.RtxGeneration();
-    const wchar_t* variant = nullptr;
-    if (!ai.IsNvidia())            variant = L"other";
-    else if (gen == 5)             variant = L"blackwell";
-    else if (gen >= 2 && gen <= 4) variant = L"universal";
-
-    if (variant) {
-        const std::wstring byFolder = JoinPath(JoinPath(runtimes, variant), kName);
-        if (FileExists(byFolder)) return byFolder;
-        const std::wstring bySuffix = JoinPath(m_exeDir, std::wstring(L"nvngx_dlssnr_") + variant + L".dll");
-        if (FileExists(bySuffix)) return bySuffix;
+    const std::vector<RuntimeCandidate> candidates = RuntimeCandidates();
+    const std::wstring* last = nullptr;   // the last existing one: with every build failed, its error stays on view
+    for (const RuntimeCandidate& c : candidates) {
+        if (!FileExists(c.path)) continue;
+        if (std::find(m_runtimeFailed.begin(), m_runtimeFailed.end(), c.path) == m_runtimeFailed.end()) return c.path;
+        last = &c.path;
     }
-    if (FileExists(generic)) return generic;
-    // Nothing for this adapter: any other build still loads and names the real problem, which reads better than a
-    // bare "not found". With none of them there, the generic path is what the missing-runtime message points at.
-    for (const wchar_t* other : { L"blackwell", L"universal", L"other" }) {
-        const std::wstring path = JoinPath(JoinPath(runtimes, other), kName);
-        if (FileExists(path)) return path;
+    // None there: the first candidate is what the missing-runtime message points at.
+    return last ? *last : candidates.front().path;
+}
+
+const char* App::RuntimeBuildName(const std::wstring& path) const {
+    if (path.empty()) return nullptr;
+    for (const RuntimeCandidate& c : RuntimeCandidates()) {
+        if (c.path != path) continue;
+        if (!std::strcmp(c.build, "blackwell")) return TR(RuntimeBuildBlackwell);
+        if (!std::strcmp(c.build, "universal")) return TR(RuntimeBuildUniversal);
+        if (!std::strcmp(c.build, "other"))     return TR(RuntimeBuildOther);
+        return TR(RuntimeBuildExe);
     }
-    return generic;
+    return nullptr;
+}
+
+void App::RestartRuntimeChoice() {
+    m_runtimeFailed.clear();
+    m_runtimeExhausted = false;
+    m_runtimeBlackSince = -1.0;
+    if (!m_settings.nrRuntimeBuild.empty()) { m_settings.nrRuntimeBuild.clear(); MarkSettingsDirty(); }
+}
+
+// A build that does not run on this card fails at load, at feature creation, or silently with a black picture
+// (a runtime adapted for another generation has done that). The processing thread reports all three through the
+// status; here the failed candidate is set aside, the next one requested, the choice kept for the next start and
+// the user told. A file the user selected is never replaced.
+void App::CheckRuntimeFallback() {
+    static constexpr double kBlackSeconds = 3.0;   // continuous black output before a build counts as failed
+    if (m_runtimeExhausted || m_runtimeRequested.empty() || !m_settings.nrDllPath.empty()) return;
+    const PipelineStatus& st = m_status;
+    if (st.nrRequestedPath != m_runtimeRequested) return;   // the processing thread has not reached the request
+    bool failed = false;
+    if (!st.nrError.empty() && (st.nrFailed || (!st.nrRuntimeLoaded && !st.nrRuntimeIdle))) failed = true;
+    else if (st.nrRuntimeLoaded && st.nrOutState == 2) {
+        const double now = NowSeconds();
+        if (m_runtimeBlackSince < 0.0) m_runtimeBlackSince = now;
+        else if (now - m_runtimeBlackSince >= kBlackSeconds) failed = true;
+    } else {
+        m_runtimeBlackSince = -1.0;
+    }
+    if (!failed) return;
+
+    const std::wstring failedPath = m_runtimeRequested;
+    const std::string from = RuntimeBuildName(failedPath) ? RuntimeBuildName(failedPath) : WideToUtf8(FileNameOf(failedPath));
+    m_runtimeFailed.push_back(failedPath);
+    m_runtimeBlackSince = -1.0;
+    const RuntimeCandidate* next = nullptr;
+    const std::vector<RuntimeCandidate> candidates = RuntimeCandidates();
+    for (const RuntimeCandidate& c : candidates)
+        if (FileExists(c.path) && std::find(m_runtimeFailed.begin(), m_runtimeFailed.end(), c.path) == m_runtimeFailed.end()) { next = &c; break; }
+    if (!next) {
+        m_runtimeExhausted = true;
+        m_runtimeRequested.clear();
+        // The kept build did not help either: the next start begins with the one for the adapter again.
+        if (!m_settings.nrRuntimeBuild.empty()) { m_settings.nrRuntimeBuild.clear(); MarkSettingsDirty(); }
+        Log::Warn("DLSS 5 runtime: %s failed on this adapter and no other build is left to try", WideToUtf8(failedPath).c_str());
+        return;
+    }
+    Log::Warn("DLSS 5 runtime: %s failed on this adapter; switching to %s", WideToUtf8(failedPath).c_str(), WideToUtf8(next->path).c_str());
+    m_ui.Toast(StrPrintf(TR(RuntimeFallbackToast), from.c_str(), RuntimeBuildName(next->path)), true);
+    if (m_settings.nrRuntimeBuild != next->build) { m_settings.nrRuntimeBuild = next->build; MarkSettingsDirty(); PushSettings(); }
+    RequestRuntimeLoad(false);
 }
 
 std::wstring App::EffectiveCaptureFolder(const Settings& s) {

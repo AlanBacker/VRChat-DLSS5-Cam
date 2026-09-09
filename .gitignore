@@ -5,8 +5,8 @@ out/
 *.suo
 .vs/
 .vscode/
-# Never commit NVIDIA runtimes (the SDK is fetched at configure time, the DLSS 5
-# runtime must be supplied by the user and is not redistributable here).
+# Never commit NVIDIA runtimes: the SDK is fetched at configure time and the DLSS 5
+# runtime builds are assets of the runtime-310.8 release, fetched by the build workflow.
 nvngx_dlssnr.dll
 nvngx_dlss.dll
 nvngx_dlssd.dll

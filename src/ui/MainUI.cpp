@@ -1062,7 +1062,9 @@ void MainUI::BlockNeural(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
     // Runtime.
     ImGui::Spacing();
     if (st && st->nrRuntimeLoaded) {
-        StatusDot(p.good, StrPrintf("%s: %s %s", TR(Runtime), TR(Loaded), st->nrRuntimeVersion.c_str()).c_str());
+        // The bundled build in use is named after the version (or the file next to the executable).
+        if (info.nrRuntimeBuild) StatusDot(p.good, StrPrintf("%s: %s %s \xC2\xB7 %s", TR(Runtime), TR(Loaded), st->nrRuntimeVersion.c_str(), info.nrRuntimeBuild).c_str());
+        else StatusDot(p.good, StrPrintf("%s: %s %s", TR(Runtime), TR(Loaded), st->nrRuntimeVersion.c_str()).c_str());
     } else if (st && st->nrRuntimeIdle) {
         StatusDot(p.muted, StrPrintf("%s: %s %s", TR(Runtime), st->nrRuntimeVersion.c_str(), TR(RuntimeIdle)).c_str());
     } else if (st && !st->ngxInitialized && s.nrRoute == RouteNgxCore) {
@@ -1071,25 +1073,40 @@ void MainUI::BlockNeural(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
     } else {
         StatusDot(p.warn, StrPrintf("%s: %s", TR(Runtime), TR(NotLoaded)).c_str());
         if (!info.nrRuntimeExists) {
-            ImGui::PushStyleColor(ImGuiCol_Text, p.warn);
-            ImGui::TextWrapped("%s", TR(RuntimeMissing));
-            ImGui::PopStyleColor();
-            ImGui::PushStyleColor(ImGuiCol_Text, p.muted);
-            ImGui::TextWrapped("%s", TR(RuntimeVariants));
-            ImGui::PopStyleColor();
+            if (info.adapter && !info.adapter->IsNvidia()) {
+                // The bundled builds are not even tried on another vendor's card: say what would run here.
+                ImGui::PushStyleColor(ImGuiCol_Text, p.muted);
+                ImGui::TextWrapped("%s", TR(NrOtherVendorHint));
+                ImGui::PopStyleColor();
+            } else {
+                ImGui::PushStyleColor(ImGuiCol_Text, p.warn);
+                ImGui::TextWrapped("%s", TR(RuntimeMissing));
+                ImGui::PopStyleColor();
+                ImGui::PushStyleColor(ImGuiCol_Text, p.muted);
+                ImGui::TextWrapped("%s", TR(RuntimeVariants));
+                ImGui::PopStyleColor();
+            }
         }
     }
-    if (st && st->nrFailed && !st->nrError.empty()) {
+    // A failed feature, or a failed load (the runtime is neither loaded nor resting).
+    if (st && !st->nrError.empty() && (st->nrFailed || (!st->nrRuntimeLoaded && !st->nrRuntimeIdle))) {
         ImGui::PushStyleColor(ImGuiCol_Text, p.bad);
         ImGui::TextWrapped("%s", st->nrError.c_str());
         ImGui::PopStyleColor();
-        // The 310.8 runtime build only carries RTX 50 code: say so on older cards instead of leaving a bare NGX code.
+        // The RTX 50 build only carries Blackwell code: say so on an older card instead of leaving a bare NGX code.
+        // The build under runtimes\universal\ is the one for those cards, so nothing is added when it is loaded.
         const int gen = info.adapter ? info.adapter->RtxGeneration() : 0;
-        if (gen >= 2 && gen <= 4 && (st->nrRuntimeVersion.empty() || st->nrRuntimeVersion.rfind("310.8", 0) == 0)) {
+        const bool universal = st->nrRuntimePath.find(L"\\universal\\") != std::wstring::npos;
+        if (gen >= 2 && gen <= 4 && !universal && (st->nrRuntimeVersion.empty() || st->nrRuntimeVersion.rfind("310.8", 0) == 0)) {
             ImGui::PushStyleColor(ImGuiCol_Text, p.warn);
             ImGui::TextWrapped("%s", TR(NrArchHint));
             ImGui::PopStyleColor();
         }
+    }
+    if (info.nrRuntimeExhausted) {
+        ImGui::PushStyleColor(ImGuiCol_Text, p.warn);
+        ImGui::TextWrapped("%s", TR(NrAllBuildsFailed));
+        ImGui::PopStyleColor();
     }
     if (st && st->nrActive && (st->nrOutState == 2 || (st->nrOutState == 3 && s.nrIntensity > 0.05f))) {
         // The runtime reports success but the output check found a black or unchanged picture.

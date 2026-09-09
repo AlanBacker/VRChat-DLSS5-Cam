@@ -224,7 +224,15 @@ private:
     void SaveSettings();
     void SaveWindowPlacement();
     void ApplyDpi(float scale);
+    // The runtime builds in the order they are tried on this adapter: the bundled ones under runtimes\, the file
+    // next to the executable and runtimes\other\ for another vendor. A build that fails is skipped for the rest of
+    // the session, the next one takes over and the choice is kept in the settings (CheckRuntimeFallback).
+    struct RuntimeCandidate { std::wstring path; const char* build; };   // build: the settings token
+    std::vector<RuntimeCandidate> RuntimeCandidates() const;
     std::wstring EffectiveRuntimePath() const;
+    const char* RuntimeBuildName(const std::wstring& path) const;   // translated name of a candidate, null for another file
+    void CheckRuntimeFallback();           // interface thread, after the status snapshot
+    void RestartRuntimeChoice();           // forget the failures and the kept build: the next load starts over
     static std::wstring EffectiveCaptureFolder(const Settings& s);
     std::wstring EffectiveCaptureFolder() const { return EffectiveCaptureFolder(m_settings); }
     void BrowseRuntime();
@@ -298,6 +306,10 @@ private:
     bool          m_pendingResize = false;
     UINT          m_pendingWidth = 0, m_pendingHeight = 0;
     bool          m_pendingBrowseRuntime = false;
+    std::vector<std::wstring> m_runtimeFailed;   // candidates that failed in this session
+    std::wstring  m_runtimeRequested;      // the file of the last load request
+    double        m_runtimeBlackSince = -1.0;    // when the output check first reported black for that request
+    bool          m_runtimeExhausted = false;    // every candidate failed
     bool          m_pendingBrowseDepthModel = false;
     bool          m_pendingBrowseFolder = false;
     bool          m_pendingBrowseImage = false;

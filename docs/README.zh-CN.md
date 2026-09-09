@@ -37,26 +37,24 @@ VRChat DLSS5 Cam 将 VRChat 相机的画面接入 GeForce RTX 显卡上的 NVIDI
 | | |
 |---|---|
 | Windows | Windows 10 21H2 或 Windows 11，64 位 |
-| 显卡 | NVIDIA GeForce RTX。**RTX 50** 系列使用常规运行库即可执行神经渲染；**RTX 40 / 30 / 20** 需要为这些世代适配的运行库（见下一行），使用常规版本时程序会报告失败，并在停用神经渲染的状态下继续工作。其他厂商的显卡不再被拒绝：只要为其准备的运行库自带 NGX 参数块，神经渲染即可运行。DLAA 与硬件光流仍仅限 NVIDIA，运动向量会改由块匹配提供。 |
-| DLSS 5 运行库 | 需自行准备的 `nvngx_dlssnr.dll`。**本项目不包含该文件，也永远不会下载它。** 该文件在 [RenoDX 的 Discord 服务器](https://discord.com/invite/renodx) 共享，适用于 RTX 50 系列以外显卡的适配版同样可以在那里获取。该服务器属于 RenoDX 项目，**不是本项目的 Discord**；本项目没有自己的 Discord 服务器。 |
+| 显卡 | NVIDIA GeForce RTX。**RTX 50** 系列与 **RTX 40 / 30 / 20** 系列各有一份对应的运行库随压缩包附带（见下一行），任何一代都无需额外准备文件。其他厂商的显卡不会被拒绝：程序可作为查看器和录制工具使用，把为该厂商适配的运行库放入 `runtimes\other\` 后神经渲染即可运行（未附带这样的文件）。DLAA 与硬件光流仍仅限 NVIDIA，运动向量会改由块匹配提供。 |
+| DLSS 5 运行库 | 已附带。压缩包内含两份 `nvngx_dlssnr.dll` 310.8.0.0：`runtimes\blackwell\` 是随游戏发布的原版（RTX 50），`runtimes\universal\` 是社区为 RTX 40 / 30 / 20 适配的同一运行库。程序启动时选择与所装显卡对应的一份，失败时改试另一份。这两个文件是 NVIDIA 的软件，受 NVIDIA 的条款约束，不属于本项目 MIT 许可的源代码（见 `THIRD_PARTY_NOTICES.md`）；无需再从其他地方获取任何文件。 |
 | VRChat | 任何带有 Stream 相机 *Spout Stream* 选项的版本（桌面或 VR）。仅实时相机功能需要。 |
 | 视频文件 | Windows Media Foundation（Windows 自带）。N / KN 版本需要安装 *Media Feature Pack*；HEVC 文件可能需要 Microsoft Store 里的 *HEVC 视频扩展*。 |
 
 ## 安装与启动
 
 1. 从[最新版本](https://github.com/AlanBacker/VRChat-DLSS5-Cam/releases/latest)下载 `VRChatDLSS5Cam-win64.zip`，解压到任意位置。
-2. 将 `nvngx_dlssnr.dll` 复制到该文件夹，与 `VRChatDLSS5Cam.exe` 放在一起。之后也可以在 *DLSS 5 神经渲染 → 运行库路径* 中指定其他位置。
-
-   也可以把多个架构的运行库并排放置，程序会在启动时自动选择与所装显卡匹配的一份：
+2. 无需再复制任何文件。DLSS 5 运行库位于压缩包的 `runtimes\` 下，分为 RTX 50 一份与 RTX 40 / 30 / 20 一份；程序启动时选择与所装显卡对应的一份，失败时切换到另一份。正在使用的版本显示在 DLSS 5 分节的*运行库*旁，路径记录在 `log.txt` 中。
 
    ```
    VRChatDLSS5Cam.exe
    runtimes\blackwell\nvngx_dlssnr.dll   RTX 50
    runtimes\universal\nvngx_dlssnr.dll   RTX 40 / 30 / 20
-   runtimes\other\nvngx_dlssnr.dll       其他厂商的显卡
+   runtimes\other\nvngx_dlssnr.dll       其他厂商的显卡（未附带）
    ```
 
-   若对应文件夹中没有文件，程序仍会使用与可执行文件同级的那一份。实际选中的路径显示在*运行库路径*处，并记录在 `log.txt` 中。
+   也可以改用自己的文件：与 `VRChatDLSS5Cam.exe` 同级的 `nvngx_dlssnr.dll` 会在对应显卡的版本之后被尝试，任意文件都可以在 *DLSS 5 神经渲染 → 运行库路径* 中选择。
 3. 在 VRChat 中打开**相机**，切换到 **Stream** 模式，并在其设置里启用 **Spout Stream**。
 4. 运行 `VRChatDLSS5Cam.exe`。预览中会出现应用了 DLSS 5 的相机画面，*启用 DLSS 5* 开关旁边的标记显示为 *运行中*。
 5. 在 VRChat 中取好景，按 **Ctrl+Alt+P**（或使用 *拍照* 按钮）。PNG 会保存至 `图片\VRChat DLSS5 Cam`。
@@ -153,8 +151,8 @@ VRChat DLSS5 Cam 将 VRChat 相机的画面接入 GeForce RTX 显卡上的 NVIDI
 最近一次检查的结果显示在其下方。
 
 发现更新版本时会弹出一个窗口，显示版本号、发布日期与发布说明，并附三个按钮。**立即更新** 会把发布用的 zip
-下载至 `%LOCALAPPDATA%\VRChatDLSS5Cam\update`，解压后关闭程序、替换程序文件并重新启动；设置、素材库
-以及程序文件夹中的 `nvngx_dlssnr.dll` 均不会被改动。**查看发布页** 在浏览器中打开该版本，**以后再说** 关闭窗口。
+下载至 `%LOCALAPPDATA%\VRChatDLSS5Cam\update`，解压后关闭程序、替换程序文件并重新启动；设置与素材库不会被改动，
+`runtimes\` 下附带的运行库会替换为新版本附带的，程序文件夹中自备的运行库文件则保持原样。**查看发布页** 在浏览器中打开该版本，**以后再说** 关闭窗口。
 程序所在的文件夹必须可写，而 `Program Files` 下的文件夹通常不可写；此时程序会给出提示，可改为从发布页手动更新。
 检查失败或更新失败都会以通知形式显示。
 
@@ -176,7 +174,7 @@ VRChat DLSS5 Cam 将 VRChat 相机的画面接入 GeForce RTX 显卡上的 NVIDI
 | 视频源 | 硬件解码 | 在 GPU 上解码视频。若某个文件颜色异常或无法打开，建议关闭。 |
 | 视频源 | 白点 / 高光压缩 | 仅在浮点（HDR）Spout 纹理时显示：神经渲染之前的曝光基准和柔和的高光滚降。 |
 | DLSS 5 | 启用 DLSS 5（DLSSNR） | 打开或关闭神经渲染。关闭会释放运行库，打开时重新从文件加载。 |
-| DLSS 5 | 运行库路径 / 重新加载 | `nvngx_dlssnr.dll` 的位置。*重新加载* 重新读取该文件。 |
+| DLSS 5 | 运行库路径 / 重新加载 | 正在使用的运行库文件；留空表示附带的、与所装显卡对应的版本。*重新加载* 重新开始选择并重新读取文件。 |
 | DLSS 5 | 加载方式 | *直接加载（signed snippet）*：直接托管 `nvngx_dlssnr.dll`。*NGX 核心*：通过 NGX 运行时创建功能。 |
 | DLSS 5 | 预设 | 自定义命名的 DLSS 5 参数组合：*+* 保存当前参数，点击列表应用，每一项都可覆盖、重命名或删除。保存在设置文件夹的 `presets.txt` 中。 |
 | DLSS 5 | 风格 | 传给运行库的渲染风格（默认 / 自然 / 电影）。 |
@@ -210,8 +208,8 @@ VRChat DLSS5 Cam 将 VRChat 相机的画面接入 GeForce RTX 显卡上的 NVIDI
 ## 常见问题
 
 - **"等待 VRChat Spout 串流…"** – 需要在 VRChat 的 Stream 相机上启用 *Spout Stream*，且相机必须处于打开状态。其他 Spout 发送端会列在 *Spout 发送端* 框中。
-- **"找不到 nvngx_dlssnr.dll"** – 将运行库复制到 `VRChatDLSS5Cam.exe` 旁边，或在 DLSS 5 分节中选择它的路径。
-- **神经渲染失败** – RTX 40 / 30 / 20 搭配常规运行库时属于预期行为：该版本只包含 RTX 50 的代码，程序会在错误下方说明这一点。修改版可从 RenoDX 的 Discord 服务器获取（见 *运行环境*；与本项目无关）。除此之外，某些运行库版本需要更新的驱动；`log.txt` 中记录有 NGX 结果代码，可尝试 *预设* 0 与 *NGX 核心* 加载方式。
+- **"运行库文件缺失"** – 压缩包没有完整解压：`runtimes\blackwell\nvngx_dlssnr.dll` 与 `runtimes\universal\nvngx_dlssnr.dll` 应位于 `VRChatDLSS5Cam.exe` 旁边。重新解压，或在*运行库路径*中选择一个运行库文件。
+- **神经渲染失败** – 程序会自行切换到另一份附带的运行库并弹出提示。两份都无法启动时，错误下方会有说明；首先应尝试更新显卡驱动，`log.txt` 中记录有 NGX 结果代码，也可以尝试 *预设* 0 与 *NGX 核心* 加载方式。在其他厂商的显卡上，附带的运行库无法启动：神经渲染需要为该厂商适配的运行库，放在 `runtimes\other\` 下。
 - **神经渲染运行中，但画面全黑或没有变化** – 程序会将每一帧神经结果与输入对比，当运行库报告成功却输出黑屏或与输入相同的画面时发出警告（`log.txt`："DLSSNR output check"）。将 DLSS 5 关闭再打开即可重新开始。若问题依旧，说明该运行库版本在这块 GPU 上无法产生画面。（*强度* 为 0 时画面不变属于正常情况，不会显示警告。）
 - **程序无法启动 / 立即关闭** – `%LOCALAPPDATA%\VRChatDLSS5Cam\` 中保存有 `log.txt`（最后一行即失败的步骤）和 `crash.txt`，提交 issue 时请附上这两个文件。
 - **NGX 未初始化 / DLAA 不支持** – NGX 运行时需要 NVIDIA GPU 和较新的驱动。DLSS 5 仍可通过 *直接加载（signed snippet）* 方式工作。

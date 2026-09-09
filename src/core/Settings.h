@@ -39,7 +39,9 @@ struct Settings {
     bool        nrEnabled = true;
     bool        nrCaptureOnly = false;  // live source: the neural pass idles for the preview and runs for a burst before each capture
     int         nrRoute = RouteSignedSnippet;
-    std::string nrDllPath;             // UTF-8, empty = <exe folder>\nvngx_dlssnr.dll
+    std::string nrDllPath;             // UTF-8, empty = the bundled build for the adapter (runtimes\<build>\nvngx_dlssnr.dll)
+    std::string nrRuntimeBuild;        // the build that took over after a failure: blackwell, universal, other or exe (the file
+                                       // next to the executable); empty = the one for the adapter. Reload starts over.
     int         nrPreset = 0;          // 0..3
     int         nrStyle = 0;           // 0 default, 1 natural, 2 cinematic
     // Strengths are 0..2. Up to 1 goes to the runtime, which stops there; above 1 the composite pass amplifies the

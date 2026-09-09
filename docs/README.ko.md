@@ -41,26 +41,24 @@ VRChat DLSS5 Cam은 VRChat 카메라의 화면에 GeForce RTX에서 NVIDIA **DLS
 | | |
 |---|---|
 | Windows | Windows 10 21H2 또는 Windows 11, 64비트 |
-| 그래픽 카드 | NVIDIA GeForce RTX. **RTX 50** 시리즈는 일반 런타임으로 뉴럴 패스를 실행합니다. **RTX 40 / 30 / 20**은 해당 세대에 맞게 적합화된 런타임 빌드가 필요하며(다음 행 참고), 일반 빌드에서는 앱이 실패를 보고하고 뉴럴 패스를 끈 상태로 계속 동작합니다. 다른 제조사의 카드도 더 이상 거부하지 않습니다. 그 카드용으로 준비된 런타임이 NGX 매개변수 블록을 스스로 갖추고 있으면 뉴럴 패스가 동작합니다. DLAA와 하드웨어 옵티컬 플로우는 NVIDIA 전용으로 남으며, 모션은 블록 매칭이 대신합니다. |
-| DLSS 5 런타임 | 직접 준비하는 `nvngx_dlssnr.dll`. **이 프로젝트에는 포함되어 있지 않으며, 이 프로젝트가 다운로드하지도 않습니다.** 파일은 [RenoDX Discord 서버](https://discord.com/invite/renodx)에서 공유되며, RTX 50 시리즈가 아닌 카드용으로 적합화된 빌드도 그곳에서 구할 수 있습니다. 그 서버는 RenoDX 프로젝트의 것이며 이 프로젝트의 Discord가 **아닙니다**. 이 프로젝트에는 자체 Discord 서버가 없습니다. |
+| 그래픽 카드 | NVIDIA GeForce RTX. **RTX 50** 시리즈와 **RTX 40 / 30 / 20** 시리즈에는 각각 맞는 런타임 빌드가 압축 파일에 들어 있어(다음 행 참고) 어느 세대에서도 파일을 따로 준비할 필요가 없습니다. 다른 제조사의 카드도 거부하지 않습니다. 뷰어와 녹화 도구로 동작하며, 그 제조사용으로 적합화된 런타임을 `runtimes\other\`에 두면 뉴럴 패스도 동작합니다(그런 파일은 포함되어 있지 않습니다). DLAA와 하드웨어 옵티컬 플로우는 NVIDIA 전용으로 남으며, 모션은 블록 매칭이 대신합니다. |
+| DLSS 5 런타임 | 포함. 압축 파일에는 `nvngx_dlssnr.dll` 310.8.0.0이 두 가지 빌드로 들어 있습니다. `runtimes\blackwell\`은 게임에 실리는 그대로의 빌드(RTX 50), `runtimes\universal\`은 같은 런타임을 커뮤니티가 RTX 40 / 30 / 20용으로 적합화한 빌드입니다. 시작할 때 설치된 카드에 맞는 빌드가 선택되고, 실패하면 다른 빌드를 시도합니다. 두 파일 모두 NVIDIA의 소프트웨어이며 NVIDIA의 약관을 따릅니다. 이 프로젝트의 MIT 라이선스 소스에는 포함되지 않습니다(`THIRD_PARTY_NOTICES.md` 참고). 다른 곳에서 구할 파일은 없습니다. |
 | VRChat | Stream 카메라에 *Spout Stream* 옵션이 있는 모든 빌드(데스크톱 또는 VR). 실시간 카메라에만 필요합니다. |
 | 동영상 파일 | Windows Media Foundation(Windows에 포함). N / KN 에디션은 *Media Feature Pack*이 필요하며, HEVC 파일은 Microsoft Store의 *HEVC 비디오 확장*이 필요할 수 있습니다. |
 
 ## 설치와 실행
 
 1. [최신 릴리스](https://github.com/AlanBacker/VRChat-DLSS5-Cam/releases/latest)에서 `VRChatDLSS5Cam-win64.zip`을 내려받아 원하는 위치에 압축을 풉니다.
-2. `nvngx_dlssnr.dll`을 그 폴더의 `VRChatDLSS5Cam.exe` 옆에 복사합니다. 다른 위치를 쓰려면 *DLSS 5 뉴럴 렌더링 → 런타임 경로*에서 지정할 수 있습니다.
-
-   여러 아키텍처용 빌드를 나란히 두어도 됩니다. 그럴 때는 설치된 카드에 맞는 빌드가 시작할 때 선택됩니다.
+2. 더 복사할 파일은 없습니다. DLSS 5 런타임은 압축 파일의 `runtimes\` 아래에 RTX 50용과 RTX 40 / 30 / 20용 두 가지 빌드로 들어 있습니다. 앱은 시작할 때 설치된 카드에 맞는 빌드를 고르고, 실패하면 다른 빌드로 전환합니다. 사용 중인 빌드는 DLSS 5 섹션의 *런타임* 옆에 표시되고 경로는 `log.txt`에 기록됩니다.
 
    ```
    VRChatDLSS5Cam.exe
    runtimes\blackwell\nvngx_dlssnr.dll   RTX 50
    runtimes\universal\nvngx_dlssnr.dll   RTX 40 / 30 / 20
-   runtimes\other\nvngx_dlssnr.dll       다른 제조사의 카드
+   runtimes\other\nvngx_dlssnr.dll       다른 제조사의 카드(포함되지 않음)
    ```
 
-   해당 폴더가 비어 있으면 실행 파일 옆에 있는 파일이 쓰입니다. 선택된 경로는 *런타임 경로*에 표시되고 `log.txt`에도 기록됩니다.
+   대신 자신의 파일을 쓸 수도 있습니다. `VRChatDLSS5Cam.exe` 옆의 `nvngx_dlssnr.dll`은 카드에 맞는 빌드 다음에 시도되며, 어떤 파일이든 *DLSS 5 뉴럴 렌더링 → 런타임 경로*에서 선택할 수 있습니다.
 3. VRChat에서 **카메라**를 열고 **Stream** 모드로 전환한 뒤, 카메라 설정에서 **Spout Stream**을 켭니다.
 4. `VRChatDLSS5Cam.exe`를 실행합니다. DLSS 5가 적용된 카메라 화면이 미리보기에 나타나고, *DLSS 5(DLSSNR) 사용* 스위치 옆의 배지가 *동작 중*으로 표시됩니다.
 5. VRChat에서 구도를 잡고 **Ctrl+Alt+P**(또는 *촬영* 버튼)를 누릅니다. PNG는 `Pictures\VRChat DLSS5 Cam`에 저장됩니다.
@@ -172,7 +170,8 @@ VRChat DLSS5 Cam은 VRChat 카메라의 화면에 GeForce RTX에서 NVIDIA **DLS
 
 새 버전이 있으면 버전, 게시 날짜, 릴리스 노트와 버튼 세 개가 있는 창이 열립니다. **지금 업데이트**는 릴리스 zip을
 `%LOCALAPPDATA%\VRChatDLSS5Cam\update`에 내려받아 압축을 풀고, 앱을 닫은 뒤 프로그램 파일을 바꾸고 다시
-시작합니다. 설정과 라이브러리, 그리고 프로그램 폴더에 있는 `nvngx_dlssnr.dll`은 건드리지 않습니다.
+시작합니다. 설정과 라이브러리는 건드리지 않고, `runtimes\` 아래의 내장 런타임은 릴리스의 것으로 바뀌며, 실행 파일
+옆에 둔 자신의 런타임 파일은 그대로 남습니다.
 **릴리스 페이지**는 브라우저에서 해당 릴리스를 열고, **나중에**는 창을 닫습니다. 프로그램 폴더는 쓰기가 가능해야
 하는데 `Program Files` 아래 폴더는 보통 그렇지 않습니다. 그럴 때는 앱이 그렇게 알려 주므로 릴리스 페이지에서
 직접 업데이트하면 됩니다. 확인이나 업데이트가 실패하면 알림으로 표시됩니다.
@@ -195,7 +194,7 @@ VRChat DLSS5 Cam은 VRChat 카메라의 화면에 GeForce RTX에서 NVIDIA **DLS
 | 소스 | 하드웨어 디코딩 | 동영상을 GPU에서 디코딩합니다. 파일의 색이 이상하거나 열리지 않으면 끄는 편이 좋습니다. |
 | 소스 | 페이퍼 화이트 / 하이라이트 압축 | 부동소수점(HDR) Spout 텍스처일 때만 표시됩니다: 뉴럴 패스 전에 적용되는 노출 기준과 부드러운 하이라이트 롤오프. |
 | DLSS 5 | DLSS 5(DLSSNR) 사용 | 뉴럴 패스를 켜거나 끕니다. 끄면 런타임을 해제하고, 켜면 파일에서 다시 불러옵니다. |
-| DLSS 5 | 런타임 경로 / 다시 불러오기 | `nvngx_dlssnr.dll`의 위치. *다시 불러오기*는 파일을 다시 불러옵니다. |
+| DLSS 5 | 런타임 경로 / 다시 불러오기 | 사용 중인 런타임 파일. 비워 두면 설치된 카드에 맞는 내장 빌드를 뜻합니다. *다시 불러오기*는 선택을 처음부터 다시 하고 파일을 다시 불러옵니다. |
 | DLSS 5 | 호스트 방식 | *직접(signed snippet)*: `nvngx_dlssnr.dll`을 직접 호스팅합니다. *NGX 코어*: NGX 런타임을 통해 기능을 생성합니다. |
 | DLSS 5 | 프리셋 | 이름을 붙인 DLSS 5 값 모음: *+*로 현재 값을 저장하고, 목록에서 적용하며, 각 항목은 덮어쓰기·이름 바꾸기·삭제가 가능합니다. 설정 폴더의 `presets.txt`에 저장됩니다. |
 | DLSS 5 | 스타일 | 런타임에 전달하는 렌더 스타일(기본 / 내추럴 / 시네마틱). |
@@ -230,8 +229,8 @@ VRChat DLSS5 Cam은 VRChat 카메라의 화면에 GeForce RTX에서 NVIDIA **DLS
 ## 문제 해결
 
 - **"VRChat Spout 스트림 대기 중…"** – VRChat의 Stream 카메라에서 *Spout Stream*이 켜져 있어야 하고, 카메라도 열려 있어야 합니다. 다른 Spout 송신자는 *Spout 송신자* 상자에 표시됩니다.
-- **"nvngx_dlssnr.dll을 찾을 수 없습니다"** – 런타임을 `VRChatDLSS5Cam.exe` 옆에 복사하거나 DLSS 5 섹션에서 경로를 지정하면 됩니다.
-- **뉴럴 렌더링 실패** – RTX 40 / 30 / 20에서 일반 런타임을 쓰는 경우 예상된 동작입니다. 그 빌드에는 RTX 50용 코드만 들어 있으며, 앱이 오류 아래에 그렇게 알려 줍니다. 수정 빌드는 RenoDX Discord 서버에서 구할 수 있습니다(*동작 환경* 참고. 이 프로젝트와는 무관합니다). 그 외의 경우 일부 런타임 빌드는 더 새로운 드라이버가 필요합니다. `log.txt`에 NGX 결과 코드가 남으며, *프리셋* 0과 *NGX 코어* 방식을 시도해 볼 만합니다.
+- **"런타임 파일이 없습니다"** – 압축 파일이 완전히 풀리지 않았습니다. `runtimes\blackwell\nvngx_dlssnr.dll`과 `runtimes\universal\nvngx_dlssnr.dll`은 `VRChatDLSS5Cam.exe` 옆에 있어야 합니다. 다시 풀거나 *런타임 경로*에서 런타임 파일을 선택하면 됩니다.
+- **뉴럴 렌더링 실패** – 앱이 스스로 다른 내장 빌드로 전환하고 알림으로 알려 줍니다. 두 빌드 모두 시작되지 않으면 오류 아래에 그렇게 표시됩니다. 먼저 더 새로운 그래픽 드라이버를 시도해 볼 만하고, `log.txt`에 NGX 결과 코드가 남으며, *프리셋* 0과 *NGX 코어* 방식도 시도해 볼 수 있습니다. 다른 제조사의 카드에서는 내장 빌드가 시작되지 않습니다. 뉴럴 패스에는 그 제조사용으로 적합화된 런타임을 `runtimes\other\`에 두어야 합니다.
 - **뉴럴 패스는 동작 중인데 화면이 검거나 변화가 없음** – 앱은 모든 뉴럴 프레임을 입력과 비교하며, 런타임이 성공을 보고하면서 검은 화면이나 변화 없는 화면을 내놓으면 경고합니다(`log.txt`: "DLSSNR output check"). DLSS 5를 껐다가 다시 켜면 새로 시작합니다. 그래도 계속되면 그 런타임 빌드는 이 GPU에서 화면을 만들지 못하는 것입니다. (*강도*가 0이면 화면에 변화가 없는 것이 정상이며 경고도 표시되지 않습니다.)
 - **앱이 시작되지 않음 / 바로 종료됨** – `%LOCALAPPDATA%\VRChatDLSS5Cam\`에 `log.txt`(마지막 줄이 실패한 단계)와 `crash.txt`가 있습니다. 이슈에는 두 파일을 함께 첨부하면 됩니다.
 - **NGX 초기화 안 됨 / DLAA 지원 안 됨** – NGX 런타임에는 NVIDIA GPU와 최신 드라이버가 필요합니다. DLSS 5는 *직접(signed snippet)* 방식으로 계속 동작합니다.

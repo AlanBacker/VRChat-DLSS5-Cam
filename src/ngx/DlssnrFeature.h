@@ -1,5 +1,5 @@
-// VRChat DLSS5 Cam - hosts the DLSS 5 neural renderer (DLSSNR, NGX feature 18) from a user-supplied nvngx_dlssnr.dll.
-// The runtime itself is not distributed with this application.
+// VRChat DLSS5 Cam - hosts the DLSS 5 neural renderer (DLSSNR, NGX feature 18) from an nvngx_dlssnr.dll: one of the
+// builds bundled under runtimes\, or a file the user points to.
 #pragma once
 #include "ngx/NgxCore.h"
 #include <string>

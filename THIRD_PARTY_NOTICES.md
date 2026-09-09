@@ -12,9 +12,15 @@ NVIDIA RTX SDKs License Agreement; the full text is downloaded to
 
 **This software contains source code provided by NVIDIA Corporation.**
 
-The DLSS 5 neural rendering runtime (`nvngx_dlssnr.dll`) is **not** part of this project,
-is never downloaded by the build and is never redistributed here. Users must supply their
-own copy; the application only loads the file the user points it to.
+## NVIDIA DLSS 5 neural rendering runtime (`nvngx_dlssnr.dll`)
+
+The release archives carry the DLSS 5 neural rendering runtime, version 310.8.0.0, in two builds:
+`runtimes\blackwell\nvngx_dlssnr.dll`, the build as shipped with games (GeForce RTX 50), and
+`runtimes\universal\nvngx_dlssnr.dll`, a community build of the same runtime adapted for
+GeForce RTX 40 / 30 / 20. Both are NVIDIA's software, distributed under NVIDIA's terms, and are
+not covered by this project's MIT License; this project claims no rights in them. The build
+workflow fetches them from the `runtime-310.8` release of this repository and verifies their
+SHA-256 checksums before packaging; the source tree itself contains no runtime file.
 
 ## Spout2 (SpoutDX)
 

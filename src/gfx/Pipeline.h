@@ -35,6 +35,7 @@ struct PipelineStatus {
     bool        nrRuntimeIdle = false;         // released by the DLSS 5 switch; nrRuntimeVersion still names the file
     std::string nrRuntimeVersion;
     std::wstring nrRuntimePath;
+    std::wstring nrRequestedPath;              // the file the last LoadNrRuntime was asked for, loaded or not
     bool        nrActive = false;
     bool        nrStandby = false;              // "neural pass only for captures": idle until a capture is requested
     bool        nrFailed = false;

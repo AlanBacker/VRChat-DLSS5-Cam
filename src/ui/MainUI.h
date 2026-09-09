@@ -76,6 +76,8 @@ struct UiFrameInfo {
     double                hoverCellTime = -1.0;
     std::wstring          nrRuntimePath;      // effective path
     bool                  nrRuntimeExists = false;
+    const char*           nrRuntimeBuild = nullptr;   // translated name of the loaded build (bundled, or the file next to the executable)
+    bool                  nrRuntimeExhausted = false; // every runtime build failed on this adapter
     std::wstring          captureFolder;      // effective folder
     std::string           hotkeyText;
     ImTextureID           displayTexture = 0;
