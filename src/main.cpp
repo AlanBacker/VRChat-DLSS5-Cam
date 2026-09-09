@@ -7,6 +7,9 @@
 // message box before the process exits.
 #include "core/App.h"
 #include "core/Util.h"
+#if APP_EDITION_AMD
+#include "gfx/FsrHost.h"
+#endif
 #include <atomic>
 #include <cstdlib>
 #include <cstdio>
@@ -206,11 +209,30 @@ void InstallCrashHandlers() {
     std::set_terminate(OnTerminate);
 }
 
+// The last step of a run. DLSS-NR-on-AMD, when it is in the process, ends the process's exit with a fail-fast
+// (0xC0000409, FAST_FAIL_FATAL_APP_EXIT) from its own detach routine, after this program's shutdown has completed
+// and been logged, so a script that started the program would see that code instead of the result. Everything of
+// this program's has been saved, released and joined by then, so the process is ended outright, which skips the
+// detach routines. Without the port the process ends the usual way.
+int EndProcess(int code) {
+#if APP_EDITION_AMD
+    if (!vdc::FsrHost::PortModule(vdc::GetExeDir()).empty()) {
+        fflush(nullptr);
+        TerminateProcess(GetCurrentProcess(), (UINT)code);
+    }
+#endif
+    return code;
+}
+
 // All C++ objects live in this frame; the SEH frame below must stay POD-only.
 int RunApp(HINSTANCE hInstance, int nCmdShow) {
     try {
-        vdc::App app;
-        return app.Run(hInstance, nCmdShow);
+        int code = 0;
+        {
+            vdc::App app;
+            code = app.Run(hInstance, nCmdShow);
+        }   // the application and every thread of its own are gone before the process ends
+        return EndProcess(code);
     } catch (const std::exception& e) {
         ReportFatal(L"Unhandled C++ exception: " + vdc::Utf8ToWide(e.what()));
         return 1;

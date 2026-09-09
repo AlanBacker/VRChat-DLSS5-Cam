@@ -97,14 +97,18 @@ The DLSS 5 section shows the installed release next to the latest one. When a ne
 reads **Update to …**; it and **Run the installer again…** fetch the installer and open its window, where **U** updates (keeping the settings and
 weights) and **R** removes it. An installation made before this version is recognised by the installer file next to the executable.
 
-On this route the strengths of the neural pass up to 1 belong to DLSS-NR-on-AMD and are set in its own overlay (**End** key; it also holds its
-*Mode*, inline or async, worth switching when a still picture comes back unchanged); this application's *Preset*, *Style* and strength values
+On this route the strengths of the neural pass up to 1 belong to DLSS-NR-on-AMD and are set in its own overlay (**End** key; its *Mode* there
+stays at inline, which a saved frame needs, see below); this application's *Preset*, *Style* and strength values
 are not passed to it. The controls that act after the pass (*Output blend*, strengths above 1, *Neural pass resolution*) work as usual.
 DLSS-NR-on-AMD needs Windows 11, a Radeon RX 7000 or RX 9000 card and Adrenalin 26.1.1 or newer; its release page states the current
 requirements. *Host route* under *Advanced* selects the route by hand (*Automatic* picks the FSR host on a Radeon card and the direct route on
 a GeForce card).
 
-The Radeon edition has not been run on Radeon hardware by the author (no such card was available). `log.txt`
+The Radeon edition has been run on an RX 9060 XT: still pictures at 720p and 4K and batch processing from the command line (the live
+Spout path has not been tried on Radeon hardware yet). DLSS-NR-on-AMD's installer sets an inline budget of 200 ms, suited to a game, after
+which a frame shows the previous frame's result; the application raises `InlineWaitMs` in `dlssnr_on_amd.ini` to 1000 after the install
+(or at start-up, with one automatic restart, when the file still has a lower value) so that a saved picture or video frame carries its own
+result, and keeps `Inline` at 1 there. Nothing else in that file is changed. `log.txt`
 (`%LOCALAPPDATA%\VRChatDLSS5Cam\`) lists the DLSS-NR-on-AMD files next to the executable and ends with the last lines of that project's own
 log (`dlssnr_on_amd.log` in the program folder); reports with it are welcome in the issues.
 

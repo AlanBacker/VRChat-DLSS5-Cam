@@ -45,6 +45,10 @@ public:
     // it installs under (version, winmm, dbghelp, wininet, winhttp, dxgi) loaded from the executable's folder
     // instead of from Windows. Empty when none is loaded.
     static std::string PortModule(const std::wstring& exeDir);
+    // Holds until the port's log reports the last of the interface hooks it installs in this process, or until a
+    // short cap passes (see the definition); returns at once when no port is loaded. `next` names, for the log
+    // line, what follows the hold.
+    static void WaitForPortHooks(const std::wstring& exeDir, const char* next);
 
 private:
     struct Fn { void* create = nullptr; void* destroy = nullptr; void* configure = nullptr; void* query = nullptr; void* dispatch = nullptr; };

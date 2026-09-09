@@ -2,6 +2,7 @@
 #include "core/I18n.h"
 #include "core/Log.h"
 #include "core/Util.h"
+#include "gfx/FsrHost.h"
 #include "ui/Theme.h"
 #include "../../resources/resource.h"
 #include "imgui.h"
@@ -233,6 +234,7 @@ CommandLine CommandLine::Parse() {
 
 int App::Run(HINSTANCE hInstance, int nCmdShow) {
     if (!Init(hInstance, nCmdShow)) {
+        if (m_ranAgain) return m_exitCode;   // nothing of this instance's to shut down: no window, device or settings
         Shutdown();
         return m_exitCode != 0 ? m_exitCode : 1;
     }
@@ -294,6 +296,32 @@ bool App::Init(HINSTANCE hInstance, int nCmdShow) {
     Log::Info("Executable folder: %s", WideToUtf8(m_exeDir).c_str());
     Log::Info("Command line: %s", WideToUtf8(GetCommandLineW()).c_str());
     if (!m_cli.error.empty()) Log::Warn("Command line: %s", m_cli.error.c_str());
+
+#if APP_EDITION_AMD
+    // DLSS-NR-on-AMD read its settings file when it loaded, before this code ran. If the file still carries the
+    // values its installer chose for a game (PortSetup::TuneIni), it is adjusted now and the run handed to a second
+    // instance started with the same command line, which finds the file adjusted; this one waits for it and
+    // returns its exit code, so a script that started the program sees one run. A second instance never starts
+    // another: it is marked by an environment variable, and the file no longer changes.
+    {
+        wchar_t adjusted[512] = {};
+        if (GetEnvironmentVariableW(L"VDC_PORT_INI_ADJUSTED", adjusted, 512)) {
+            Log::Info("DLSS-NR-on-AMD: settings file adjusted for saved frames by the first start (%s)", WideToUtf8(adjusted).c_str());
+        } else {
+            std::string changes;
+            if (PortSetup::TuneIni(m_exeDir, changes)) {
+                Log::Info("DLSS-NR-on-AMD: starting the program again so the adjusted settings file applies");
+                // This instance's port writes its hook lines into the log the second instance reads at its own start;
+                // they must be in the file before that instance's start line (see FsrHost::WaitForPortHooks).
+                FsrHost::WaitForPortHooks(m_exeDir, "starting the program again now");
+                Log::Shutdown();   // the second instance takes the log file over
+                m_ranAgain = true;
+                m_exitCode = RunAgainAndWait(changes);
+                return false;
+            }
+        }
+    }
+#endif
 
     Log::Info("Settings file: %s", WideToUtf8(m_settingsPath).c_str());
     m_settings.Load(m_settingsPath);
@@ -2773,6 +2801,28 @@ void App::RelaunchSelf() {
     Log::Info("Restarting %s", WideToUtf8(exe).c_str());
     ShellExecuteW(nullptr, L"open", exe, nullptr, m_exeDir.c_str(), SW_SHOWNORMAL);
     if (m_hwnd) PostMessageW(m_hwnd, WM_CLOSE, 0, 0);
+}
+
+int App::RunAgainAndWait(const std::string& note) {
+    wchar_t exe[MAX_PATH * 2] = {};
+    GetModuleFileNameW(nullptr, exe, (DWORD)(sizeof(exe) / sizeof(exe[0])));
+    std::wstring cmdLine = GetCommandLineW();   // the same arguments; CreateProcess may write into the buffer
+    std::vector<wchar_t> cmd(cmdLine.begin(), cmdLine.end());
+    cmd.push_back(L'\0');
+    // Inherited by the second instance: marks it as such and carries what was changed for its log.
+    SetEnvironmentVariableW(L"VDC_PORT_INI_ADJUSTED", Utf8ToWide(note.empty() ? std::string("1") : note).c_str());
+    STARTUPINFOW si{};
+    si.cb = sizeof(si);
+    PROCESS_INFORMATION pi{};
+    if (!CreateProcessW(exe, cmd.data(), nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi)) {
+        return 1;   // the log is closed; the second instance would have said more
+    }
+    CloseHandle(pi.hThread);
+    WaitForSingleObject(pi.hProcess, INFINITE);
+    DWORD code = 1;
+    GetExitCodeProcess(pi.hProcess, &code);
+    CloseHandle(pi.hProcess);
+    return (int)code;
 }
 
 void App::RestartRuntimeChoice() {

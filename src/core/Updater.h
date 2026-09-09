@@ -75,6 +75,11 @@ public:
     static constexpr const wchar_t* kWeightsFile = L"dlssnr_on_amd_weights.bin";
     static constexpr const wchar_t* kSetupFile   = L"dlssnr_on_amd_setup.exe";
     static constexpr const wchar_t* kLogFile     = L"dlssnr_on_amd.log";
+    static constexpr const wchar_t* kIniFile     = L"dlssnr_on_amd.ini";
+    // Adjusts the port's settings file for frames that are saved rather than shown (see the definition). Returns
+    // true when a value was changed; `changes` names them. The port reads the file when it loads, so a change made
+    // at start-up takes effect on the next start.
+    static bool TuneIni(const std::wstring& exeDir, std::string& changes);
 
     ~PortSetup();
     void   Check();                                 // look up the latest release (tag, date, installer)

@@ -239,6 +239,7 @@ private:
     void RecordPortVersion();              // an installation from before the record: taken as the latest when its installer file is the latest one
     void LogPortState(bool tail);          // its files next to the executable; tail: the last lines of its own log too
     void RelaunchSelf();                   // start the executable again and close this instance
+    int  RunAgainAndWait(const std::string& note);   // start the executable again with the same command line, wait, return its code
     static std::wstring EffectiveCaptureFolder(const Settings& s);
     std::wstring EffectiveCaptureFolder() const { return EffectiveCaptureFolder(m_settings); }
     void BrowseRuntime();
@@ -330,6 +331,7 @@ private:
     CommandLine   m_cli;
     bool          m_headless = false;
     int           m_exitCode = 0;
+    bool          m_ranAgain = false;      // Init handed the run to a second instance; m_exitCode is its code
     double        m_startTime = 0.0;
     size_t        m_nextScreenshot = 0;
     bool          m_cliActionsDone = false;

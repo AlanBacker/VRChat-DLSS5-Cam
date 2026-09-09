@@ -1,5 +1,7 @@
 #include "gfx/Device.h"
 #include "core/Log.h"
+#include "core/Util.h"
+#include "gfx/FsrHost.h"
 #include <d3d11.h>
 #include <algorithm>
 #include <cstring>
@@ -374,8 +376,9 @@ void Device::SelectAdapter(IDXGIFactory6* factory, bool /*debug*/) {
         if (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) continue;
         if (FAILED(D3D12CreateDevice(adapter.Get(), D3D_FEATURE_LEVEL_11_0, __uuidof(ID3D12Device), nullptr)))
             continue;
-        Log::Info("Adapter %u: %s (%s) %llu MB", i, WideToUtf8(desc.Description).c_str(),
-                  VendorName(desc.VendorId), (unsigned long long)(desc.DedicatedVideoMemory >> 20));
+        Log::Info("Adapter %u: %s (%s) %llu MB luid %08lx:%08lx", i, WideToUtf8(desc.Description).c_str(),
+                  VendorName(desc.VendorId), (unsigned long long)(desc.DedicatedVideoMemory >> 20),
+                  (unsigned long)desc.AdapterLuid.HighPart, (unsigned long)desc.AdapterLuid.LowPart);
         if (!best) best = adapter;
         if (!firstNvidia && desc.VendorId == 0x10DE) firstNvidia = adapter;
     }
@@ -384,6 +387,9 @@ void Device::SelectAdapter(IDXGIFactory6* factory, bool /*debug*/) {
 
 bool Device::Init(HWND hwnd, bool debugLayer, std::wstring& error, bool headless, UINT width, UINT height) {
     m_hwnd = hwnd;
+#if APP_EDITION_AMD
+    FsrHost::WaitForPortHooks(GetExeDir(), "creating Direct3D 12 now");   // the port's hooks must precede the device (see FsrHost.cpp)
+#endif
     m_headless = headless;
     HRESULT hr = S_OK;
 
@@ -422,6 +428,8 @@ bool Device::Init(HWND hwnd, bool debugLayer, std::wstring& error, bool headless
 
     hr = D3D12CreateDevice(m_adapter.Get(), D3D_FEATURE_LEVEL_11_0, IID_PPV_ARGS(&m_device));
     if (FAILED(hr)) { error = L"D3D12CreateDevice failed: " + Utf8ToWide(FormatHr(hr)); return false; }
+    Log::Info("Direct3D 12 device %p on adapter luid %08lx:%08lx", (void*)m_device.Get(),
+              (unsigned long)m_info.luid.HighPart, (unsigned long)m_info.luid.LowPart);
 
     if (debugLayer) {
         ComPtr<ID3D12InfoQueue> iq;

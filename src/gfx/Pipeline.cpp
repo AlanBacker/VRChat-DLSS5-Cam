@@ -373,6 +373,21 @@ bool Pipeline::Init(Device& device, const std::wstring& exeDir, const std::wstri
     if (!m_shaders.Init(device, error)) return false;
     m_ngx.Init(device, exeDir, appDataDir);   // failure is non-fatal: the app still works as a viewer
     m_status.nvofAvailable = NvOpticalFlow::LibraryAvailable();
+#if APP_EDITION_AMD
+    // Bring the FidelityFX module into the process at start-up, before the first frame is presented, rather than
+    // lazily on the first neural frame. DLSS-NR-on-AMD attaches to a game by hooking the FidelityFX dispatch, and a
+    // game has its FSR runtime loaded during its own start-up; matching that load order gives the port the best
+    // chance of finding and hooking ours. Failure is non-fatal: the first neural frame goes through the normal load
+    // path and reports any error there.
+    if (m_isAmd) {
+        std::string ferr;
+        if (m_fsr.Load(device.D3D12(), exeDir, ferr)) Log::Info("FSR host: runtime pre-loaded at start-up (for DLSS-NR-on-AMD)");
+        else Log::Info("FSR host: pre-load skipped (%s); the first neural frame will retry", ferr.c_str());
+        m_fsrPortModule = FsrHost::PortModule(exeDir);   // loaded before this program's own code ran, if at all
+        m_fsrPortCheckTime = NowSeconds();
+        if (!m_fsrPortModule.empty()) Log::Info("FSR host: DLSS-NR-on-AMD is loaded as %s", m_fsrPortModule.c_str());
+    }
+#endif
     return true;
 }
 
@@ -1052,6 +1067,12 @@ bool Pipeline::RunFsrHost(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const
         reset = true;
     }
     if (m_nrSkipped) { reset = true; m_nrSkipped = false; }
+    // DLSS-NR-on-AMD runs its network inline, the frame's queue waiting for the result, and lets a frame through
+    // without it when more than one frame is in flight ("too many frames in flight, skipping one"). A frame that is
+    // saved must carry its result, so with the port in the process the previous frame's work is waited for before
+    // the next dispatch is recorded: one neural frame is ever in flight. The cost is the overlap of the other passes
+    // with the network, which the network's own time dwarfs.
+    if (!m_fsrPortModule.empty()) gpu.WaitIdle();
     gpu.TimerBegin(cmd, GpuTimer::Neural);
     Tex& mv = m_nrScaled ? m_nrMv : m_mv;
     Tex& depth = m_nrScaled ? m_nrDepth : m_depth;

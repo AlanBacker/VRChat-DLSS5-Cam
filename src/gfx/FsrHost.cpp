@@ -188,4 +188,52 @@ std::string FsrHost::PortModule(const std::wstring& exeDir) {
     return {};
 }
 
+// DLSS-NR-on-AMD attaches to a program by hooking the DXGI and Direct3D 12 interfaces. It is loaded as a proxy
+// version.dll before the program's own code runs, but installs those hooks from a thread of its own, after making a
+// Direct3D 12 device to read the interface tables from. A game spends seconds starting up, so its swap chain is created
+// long after the hooks are in place. This program creates its device and swap chain within milliseconds of starting,
+// which is before the port has finished: the port then never sees the swap chain being created, treats its frames as
+// belonging to another renderer and never initialises its engine. So, when the port is present, the Direct3D start-up
+// is held until its log reports the last of its interface hooks (or until a short cap passes, so a change in the
+// port's log format cannot hang the program). The port appends to its log run after run, so only what this run has
+// written counts: the file must have been written to since this process was created, and the hook line is looked for
+// after the last of the port's start lines ("dlssnr_amd v..."); an earlier run's lines would otherwise pass for this
+// one's and the hold would end at once, before the hooks are in place. The same hold precedes the start of a second
+// instance (App::RunAgainAndWait): its port writes its start line into the same log, and this instance's hook lines
+// have to be in the file before that line, or the second instance takes them for its own.
+void FsrHost::WaitForPortHooks(const std::wstring& exeDir, const char* next) {
+    const std::string port = PortModule(exeDir);
+    if (port.empty()) return;
+    const std::wstring logPath = exeDir + L"\\dlssnr_on_amd.log";
+    FILETIME created{}, exited{}, kernelTime{}, userTime{};
+    GetProcessTimes(GetCurrentProcess(), &created, &exited, &kernelTime, &userTime);
+    const ULONGLONG start = GetTickCount64();
+    const ULONGLONG cap = 4000;   // ms; the port needs ~150 ms on an RX 9060 XT
+    bool ready = false;
+    unsigned long long bytes = 0;
+    while (GetTickCount64() - start < cap) {
+        HANDLE h = CreateFileW(logPath.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                               nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (h != INVALID_HANDLE_VALUE) {
+            BY_HANDLE_FILE_INFORMATION info{};
+            const bool thisRun = GetFileInformationByHandle(h, &info) && CompareFileTime(&info.ftLastWriteTime, &created) >= 0;
+            std::string text;
+            if (thisRun) {
+                char buf[4096];
+                DWORD n = 0;
+                while (ReadFile(h, buf, sizeof(buf), &n, nullptr) && n) { text.append(buf, n); if (text.size() > (1u << 20)) break; }
+            }
+            CloseHandle(h);
+            bytes = text.size();
+            size_t from = text.rfind("\ndlssnr_amd v");   // this run's part of the log (all of it when there is no start line)
+            if (from == std::string::npos) from = 0;
+            if (thisRun && text.find("hooked IDXGISwapChain1::Present1", from) != std::string::npos) { ready = true; break; }
+        }
+        Sleep(5);
+    }
+    const unsigned waited = (unsigned)(GetTickCount64() - start);
+    if (ready) Log::Info("DLSS-NR-on-AMD (%s): interface hooks in place after %u ms (its log: %llu bytes); %s", port.c_str(), waited, bytes, next);
+    else Log::Warn("DLSS-NR-on-AMD (%s): interface hooks not reported after %u ms (its log: %llu bytes); %s", port.c_str(), waited, bytes, next);
+}
+
 } // namespace vdc

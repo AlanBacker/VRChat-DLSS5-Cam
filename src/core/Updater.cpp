@@ -709,6 +709,8 @@ bool PortSetup::RunInstall(const std::wstring& exeDir, std::string& error) {
         if (ran && code == 0 && FileExists(weights)) {
             { std::lock_guard<std::mutex> lock(m_mutex); m_status.exitCode = code; }
             Log::Info("DLSS-NR-on-AMD: silent install finished (code %lu)", code);
+            std::string tuned;
+            TuneIni(exeDir, tuned);   // the restart that follows starts with the adjusted file
             SetState(State::Finished);
             return true;
         }
@@ -739,7 +741,71 @@ bool PortSetup::RunInstall(const std::wstring& exeDir, std::string& error) {
     CloseHandle(sei.hProcess);
     { std::lock_guard<std::mutex> lock(m_mutex); m_status.exitCode = code; }
     Log::Info("DLSS-NR-on-AMD: installer finished with code %lu", (unsigned long)code);
+    std::string tuned;
+    TuneIni(exeDir, tuned);   // an update may have written the file afresh; the restart that follows uses it
     SetState(State::Finished);
+    return true;
+}
+
+// The port's settings file, written by its installer with values chosen for a game: the network runs inline, the
+// frame's queue waiting for it on the GPU, with a budget of 200 ms after which the frame shows the previous frame's
+// result. A game prefers a late frame; a picture or a video frame that is saved must carry its own result, so here
+// the budget is raised to a second: the most the port's wait honours (its iteration cap, measured on an RX 9060 XT),
+// enough for a 4K frame on that card (0.2 s, the first one 0.4-0.6 s) and under the driver's two-second hang
+// detection. The inline mode is kept on, as the asynchronous one hands the result to the next frame. Only the
+// values of keys the file already has are changed; every other byte of the file stays as it is.
+bool PortSetup::TuneIni(const std::wstring& exeDir, std::string& changes) {
+    changes.clear();
+    const std::wstring path = JoinPath(exeDir, kIniFile);
+    HANDLE h = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_EXISTING,
+                           FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (h == INVALID_HANDLE_VALUE) return false;
+    std::string text;
+    {
+        char buf[4096];
+        DWORD n = 0;
+        while (ReadFile(h, buf, sizeof(buf), &n, nullptr) && n) { text.append(buf, n); if (text.size() > (1u << 20)) break; }
+        CloseHandle(h);
+    }
+    static constexpr unsigned long kInlineWaitMs = 1000;
+    std::string out;
+    size_t pos = 0;
+    while (pos < text.size()) {
+        size_t end = text.find('\n', pos);
+        if (end == std::string::npos) end = text.size(); else ++end;
+        std::string line = text.substr(pos, end - pos);
+        pos = end;
+        std::string body = line, tail;
+        while (!body.empty() && (body.back() == '\n' || body.back() == '\r')) { tail.insert(tail.begin(), body.back()); body.pop_back(); }
+        auto key = [&](const char* k) { return body.compare(0, strlen(k), k) == 0; };
+        if (key("InlineWaitMs=")) {
+            const unsigned long v = strtoul(body.c_str() + strlen("InlineWaitMs="), nullptr, 10);
+            if (v < kInlineWaitMs) {
+                changes += (changes.empty() ? "" : ", ") + StrPrintf("InlineWaitMs %lu -> %lu", v, kInlineWaitMs);
+                line = StrPrintf("InlineWaitMs=%lu", kInlineWaitMs) + tail;
+            }
+        } else if (key("Inline=")) {
+            const std::string v = body.substr(strlen("Inline="));
+            if (v != "1") {
+                changes += (changes.empty() ? "" : ", ") + ("Inline " + v + " -> 1");
+                line = "Inline=1" + tail;
+            }
+        }
+        out += line;
+    }
+    if (changes.empty()) return false;
+    h = CreateFileW(path.c_str(), GENERIC_WRITE, FILE_SHARE_READ, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (h == INVALID_HANDLE_VALUE) {
+        Log::Warn("DLSS-NR-on-AMD: settings file %s could not be written (%s); %s left as they are",
+                  WideToUtf8(path).c_str(), LastErrorText().c_str(), changes.c_str());
+        changes.clear();
+        return false;
+    }
+    DWORD written = 0;
+    const bool ok = WriteFile(h, out.data(), (DWORD)out.size(), &written, nullptr) && written == out.size();
+    CloseHandle(h);
+    if (!ok) { Log::Warn("DLSS-NR-on-AMD: settings file %s was not written completely", WideToUtf8(path).c_str()); changes.clear(); return false; }
+    Log::Info("DLSS-NR-on-AMD: settings file adjusted for saved frames: %s", changes.c_str());
     return true;
 }
 
