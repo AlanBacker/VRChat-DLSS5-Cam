@@ -107,7 +107,6 @@ bool Settings::ApplyText(const std::string& data) {
     r.Get("nrColorStrength", nrColorStrength);
     r.Get("nrShadowGain", nrShadowGain);
     r.Get("nrHighlightGain", nrHighlightGain);
-    r.Get("nrInputScale", nrInputScale);
     r.Get("motionMode", motionMode);
     r.Get("depthMode", depthMode);
     r.Get("searchRadius", searchRadius);
@@ -208,7 +207,6 @@ void PutParameters(Writer& w, const Settings& s) {
     w.Put("nrColorStrength", s.nrColorStrength);
     w.Put("nrShadowGain", s.nrShadowGain);
     w.Put("nrHighlightGain", s.nrHighlightGain);
-    w.Put("nrInputScale", s.nrInputScale);
     w.Put("motionMode", s.motionMode);
     w.Put("depthMode", s.depthMode);
     w.Put("searchRadius", s.searchRadius);
@@ -265,7 +263,6 @@ std::string Settings::ProcessingText() const {
     w.Put("nrUiCorrection", nrUiCorrection);
     w.Put("nrUpscale", nrUpscale);
     w.Put("nrInputExposure", nrInputExposure);
-    w.Put("nrInputScale", nrInputScale);
     w.Put("motionMode", motionMode);
     w.Put("depthMode", depthMode);
     w.Put("searchRadius", searchRadius);
@@ -304,7 +301,6 @@ std::string Settings::EffectText() const {
     w.Put("nrColorStrength", nrColorStrength);
     w.Put("nrShadowGain", nrShadowGain);
     w.Put("nrHighlightGain", nrHighlightGain);
-    w.Put("nrInputScale", nrInputScale);
     return w.out;
 }
 
@@ -350,7 +346,6 @@ bool Settings::Save(const std::wstring& path) const {
     w.Put("nrColorStrength", nrColorStrength);
     w.Put("nrShadowGain", nrShadowGain);
     w.Put("nrHighlightGain", nrHighlightGain);
-    w.Put("nrInputScale", nrInputScale);
     w.Put("settingsVersion", settingsVersion);
     w.Put("motionMode", motionMode);
     w.Put("depthMode", depthMode);
@@ -427,7 +422,6 @@ void Settings::Clamp() {
     nrColorStrength = std::clamp(nrColorStrength, 0.0f, 2.0f);
     nrShadowGain = std::clamp(nrShadowGain, 0.0f, 2.0f);
     nrHighlightGain = std::clamp(nrHighlightGain, 0.0f, 2.0f);
-    nrInputScale = std::clamp(nrInputScale, 25, 100);
     processRateLimit = std::clamp(processRateLimit, 0, 240);
     nrGlobalTone = std::clamp(nrGlobalTone, 0.0f, 2.0f);
     nrLocalTone = std::clamp(nrLocalTone, 0.0f, 2.0f);
@@ -461,7 +455,7 @@ void Settings::CopyEffects(const Settings& from) {
     nrLocalStructure = from.nrLocalStructure; nrSkinStructure = from.nrSkinStructure;
     nrAutoMask = from.nrAutoMask; nrUiCorrection = from.nrUiCorrection;
     nrInputExposure = from.nrInputExposure; nrToneTransfer = from.nrToneTransfer; nrColorStrength = from.nrColorStrength;
-    nrShadowGain = from.nrShadowGain; nrHighlightGain = from.nrHighlightGain; nrInputScale = from.nrInputScale;
+    nrShadowGain = from.nrShadowGain; nrHighlightGain = from.nrHighlightGain;
 }
 
 } // namespace vdc
