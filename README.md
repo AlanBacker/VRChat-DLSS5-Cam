@@ -41,8 +41,8 @@ as a batch. It is an ordinary Windows application: the VRChat process is never t
 | | |
 |---|---|
 | Windows | Windows 10 21H2 or Windows 11, 64-bit |
-| Graphics card | NVIDIA GeForce RTX. The **RTX 50** series runs the neural pass with the regular runtime. **RTX 40 / 30 / 20** require the modified runtime build (see the next row); with the regular build the application reports the failure and continues with the neural pass disabled. |
-| DLSS 5 runtime | A copy of `nvngx_dlssnr.dll`, supplied by the user. **It is not included here and is never downloaded by this project.** The file is shared on the [RenoDX Discord server](https://discord.com/invite/renodx), where a modified build for cards other than the RTX 50 series is available as well. That server belongs to the RenoDX project and is **not** this project's Discord; this project has no Discord server of its own. |
+| Graphics card | NVIDIA GeForce RTX. The **RTX 50** series runs the neural pass with the regular runtime. **RTX 40 / 30 / 20** require a runtime build adapted for those generations (see the next row); with the regular build the application reports the failure and continues with the neural pass disabled. Cards from other vendors are no longer refused: the neural pass runs whenever the runtime supplied for them carries its own NGX parameter block. DLAA and the hardware optical flow stay NVIDIA-only, and block matching takes over as the motion source. |
+| DLSS 5 runtime | A copy of `nvngx_dlssnr.dll`, supplied by the user. **It is not included here and is never downloaded by this project.** The file is shared on the [RenoDX Discord server](https://discord.com/invite/renodx), where a build adapted for cards other than the RTX 50 series is available as well. That server belongs to the RenoDX project and is **not** this project's Discord; this project has no Discord server of its own. |
 | VRChat | Any build with the Stream Camera *Spout Stream* option (desktop or VR). Required for the live camera only. |
 | Video files | Windows Media Foundation (part of Windows). The N / KN editions require the *Media Feature Pack*; HEVC files may require the *HEVC Video Extensions* from the Microsoft Store. |
 
@@ -50,6 +50,19 @@ as a batch. It is an ordinary Windows application: the VRChat process is never t
 
 1. Download `VRChatDLSS5Cam-win64.zip` from the [latest release](https://github.com/AlanBacker/VRChat-DLSS5-Cam/releases/latest) and extract it to any location.
 2. Copy `nvngx_dlssnr.dll` into that folder, next to `VRChatDLSS5Cam.exe`. A different location can also be selected later under *DLSS 5 Neural Rendering → Runtime path*.
+
+   Builds for several architectures can be kept side by side instead, and the one matching the installed card is then
+   chosen at start-up:
+
+   ```
+   VRChatDLSS5Cam.exe
+   runtimes\blackwell\nvngx_dlssnr.dll   RTX 50
+   runtimes\universal\nvngx_dlssnr.dll   RTX 40 / 30 / 20
+   runtimes\other\nvngx_dlssnr.dll       cards from another vendor
+   ```
+
+   A file next to the executable is still used when the folder for this card holds nothing. The path that was picked
+   is shown under *Runtime path* and recorded in `log.txt`.
 3. In VRChat, open the **Camera**, switch it to **Stream** mode and enable **Spout Stream** in its settings.
 4. Start `VRChatDLSS5Cam.exe`. The camera picture appears in the preview with DLSS 5 applied, and the badge next to the *Enable DLSS 5* switch reads *Active*.
 5. Frame the shot in VRChat and press **Ctrl+Alt+P** (or use the *Capture photo* button). The PNG is written to `Pictures\VRChat DLSS5 Cam`.

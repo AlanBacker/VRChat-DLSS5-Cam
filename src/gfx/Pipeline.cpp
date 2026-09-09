@@ -944,26 +944,29 @@ bool Pipeline::NeuralNeedsCreate(const Settings& s, UINT inW, UINT inH, UINT out
            m_nr.OutputHeight() != outH || m_nrCreatedUseCore != useCore || m_nrCreatedPreset != s.nrPreset;
 }
 
+// What the chosen route needs to be there. The core route goes through the NGX runtime; the snippet route hosts the
+// runtime DLL itself and only falls back to the core for the parameter block, so a runtime that brings its own runs
+// on an adapter the NGX core refuses.
+bool Pipeline::NeuralRouteReady(const Settings& s) const {
+    if (s.nrRoute == RouteNgxCore) return m_ngx.Initialized();
+    return m_nr.RuntimeLoaded() && (m_nr.SelfContained() || m_ngx.Initialized());
+}
+
 // True when this frame is going to create an NGX feature (the neural pass or DLAA). The depth network keeps quiet on
 // such a frame and until it has completed (see Render): an inference on its own queue alongside the creation and
 // first evaluation of the neural feature leaves some runtime builds with a black picture for good.
 bool Pipeline::FeatureCreatesThisFrame(const Settings& s, bool nrWanted, UINT nrInW, UINT nrInH, UINT nrOutW, UINT nrOutH,
                                        bool dlaaWanted) const {
-    if (!m_ngx.Initialized()) return false;
-    if (nrWanted && !m_nrFailed) {
-        const bool useCore = s.nrRoute == RouteNgxCore;
-        if ((useCore || m_nr.RuntimeLoaded()) && NeuralNeedsCreate(s, nrInW, nrInH, nrOutW, nrOutH)) return true;
-    }
-    if (dlaaWanted && !m_dlaaFailed && m_ngx.DlssAvailable() &&
+    if (nrWanted && !m_nrFailed && NeuralRouteReady(s) && NeuralNeedsCreate(s, nrInW, nrInH, nrOutW, nrOutH)) return true;
+    if (m_ngx.Initialized() && dlaaWanted && !m_dlaaFailed && m_ngx.DlssAvailable() &&
         (!m_dlaa.Created() || m_dlaa.Width() != m_inW || m_dlaa.Height() != m_inH || m_dlaaCreatedPreset != s.dlaaPreset))
         return true;
     return false;
 }
 
 bool Pipeline::RunNeural(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const Settings& s, Tex& input, bool reset) {
-    if (m_nrFailed || !m_ngx.Initialized()) return false;
+    if (m_nrFailed || !NeuralRouteReady(s)) return false;
     const bool useCore = s.nrRoute == RouteNgxCore;
-    if (!useCore && !m_nr.RuntimeLoaded()) return false;
     if (NeuralNeedsCreate(s, m_nrInW, m_nrInH, m_nrOutW, m_nrOutH)) {
         if (m_nr.Created()) { gpu.WaitIdle(); m_nr.Release(m_ngx); }
         std::string err;
@@ -1246,7 +1249,7 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
     // Whenever the neural pass does not run (between capture bursts, switched off, failed, runtime not loaded) and
     // DLAA is off, nothing consumes the motion and depth guidance: those passes rest as well, so the picture only
     // goes through the conversion and the composite. The compare views of the motion or the depth keep them running.
-    const bool nrRuns = nrWanted && !m_nrFailed && m_ngx.Initialized() && (s.nrRoute == RouteNgxCore || m_nr.RuntimeLoaded());
+    const bool nrRuns = nrWanted && !m_nrFailed && NeuralRouteReady(s);
     const bool guidanceIdle = !nrRuns && !dlaaWanted && s.compareMode != CompareMotion && s.compareMode != CompareDepth;
     // Neural pass size: below the input resolution when asked for, never while the pass itself upscales.
     const bool nrScaled = !(m_inW != m_outW || m_inH != m_outH) && s.nrInputScale < 100;

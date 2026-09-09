@@ -192,6 +192,7 @@ private:
     bool EnsureNeuralTextures(GpuContext& gpu, UINT inW, UINT inH, UINT outW, UINT outH, bool scaled);
     bool RunNeural(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const Settings& s, Tex& input, bool reset);
     bool NeuralNeedsCreate(const Settings& s, UINT inW, UINT inH, UINT outW, UINT outH) const;
+    bool NeuralRouteReady(const Settings& s) const;
     bool FeatureCreatesThisFrame(const Settings& s, bool nrWanted, UINT nrInW, UINT nrInH, UINT nrOutW, UINT nrOutH,
                                  bool dlaaWanted) const;
     void RunComposite(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const Settings& s, Tex& processed, Tex* neuralBase,

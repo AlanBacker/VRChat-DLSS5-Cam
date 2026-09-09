@@ -37,8 +37,8 @@ VRChat DLSS5 Cam 将 VRChat 相机的画面接入 GeForce RTX 显卡上的 NVIDI
 | | |
 |---|---|
 | Windows | Windows 10 21H2 或 Windows 11，64 位 |
-| 显卡 | NVIDIA GeForce RTX。**RTX 50** 系列使用常规运行库即可执行神经渲染；**RTX 40 / 30 / 20** 需要修改版运行库（见下一行），使用常规版本时程序会报告失败，并在停用神经渲染的状态下继续工作。 |
-| DLSS 5 运行库 | 需自行准备的 `nvngx_dlssnr.dll`。**本项目不包含该文件，也永远不会下载它。** 该文件在 [RenoDX 的 Discord 服务器](https://discord.com/invite/renodx) 共享，适用于 RTX 50 系列以外显卡的修改版同样可以在那里获取。该服务器属于 RenoDX 项目，**不是本项目的 Discord**；本项目没有自己的 Discord 服务器。 |
+| 显卡 | NVIDIA GeForce RTX。**RTX 50** 系列使用常规运行库即可执行神经渲染；**RTX 40 / 30 / 20** 需要为这些世代适配的运行库（见下一行），使用常规版本时程序会报告失败，并在停用神经渲染的状态下继续工作。其他厂商的显卡不再被拒绝：只要为其准备的运行库自带 NGX 参数块，神经渲染即可运行。DLAA 与硬件光流仍仅限 NVIDIA，运动向量会改由块匹配提供。 |
+| DLSS 5 运行库 | 需自行准备的 `nvngx_dlssnr.dll`。**本项目不包含该文件，也永远不会下载它。** 该文件在 [RenoDX 的 Discord 服务器](https://discord.com/invite/renodx) 共享，适用于 RTX 50 系列以外显卡的适配版同样可以在那里获取。该服务器属于 RenoDX 项目，**不是本项目的 Discord**；本项目没有自己的 Discord 服务器。 |
 | VRChat | 任何带有 Stream 相机 *Spout Stream* 选项的版本（桌面或 VR）。仅实时相机功能需要。 |
 | 视频文件 | Windows Media Foundation（Windows 自带）。N / KN 版本需要安装 *Media Feature Pack*；HEVC 文件可能需要 Microsoft Store 里的 *HEVC 视频扩展*。 |
 
@@ -46,6 +46,17 @@ VRChat DLSS5 Cam 将 VRChat 相机的画面接入 GeForce RTX 显卡上的 NVIDI
 
 1. 从[最新版本](https://github.com/AlanBacker/VRChat-DLSS5-Cam/releases/latest)下载 `VRChatDLSS5Cam-win64.zip`，解压到任意位置。
 2. 将 `nvngx_dlssnr.dll` 复制到该文件夹，与 `VRChatDLSS5Cam.exe` 放在一起。之后也可以在 *DLSS 5 神经渲染 → 运行库路径* 中指定其他位置。
+
+   也可以把多个架构的运行库并排放置，程序会在启动时自动选择与所装显卡匹配的一份：
+
+   ```
+   VRChatDLSS5Cam.exe
+   runtimes\blackwell\nvngx_dlssnr.dll   RTX 50
+   runtimes\universal\nvngx_dlssnr.dll   RTX 40 / 30 / 20
+   runtimes\other\nvngx_dlssnr.dll       其他厂商的显卡
+   ```
+
+   若对应文件夹中没有文件，程序仍会使用与可执行文件同级的那一份。实际选中的路径显示在*运行库路径*处，并记录在 `log.txt` 中。
 3. 在 VRChat 中打开**相机**，切换到 **Stream** 模式，并在其设置里启用 **Spout Stream**。
 4. 运行 `VRChatDLSS5Cam.exe`。预览中会出现应用了 DLSS 5 的相机画面，*启用 DLSS 5* 开关旁边的标记显示为 *运行中*。
 5. 在 VRChat 中取好景，按 **Ctrl+Alt+P**（或使用 *拍照* 按钮）。PNG 会保存至 `图片\VRChat DLSS5 Cam`。

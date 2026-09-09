@@ -42,8 +42,8 @@ Mod も必要としません。
 | | |
 |---|---|
 | Windows | Windows 10 21H2 または Windows 11、64 ビット |
-| グラフィックカード | NVIDIA GeForce RTX。**RTX 50** シリーズは通常のランタイムでニューラルパスが動作します。**RTX 40 / 30 / 20** には改変版のランタイムビルドが必要で（次の行を参照）、通常のビルドではアプリケーションが失敗を報告し、ニューラルパスを無効にして動作を続けます。 |
-| DLSS 5 ランタイム | 各自で用意する `nvngx_dlssnr.dll`。**本プロジェクトには含まれておらず、本プロジェクトがダウンロードすることもありません。** ファイルは [RenoDX の Discord サーバー](https://discord.com/invite/renodx) で共有されており、RTX 50 シリーズ以外のカード向けの改変ビルドもそこで入手できます。そのサーバーは RenoDX プロジェクトのものであり、本プロジェクトの Discord **ではありません**。本プロジェクトには独自の Discord サーバーはありません。 |
+| グラフィックカード | NVIDIA GeForce RTX。**RTX 50** シリーズは通常のランタイムでニューラルパスが動作します。**RTX 40 / 30 / 20** にはその世代向けに適合させたランタイムビルドが必要で（次の行を参照）、通常のビルドではアプリケーションが失敗を報告し、ニューラルパスを無効にして動作を続けます。他社製カードも拒否しなくなりました。そのカード向けに用意されたランタイムが NGX のパラメーターブロックを自ら備えていれば、ニューラルパスが動作します。DLAA とハードウェアオプティカルフローは NVIDIA 専用のままで、モーションはブロックマッチングが引き継ぎます。 |
+| DLSS 5 ランタイム | 各自で用意する `nvngx_dlssnr.dll`。**本プロジェクトには含まれておらず、本プロジェクトがダウンロードすることもありません。** ファイルは [RenoDX の Discord サーバー](https://discord.com/invite/renodx) で共有されており、RTX 50 シリーズ以外のカード向けに適合させたビルドもそこで入手できます。そのサーバーは RenoDX プロジェクトのものであり、本プロジェクトの Discord **ではありません**。本プロジェクトには独自の Discord サーバーはありません。 |
 | VRChat | Stream カメラに *Spout Stream* オプションがあるビルド（デスクトップまたは VR）。ライブカメラにのみ必要です。 |
 | 動画ファイル | Windows Media Foundation（Windows の一部）。N / KN エディションには *Media Feature Pack* が必要です。HEVC ファイルには Microsoft Store の *HEVC ビデオ拡張機能* が必要な場合があります。 |
 
@@ -51,6 +51,17 @@ Mod も必要としません。
 
 1. [最新リリース](https://github.com/AlanBacker/VRChat-DLSS5-Cam/releases/latest) から `VRChatDLSS5Cam-win64.zip` をダウンロードし、任意の場所に展開します。
 2. `nvngx_dlssnr.dll` をそのフォルダの `VRChatDLSS5Cam.exe` と同じ場所にコピーします。別の場所を指定する場合は、*DLSS 5 ニューラルレンダリング → ランタイムのパス* から選択できます。
+
+   複数のアーキテクチャ向けビルドを併置しておくこともできます。その場合は搭載カードに合うものが起動時に選ばれます。
+
+   ```
+   VRChatDLSS5Cam.exe
+   runtimes\blackwell\nvngx_dlssnr.dll   RTX 50
+   runtimes\universal\nvngx_dlssnr.dll   RTX 40 / 30 / 20
+   runtimes\other\nvngx_dlssnr.dll       他社製カード
+   ```
+
+   対応するフォルダが空の場合は、実行ファイルと同じ場所にあるファイルが使われます。選ばれたパスは*ランタイムのパス*に表示され、`log.txt` にも記録されます。
 3. VRChat で**カメラ**を開き、**Stream** モードに切り替えて、その設定で **Spout Stream** を有効にします。
 4. `VRChatDLSS5Cam.exe` を起動します。DLSS 5 を適用したカメラ映像がプレビューに表示され、*DLSS 5（DLSSNR）を有効化* スイッチの隣のバッジが *動作中* になります。
 5. VRChat で構図を決めて **Ctrl+Alt+P**（または *撮影* ボタン）を押します。PNG は `Pictures\VRChat DLSS5 Cam` に保存されます。

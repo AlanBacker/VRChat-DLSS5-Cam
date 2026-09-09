@@ -2576,9 +2576,36 @@ void App::SaveWindowPlacement() {
     m_settings.windowHeight = std::max(300L, wp.rcNormalPosition.bottom - wp.rcNormalPosition.top);
 }
 
+// Runtime builds differ per architecture: the one that carries Blackwell code cannot start on an RTX 40/30/20 card,
+// and a build adapted for another vendor is a third file, all under the same name. With no path set in the settings,
+// several builds may therefore sit side by side under runtimes\ and the one for this adapter is picked here.
 std::wstring App::EffectiveRuntimePath() const {
     if (!m_settings.nrDllPath.empty()) return Utf8ToWide(m_settings.nrDllPath);
-    return JoinPath(m_exeDir, L"nvngx_dlssnr.dll");
+
+    static constexpr wchar_t kName[] = L"nvngx_dlssnr.dll";
+    const std::wstring generic = JoinPath(m_exeDir, kName);
+    const std::wstring runtimes = JoinPath(m_exeDir, L"runtimes");
+    const AdapterInfo& ai = m_device.Info();
+    const int gen = ai.RtxGeneration();
+    const wchar_t* variant = nullptr;
+    if (!ai.IsNvidia())            variant = L"other";
+    else if (gen == 5)             variant = L"blackwell";
+    else if (gen >= 2 && gen <= 4) variant = L"universal";
+
+    if (variant) {
+        const std::wstring byFolder = JoinPath(JoinPath(runtimes, variant), kName);
+        if (FileExists(byFolder)) return byFolder;
+        const std::wstring bySuffix = JoinPath(m_exeDir, std::wstring(L"nvngx_dlssnr_") + variant + L".dll");
+        if (FileExists(bySuffix)) return bySuffix;
+    }
+    if (FileExists(generic)) return generic;
+    // Nothing for this adapter: any other build still loads and names the real problem, which reads better than a
+    // bare "not found". With none of them there, the generic path is what the missing-runtime message points at.
+    for (const wchar_t* other : { L"blackwell", L"universal", L"other" }) {
+        const std::wstring path = JoinPath(JoinPath(runtimes, other), kName);
+        if (FileExists(path)) return path;
+    }
+    return generic;
 }
 
 std::wstring App::EffectiveCaptureFolder(const Settings& s) {

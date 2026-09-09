@@ -13,6 +13,8 @@ using CreateFeatureFn  = NVSDK_NGX_Result(NVSDK_CONV*)(ID3D12GraphicsCommandList
 using EvaluateFeatureFn = NVSDK_NGX_Result(NVSDK_CONV*)(ID3D12GraphicsCommandList*, const NVSDK_NGX_Handle*, const NVSDK_NGX_Parameter*, PFN_NVSDK_NGX_ProgressCallback);
 using ReleaseFeatureFn = NVSDK_NGX_Result(NVSDK_CONV*)(NVSDK_NGX_Handle*);
 using ShutdownFn       = NVSDK_NGX_Result(NVSDK_CONV*)(ID3D12Device*);
+using AllocParamsFn    = NVSDK_NGX_Result(NVSDK_CONV*)(NVSDK_NGX_Parameter**);
+using DestroyParamsFn  = NVSDK_NGX_Result(NVSDK_CONV*)(NVSDK_NGX_Parameter*);
 using GetModuleFileNameWFn = DWORD(WINAPI*)(HMODULE, LPWSTR, DWORD);
 
 constexpr unsigned long long kApplicationId = 0x0876232Cull;
@@ -23,6 +25,10 @@ CreateFeatureFn   g_create = nullptr;
 EvaluateFeatureFn g_evaluate = nullptr;
 ReleaseFeatureFn  g_release = nullptr;
 ShutdownFn        g_shutdown = nullptr;
+// Optional. A runtime that also exports the parameter block keeps the whole snippet route inside the DLL, so the NGX
+// core is needed only for the core route and for DLAA.
+AllocParamsFn     g_allocParams = nullptr;
+DestroyParamsFn   g_destroyParams = nullptr;
 
 std::atomic<HMODULE>              g_callerModule{ nullptr };
 std::atomic<GetModuleFileNameWFn> g_originalGetModuleFileNameW{ nullptr };
@@ -123,6 +129,18 @@ NVSDK_NGX_Result SafeRelease(ReleaseFeatureFn fn, NVSDK_NGX_Handle* handle, unsi
 NVSDK_NGX_Result SafeShutdown(ShutdownFn fn, ID3D12Device* device, unsigned long* seh) noexcept {
     *seh = 0;
     VDC_SEH_TRY { return fn(device); }
+    VDC_SEH_EXCEPT(*seh) { return NVSDK_NGX_Result_FAIL_PlatformError; }
+}
+
+NVSDK_NGX_Result SafeAllocParams(AllocParamsFn fn, NVSDK_NGX_Parameter** out, unsigned long* seh) noexcept {
+    *seh = 0;
+    VDC_SEH_TRY { return fn(out); }
+    VDC_SEH_EXCEPT(*seh) { return NVSDK_NGX_Result_FAIL_PlatformError; }
+}
+
+NVSDK_NGX_Result SafeDestroyParams(DestroyParamsFn fn, NVSDK_NGX_Parameter* params, unsigned long* seh) noexcept {
+    *seh = 0;
+    VDC_SEH_TRY { return fn(params); }
     VDC_SEH_EXCEPT(*seh) { return NVSDK_NGX_Result_FAIL_PlatformError; }
 }
 
@@ -275,6 +293,10 @@ bool DlssnrFeature::LoadRuntime(ID3D12Device* device, const std::wstring& dllPat
     g_evaluate = reinterpret_cast<EvaluateFeatureFn>(GetProcAddress(m_module, "NVSDK_NGX_D3D12_EvaluateFeature"));
     g_release  = reinterpret_cast<ReleaseFeatureFn>(GetProcAddress(m_module, "NVSDK_NGX_D3D12_ReleaseFeature"));
     g_shutdown = reinterpret_cast<ShutdownFn>(GetProcAddress(m_module, "NVSDK_NGX_D3D12_Shutdown1"));
+    // Optional pair: with it the snippet route allocates its own parameter block and never calls the NGX core.
+    g_allocParams   = reinterpret_cast<AllocParamsFn>(GetProcAddress(m_module, "NVSDK_NGX_D3D12_AllocateParameters"));
+    g_destroyParams = reinterpret_cast<DestroyParamsFn>(GetProcAddress(m_module, "NVSDK_NGX_D3D12_DestroyParameters"));
+    if (!g_allocParams || !g_destroyParams) { g_allocParams = nullptr; g_destroyParams = nullptr; }
     if (!g_initExt || !g_create || !g_evaluate || !g_release || !g_shutdown) {
         error = "nvngx_dlssnr.dll does not export the expected NGX D3D12 entry points";
         UnloadRuntime();
@@ -287,7 +309,8 @@ bool DlssnrFeature::LoadRuntime(ID3D12Device* device, const std::wstring& dllPat
     if (seh) { error = StrPrintf("DLSSNR Init_Ext raised exception 0x%08lx", seh); UnloadRuntime(); return false; }
     if (NVSDK_NGX_FAILED(r)) { error = StrPrintf("DLSSNR Init_Ext failed (%s, 0x%08x)", NgxCore::ResultName(r), (unsigned)r); UnloadRuntime(); return false; }
     m_snippetInitialized = true;
-    Log::Info("DLSSNR runtime loaded: %s (version %s)", WideToUtf8(dllPath).c_str(), m_runtimeVersion.c_str());
+    Log::Info("DLSSNR runtime loaded: %s (version %s), parameter block %s", WideToUtf8(dllPath).c_str(),
+              m_runtimeVersion.c_str(), g_allocParams ? "from the runtime" : "from the NGX core");
     return true;
 }
 
@@ -296,6 +319,12 @@ void DlssnrFeature::UnloadRuntime() {
         unsigned long seh = 0;
         if (!m_useCore && g_release) SafeRelease(g_release, m_feature, &seh);
         m_feature = nullptr;
+    }
+    // A parameter block that came from the runtime has to go back before the module does.
+    if (m_params && m_paramsFromRuntime) {
+        if (g_destroyParams) { unsigned long seh = 0; SafeDestroyParams(g_destroyParams, m_params, &seh); }
+        m_params = nullptr;
+        m_paramsFromRuntime = false;
     }
     if (m_snippetInitialized && g_shutdown && m_device) {
         unsigned long seh = 0;
@@ -307,6 +336,7 @@ void DlssnrFeature::UnloadRuntime() {
     RemoveCallerShim();
     if (m_module) { FreeLibrary(m_module); m_module = nullptr; }
     g_initExt = nullptr; g_create = nullptr; g_evaluate = nullptr; g_release = nullptr; g_shutdown = nullptr;
+    g_allocParams = nullptr; g_destroyParams = nullptr;
     m_runtimePath.clear();
     m_runtimeVersion.clear();
 }
@@ -314,17 +344,30 @@ void DlssnrFeature::UnloadRuntime() {
 bool DlssnrFeature::Create(NgxCore& core, ID3D12GraphicsCommandList* cmd, UINT inW, UINT inH, UINT outW, UINT outH,
                            int preset, bool useCore, std::string& error) {
     Release(core);
-    if (!core.Initialized()) { error = "NGX core is not initialized"; return false; }
     if (!useCore && !RuntimeLoaded()) { error = "DLSSNR runtime is not loaded"; return false; }
+    const bool runtimeParams = !useCore && g_allocParams && g_destroyParams;
+    if (!runtimeParams && !core.Initialized()) { error = "NGX core is not initialized"; return false; }
 
-    m_params = core.AllocateParameters(error);
-    if (!m_params) return false;
+    unsigned long seh = 0;
+    if (runtimeParams) {
+        const NVSDK_NGX_Result pr = SafeAllocParams(g_allocParams, &m_params, &seh);
+        if (seh || NVSDK_NGX_FAILED(pr) || !m_params) {
+            error = seh ? StrPrintf("DLSSNR AllocateParameters raised exception 0x%08lx", seh)
+                        : StrPrintf("DLSSNR AllocateParameters failed (%s)", NgxCore::ResultName(pr));
+            m_params = nullptr;
+            return false;
+        }
+        m_paramsFromRuntime = true;
+    } else {
+        m_params = core.AllocateParameters(error);
+        if (!m_params) return false;
+        m_paramsFromRuntime = false;
+    }
 
     const CreateValues cv{ inW, inH, outW, outH, preset };
-    unsigned long seh = 0;
     if (!SafeSetCreateParams(m_params, &cv, &seh)) {
         error = StrPrintf("DLSSNR parameter setup raised exception 0x%08lx", seh);
-        core.DestroyParameters(m_params); m_params = nullptr;
+        DestroyParams(core);
         return false;
     }
     const CreateFeatureFn createFn = useCore ? static_cast<CreateFeatureFn>(&NVSDK_NGX_D3D12_CreateFeature) : g_create;
@@ -333,7 +376,7 @@ bool DlssnrFeature::Create(NgxCore& core, ID3D12GraphicsCommandList* cmd, UINT i
         error = seh ? StrPrintf("DLSSNR CreateFeature raised exception 0x%08lx", seh)
                     : StrPrintf("DLSSNR CreateFeature failed (%s, 0x%08x)", NgxCore::ResultName(r), (unsigned)r);
         m_feature = nullptr;
-        core.DestroyParameters(m_params); m_params = nullptr;
+        DestroyParams(core);
         return false;
     }
     m_useCore = useCore;
@@ -356,7 +399,23 @@ void DlssnrFeature::Release(NgxCore& core) {
         }
         m_feature = nullptr;
     }
-    if (m_params) { core.DestroyParameters(m_params); m_params = nullptr; }
+    DestroyParams(core);
+}
+
+bool DlssnrFeature::SelfContained() const {
+    return RuntimeLoaded() && g_allocParams != nullptr && g_destroyParams != nullptr;
+}
+
+// The parameter block goes back to whoever handed it out.
+void DlssnrFeature::DestroyParams(NgxCore& core) {
+    if (!m_params) return;
+    if (m_paramsFromRuntime) {
+        if (g_destroyParams) { unsigned long seh = 0; SafeDestroyParams(g_destroyParams, m_params, &seh); }
+    } else {
+        core.DestroyParameters(m_params);
+    }
+    m_params = nullptr;
+    m_paramsFromRuntime = false;
 }
 
 bool DlssnrFeature::Evaluate(ID3D12GraphicsCommandList* cmd, const Inputs& in, const Params& p, std::string& error) {

@@ -35,6 +35,9 @@ public:
     bool RuntimeLoaded() const { return m_module != nullptr && m_snippetInitialized; }
     const std::wstring& RuntimePath() const { return m_runtimePath; }
     const std::string& RuntimeVersion() const { return m_runtimeVersion; }
+    // True when the loaded runtime also exports the NGX parameter block, so the snippet route needs nothing from the
+    // NGX core and therefore no NVIDIA driver. A runtime adapted for another vendor is only usable that way.
+    bool SelfContained() const;
 
     // useCore = create feature 18 through the NGX core instead of the snippet exports (experimental).
     bool Create(NgxCore& core, ID3D12GraphicsCommandList* cmd, UINT inW, UINT inH, UINT outW, UINT outH,
@@ -54,6 +57,7 @@ public:
 private:
     bool InstallCallerShim(std::string& error);
     void RemoveCallerShim();
+    void DestroyParams(NgxCore& core);
 
     HMODULE              m_module = nullptr;
     std::wstring         m_runtimePath;
@@ -64,6 +68,7 @@ private:
     bool                 m_shimInstalled = false;
 
     NVSDK_NGX_Parameter* m_params = nullptr;
+    bool                 m_paramsFromRuntime = false;
     NVSDK_NGX_Handle*    m_feature = nullptr;
     bool                 m_useCore = false;
     UINT                 m_inW = 0, m_inH = 0, m_outW = 0, m_outH = 0;
