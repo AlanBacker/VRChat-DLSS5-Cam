@@ -682,6 +682,30 @@ bool PortSetup::RunInstall(const std::wstring& exeDir, std::string& error) {
         return false;
     }
     { std::lock_guard<std::mutex> lock(m_mutex); m_status.setupPath = path; }
+
+    const std::wstring weights = JoinPath(exeDir, PortSetup::kWeightsFile);
+    // A first install answers the same prompts every time - accept the folder, accept the DLL name the setup
+    // proposes for our executable (it detects that VRChatDLSS5Cam.exe loads version.dll) - and makes no real choice,
+    // so it is run without a window and driven from here. The update / removal menu is a decision and keeps its own
+    // window. If the silent run leaves no weights file (a machine the port refuses, or a folder that needs
+    // administrator rights), the window opens so the reason is visible.
+    if (!FileExists(weights)) {
+        SetState(State::Installing);
+        std::string out, herr;
+        unsigned long code = 1;
+        const bool ran = RunSetupHidden(path, exeDir, "\r\n\r\n\r\n\r\n\r\n\r\n", 300000, out, code, herr);
+        if (!out.empty()) Log::Info("DLSS-NR-on-AMD installer output:\n%s", out.c_str());
+        if (ran && code == 0 && FileExists(weights)) {
+            { std::lock_guard<std::mutex> lock(m_mutex); m_status.exitCode = code; }
+            Log::Info("DLSS-NR-on-AMD: silent install finished (code %lu)", code);
+            SetState(State::Finished);
+            return true;
+        }
+        if (m_cancel) return true;   // the application is closing; leave the window unopened
+        const std::string why = ran ? StrPrintf("exit code %lu, no weights file", code) : herr;
+        Log::Info("DLSS-NR-on-AMD: the silent install did not complete (%s); opening the installer window", why.c_str());
+    }
+
     // Its own console window, started in the program folder: there it finds the executable and nvngx_dlssnr.dll.
     SHELLEXECUTEINFOW sei{};
     sei.cbSize = sizeof(sei);
@@ -706,6 +730,73 @@ bool PortSetup::RunInstall(const std::wstring& exeDir, std::string& error) {
     Log::Info("DLSS-NR-on-AMD: installer finished with code %lu", (unsigned long)code);
     SetState(State::Finished);
     return true;
+}
+
+// Runs dlssnr_on_amd_setup.exe with no window, its standard input fed the answers and its output captured. The
+// setup reads one line per prompt and writes a progress bar of many lines, so the output pipe is drained on a
+// thread while this one waits for the process. Killed if the timeout passes or the application starts closing.
+bool PortSetup::RunSetupHidden(const std::wstring& path, const std::wstring& exeDir, const std::string& answers,
+                               unsigned timeoutMs, std::string& captured, unsigned long& exitCode, std::string& error) {
+    exitCode = 1;
+    SECURITY_ATTRIBUTES sa{};
+    sa.nLength = sizeof(sa);
+    sa.bInheritHandle = TRUE;
+    HANDLE inRd = nullptr, inWr = nullptr, outRd = nullptr, outWr = nullptr;
+    if (!CreatePipe(&inRd, &inWr, &sa, 0)) { error = "input pipe: " + LastErrorText(); return false; }
+    if (!CreatePipe(&outRd, &outWr, &sa, 0)) { error = "output pipe: " + LastErrorText(); CloseHandle(inRd); CloseHandle(inWr); return false; }
+    // The ends this process keeps are not inherited by the child.
+    SetHandleInformation(inWr, HANDLE_FLAG_INHERIT, 0);
+    SetHandleInformation(outRd, HANDLE_FLAG_INHERIT, 0);
+
+    STARTUPINFOW si{};
+    si.cb = sizeof(si);
+    si.dwFlags = STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW;
+    si.wShowWindow = SW_HIDE;
+    si.hStdInput = inRd;
+    si.hStdOutput = outWr;
+    si.hStdError = outWr;
+    std::wstring cmd = L"\"" + path + L"\"";   // no arguments: the folder is the working directory
+    std::vector<wchar_t> cmdBuf(cmd.begin(), cmd.end());
+    cmdBuf.push_back(0);
+    PROCESS_INFORMATION pi{};
+    const BOOL started = CreateProcessW(path.c_str(), cmdBuf.data(), nullptr, nullptr, TRUE, CREATE_NO_WINDOW,
+                                        nullptr, exeDir.c_str(), &si, &pi);
+    CloseHandle(inRd);    // owned by the child now (or unused if it did not start)
+    CloseHandle(outWr);
+    if (!started) {
+        error = "the installer could not be started: " + LastErrorText();
+        CloseHandle(inWr);
+        CloseHandle(outRd);
+        return false;
+    }
+    if (!answers.empty()) { DWORD wrote = 0; WriteFile(inWr, answers.data(), (DWORD)answers.size(), &wrote, nullptr); }
+    CloseHandle(inWr);    // end of input: any further prompt reads end-of-file and takes its default
+
+    std::string buf;
+    std::thread reader([&] {
+        char chunk[4096];
+        DWORD n = 0;
+        while (ReadFile(outRd, chunk, sizeof(chunk), &n, nullptr) && n) buf.append(chunk, n);
+    });
+    unsigned elapsed = 0;
+    const DWORD step = 250;
+    for (;;) {
+        const DWORD w = WaitForSingleObject(pi.hProcess, step);
+        if (w == WAIT_OBJECT_0) break;
+        elapsed += step;
+        if (m_cancel) { TerminateProcess(pi.hProcess, 1); error = "cancelled"; break; }
+        if (elapsed >= timeoutMs) { TerminateProcess(pi.hProcess, 1); error = "the installer did not finish in time"; break; }
+    }
+    WaitForSingleObject(pi.hProcess, INFINITE);   // settle after a possible terminate
+    DWORD code = 1;
+    GetExitCodeProcess(pi.hProcess, &code);
+    reader.join();          // the child has gone, so its output end is closed and the reader has ended
+    CloseHandle(outRd);
+    CloseHandle(pi.hProcess);
+    CloseHandle(pi.hThread);
+    captured = buf;
+    exitCode = code;
+    return error.empty();
 }
 
 } // namespace vdc

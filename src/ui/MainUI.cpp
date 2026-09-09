@@ -1563,13 +1563,15 @@ void MainUI::BlockFsrHost(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
 void MainUI::PortActions(const UiFrameInfo& info, UiEvents& ev, bool portLoaded, bool card) {
     const Palette& p = Colors();
     const PortSetup::Status* ps = info.portSetup;
-    const bool busy = ps && (ps->state == PortSetup::State::Checking || ps->state == PortSetup::State::Downloading || ps->state == PortSetup::State::Launched);
+    const bool busy = ps && (ps->state == PortSetup::State::Checking || ps->state == PortSetup::State::Downloading || ps->state == PortSetup::State::Installing ||
+                            ps->state == PortSetup::State::Launched);
     const bool latestKnown = ps && !ps->tag.empty();
     const bool newer = latestKnown && !info.portInstalledTag.empty() && ps->tag != info.portInstalledTag;
     if (ps) {
         switch (ps->state) {
             case PortSetup::State::Checking: StatusDot(p.muted, TR(AmdPortChecking)); break;
             case PortSetup::State::Downloading: StatusDot(p.accent, StrPrintf(TR(AmdPortDownloading), ps->downloadedMb, ps->totalMb).c_str()); break;
+            case PortSetup::State::Installing: StatusDot(p.accent, TR(AmdPortInstalling)); break;
             case PortSetup::State::Launched: StatusDot(p.accent, TR(AmdPortInstallerRunning)); break;
             case PortSetup::State::Failed:
                 ImGui::PushStyleColor(ImGuiCol_Text, p.bad);

@@ -58,7 +58,7 @@ private:
 // its own thread; Get() hands back a copy of the state.
 class PortSetup {
 public:
-    enum class State { Idle, Checking, Ready, Downloading, Launched, Finished, Failed };
+    enum class State { Idle, Checking, Ready, Downloading, Installing, Launched, Finished, Failed };
     struct Status {
         State       state = State::Idle;
         std::string tag, date, pageUrl, assetUrl;   // the latest release, once looked up
@@ -88,6 +88,10 @@ private:
     void Join();
     bool RunCheck(std::string& error);
     bool RunInstall(const std::wstring& exeDir, std::string& error);
+    // Runs the setup without a window, feeding it the answers and capturing its console output, up to a
+    // timeout (it is killed if the application is closing). Returns false when it could not run at all.
+    bool RunSetupHidden(const std::wstring& path, const std::wstring& exeDir, const std::string& answers,
+                        unsigned timeoutMs, std::string& captured, unsigned long& exitCode, std::string& error);
 
     mutable std::mutex m_mutex;
     Status             m_status;

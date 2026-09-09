@@ -2703,6 +2703,7 @@ void App::PollPortSetup() {
     m_portGenSeen = m_portStatus.generation;
     switch (m_portStatus.state) {
         case PortSetup::State::Ready: RecordPortVersion(); break;
+        case PortSetup::State::Installing: m_ui.Toast(TR(AmdPortInstalling)); break;
         case PortSetup::State::Launched: m_ui.Toast(TR(AmdPortInstallerRunning)); break;
         case PortSetup::State::Finished: {
             m_portWeightsTime = -1.0;   // looked at again on the next frame

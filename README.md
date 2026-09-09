@@ -87,14 +87,15 @@ or modification, which is why its installer is never part of this archive.
    its own weights); the NVIDIA-only files (`nvngx_dlss.dll`, `runtimes\`) are not in it. The GeForce edition offers **Get the Radeon edition…**
    when it finds itself on a Radeon card (`--edition amd` on the command line does the same) and swaps its files the way an update does.
 2. Start `VRChatDLSS5Cam.exe`. The start-up card and the DLSS 5 section offer **Install DLSS-NR-on-AMD…**, with the licence linked next to it.
-   One press downloads `dlssnr_on_amd_setup.exe` into the program folder and starts it in its own window; press **Enter** there to accept the
-   DLL name it proposes (it may ask for elevation). When the installer has finished, the application restarts by itself; the DLSS 5 section
-   then reads *Runtime: Loaded FSR … · FSR host* and *DLSS-NR-on-AMD v…: loaded (version.dll) · up to date*, and the badge next to
-   *Enable DLSS 5* reads *Active*.
+   One press downloads `dlssnr_on_amd_setup.exe` into the program folder and runs it in the background, taking the folder and the DLL name it
+   proposes for the executable; no window and no key press are needed. When it has finished, the application restarts by itself, and the DLSS 5
+   section reads *Runtime: Loaded FSR … · FSR host* and *DLSS-NR-on-AMD v…: loaded (version.dll) · up to date*, with the badge next to
+   *Enable DLSS 5* reading *Active*. If the folder needs administrator rights, or the card is one the port does not support, the installer opens
+   its own window instead so its message is visible.
 
 The DLSS 5 section shows the installed release next to the latest one. When a newer DLSS-NR-on-AMD is out, the section says so and the button
-reads **Update to …**: it fetches the new installer, which does the update (**U**). **Run the installer again…** does the same at any time, for
-an update or the removal (**R**). An installation made before this version is recognised by the installer file next to the executable.
+reads **Update to …**; it and **Run the installer again…** fetch the installer and open its window, where **U** updates (keeping the settings and
+weights) and **R** removes it. An installation made before this version is recognised by the installer file next to the executable.
 
 On this route the strengths of the neural pass up to 1 belong to DLSS-NR-on-AMD and are set in its own overlay (**End** key; it also holds its
 *Mode*, inline or async, worth switching when a still picture comes back unchanged); this application's *Preset*, *Style* and strength values
