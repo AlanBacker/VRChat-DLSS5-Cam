@@ -4,6 +4,7 @@
 #include <winhttp.h>
 #include <shellapi.h>
 #include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -694,7 +695,17 @@ bool PortSetup::RunInstall(const std::wstring& exeDir, std::string& error) {
         std::string out, herr;
         unsigned long code = 1;
         const bool ran = RunSetupHidden(path, exeDir, "\r\n\r\n\r\n\r\n\r\n\r\n", 300000, out, code, herr);
-        if (!out.empty()) Log::Info("DLSS-NR-on-AMD installer output:\n%s", out.c_str());
+        // Keep the lines that carry words for the log; drop the banner and the progress bar (brackets, hashes, %).
+        std::string words;
+        std::string line;
+        auto flush = [&] {
+            if (std::any_of(line.begin(), line.end(), [](unsigned char c) { return std::isalpha(c); }))
+                words += line + "\n";
+            line.clear();
+        };
+        for (char c : out) { if (c == '\n' || c == '\r') flush(); else line += c; }
+        flush();
+        if (!words.empty()) Log::Info("DLSS-NR-on-AMD installer output:\n%s", words.c_str());
         if (ran && code == 0 && FileExists(weights)) {
             { std::lock_guard<std::mutex> lock(m_mutex); m_status.exitCode = code; }
             Log::Info("DLSS-NR-on-AMD: silent install finished (code %lu)", code);
