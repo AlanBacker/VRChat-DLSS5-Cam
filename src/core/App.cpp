@@ -1802,6 +1802,7 @@ void App::Frame() {
         info.updateNotes = us.release.notes;
         info.updatePrerelease = us.release.prerelease;
         info.updateEdition = us.release.edition;
+        info.updateDowngrade = us.release.downgrade;
         info.updateHasAsset = !us.release.assetUrl.empty();
         info.updateError = us.error;
         info.updateWritable = us.writable;
@@ -1812,8 +1813,11 @@ void App::Frame() {
             m_updateGenSeen = us.generation;
             switch (us.state) {
             case Updater::State::Available:
-                info.updateShow = true;
-                if (m_cli.update || (us.release.edition && m_cli.edition)) m_updater.Download(m_exeDir, JoinPath(m_appDataDir, L"update"));   // --update / --edition: no click needed
+                // The stable channel's way back from a pre-release: offered in a notice by the automatic check, as the
+                // usual card when the user asked (the check button, or the switch to the stable channel).
+                if (us.release.downgrade && !us.manual) m_ui.Toast(StrPrintf(TR(UpdateDowngradeToast), us.release.version.c_str()));
+                else info.updateShow = true;
+                if (!us.release.downgrade && (m_cli.update || (us.release.edition && m_cli.edition))) m_updater.Download(m_exeDir, JoinPath(m_appDataDir, L"update"));   // --update / --edition: no click needed
                 break;
             case Updater::State::UpToDate:
                 if (us.release.edition) m_ui.Toast(StrPrintf(TR(EditionNotFound), APP_EDITION_AMD ? TR(EditionGeforce) : TR(EditionAmd), APP_VERSION_STRING), true);
@@ -2921,7 +2925,10 @@ void App::CheckRuntimeFallback() {
     const PipelineStatus& st = m_status;
     if (st.nrRequestedPath != m_runtimeRequested) return;   // the processing thread has not reached the request
     bool failed = false;
-    if (!st.nrError.empty() && (st.nrFailed || (!st.nrRuntimeLoaded && !st.nrRuntimeIdle))) failed = true;
+    // A build counts as failed when it does not load or cannot create its feature. An evaluation error is not the
+    // build's fault (the same request fails on every build), so it never switches builds.
+    if (!st.nrError.empty() && ((!st.nrRuntimeLoaded && !st.nrRuntimeIdle) ||
+                                (st.nrFailed && st.nrError.find("CreateFeature") != std::string::npos))) failed = true;
     else if (st.nrRuntimeLoaded && st.nrOutState == 2) {
         const double now = NowSeconds();
         if (m_runtimeBlackSince < 0.0) m_runtimeBlackSince = now;
@@ -2940,11 +2947,13 @@ void App::CheckRuntimeFallback() {
     for (const RuntimeCandidate& c : candidates)
         if (FileExists(c.path) && std::find(m_runtimeFailed.begin(), m_runtimeFailed.end(), c.path) == m_runtimeFailed.end()) { next = &c; break; }
     if (!next) {
+        // Every build failed: back to the one for the adapter (the first candidate) and no more switching this
+        // session, so a failure that was not the build's fault does not leave the session on the wrong build.
         m_runtimeExhausted = true;
-        m_runtimeRequested.clear();
-        // The kept build did not help either: the next start begins with the one for the adapter again.
-        if (!m_settings.nrRuntimeBuild.empty()) { m_settings.nrRuntimeBuild.clear(); MarkSettingsDirty(); }
-        Log::Warn("DLSS 5 runtime: %s failed on this adapter and no other build is left to try", WideToUtf8(failedPath).c_str());
+        m_runtimeFailed.clear();
+        if (!m_settings.nrRuntimeBuild.empty()) { m_settings.nrRuntimeBuild.clear(); MarkSettingsDirty(); PushSettings(); }
+        Log::Warn("DLSS 5 runtime: %s failed on this adapter and no other build is left to try; back to the adapter's build", WideToUtf8(failedPath).c_str());
+        RequestRuntimeLoad(false);
         return;
     }
     Log::Warn("DLSS 5 runtime: %s failed on this adapter; switching to %s", WideToUtf8(failedPath).c_str(), WideToUtf8(next->path).c_str());

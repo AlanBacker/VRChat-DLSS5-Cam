@@ -17,18 +17,18 @@ enum class Lang { English = 0, Chinese = 1, Japanese = 2, Korean = 3, Count = 4 
     X(TmConvert,          "Convert", "转换", "変換", "변환") \
     X(TmGuidance,         "Guidance", "引导", "ガイダンス", "가이던스") \
     X(TmOpticalFlow,      "Optical flow", "光流", "オプティカルフロー", "옵티컬 플로우") \
-    X(TmDlaa,             "DLAA", "DLAA", "DLAA", "DLAA") \
+    X(TmDlaa,             "DLSS SR / DLAA", "DLSS SR / DLAA", "DLSS SR / DLAA", "DLSS SR / DLAA") \
     X(TmNeural,           "Neural", "神经渲染", "ニューラル", "뉴럴") \
     X(TmComposite,        "Composite", "合成", "合成", "합성") \
     X(TmUi,               "UI", "界面", "UI", "UI") \
-    X(TipUpscale,         "Let DLSS 5 upscale from the sender resolution to the custom resolution instead of resampling first (experimental).", "让 DLSS 5 直接从发送端分辨率放大到自定义分辨率，而不是先重采样（实验性）。", "先にリサンプリングせず、送信側の解像度からカスタム解像度へ DLSS 5 でアップスケールします（実験的）。", "먼저 리샘플링하지 않고 DLSS 5가 송신 해상도에서 사용자 지정 해상도로 업스케일하도록 합니다(실험적).") \
     X(NrScaleMode, "Neural pass resolution", "神经渲染分辨率", "ニューラルパス解像度", "뉴럴 패스 해상도") \
     X(NrScaleModePercent, "Percentage", "按百分比", "割合（％）", "비율(%)") \
     X(NrScaleModeFixed, "Maximum resolution", "限制最大分辨率", "最大解像度を制限", "최대 해상도 제한") \
-    X(TipNrScaleMode, "How the neural pass is sized. Percentage runs it at a share of the input. Maximum resolution caps its long edge, so a large (e.g. 8K) source is processed at a fixed, smaller size for a lighter GPU load. The pass never runs above the input, and neither mode applies while neural upscaling is on.", "神经渲染以多大尺寸运行。按百分比：以输入的一定比例运行。限制最大分辨率：限制其长边，这样很大的（如 8K）来源也会以固定的较小尺寸处理，GPU 负担更轻。神经渲染不会超过输入分辨率；开启神经上采样时两种模式都不生效。", "ニューラルパスをどの大きさで実行するか。割合：入力の一定割合で実行します。最大解像度を制限：長辺を制限し、8K など大きなソースも一定の小さいサイズで処理され GPU 負荷が軽くなります。パスが入力を超えて実行されることはなく、ニューラルアップスケール中はどちらのモードも適用されません。", "뉴럴 패스를 어느 크기로 실행할지. 비율: 입력의 일정 비율로 실행합니다. 최대 해상도 제한: 긴 변을 제한하여 8K 같은 큰 소스도 고정된 더 작은 크기로 처리되어 GPU 부하가 줄어듭니다. 패스가 입력보다 크게 실행되지 않으며, 뉴럴 업스케일 중에는 두 모드 모두 적용되지 않습니다.") \
-    X(TipNrScalePercent, "Runs the neural pass at this share of the input and adds its change to the full-resolution picture. Lower = less GPU load, the finest detail of the pass is lost.", "以输入的该比例运行神经渲染，再把它带来的变化叠加到全分辨率画面。越低 GPU 占用越少，但会损失最细小的细节。", "入力のこの割合でニューラルパスを実行し、その変化をフル解像度の画像に加えます。低いほど GPU 負荷は減りますが、最も細かいディテールは失われます。", "입력의 이 비율로 뉴럴 패스를 실행하고 그 변화를 전체 해상도 화면에 더합니다. 낮을수록 GPU 부하가 줄지만 가장 미세한 디테일은 사라집니다.") \
-    X(TipNrMaxResolution, "Caps the long edge of the neural pass. A source larger than this is processed at this size (aspect kept) and its change is upsampled onto the full picture; a smaller source is left at its own size. Lower = less GPU load.", "限制神经渲染的长边。比它大的来源会以该尺寸处理（保持宽高比），其变化再上采样叠加到完整画面；更小的来源保持原尺寸。越低 GPU 占用越少。", "ニューラルパスの長辺を制限します。これより大きいソースはこのサイズで処理され（アスペクト比を維持）、その変化がフル画像にアップサンプルされて加算されます。小さいソースは元のサイズのままです。低いほど GPU 負荷が減ります。", "뉴럴 패스의 긴 변을 제한합니다. 이보다 큰 소스는 이 크기로 처리되고(가로세로 비율 유지) 그 변화가 전체 화면에 업샘플되어 더해집니다. 더 작은 소스는 원래 크기를 유지합니다. 낮을수록 GPU 부하가 줄어듭니다.") \
+    X(TipNrScaleMode, "Size of the neural pass. Full picture: the whole output resolution. A cap on the long edge or a percentage runs it smaller (a large 8K source at a fixed, lighter size) and adds its change to the full-resolution picture; the finest detail of the pass is lost.", "神经渲染的运行尺寸。完整画面：按输出分辨率运行。限制长边或按百分比会以更小的尺寸运行（例如把 8K 来源固定在较小尺寸，GPU 负担更轻），再把变化叠加到全分辨率画面；会损失最细小的细节。", "ニューラルパスの実行サイズ。完全な画像：出力解像度全体で実行します。長辺の制限や割合を選ぶと小さいサイズで実行し（8K など大きなソースを一定の軽いサイズに）、その変化をフル解像度の画像に加えます。最も細かいディテールは失われます。", "뉴럴 패스의 실행 크기. 전체 화면: 출력 해상도 전체로 실행합니다. 긴 변 제한이나 비율을 선택하면 더 작은 크기로 실행하고(8K 같은 큰 소스를 고정된 가벼운 크기로) 그 변화를 전체 해상도 화면에 더합니다. 가장 미세한 디테일은 사라집니다.") \
     X(NrPassSize, "Neural pass", "神经渲染尺寸", "ニューラルパス", "뉴럴 패스") \
+    X(NrScaleFull,        "Full picture (100 %)", "完整画面（100 %）", "完全な画像（100 %）", "전체 화면(100 %)") \
+    X(NrScaleEdgeFmt,     "Long edge up to %d px", "长边不超过 %d 像素", "長辺 %d px まで", "긴 변 최대 %d px") \
+    X(NrScalePercentFmt,  "%d %% of the picture", "画面的 %d %%", "画像の %d %%", "화면의 %d %%") \
     X(TipRoute,           "Automatic: the direct route on a GeForce card, the FSR host on a Radeon card. Direct: talk to nvngx_dlssnr.dll itself. NGX core: ask the NVIDIA NGX runtime to create the feature. FSR host: run an FSR 3.1 context at native size for DLSS-NR-on-AMD to attach to.", "自动：GeForce 显卡走直接加载，Radeon 显卡走 FSR 宿主。直接加载：直接调用 nvngx_dlssnr.dll。NGX 核心：通过 NVIDIA NGX 运行时创建功能。FSR 宿主：以原生尺寸运行一个 FSR 3.1 上下文，供 DLSS-NR-on-AMD 挂接。", "自動：GeForce では直接、Radeon では FSR ホスト。直接：nvngx_dlssnr.dll を直接呼び出します。NGX コア：NVIDIA NGX ランタイムに機能の作成を依頼します。FSR ホスト：DLSS-NR-on-AMD が取り付く FSR 3.1 コンテキストをネイティブサイズで動かします。", "자동: GeForce 카드는 직접, Radeon 카드는 FSR 호스트. 직접: nvngx_dlssnr.dll을 직접 호출합니다. NGX 코어: NVIDIA NGX 런타임에 기능 생성을 요청합니다. FSR 호스트: DLSS-NR-on-AMD가 붙을 FSR 3.1 컨텍스트를 원본 크기로 실행합니다.") \
     X(TipNvof,            "NVIDIA's hardware optical flow engine (Turing or newer, nvofapi64.dll from the GeForce driver; Radeon cards have no such engine); falls back to block matching when unavailable. Grid = spacing of the hardware vectors in source pixels: 4 px is the fastest and is upsampled to per-pixel vectors, 2 px and 1 px are finer but much slower at 4K.", "NVIDIA 的硬件光流引擎（Turing 及更新架构，使用 GeForce 驱动中的 nvofapi64.dll；Radeon 显卡没有这样的引擎），不可用时回退到块匹配。网格 = 硬件矢量的间距（源像素）：4 px 最快，会上采样为逐像素矢量；2 px、1 px 更精细，但在 4K 下明显更慢。", "NVIDIA のハードウェアオプティカルフローエンジン（Turing 以降、GeForce ドライバーの nvofapi64.dll。Radeon カードにはこのエンジンはありません）。利用できない場合はブロックマッチングにフォールバックします。グリッド = ハードウェアベクトルの間隔（ソースピクセル）：4 px が最速でピクセル単位に補間されます。2 px / 1 px はより精細ですが 4K では大幅に遅くなります。", "NVIDIA의 하드웨어 옵티컬 플로우 엔진(Turing 이상, GeForce 드라이버의 nvofapi64.dll. Radeon 카드에는 이런 엔진이 없습니다). 사용할 수 없으면 블록 매칭으로 대체합니다. 그리드 = 하드웨어 벡터 간격(소스 픽셀): 4 px가 가장 빠르고 픽셀 단위로 보간됩니다. 2 px / 1 px는 더 세밀하지만 4K에서는 훨씬 느립니다.") \
     X(TipAutoReset,       "Clear the temporal history when the matching cost jumps sharply (scene cut). Off by default: DLSS 5 recovers on its own, and every reset causes a visible pop.", "匹配代价突然跳变（镜头切换）时清空时间历史。默认关闭：DLSS 5 会自行恢复，而每次重置都会造成明显的画面跳动。", "マッチングコストが急激に跳ね上がったとき（シーンカット）に時間履歴をクリアします。既定ではオフ：DLSS 5 は自力で回復し、リセットのたびに目に見えるポップが生じます。", "매칭 비용이 급격히 뛸 때(장면 전환) 시간 히스토리를 지웁니다. 기본값은 꺼짐: DLSS 5는 스스로 복구되며, 초기화할 때마다 눈에 띄는 튐이 생깁니다.") \
@@ -86,8 +86,18 @@ enum class Lang { English = 0, Chinese = 1, Japanese = 2, Korean = 3, Count = 4 
     X(Detected,           "Detected", "检测到", "検出", "감지됨") \
     X(SenderFps,          "Sender FPS", "发送端帧率", "送信元 FPS", "송신자 FPS") \
     X(Format,             "Format", "格式", "フォーマット", "형식") \
-    X(CustomResolution,   "Custom processing resolution", "自定义处理分辨率", "処理解像度をカスタム指定", "사용자 지정 처리 해상도") \
-    X(CustomResolutionHint, "Off = adaptive: follows the VRChat stream resolution automatically", "关闭 = 自适应：自动跟随 VRChat 串流分辨率", "オフ = 自動：VRChat のストリーム解像度に追従します", "끄기 = 자동: VRChat 스트림 해상도를 따릅니다") \
+    X(CustomResolution,   "Custom output resolution", "自定义输出分辨率", "出力解像度をカスタム指定", "사용자 지정 출력 해상도") \
+    X(CustomResolutionHint, "Off = the source size (follows the VRChat stream automatically). Larger than the source = upscaling (super resolution), smaller = downscaling.", "关闭 = 使用来源分辨率（自动跟随 VRChat 串流）。大于来源即放大（超分辨率），小于来源即缩小。", "オフ = ソースの解像度（VRChat のストリームに自動で追従）。ソースより大きければアップスケール（超解像）、小さければ縮小です。", "끄기 = 소스 해상도(VRChat 스트림을 자동으로 따름). 소스보다 크면 업스케일(초해상도), 작으면 축소입니다.") \
+    X(UpscaleMethod,      "Upscaling", "放大方式", "アップスケール方式", "업스케일 방식") \
+    X(UpscaleDlss,        "DLSS super resolution", "DLSS 超分辨率", "DLSS 超解像", "DLSS 초해상도") \
+    X(UpscaleResample,    "Resampling (Catmull-Rom)", "插值重采样（Catmull-Rom）", "リサンプリング（Catmull-Rom）", "리샘플링(Catmull-Rom)") \
+    X(TipUpscaleMethod,   "How the picture reaches the larger output size. DLSS super resolution: the official DLSS upscaler (nvngx_dlss.dll) rebuilds the detail from the source at a render size chosen for the ratio, and the neural pass then works on the large picture. Resampling: a plain filter, no DLSS.", "画面如何放大到更大的输出尺寸。DLSS 超分辨率：官方 DLSS 放大器（nvngx_dlss.dll）按放大倍数选定渲染尺寸、从来源重建细节，神经渲染随后在放大后的画面上运行。插值重采样：普通滤波，不用 DLSS。", "大きな出力サイズへどう拡大するか。DLSS 超解像：公式の DLSS アップスケーラー（nvngx_dlss.dll）が倍率に応じたレンダリングサイズでソースからディテールを再構築し、その後ニューラルパスが拡大後の画像で動作します。リサンプリング：通常のフィルターのみで DLSS は使いません。", "화면을 더 큰 출력 크기로 어떻게 키울지. DLSS 초해상도: 공식 DLSS 업스케일러(nvngx_dlss.dll)가 배율에 맞는 렌더링 크기로 원본에서 디테일을 재구성하고, 이후 뉴럴 패스가 키운 화면에서 동작합니다. 리샘플링: 일반 필터만 사용하며 DLSS를 쓰지 않습니다.") \
+    X(UpscaleWarning,     "Super resolution: the neural pass and everything after it work on %.1fx the source's pixels. Expect a large drop in speed and more video memory in use. For a live stream set a processing rate cap; pictures and videos just take longer.", "超分辨率：神经渲染及其后的所有阶段处理的像素是来源的 %.1f 倍，速度会大幅下降，显存占用更高。实时串流请设置处理帧率上限；处理图片和视频只是更耗时。", "超解像：ニューラルパス以降はソースの %.1f 倍のピクセルを処理します。速度が大きく低下し、VRAM 使用量も増えます。ライブ配信では処理レート上限を設定してください。画像や動画は時間がかかるだけです。", "초해상도: 뉴럴 패스와 그 이후 단계는 소스의 %.1f배 픽셀을 처리합니다. 속도가 크게 떨어지고 VRAM 사용량이 늘어납니다. 실시간 스트림에서는 처리 속도 상한을 설정하세요. 사진과 동영상은 시간이 더 걸릴 뿐입니다.") \
+    X(UpscaleNoDlss,      "DLSS is not available on this system: the picture is resampled instead.", "此系统没有 DLSS：改用插值放大。", "このシステムでは DLSS を使えないため、代わりにリサンプリングで拡大します。", "이 시스템에서는 DLSS를 사용할 수 없어 리샘플링으로 키웁니다.") \
+    X(UpscaleStatusDlss,  "In effect: DLSS super resolution (%s), %ux%u -> %ux%u", "当前生效：DLSS 超分辨率（%s），%ux%u → %ux%u", "適用中：DLSS 超解像（%s）、%ux%u → %ux%u", "적용 중: DLSS 초해상도(%s), %ux%u → %ux%u") \
+    X(UpscaleStatusDlaa,  "In effect: resampling, then DLAA", "当前生效：插值放大，再 DLAA", "適用中：リサンプリング後に DLAA", "적용 중: 리샘플링 후 DLAA") \
+    X(UpscaleStatusResample, "In effect: resampling", "当前生效：插值放大", "適用中：リサンプリング", "적용 중: 리샘플링") \
+    X(UpscaleToast,       "Super resolution is on: processing gets much slower and uses more video memory.", "已开启超分辨率：处理速度会大幅下降，显存占用更高。", "超解像がオンです。処理が大幅に遅くなり、VRAM 使用量も増えます。", "초해상도가 켜졌습니다. 처리가 크게 느려지고 VRAM 사용량이 늘어납니다.") \
     X(Width,              "Width", "宽度", "幅", "너비") \
     X(Height,             "Height", "高度", "高さ", "높이") \
     X(KeepAspect,         "Keep aspect ratio", "保持宽高比", "アスペクト比を維持", "가로세로 비율 유지") \
@@ -172,7 +182,6 @@ enum class Lang { English = 0, Chinese = 1, Japanese = 2, Korean = 3, Count = 4 
     X(UseDefault,         "Runtime default", "使用默认值", "既定値を使用", "기본값 사용") \
     X(AutoMask,           "Auto mask", "自动遮罩", "自動マスク", "자동 마스크") \
     X(UiCorrection,       "UI correction", "UI 校正", "UI 補正", "UI 보정") \
-    X(NrUpscale,          "Neural upscaling to the custom resolution (experimental)", "神经上采样到自定义分辨率（实验性）", "カスタム解像度へニューラルアップスケール（実験的）", "사용자 지정 해상도로 뉴럴 업스케일(실험적)") \
     X(ResetHistory,       "Reset temporal history", "重置时序历史", "時間履歴をリセット", "시간 이력 초기화") \
     X(ResetDefaults,      "Reset to defaults", "恢复默认", "既定値に戻す", "기본값으로 재설정") \
     X(Status,             "Status", "状态", "状態", "상태") \
@@ -216,6 +225,7 @@ enum class Lang { English = 0, Chinese = 1, Japanese = 2, Korean = 3, Count = 4 
     X(FrameCost,          "Frame mismatch", "帧差异", "フレーム不一致", "프레임 불일치") \
     X(DlaaEnable,         "Run DLSS DLAA before neural rendering", "在神经渲染前运行 DLSS DLAA", "ニューラルレンダリングの前に DLSS DLAA を実行", "뉴럴 렌더링 전에 DLSS DLAA 실행") \
     X(DlaaHint,           "Uses the official nvngx_dlss.dll (temporal anti-aliasing). Adds GPU cost.", "使用官方 nvngx_dlss.dll（时序抗锯齿），会增加 GPU 开销。", "公式の nvngx_dlss.dll（時間的アンチエイリアス）を使用します。GPU 負荷が増えます。", "공식 nvngx_dlss.dll(시간적 안티앨리어싱)을 사용합니다. GPU 부하가 증가합니다.") \
+    X(DlaaInSr,           "DLSS super resolution is in effect and includes this anti-aliasing; the switch is not used.", "DLSS 超分辨率生效时已包含这项抗锯齿，此开关不起作用。", "DLSS 超解像が適用中で、このアンチエイリアスを含んでいます。このスイッチは使われません。", "DLSS 초해상도가 적용 중이며 이 안티앨리어싱을 포함합니다. 이 스위치는 사용되지 않습니다.") \
     X(DlaaPreset,         "DLSS preset", "DLSS 预设", "DLSS プリセット", "DLSS 프리셋") \
     X(CaptureFolder,      "Folder", "保存文件夹", "保存先", "저장 폴더") \
     X(OpenFolder,         "Open", "打开", "開く", "열기") \
@@ -491,6 +501,10 @@ enum class Lang { English = 0, Chinese = 1, Japanese = 2, Korean = 3, Count = 4 
     X(TipUpdateChannel,   "Stable: only full releases. Pre-release: also the builds published for testing before a full release; full releases reach this channel too and are marked as such.", "稳定版：只接收正式发布的版本。预览版：也接收正式发布前用于测试的版本；正式版同样会推送到该通道，并标注为正式版。", "安定版: 正式リリースのみ。プレリリース版: 正式リリース前にテスト用として公開されたビルドも含みます。正式リリースもこのチャネルに届き、その旨が表示されます。", "안정 버전: 정식 릴리스만. 프리릴리스 버전: 정식 릴리스 전에 테스트용으로 공개된 빌드도 포함합니다. 정식 릴리스도 이 채널로 오며 정식 릴리스로 표시됩니다.") \
     X(ReleaseFull,        "Full release", "正式版", "正式リリース", "정식 릴리스") \
     X(UpdateFullNote,     "A full release: it replaces the pre-release build you are running.", "这是正式版，将替换你正在使用的预览版。", "正式リリースです。実行中のプレリリース版を置き換えます。", "정식 릴리스입니다. 실행 중인 프리릴리스 빌드를 대체합니다.") \
+    X(UpdateDowngradeTitle, "Back to the stable release", "回到稳定版", "安定版に戻る", "안정 버전으로 돌아가기") \
+    X(UpdateDowngradeFmt, "Stable channel: the full release %s is available (you are running the newer pre-release %s).", "已选择稳定版通道：正式版 %s 可用（当前运行的是更新的预览版 %s）。", "安定版チャンネル：正式リリース %s が利用できます（現在はより新しいプレリリース版 %s を実行中）。", "안정 채널: 정식 릴리스 %s을(를) 사용할 수 있습니다(현재 더 새로운 프리릴리스 %s 실행 중).") \
+    X(UpdateDowngradeNow, "Go back now", "立即回退", "今すぐ戻す", "지금 되돌리기") \
+    X(UpdateDowngradeToast, "The stable channel offers the full release %s, older than this pre-release: Settings, Check for updates, to go back.", "稳定版通道提供正式版 %s（比当前预览版旧）；要回退请到 设置 → 检查更新。", "安定版チャンネルには正式リリース %s があります（このプレリリース版より古い）。戻すには 設定 → 更新を確認 へ。", "안정 채널에 정식 릴리스 %s이(가) 있습니다(이 프리릴리스보다 이전 버전). 되돌리려면 설정 → 업데이트 확인.") \
     X(NvofNoEngine,       "Not on this card (NVIDIA cards only); block matching is used", "此显卡没有该引擎（仅 NVIDIA 显卡有），已使用块匹配", "このカードにはありません（NVIDIA カードのみ）。ブロックマッチングを使用中", "이 카드에는 없습니다(NVIDIA 카드 전용). 블록 매칭 사용 중") \
     X(TipToolRowGrip,     "Drag to move the toolbar; drop it past an edge of the picture to tuck it away there", "拖动可移动工具条；拖过画面边缘即可收起到那一侧", "ドラッグしてツールバーを移動します。画面の端の外へ離すとその側に収納されます", "드래그하여 도구 모음을 옮깁니다. 화면 가장자리 밖에 놓으면 그쪽에 접어 둡니다") \
     X(TipToolRowTuck,     "Tuck the toolbar away at the nearest edge", "把工具条收到最近的边缘", "ツールバーを最も近い端に収納します", "도구 모음을 가장 가까운 가장자리에 접어 둡니다") \

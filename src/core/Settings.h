@@ -40,6 +40,7 @@ struct Settings {
     int  customWidth  = 1920;
     int  customHeight = 1080;
     bool keepAspect   = true;
+    int  upscaleMode  = 0;             // output larger than the source: 0 = DLSS super resolution (resampling without DLSS), 1 = resampling
 
     // HDR source (only used when the Spout texture is a floating-point / linear HDR format)
     float hdrPaperWhite = 1.0f;           // scene value mapped to display white, 0.1..8
@@ -63,7 +64,6 @@ struct Settings {
     float       nrSkinStructure = -1.0f; // -1 = runtime default, else 0..2
     bool        nrAutoMask = false;
     bool        nrUiCorrection = false;
-    bool        nrUpscale = false;     // experimental: let DLSSNR upscale to the custom resolution
     // Output blend (composite pass)
     float       nrInputExposure = 1.0f; // 0.25..4: gain on the picture the network sees (paper-white scale), undone afterwards
     float       nrToneTransfer = 1.0f;  // 0..2: share of the neural pass's brightness change that reaches the output
@@ -72,7 +72,7 @@ struct Settings {
     float       nrHighlightGain = 1.0f; // 0..2: how much of its brightening (highlights, reflections, glow) reaches the output
     int         nrInputScale = 100;     // 25..100 %: neural pass resolution as a share of the input (percentage mode)
     int         nrScaleMode = 0;        // 0 = percentage (nrInputScale), 1 = maximum resolution (nrMaxLongEdge cap)
-    int         nrMaxLongEdge = 2160;   // resolution mode: cap the neural pass long edge; the pass never exceeds the input
+    int         nrMaxLongEdge = 2160;   // resolution mode: cap the neural pass long edge; the pass never exceeds the picture
 
     // Frame guidance (motion vectors / depth)
     int   motionMode = MotionNvOpticalFlow;   // falls back to block matching when the hardware engine is unavailable

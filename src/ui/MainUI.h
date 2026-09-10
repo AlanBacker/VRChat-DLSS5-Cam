@@ -107,6 +107,7 @@ struct UiFrameInfo {
     std::string           updateVersion, updateDate, updateNotes, updateError;
     bool                  updatePrerelease = false;
     bool                  updateEdition = false;    // the release found is the other edition of this program
+    bool                  updateDowngrade = false;  // the release found is older: the stable channel's way back from a pre-release
     bool                  updateHasAsset = false;   // the release carries the win64 zip
     bool                  updateWritable = true;    // the program folder takes new files
     bool                  updateShow = false;       // open the update popup (set for one frame)
@@ -293,6 +294,7 @@ private:
     float  m_libraryDragH = 0.0f;
     float  m_thumbH = 0.0f;          // thumbnail height of the library cards, from the library's height
     bool   m_updateOpen = false;     // open the update popup on this frame
+    bool   m_upscaleWarned = false;  // the notice about the cost of super resolution was shown for the current upscale
     bool   m_wipeDragging = false;
     // Seek bar: while the knob is dragged the bar follows the cursor and seeks are sent a few times per second;
     // after a seek the bar shows the target until the processing thread reports a position near it.

@@ -85,6 +85,7 @@ bool Settings::ApplyText(const std::string& data) {
     r.Get("customWidth", customWidth);
     r.Get("customHeight", customHeight);
     r.Get("keepAspect", keepAspect);
+    r.Get("upscaleMode", upscaleMode);
     r.Get("nrEnabled", nrEnabled);
     r.Get("nrCaptureOnly", nrCaptureOnly);
     r.Get("nrRoute", nrRoute);
@@ -101,7 +102,6 @@ bool Settings::ApplyText(const std::string& data) {
     r.Get("hdrPaperWhite", hdrPaperWhite);
     r.Get("hdrHighlightCompression", hdrHighlightCompression);
     r.Get("nrUiCorrection", nrUiCorrection);
-    r.Get("nrUpscale", nrUpscale);
     r.Get("nrInputExposure", nrInputExposure);
     r.Get("nrToneTransfer", nrToneTransfer);
     r.Get("nrColorStrength", nrColorStrength);
@@ -193,6 +193,7 @@ void PutParameters(Writer& w, const Settings& s) {
     w.Put("customWidth", s.customWidth);
     w.Put("customHeight", s.customHeight);
     w.Put("keepAspect", s.keepAspect);
+    w.Put("upscaleMode", s.upscaleMode);
     w.Put("nrEnabled", s.nrEnabled);
     w.Put("nrCaptureOnly", s.nrCaptureOnly);
     w.Put("nrRoute", s.nrRoute);
@@ -207,7 +208,6 @@ void PutParameters(Writer& w, const Settings& s) {
     w.Put("hdrPaperWhite", s.hdrPaperWhite);
     w.Put("hdrHighlightCompression", s.hdrHighlightCompression);
     w.Put("nrUiCorrection", s.nrUiCorrection);
-    w.Put("nrUpscale", s.nrUpscale);
     w.Put("nrInputExposure", s.nrInputExposure);
     w.Put("nrToneTransfer", s.nrToneTransfer);
     w.Put("nrColorStrength", s.nrColorStrength);
@@ -257,6 +257,7 @@ std::string Settings::ProcessingText(bool strengthsInPass) const {
     w.Put("customWidth", customWidth);
     w.Put("customHeight", customHeight);
     w.Put("keepAspect", keepAspect);
+    w.Put("upscaleMode", upscaleMode);
     w.Put("hdrPaperWhite", hdrPaperWhite);
     w.Put("hdrHighlightCompression", hdrHighlightCompression);
     w.Put("nrEnabled", nrEnabled);
@@ -275,7 +276,6 @@ std::string Settings::ProcessingText(bool strengthsInPass) const {
         w.Put("nrAutoMask", nrAutoMask);
         w.Put("nrUiCorrection", nrUiCorrection);
     }
-    w.Put("nrUpscale", nrUpscale);
     w.Put("nrInputExposure", nrInputExposure);
     w.Put("nrInputScale", nrInputScale);
     w.Put("nrScaleMode", nrScaleMode);
@@ -344,6 +344,7 @@ bool Settings::Save(const std::wstring& path) const {
     w.Put("customWidth", customWidth);
     w.Put("customHeight", customHeight);
     w.Put("keepAspect", keepAspect);
+    w.Put("upscaleMode", upscaleMode);
     w.Put("nrEnabled", nrEnabled);
     w.Put("nrCaptureOnly", nrCaptureOnly);
     w.Put("nrRoute", nrRoute);
@@ -360,7 +361,6 @@ bool Settings::Save(const std::wstring& path) const {
     w.Put("hdrPaperWhite", hdrPaperWhite);
     w.Put("hdrHighlightCompression", hdrHighlightCompression);
     w.Put("nrUiCorrection", nrUiCorrection);
-    w.Put("nrUpscale", nrUpscale);
     w.Put("nrInputExposure", nrInputExposure);
     w.Put("nrToneTransfer", nrToneTransfer);
     w.Put("nrColorStrength", nrColorStrength);
@@ -431,6 +431,7 @@ void Settings::Clamp() {
     language = std::clamp(language, 0, 4);
     customWidth = std::clamp(customWidth, 256, 7680);
     customHeight = std::clamp(customHeight, 256, 4320);
+    upscaleMode = std::clamp(upscaleMode, 0, 1);
     nrRoute = std::clamp(nrRoute, -1, 2);
     if (nrRuntimeBuild != "blackwell" && nrRuntimeBuild != "universal" && nrRuntimeBuild != "other" && nrRuntimeBuild != "exe") nrRuntimeBuild.clear();
     nrPreset = std::clamp(nrPreset, 0, 3);

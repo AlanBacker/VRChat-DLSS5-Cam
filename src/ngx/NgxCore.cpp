@@ -56,6 +56,18 @@ bool SafeGetInt(NVSDK_NGX_Parameter* p, const char* key, int* out, unsigned long
     VDC_SEH_EXCEPT(*seh) { return false; }
 }
 
+struct OptimalOut { unsigned optW, optH, maxW, maxH, minW, minH; float sharpness; };
+
+NVSDK_NGX_Result SafeOptimalSettings(NVSDK_NGX_Parameter* caps, unsigned outW, unsigned outH, int quality, OptimalOut* o,
+                                     unsigned long* seh) noexcept {
+    *seh = 0;
+    VDC_SEH_TRY {
+        return NGX_DLSS_GET_OPTIMAL_SETTINGS(caps, outW, outH, (NVSDK_NGX_PerfQuality_Value)quality, &o->optW, &o->optH,
+                                             &o->maxW, &o->maxH, &o->minW, &o->minH, &o->sharpness);
+    }
+    VDC_SEH_EXCEPT(*seh) { return NVSDK_NGX_Result_FAIL_PlatformError; }
+}
+
 } // namespace
 
 const char* NgxCore::ResultName(NVSDK_NGX_Result r) {
@@ -131,6 +143,21 @@ bool NgxCore::Init(Device& device, const std::wstring& exeDir, const std::wstrin
     }
     m_status = m_dlssAvailable ? "OK" : (m_needsDriverUpdate ? "Driver update required" : "DLSS unavailable");
     Log::Info("NGX core initialized (%s)", m_status.c_str());
+    return true;
+}
+
+bool NgxCore::DlssOptimalSettings(UINT outW, UINT outH, int quality, DlssOptimal& out) const {
+    out = DlssOptimal{};
+    if (!m_initialized || !m_dlssAvailable || !m_caps || !outW || !outH) return false;
+    OptimalOut o{};
+    unsigned long seh = 0;
+    const NVSDK_NGX_Result r = SafeOptimalSettings(m_caps, outW, outH, quality, &o, &seh);
+    if (seh) { Log::Warn("DLSS optimal settings raised exception 0x%08lx", seh); return false; }
+    if (NVSDK_NGX_FAILED(r)) { Log::Warn("DLSS optimal settings failed (%s)", ResultName(r)); return false; }
+    if (!o.optW || !o.optH) return false;   // the mode is not offered for this output size
+    out.optW = o.optW; out.optH = o.optH;
+    out.minW = o.minW ? o.minW : o.optW; out.minH = o.minH ? o.minH : o.optH;
+    out.maxW = o.maxW ? o.maxW : o.optW; out.maxH = o.maxH ? o.maxH : o.optH;
     return true;
 }
 

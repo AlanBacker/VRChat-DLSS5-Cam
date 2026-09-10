@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(VRChatDLSS5Cam VERSION 1.5.1 LANGUAGES CXX)
+project(VRChatDLSS5Cam VERSION 1.5.2 LANGUAGES CXX)
 
 if(NOT WIN32)
   message(FATAL_ERROR "VRChat DLSS5 Cam targets Windows only.")
@@ -80,7 +80,7 @@ set(APP_SOURCES
   src/gfx/DepthEstimator.cpp
   src/ngx/NgxCore.cpp
   src/ngx/DlssnrFeature.cpp
-  src/ngx/DlaaFeature.cpp
+  src/ngx/DlssFeature.cpp
   src/ui/Theme.cpp
   src/ui/Fonts.cpp
   src/ui/MainUI.cpp)

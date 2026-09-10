@@ -1,4 +1,4 @@
-// VRChat DLSS5 Cam - per-frame processing graph: convert -> guidance (motion/depth) -> DLAA -> DLSSNR -> composite -> capture.
+// VRChat DLSS5 Cam - per-frame processing graph: convert -> guidance (motion/depth) -> DLSS (super resolution / DLAA) -> DLSSNR -> composite -> capture.
 #pragma once
 #include "gfx/Device.h"
 #include "gfx/Shaders.h"
@@ -7,7 +7,7 @@
 #include "ngx/NgxCore.h"
 #include "ngx/DlssnrFeature.h"
 #include "gfx/FsrHost.h"
-#include "ngx/DlaaFeature.h"
+#include "ngx/DlssFeature.h"
 #include "core/Settings.h"
 #include "core/SourceFrame.h"
 #include "core/Capture.h"
@@ -50,7 +50,9 @@ struct PipelineStatus {
     float       nrOutDelta = -1.0f;             // output check: mean |output - input| on a sample grid (-1 = no result yet)
     float       nrOutLuma = 0.0f, nrInLuma = 0.0f;
     int         nrOutState = 0;                 // 0 unknown, 1 ok, 2 output black, 3 output equals the input
-    bool        nrUpscaling = false;
+    int         upscaleMode = 0;                // output larger than the source: 0 no, 1 DLSS super resolution, 2 resampled
+    int         srQuality = 0;                  // NVSDK_NGX_PerfQuality_Value of the super resolution feature
+    std::string srQualityName;                  // its name ("Quality", "Balanced", ...)
     UINT        nrPassWidth = 0, nrPassHeight = 0;   // neural pass size (equals the input unless reduced)
     bool        dlaaActive = false;
     bool        dlaaFailed = false;
@@ -123,7 +125,7 @@ public:
     void RequestReset() { m_resetReq = true; }
     void RestartDepthEstimator() { m_depthRestartReq = true; }
     void MarkNrDirty() { m_nrDirtyReq = true; }
-    void MarkDlaaDirty() { m_dlaaDirtyReq = true; }
+    void MarkDlaaDirty() { m_dlssDirtyReq = true; }
     void RetryFsrHost() { m_fsrRetryReq = true; }   // FSR host route: load amd_fidelityfx_dx12.dll again after a failure
     // baseName: empty = timestamped VRChat_DLSS5_... name; else "<baseName>_DLSS5_<w>x<h>.png" (still images).
     void RequestCapture(const std::wstring& folder, bool keepAlpha, bool saveOriginal, const std::wstring& baseName);
@@ -160,10 +162,13 @@ private:
         UINT srcW = 0, srcH = 0; DXGI_FORMAT srcFmt = DXGI_FORMAT_UNKNOWN;   // the source as the passes see it (turned, cropped)
         UINT rawW = 0, rawH = 0, xformBits = 0, cropX0 = 0, cropY0 = 0;      // the texture behind it and the orientation
         UINT inW = 0, inH = 0, outW = 0, outH = 0;
+        int  upscaleMethod = 0;                                              // Settings::upscaleMode
+        bool sr = false; int srQuality = 0;                                  // DLSS super resolution inW x inH -> outW x outH
         bool nvof = false; UINT nvofGrid = 2, nvofPerf = 10; bool nvofBidir = true;
         bool depthEst = false; UINT depthLongSide = 336; std::wstring depthModel;
         bool operator==(const Config& o) const {
             return srcW == o.srcW && srcH == o.srcH && srcFmt == o.srcFmt && inW == o.inW && inH == o.inH &&
+                   upscaleMethod == o.upscaleMethod && sr == o.sr && srQuality == o.srQuality &&
                    rawW == o.rawW && rawH == o.rawH && xformBits == o.xformBits && cropX0 == o.cropX0 && cropY0 == o.cropY0 &&
                    outW == o.outW && outH == o.outH && nvof == o.nvof && nvofGrid == o.nvofGrid && nvofPerf == o.nvofPerf &&
                    nvofBidir == o.nvofBidir && depthEst == o.depthEst && depthLongSide == o.depthLongSide && depthModel == o.depthModel;
@@ -183,6 +188,7 @@ private:
     bool CreateDisplayBuffers(GpuContext& gpu, UINT w, UINT h, bool wide);
     void RetireDisplayBuffers(GpuContext& gpu);
     Config ComputeConfig(const SourceFrame& src, const Settings& s) const;
+    void ChooseUpscale(Config& c, const Settings& s) const;   // output larger than the source: DLSS super resolution?
     std::wstring DepthModelPath(const Settings& s) const;
 
     void RunConvert(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const SourceFrame& src, const Settings& s, bool writeNvof);
@@ -196,7 +202,8 @@ private:
     void UpdateNeuralCheck(float delta, float outLuma, float inLuma);
     void RunDepthCapture(GpuContext& gpu, ID3D12GraphicsCommandList*& cmd);      // colour -> network input -> CPU readback
     bool RunDepthApply(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, bool reset);   // network output -> m_depth (temporally filtered)
-    bool RunDlaa(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const Settings& s, bool reset);
+    bool DlssNeedsCreate(const Settings& s) const;
+    bool RunDlss(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const Settings& s, bool reset);
     Tex& PrepareNeuralInput(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const Settings& s, Tex& base);
     bool EnsureNeuralTextures(GpuContext& gpu, UINT inW, UINT inH, UINT outW, UINT outH, bool scaled);
     bool RunNeural(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const Settings& s, Tex& input, bool reset);
@@ -206,7 +213,7 @@ private:
     bool NeuralNeedsCreate(const Settings& s, UINT inW, UINT inH, UINT outW, UINT outH) const;
     bool NeuralRouteReady(const Settings& s) const;
     bool FeatureCreatesThisFrame(const Settings& s, bool nrWanted, UINT nrInW, UINT nrInH, UINT nrOutW, UINT nrOutH,
-                                 bool dlaaWanted) const;
+                                 bool dlssWanted) const;
     void RunComposite(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const Settings& s, Tex& processed, Tex* neuralBase,
                       Tex* neuralInput, bool bypass);
     void EnqueueReadback(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, Tex& src, const std::wstring& path, bool keepAlpha,
@@ -215,7 +222,7 @@ private:
     Shaders        m_shaders;
     NgxCore        m_ngx;
     DlssnrFeature  m_nr;
-    DlaaFeature    m_dlaa;
+    DlssFeature    m_dlss;
     FsrHost        m_fsr;
     NvOpticalFlow  m_nvof;
     DepthEstimator m_depthEst;
@@ -236,7 +243,7 @@ private:
     Tex m_flowBack, m_costBack; // NVOF backward pass (previous -> current)
     Tex m_mv, m_conf, m_depth;  // dense guidance
     Tex m_depthHist[2];         // temporally filtered depth, ping-pong by frame parity
-    Tex m_dlaaOut, m_nrOut;
+    Tex m_dlssOut, m_nrOut;
     Tex m_nrIn;                 // exposed copy of the neural input (nrInputExposure != 1)
     bool m_nrInExposed = false; // the last neural pass read m_nrIn rather than its base picture
     Tex  m_nrMv, m_nrDepth;                   // guidance resampled to a reduced pass size
@@ -314,7 +321,7 @@ private:
     std::atomic<bool> m_resetReq{false};
     std::atomic<bool> m_depthRestartReq{false};
     std::atomic<bool> m_nrDirtyReq{false};
-    std::atomic<bool> m_dlaaDirtyReq{false};
+    std::atomic<bool> m_dlssDirtyReq{false};
     std::atomic<bool> m_fsrRetryReq{false};
     bool   m_nrDirty = false;
     bool   m_nrFailed = false;
@@ -329,9 +336,15 @@ private:
     std::string m_fsrError;
     std::string m_fsrPortModule;      // DLSS-NR-on-AMD module seen in the process (looked up every few seconds)
     double m_fsrPortCheckTime = 0.0;
-    bool   m_dlaaFailed = false;
-    std::string m_dlaaError;
-    int    m_dlaaCreatedPreset = -1;
+    bool   m_dlssFailed = false;
+    std::string m_dlssError;
+    int    m_dlssCreatedPreset = -1;
+    struct SrModes {                  // DLSS super resolution render sizes per quality mode, for one output size
+        UINT outW = 0, outH = 0;
+        bool ok[5] = {};
+        NgxCore::DlssOptimal m[5];
+    };
+    mutable SrModes m_srModes;
     double m_lastFreshTime = 0.0;
     double m_frameIntervalMs = 16.7;
     float  m_statAvgCost = 0.0f, m_statMaxCost = 0.0f, m_statAvgMotion = 0.0f;

@@ -481,7 +481,7 @@ std::string MainUI::StepLabel(const UndoStep& from, const UndoStep& to) {
     VDC_KEY("nrStyle", Style, false) VDC_KEY("nrIntensity", Intensity, false)
     VDC_KEY("nrGlobalTone", GlobalTone, false) VDC_KEY("nrLocalTone", LocalTone, false) VDC_KEY("nrLocalStructure", LocalStructure, false)
     VDC_KEY("nrSkinStructure", SkinStructure, false) VDC_KEY("nrAutoMask", AutoMask, true) VDC_KEY("nrUiCorrection", UiCorrection, true)
-    VDC_KEY("nrUpscale", NrUpscale, true) VDC_KEY("nrInputExposure", InputExposure, false) VDC_KEY("nrToneTransfer", ToneTransfer, false)
+    VDC_KEY("upscaleMode", UpscaleMethod, false) VDC_KEY("nrInputExposure", InputExposure, false) VDC_KEY("nrToneTransfer", ToneTransfer, false)
     VDC_KEY("nrColorStrength", ColorStrength, false) VDC_KEY("nrShadowGain", ShadowGain, false) VDC_KEY("nrHighlightGain", HighlightGain, false)
     VDC_KEY("nrScaleMode", NrScaleMode, false) VDC_KEY("nrInputScale", NrScaleModePercent, false) VDC_KEY("nrMaxLongEdge", NrScaleModeFixed, false) VDC_KEY("hdrPaperWhite", PaperWhite, false) VDC_KEY("hdrHighlightCompression", HighlightCompression, false)
     VDC_KEY("motionMode", MotionSource, false) VDC_KEY("depthMode", DepthSource, false) VDC_KEY("searchRadius", SearchRadius, false)
@@ -558,7 +558,7 @@ void MainUI::DrawUpdatePopup(Settings& /*s*/, const UiFrameInfo& info, UiEvents&
     const int st = info.updateState;
     const bool busy = st == UpDownloading || st == UpExtracting || st == UpRestarting;
     ImGui::PushFont(fonts.Bold(), ImGui::GetStyle().FontSizeBase * 1.15f);
-    ImGui::TextUnformatted(info.updateEdition ? TR(UpdateEditionTitle) : TR(UpdateTitle));
+    ImGui::TextUnformatted(info.updateEdition ? TR(UpdateEditionTitle) : info.updateDowngrade ? TR(UpdateDowngradeTitle) : TR(UpdateTitle));
     ImGui::PopFont();
     // Every release found is labelled, so a full release reaching the pre-release channel reads as one.
     ImGui::SameLine(0.0f, 10.0f);
@@ -568,10 +568,14 @@ void MainUI::DrawUpdatePopup(Settings& /*s*/, const UiFrameInfo& info, UiEvents&
         const char* thisEdition = APP_EDITION_AMD ? TR(EditionAmd) : TR(EditionGeforce);
         const char* otherEdition = APP_EDITION_AMD ? TR(EditionGeforce) : TR(EditionAmd);
         ImGui::TextUnformatted(StrPrintf(TR(UpdateEditionFmt), otherEdition, info.updateVersion.c_str(), thisEdition, info.appVersion.c_str()).c_str());
+    } else if (info.updateDowngrade) {
+        ImGui::PushTextWrapPos(w);
+        ImGui::TextUnformatted(StrPrintf(TR(UpdateDowngradeFmt), info.updateVersion.c_str(), info.appVersion.c_str()).c_str());
+        ImGui::PopTextWrapPos();
     } else {
         ImGui::TextUnformatted(StrPrintf(TR(UpdateVersionFmt), info.updateVersion.c_str(), info.appVersion.c_str()).c_str());
     }
-    if (info.prerelease && !info.updatePrerelease && !info.updateEdition) {
+    if (info.prerelease && !info.updatePrerelease && !info.updateEdition && !info.updateDowngrade) {
         ImGui::PushStyleColor(ImGuiCol_Text, p.textDim); ImGui::TextWrapped("%s", TR(UpdateFullNote)); ImGui::PopStyleColor();
     }
     if (!info.updateDate.empty()) ImGui::TextDisabled("%s", StrPrintf(TR(UpdatePublished), info.updateDate.c_str()).c_str());
@@ -610,7 +614,7 @@ void MainUI::DrawUpdatePopup(Settings& /*s*/, const UiFrameInfo& info, UiEvents&
     }
     ImGui::Separator();
     ImGui::BeginDisabled(busy || !info.updateHasAsset || !info.updateWritable);
-    if (AccentButton(TR(UpdateNow), ImVec2(em * 9.0f, 0.0f))) ev.updateStart = true;
+    if (AccentButton(info.updateDowngrade ? TR(UpdateDowngradeNow) : TR(UpdateNow), ImVec2(em * 9.0f, 0.0f))) ev.updateStart = true;
     ImGui::EndDisabled();
     ImGui::SameLine();
     if (GhostButton(TR(UpdatePage), ImVec2(em * 9.0f, 0.0f))) ev.updateOpenPage = true;
@@ -1015,7 +1019,8 @@ void MainUI::BlockSource(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         }
     }
     ImGui::Spacing();
-    // Custom resolution.
+    // Output resolution: off = the source size; larger than the source = upscaling (DLSS super resolution or
+    // resampling), smaller = downscaling.
     if (Toggle(TR(CustomResolution), &s.customResolution)) ev.settingsChanged = true;
     Help(TR(CustomResolutionHint));
     if (s.customResolution) {
@@ -1027,13 +1032,45 @@ void MainUI::BlockSource(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         if (ImGui::Checkbox(TR(KeepAspect), &s.keepAspect)) ev.settingsChanged = true;
         ImGui::TextDisabled("%s:", TR(Presets));
         ImGui::SameLine();
-        struct { const char* n; int w, h; } presets[] = { {"720p",1280,720}, {"1080p",1920,1080}, {"1440p",2560,1440}, {"4K",3840,2160} };
+        struct { const char* n; int w, h; } presets[] = { {"720p",1280,720}, {"1080p",1920,1080}, {"1440p",2560,1440}, {"4K",3840,2160}, {"8K",7680,4320} };
         for (auto& pr : presets) {
             if (ImGui::SmallButton(pr.n)) { s.customWidth = pr.w; s.customHeight = pr.h; ev.settingsChanged = true; }
             ImGui::SameLine();
         }
         ImGui::NewLine();
+        // Upscaling: the output is larger than the source. The method, a plain warning about the cost (the neural
+        // pass and everything after it work on the large picture) and what is in effect right now.
+        const PipelineStatus* st = info.status;
+        const UINT srcW = st ? st->srcWidth : 0, srcH = st ? st->srcHeight : 0;
+        UINT outW = (UINT)s.customWidth, outH = (UINT)s.customHeight;
+        if (s.keepAspect && srcW && srcH) outH = (UINT)std::lround((double)outW * srcH / srcW);
+        const bool upscaling = srcW && srcH && (outW > srcW || outH > srcH);
+        if (upscaling) {
+            const bool dlss = st->ngxInitialized && st->dlssAvailable;
+            const char* methods[] = { TR(UpscaleDlss), TR(UpscaleResample) };
+            if (ComboIds(TR(UpscaleMethod), &s.upscaleMode, methods, 2, TR(TipUpscaleMethod))) ev.settingsChanged = true;
+            if (!dlss && s.upscaleMode == 0) Hint(TR(UpscaleNoDlss));
+            const double factor = (double)outW * outH / ((double)srcW * srcH);
+            ImGui::PushStyleColor(ImGuiCol_Text, p.warn);
+            ImGui::TextWrapped("%s", StrPrintf(TR(UpscaleWarning), factor).c_str());
+            ImGui::PopStyleColor();
+            if (!m_upscaleWarned) { m_upscaleWarned = true; Toast(TR(UpscaleToast)); }
+            if (st->upscaleMode == 1) {
+                ImGui::TextDisabled("%s", StrPrintf(TR(UpscaleStatusDlss), st->srQualityName.c_str(), st->inWidth, st->inHeight, st->outWidth, st->outHeight).c_str());
+            } else if (st->upscaleMode == 2) {
+                ImGui::TextDisabled("%s", st->dlaaActive ? TR(UpscaleStatusDlaa) : TR(UpscaleStatusResample));
+                if (s.upscaleMode == 0 && st->dlaaFailed && !st->dlaaError.empty()) {
+                    ImGui::PushStyleColor(ImGuiCol_Text, p.bad);
+                    ImGui::TextWrapped("%s", st->dlaaError.c_str());
+                    ImGui::PopStyleColor();
+                }
+            }
+        } else {
+            m_upscaleWarned = false;   // the next upscale gets the notice again
+        }
         ImGui::Unindent(6.0f);
+    } else {
+        m_upscaleWarned = false;
     }
     if (s.sourceMode == SourceSpout) Hint(TR(VrchatResHint));
     // HDR source controls: only meaningful for floating-point (scene-linear) Spout textures.
@@ -1137,25 +1174,29 @@ void MainUI::EffectControls(Settings& s, UiEvents& ev, bool advanced, bool enabl
         Help(TR(TipAutoMask));
         if (Toggle(TR(UiCorrection), &s.nrUiCorrection)) ch = true;
         Help(TR(TipUiCorrection));
-        if (s.customResolution) {
-            if (Toggle(TR(NrUpscale), &s.nrUpscale)) ch = true;
-            Help(TR(TipUpscale));
-        }
         {
-            // Neural pass resolution: a share of the input, or a cap on the long edge; the change is upsampled onto the full picture.
-            ImGui::BeginDisabled(s.customResolution && s.nrUpscale);
-            const char* nrModes[] = { TR(NrScaleModePercent), TR(NrScaleModeFixed) };
-            ch |= ComboIds(TR(NrScaleMode), &s.nrScaleMode, nrModes, 2, TR(TipNrScaleMode));
-            if (s.nrScaleMode == 1) {
-                static const int kNrEdges[] = { 720, 1080, 1440, 2160, 2880, 3840 };
-                const char* nrEdges[] = { "720 px", "1080 px", "1440 px", "2160 px", "2880 px", "3840 px" };
-                int nrSel = 3;
-                for (int i = 0; i < 6; ++i) if (s.nrMaxLongEdge == kNrEdges[i]) nrSel = i;
-                if (ComboIds(TR(NrScaleModeFixed), &nrSel, nrEdges, 6, TR(TipNrMaxResolution))) { s.nrMaxLongEdge = kNrEdges[nrSel]; ch = true; }
-            } else {
-                ch |= SliderIntReset(TR(NrScaleModePercent), &s.nrInputScale, 25, 100, 100, "%d%%", TR(TipNrScalePercent));
+            // Neural pass resolution, one list: the full picture, a cap on the long edge, or a percentage; a reduced
+            // pass has its change upsampled onto the full picture. A value from the settings file or the command
+            // line that is not on the list gets its own entry.
+            static const int kNrEdges[] = { 3840, 2880, 2160, 1440, 1080, 720 };
+            static const int kNrPercents[] = { 75, 50, 25 };
+            std::vector<std::string> labels;
+            labels.emplace_back(TR(NrScaleFull));
+            int sel = 0;
+            for (int e : kNrEdges) { if (s.nrScaleMode == 1 && s.nrMaxLongEdge == e) sel = (int)labels.size(); labels.emplace_back(StrPrintf(TR(NrScaleEdgeFmt), e)); }
+            for (int pc : kNrPercents) { if (s.nrScaleMode == 0 && s.nrInputScale == pc) sel = (int)labels.size(); labels.emplace_back(StrPrintf(TR(NrScalePercentFmt), pc)); }
+            if (sel == 0 && !(s.nrScaleMode == 0 && s.nrInputScale >= 100)) {
+                sel = (int)labels.size();
+                labels.emplace_back(s.nrScaleMode == 1 ? StrPrintf(TR(NrScaleEdgeFmt), s.nrMaxLongEdge) : StrPrintf(TR(NrScalePercentFmt), s.nrInputScale));
             }
-            ImGui::EndDisabled();
+            std::vector<const char*> items;
+            for (const std::string& l : labels) items.push_back(l.c_str());
+            if (ComboIds(TR(NrScaleMode), &sel, items.data(), (int)items.size(), TR(TipNrScaleMode))) {
+                if (sel == 0) { s.nrScaleMode = 0; s.nrInputScale = 100; }
+                else if (sel <= 6) { s.nrScaleMode = 1; s.nrMaxLongEdge = kNrEdges[sel - 1]; }
+                else if (sel <= 9) { s.nrScaleMode = 0; s.nrInputScale = kNrPercents[sel - 7]; }
+                ch = true;
+            }
         }
         ImGui::Spacing();
         ImGui::TextUnformatted(TR(OutputBlend));
@@ -1629,7 +1670,8 @@ void MainUI::BlockDlaa(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
     const Palette& p = Colors();
     const PipelineStatus* st = info.status;
     const bool available = st && st->ngxInitialized && st->dlssAvailable;
-    ImGui::BeginDisabled(!available);
+    const bool inSr = st && st->upscaleMode == 1;   // DLSS super resolution in effect: it includes the anti-aliasing
+    ImGui::BeginDisabled(!available || inSr);
     if (Toggle(TR(DlaaEnable), &s.dlaaEnabled)) { ev.dlaaChanged = true; ev.settingsChanged = true; }
     ImGui::EndDisabled();
     ImGui::SameLine(0.0f, 12.0f);
@@ -1639,7 +1681,7 @@ void MainUI::BlockDlaa(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         else if (!available) Pill(TR(Unsupported), WithAlpha(p.muted, 0.2f), p.muted);
         else Pill(TR(Inactive), WithAlpha(p.muted, 0.2f), p.muted);
     }
-    Hint(TR(DlaaHint));
+    Hint(inSr ? TR(DlaaInSr) : TR(DlaaHint));
     if (st && st->dlaaFailed && !st->dlaaError.empty()) {
         ImGui::PushStyleColor(ImGuiCol_Text, p.bad);
         ImGui::TextWrapped("%s", st->dlaaError.c_str());
@@ -1712,7 +1754,7 @@ void MainUI::BlockAbout(Settings& s, const UiFrameInfo& info, UiEvents& ev, cons
     if (Toggle(TR(UpdateAuto), &s.updateCheck)) ev.settingsChanged = true;
     {
         const char* channels[] = { TR(ChannelStable), TR(ChannelPreview) };
-        if (ComboIds("##updateChannel", &s.updateChannel, channels, 2)) ev.settingsChanged = true;
+        if (ComboIds("##updateChannel", &s.updateChannel, channels, 2)) { ev.settingsChanged = true; ev.updateCheckNow = true; }
         ImGui::SameLine();
         ImGui::AlignTextToFramePadding();
         ImGui::TextUnformatted(TR(UpdateChannel));
@@ -1726,7 +1768,7 @@ void MainUI::BlockAbout(Settings& s, const UiFrameInfo& info, UiEvents& ev, cons
         ImGui::EndDisabled();
         if (st == UpAvailable) {
             ImGui::SameLine(0.0f, style.ItemSpacing.x);
-            if (AccentButton(TR(UpdateNow), half)) m_updateOpen = true;
+            if (AccentButton(info.updateDowngrade ? TR(UpdateDowngradeNow) : TR(UpdateNow), half)) m_updateOpen = true;
         }
         const Palette& p = Colors();
         if (st == UpChecking) ImGui::TextDisabled("%s", TR(UpdateChecking));
@@ -1735,7 +1777,7 @@ void MainUI::BlockAbout(Settings& s, const UiFrameInfo& info, UiEvents& ev, cons
             if (info.updatePrerelease) Pill(TR(ChannelPreview), WithAlpha(p.warn, 0.2f), p.warn);
             else Pill(TR(ReleaseFull), WithAlpha(p.good, 0.2f), p.good);
             ImGui::SameLine(0.0f, 6.0f);
-            ImGui::PushStyleColor(ImGuiCol_Text, p.accentHover); ImGui::TextWrapped("%s", StrPrintf(TR(UpdateVersionFmt), info.updateVersion.c_str(), info.appVersion.c_str()).c_str()); ImGui::PopStyleColor();
+            ImGui::PushStyleColor(ImGuiCol_Text, p.accentHover); ImGui::TextWrapped("%s", StrPrintf(info.updateDowngrade ? TR(UpdateDowngradeFmt) : TR(UpdateVersionFmt), info.updateVersion.c_str(), info.appVersion.c_str()).c_str()); ImGui::PopStyleColor();
         }
         else if (st == UpFailed) { ImGui::PushStyleColor(ImGuiCol_Text, p.bad); ImGui::TextWrapped("%s", info.updateWritable ? StrPrintf(TR(UpdateCheckFailed), info.updateError.c_str()).c_str() : TR(UpdateNotWritable)); ImGui::PopStyleColor(); }
     }
@@ -2023,7 +2065,7 @@ void MainUI::DrawPicture(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
         const char* motion = st.motionModeActive == MotionNvOpticalFlow ? "NVOF" : st.motionModeActive == MotionCompute ? TR(MotionCompute) : TR(MotionZero);
         const char* depth = st.depthModeActive == DepthEstimated ? "Depth Anything V2" : st.depthModeActive == DepthGradient ? TR(DepthGradient)
                           : st.depthModeActive == DepthZero ? TR(DepthZero) : TR(DepthFlat);
-        lines[2] = StrPrintf("%s: %s   %s: %s%s%s", TR(MotionSource), motion, TR(DepthSource), depth, st.dlaaActive ? "  +DLAA" : "",
+        lines[2] = StrPrintf("%s: %s   %s: %s%s%s", TR(MotionSource), motion, TR(DepthSource), depth, st.upscaleMode == 1 ? "  +DLSS SR" : st.dlaaActive ? "  +DLAA" : "",
                              st.sceneCut ? StrPrintf("  [%s]", TR(SceneCut)).c_str() : "");
         lines[3] = (s.sourceMode == SourceImage)
             ? StrPrintf("GPU %s   %s %3.0f %s   %s", FormatMsFixed(m_shown.gpuMs[(UINT)GpuTimer::Frame]).c_str(), TR(UiFps), m_shown.fps, TR(Fps), info.imageName.c_str())

@@ -423,9 +423,11 @@ bool Updater::RunCheck(const std::string& currentVersion, bool includePrerelease
     }
     // An edition switch takes this version again in the other edition; an update needs a newer one.
     newer = found && CompareVersion(best, cur) >= (otherEdition ? 0 : 1);
+    // The stable channel while a newer pre-release is running: the newest full release is offered as the way back.
+    if (found && !newer && !otherEdition && !includePrerelease && CompareVersion(best, cur) < 0) { newer = true; out.downgrade = true; }
     if (found) Log::Info("Update check: newest %s release%s is %s (this is %s)%s", includePrerelease ? "stable or pre-" : "stable",
                          otherEdition ? " of the other edition" : "", out.tag.c_str(), currentVersion.c_str(),
-                         newer ? (otherEdition ? ": available" : ": newer") : "");
+                         newer ? (otherEdition ? ": available" : out.downgrade ? ": older, offered as the way back to the stable channel" : ": newer") : "");
     else Log::Info("Update check: no release%s found on the %s channel", otherEdition ? " of the other edition" : "", includePrerelease ? "pre-release" : "stable");
     return true;
 }

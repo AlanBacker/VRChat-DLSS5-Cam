@@ -23,6 +23,12 @@ public:
     NVSDK_NGX_Parameter* AllocateParameters(std::string& error);
     void DestroyParameters(NVSDK_NGX_Parameter* params);
 
+    // DLSS super resolution render sizes for an output size in one quality mode (NVSDK_NGX_PerfQuality_Value):
+    // the optimal render size and the range the feature accepts. False when DLSS is unavailable or the mode is not
+    // supported for that output.
+    struct DlssOptimal { UINT optW = 0, optH = 0, minW = 0, minH = 0, maxW = 0, maxH = 0; };
+    bool DlssOptimalSettings(UINT outW, UINT outH, int quality, DlssOptimal& out) const;
+
     static const char* ResultName(NVSDK_NGX_Result r);
 
 private:

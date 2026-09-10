@@ -19,6 +19,7 @@ public:
         bool prerelease = false;
         std::string assetName;              // the archive the release was looked up for (this edition's, or the other one's)
         bool edition = false;               // an edition switch: the other edition of this program, this version or newer
+        bool downgrade = false;             // the stable channel's newest release is older than this program: the way back
     };
     struct Status {
         State       state = State::Idle;
