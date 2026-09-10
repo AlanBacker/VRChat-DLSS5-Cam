@@ -1236,8 +1236,23 @@ void App::WorkerMain() {
             // Only a change of what the passes read starts the still passes over. A display, blend or interface
             // change (the wipe, the theme, the library strip...) composites the existing result once, without
             // running the picture through the passes again.
-            std::string key = settings.ProcessingText();
-            if (key != processingKey) passesLeft = std::max(passesLeft, kImageSettingsPasses);
+            std::string key = settings.ProcessingText(m_pipeline.StrengthsInPass(settings));
+            if (key != processingKey) {
+                if (stillMode && !processingKey.empty()) {
+                    // Which key changed (the first differing line), for the log.
+                    size_t a = 0, b = 0; std::string changedKey;
+                    while (a < key.size() || b < processingKey.size()) {
+                        const size_t ea = key.find('\n', a), eb = processingKey.find('\n', b);
+                        const std::string la = key.substr(a, ea == std::string::npos ? std::string::npos : ea - a);
+                        const std::string lb = processingKey.substr(b, eb == std::string::npos ? std::string::npos : eb - b);
+                        if (la != lb) { changedKey = la.empty() ? lb : la; break; }
+                        if (ea == std::string::npos || eb == std::string::npos) break;
+                        a = ea + 1; b = eb + 1;
+                    }
+                    Log::Info("Still passes: %d more (a processing setting changed: %s)", kImageSettingsPasses, changedKey.c_str());
+                }
+                passesLeft = std::max(passesLeft, kImageSettingsPasses);
+            }
             processingKey = std::move(key);
         }
         if (modeChanged) passesLeft = kImageConvergePasses;
@@ -1386,7 +1401,11 @@ void App::WorkerMain() {
             // A still picture gets one depth estimate, which may land after the passes ran out: converge again with it.
             if (stillMode) {
                 const UINT64 inferences = m_pipeline.Status().depthInferences;
-                if (inferences != imageDepthSeen) { imageDepthSeen = inferences; passesLeft = std::max(passesLeft, kImageSettingsPasses); }
+                if (inferences != imageDepthSeen) {
+                    imageDepthSeen = inferences;
+                    Log::Info("Still passes: %d more (depth estimate %llu landed, %d were left)", kImageSettingsPasses, (unsigned long long)inferences, passesLeft);
+                    passesLeft = std::max(passesLeft, kImageSettingsPasses);
+                }
             }
 
             const bool processed = fresh && src.Connected() && src.hasFrame;

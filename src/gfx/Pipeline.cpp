@@ -1072,7 +1072,14 @@ bool Pipeline::RunFsrHost(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const
     // saved must carry its result, so with the port in the process the previous frame's work is waited for before
     // the next dispatch is recorded: one neural frame is ever in flight. The cost is the overlap of the other passes
     // with the network, which the network's own time dwarfs.
-    if (!m_fsrPortModule.empty()) gpu.WaitIdle();
+    // The port's network and the depth network (DirectML, on its own queue) do not share the card: a job that runs
+    // alongside the estimator's warm-up or an inference stretches from a fifth of a second to several, past the
+    // driver's two-second limit, and the device is lost (seen on an RX 9060 XT). So no dispatch while the estimator
+    // works; an inference submitted after a frame is waited for before the next one is recorded.
+    if (!m_fsrPortModule.empty()) {
+        if (!m_depthEst.WaitIdle(15.0)) Log::Warn("FSR host: depth estimator still busy after 15 s, dispatching anyway");
+        gpu.WaitIdle();
+    }
     gpu.TimerBegin(cmd, GpuTimer::Neural);
     Tex& mv = m_nrScaled ? m_nrMv : m_mv;
     Tex& depth = m_nrScaled ? m_nrDepth : m_depth;

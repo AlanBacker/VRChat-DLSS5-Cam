@@ -105,4 +105,15 @@ jobs:
           files: |
             dist/VRChatDLSS5Cam-win64.zip
             dist-amd/VRChatDLSS5Cam-win64-amd.zip
+          body: |
+            ### Which file to download / 下载哪个文件
+
+            | Graphics card / 显卡 | File / 文件 |
+            |---|---|
+            | NVIDIA GeForce RTX 20 / 30 / 40 / 50 | `VRChatDLSS5Cam-win64.zip` |
+            | AMD Radeon RX 7000 / 9000 | `VRChatDLSS5Cam-win64-amd.zip` (Radeon edition / Radeon 版) |
+
+            The Radeon edition fetches DLSS-NR-on-AMD's installer for you at the first start; what to expect on Radeon is listed in the README under *AMD Radeon cards*.
+            Radeon 版会在首次启动时为你下载 DLSS-NR-on-AMD 的安装器；Radeon 上的预期表现见 README 的 *AMD Radeon 显卡* 一节。
+
           generate_release_notes: true

@@ -118,6 +118,8 @@ struct Settings {
     bool libraryVisible = true;        // the media library strip under the preview
     float sidebarWidth = 0.0f;         // in font-size units, 0 = default (24); dragged at the sidebar handle
     float libraryHeight = 0.0f;        // in font-size units, 0 = default; dragged at the library's top edge
+    float toolRowX = -1.0f, toolRowY = -1.0f;   // centre of the turn/mirror/crop tool row as fractions of the picture area; -1 = bottom centre
+    int   toolRowDock = 0;             // the tool row tucked away at an edge: 0 shown, 1 left, 2 right, 3 top, 4 bottom
     bool showAdvanced = true;          // advanced controls in the sidebar
     int  theme = 0;                    // 0 = follow Windows, 1 = dark, 2 = light
 
@@ -147,7 +149,7 @@ struct Settings {
     std::string EffectText() const;
     // The values the processing passes depend on, as text: a still picture is run through the passes again only
     // when this changes (a display, blend or interface change composites the existing result).
-    std::string ProcessingText() const;
+    std::string ProcessingText(bool strengthsInPass = true) const;   // strengthsInPass: the preset, style and strengths reach the pass
     // Takes the DLSS 5 effect values (preset, style, strengths, blend, pass resolution) from another set: a library
     // item with parameters of its own replaces these while it is previewed or processed.
     void CopyEffects(const Settings& from);

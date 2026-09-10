@@ -48,6 +48,11 @@ as a batch. It is an ordinary Windows application: the VRChat process is never t
 
 ## Getting started
 
+| Your graphics card | Download | Notes |
+|---|---|---|
+| NVIDIA GeForce RTX 20 / 30 / 40 / 50 | `VRChatDLSS5Cam-win64.zip` | The DLSS 5 runtime is in the archive. |
+| AMD Radeon RX 7000 / 9000 | `VRChatDLSS5Cam-win64-amd.zip` | The Radeon edition; it fetches DLSS-NR-on-AMD's installer for you at the first start. See [AMD Radeon cards](#amd-radeon-cards) for what to expect. |
+
 1. Download `VRChatDLSS5Cam-win64.zip` from the [latest release](https://github.com/AlanBacker/VRChat-DLSS5-Cam/releases/latest) and extract it to any location. (Radeon card: `VRChatDLSS5Cam-win64-amd.zip` instead, see *AMD Radeon cards* below.)
 2. Nothing else has to be copied. The DLSS 5 runtime is in the archive under `runtimes\`, in one build for RTX 50
    and one for RTX 40 / 30 / 20; the application picks the build for the installed card at start and switches to the
@@ -104,13 +109,39 @@ DLSS-NR-on-AMD needs Windows 11, a Radeon RX 7000 or RX 9000 card and Adrenalin 
 requirements. *Host route* under *Advanced* selects the route by hand (*Automatic* picks the FSR host on a Radeon card and the direct route on
 a GeForce card).
 
-The Radeon edition has been run on an RX 9060 XT: still pictures at 720p and 4K and batch processing from the command line (the live
-Spout path has not been tried on Radeon hardware yet). DLSS-NR-on-AMD's installer sets an inline budget of 200 ms, suited to a game, after
+The Radeon edition has been run on an RX 9060 XT: still pictures at 720p and 4K, video files, batch processing from the command line and
+the live VRChat camera (at a lower frame rate than on a GeForce card; see the list below). DLSS-NR-on-AMD's installer sets an inline budget of 200 ms, suited to a game, after
 which a frame shows the previous frame's result; the application raises `InlineWaitMs` in `dlssnr_on_amd.ini` to 1000 after the install
 (or at start-up, with one automatic restart, when the file still has a lower value) so that a saved picture or video frame carries its own
 result, and keeps `Inline` at 1 there. Nothing else in that file is changed. `log.txt`
 (`%LOCALAPPDATA%\VRChatDLSS5Cam\`) lists the DLSS-NR-on-AMD files next to the executable and ends with the last lines of that project's own
 log (`dlssnr_on_amd.log` in the program folder); reports with it are welcome in the issues.
+
+### What to expect on Radeon in this version
+
+- **Cards.** Radeon RX 7000 and RX 9000 on Windows 11 with Adrenalin 26.1.1 or newer, the cards DLSS-NR-on-AMD supports; the author's
+  tests ran on an RX 9060 XT. On an older Radeon the FSR host still runs, but without the port's network, and the picture comes back unchanged.
+- **Works.** Still pictures, video files, the batch queue, the live VRChat camera with captures and timelapses, the depth network, the controls
+  after the pass (*Output blend*, strengths above 1, *Neural pass resolution*), updates and the edition switch.
+- **Slower.** DLSS-NR-on-AMD runs its network inline and the frame waits for it: about 25 ms at 720p and 180 ms at 4K on the RX 9060 XT,
+  so a 4K live picture reaches a few frames per second. A *Maximum resolution* cap under *Neural pass resolution* and the *Processing rate
+  cap* keep the live picture fluid; saved pictures and videos come out the same, only later.
+- **No hardware optical flow.** The optical flow engine belongs to the GeForce driver; on Radeon the motion vectors come from GPU block
+  matching, which is coarser in fast motion. The status dot under *Frame guidance* says so.
+- **Strengths and presets.** The port keeps its own *Preset*, *Style* and strengths up to 1, set in its overlay (**End** key), as described above.
+  Moving those sliders here therefore composites the existing result at once (values above 1 take effect in the composite) instead of
+  running the picture through its passes again, which on a Radeon costs about four seconds at 4K for no change in the picture.
+- **The depth network and the port take turns.** The port's network and the depth network (DirectML) do not share the card: a neural
+  pass that ran alongside the estimator's warm-up stretched from 0.17 s to 2.7 s, past the driver's two-second limit, and the
+  graphics device was lost (the driver restarts, the program has to be started again). Since v1.5.0 the program waits for the
+  estimator before every neural pass, so the two never overlap; the first passes of a picture start once the estimator is ready.
+  The three-second stall of one frame seen earlier in a 4K batch, a watchdog spike in the port's log, was the same overlap.
+- **Idle load.** Once a picture has run its passes the card idles (about 2 % on the RX 9060 XT, the same as on a GeForce). One CPU
+  core, though, stays busy from the first neural pass until the program closes: a thread of DLSS-NR-on-AMD polls the card at full
+  speed (its inline mode). That thread belongs to the port; releasing the FSR context does not end it.
+
+**Planned:** an optical flow pass of this program's own, ported from the optical flow of the AMD FidelityFX SDK (MIT), to replace block
+matching on Radeon and to serve as a second source on GeForce.
 
 ## Images and video files
 
@@ -151,7 +182,9 @@ frame moves it), confirmed with **Enter** or *Apply* and dropped with **Esc**. T
 its original state. Each file keeps its own orientation and crop, processing and the saved result use the turned
 and cropped picture, and every step is recorded in the history and can be undone. The live picture has the same
 toolbar without the crop: a turn or mirror of the VRChat camera picture applies to the preview, the captures and the
-timelapse alike, and is kept across sessions.
+timelapse alike, and is kept across sessions. The toolbar itself can be moved: drag it by the grip at its left end, and drop it past
+an edge of the picture, or press the arrow at its right end, to tuck it away at that edge, where a small tab brings it back. Its place
+is kept across sessions as well.
 
 ## Working with the interface
 
@@ -215,7 +248,8 @@ timelapse alike, and is kept across sessions.
 
 At every start the application asks GitHub for the newest release on the selected channel and reports it when it is
 newer than the running version. Two channels are offered in the *About* section under *Update channel*: **Stable**
-(full releases only) and **Pre-release** (also the builds published for testing before a full release). *Check for
+(full releases only) and **Pre-release** (also the builds published for testing before a full release; full releases reach this
+channel too, and the update window marks each release *Full release* or *Pre-release*). *Check for
 updates at start* switches the check off, the *Check for updates* button runs it at any time, and the result of the
 last check is shown underneath.
 
@@ -289,7 +323,7 @@ Command-line options (open files, process unattended, screenshots, headless runs
 - **The application does not start / closes immediately** – `%LOCALAPPDATA%\VRChatDLSS5Cam\` holds `log.txt` (its last line is the step that failed) and `crash.txt`. Both files belong in the issue report.
 - **NGX not initialized / DLAA unsupported** – the NGX runtime needs an NVIDIA GPU and a current driver. DLSS 5 still works through the *Signed snippet* route.
 - **Depth estimator unavailable** – `onnxruntime.dll`, `onnxruntime_providers_shared.dll`, `DirectML.dll` and `models\depth_anything_v2_small_fp16.onnx` must sit next to the executable (all are in the release package). Until the estimator is ready the application uses zero depth; its state is shown under *Frame guidance*.
-- **Optical flow unavailable** – when `log.txt` says "NVOF unavailable, falling back to block matching", the GeForce driver needs an update; block matching is used until then. The status dot under *Frame guidance* shows which source is active.
+- **Optical flow unavailable** – on a Radeon card this is expected: the optical flow engine is part of the GeForce driver and has no counterpart on Radeon, so block matching is used and the status dot under *Frame guidance* says so. On a GeForce card, when `log.txt` says "NVOF unavailable, falling back to block matching", the GeForce driver needs an update; block matching is used until then.
 - **The video preview is black** – many films start with a fade from black; the preview skips those frames and says so under the picture while the frame on show is still dark. Seeking forward with the bar or the arrow keys moves past them.
 - **Video file does not open / no encoder available** – the formats depend on the codecs installed in Windows. HEVC files need the *HEVC Video Extensions* (Microsoft Store), and Windows N / KN needs the *Media Feature Pack*. When the H.264 encoder is missing, *PNG sequence* is the alternative output. Switching *Hardware decoding* off helps with files the GPU decoder rejects.
 - **Low frame rate** – switch DLAA off, raise the depth update interval or lower the depth network resolution, lower the neural pass resolution, or set a processing rate cap. The optical-flow grid is best left at 4 px (2 px and 1 px cost far more at 4K). The log prints a `Perf:` line every 15 s with the cost of each stage.

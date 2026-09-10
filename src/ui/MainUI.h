@@ -335,6 +335,9 @@ private:
     SourceTransform m_cropWork, m_cropDragBase;
     int    m_cropHandle = -1;        // 0-7 the handles (clockwise from the top left), 8 the whole rectangle
     ImVec2 m_cropDragStart;
+    // The turn/mirror/crop tool row being moved by its grip: the mouse keeps this offset from the row's centre.
+    bool   m_toolRowDragging = false;
+    ImVec2 m_toolRowDragOffset;
 };
 
 } // namespace vdc::ui

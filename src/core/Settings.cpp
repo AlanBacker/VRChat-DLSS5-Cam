@@ -162,6 +162,9 @@ bool Settings::ApplyText(const std::string& data) {
     r.Get("libraryVisible", libraryVisible);
     r.Get("sidebarWidth", sidebarWidth);
     r.Get("libraryHeight", libraryHeight);
+    r.Get("toolRowX", toolRowX);
+    r.Get("toolRowY", toolRowY);
+    r.Get("toolRowDock", toolRowDock);
     r.Get("updateCheck", updateCheck);
     r.Get("updateChannel", updateChannel);
     r.Get("portConsent", portConsent);
@@ -239,8 +242,11 @@ void PutParameters(Writer& w, const Settings& s) {
 }
 } // namespace
 
-std::string Settings::ProcessingText() const {
+std::string Settings::ProcessingText(bool strengthsInPass) const {
     // Everything the processing passes read; not the display and blend values (composite only), not the interface.
+    // The preset, style and strengths are parameters of the NGX feature; the FSR host route hands the picture to
+    // DLSS-NR-on-AMD, which keeps its own, so there a change of them composites the existing result (strengths above 1)
+    // without running the still through its passes again.
     Writer w;
     w.Put("sourceMode", sourceMode);
     w.Put("imagePath", imagePath);
@@ -258,15 +264,17 @@ std::string Settings::ProcessingText() const {
     w.Put("nrRoute", nrRoute);
     w.Put("nrDllPath", nrDllPath);
     w.Put("nrRuntimeBuild", nrRuntimeBuild);
-    w.Put("nrPreset", nrPreset);
-    w.Put("nrStyle", nrStyle);
-    w.Put("nrIntensity", nrIntensity);
-    w.Put("nrGlobalTone", nrGlobalTone);
-    w.Put("nrLocalTone", nrLocalTone);
-    w.Put("nrLocalStructure", nrLocalStructure);
-    w.Put("nrSkinStructure", nrSkinStructure);
-    w.Put("nrAutoMask", nrAutoMask);
-    w.Put("nrUiCorrection", nrUiCorrection);
+    if (strengthsInPass) {
+        w.Put("nrPreset", nrPreset);
+        w.Put("nrStyle", nrStyle);
+        w.Put("nrIntensity", nrIntensity);
+        w.Put("nrGlobalTone", nrGlobalTone);
+        w.Put("nrLocalTone", nrLocalTone);
+        w.Put("nrLocalStructure", nrLocalStructure);
+        w.Put("nrSkinStructure", nrSkinStructure);
+        w.Put("nrAutoMask", nrAutoMask);
+        w.Put("nrUiCorrection", nrUiCorrection);
+    }
     w.Put("nrUpscale", nrUpscale);
     w.Put("nrInputExposure", nrInputExposure);
     w.Put("nrInputScale", nrInputScale);
@@ -399,6 +407,9 @@ bool Settings::Save(const std::wstring& path) const {
     w.Put("libraryVisible", libraryVisible);
     w.Put("sidebarWidth", sidebarWidth);
     w.Put("libraryHeight", libraryHeight);
+    w.Put("toolRowX", toolRowX);
+    w.Put("toolRowY", toolRowY);
+    w.Put("toolRowDock", toolRowDock);
     w.Put("updateCheck", updateCheck);
     w.Put("updateChannel", updateChannel);
     w.Put("portConsent", portConsent);
@@ -425,6 +436,9 @@ void Settings::Clamp() {
     nrPreset = std::clamp(nrPreset, 0, 3);
     if (sidebarWidth != 0.0f) sidebarWidth = std::clamp(sidebarWidth, 16.0f, 48.0f);
     if (libraryHeight != 0.0f) libraryHeight = std::clamp(libraryHeight, 7.0f, 30.0f);
+    toolRowX = toolRowX < 0.0f ? -1.0f : std::clamp(toolRowX, 0.0f, 1.0f);   // either one below zero = the default place
+    toolRowY = toolRowY < 0.0f ? -1.0f : std::clamp(toolRowY, 0.0f, 1.0f);   // (each key is applied, and clamped, on its own)
+    toolRowDock = std::clamp(toolRowDock, 0, 4);
     updateChannel = std::clamp(updateChannel, 0, 1);
     nrStyle = std::clamp(nrStyle, 0, 2);
     sourceMode = std::clamp(sourceMode, 0, 2);

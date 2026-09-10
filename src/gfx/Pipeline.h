@@ -115,6 +115,7 @@ public:
     void PublishStatus(GpuContext& gpu);                    // copies the status (plus GPU timers) for StatusSnapshot
     const PipelineStatus& Status() const { return m_status; }
     bool NeedsFrame() const;                                // pending requests that want a frame even without new input
+    bool StrengthsInPass(const Settings& s) const { return Route(s) != RouteFsrHost; }   // see Settings::ProcessingText
     bool HasDisplay() const { return m_hasDisplay; }
     NgxCore& Ngx() { return m_ngx; }
 

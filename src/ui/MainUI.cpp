@@ -560,13 +560,19 @@ void MainUI::DrawUpdatePopup(Settings& /*s*/, const UiFrameInfo& info, UiEvents&
     ImGui::PushFont(fonts.Bold(), ImGui::GetStyle().FontSizeBase * 1.15f);
     ImGui::TextUnformatted(info.updateEdition ? TR(UpdateEditionTitle) : TR(UpdateTitle));
     ImGui::PopFont();
-    if (info.updatePrerelease) { ImGui::SameLine(0.0f, 10.0f); Pill(TR(ChannelPreview), WithAlpha(p.warn, 0.2f), p.warn); }
+    // Every release found is labelled, so a full release reaching the pre-release channel reads as one.
+    ImGui::SameLine(0.0f, 10.0f);
+    if (info.updatePrerelease) Pill(TR(ChannelPreview), WithAlpha(p.warn, 0.2f), p.warn);
+    else Pill(TR(ReleaseFull), WithAlpha(p.good, 0.2f), p.good);
     if (info.updateEdition) {
         const char* thisEdition = APP_EDITION_AMD ? TR(EditionAmd) : TR(EditionGeforce);
         const char* otherEdition = APP_EDITION_AMD ? TR(EditionGeforce) : TR(EditionAmd);
         ImGui::TextUnformatted(StrPrintf(TR(UpdateEditionFmt), otherEdition, info.updateVersion.c_str(), thisEdition, info.appVersion.c_str()).c_str());
     } else {
         ImGui::TextUnformatted(StrPrintf(TR(UpdateVersionFmt), info.updateVersion.c_str(), info.appVersion.c_str()).c_str());
+    }
+    if (info.prerelease && !info.updatePrerelease && !info.updateEdition) {
+        ImGui::PushStyleColor(ImGuiCol_Text, p.textDim); ImGui::TextWrapped("%s", TR(UpdateFullNote)); ImGui::PopStyleColor();
     }
     if (!info.updateDate.empty()) ImGui::TextDisabled("%s", StrPrintf(TR(UpdatePublished), info.updateDate.c_str()).c_str());
     if (!info.updateNotes.empty()) {
@@ -1336,6 +1342,7 @@ void MainUI::BlockGuidance(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         if (st) {
             if (still && !st->nvofReady) StatusDot(p.muted, StrPrintf("%s: %s", TR(Nvof), TR(StaticPreview)).c_str());
             else if (st->nvofReady) StatusDot(p.good, StrPrintf("%s: %s (%u px%s)", TR(Nvof), TR(Available), st->nvofGrid, st->nvofBidirectional ? " \xE2\x87\x84" : "").c_str());
+            else if (!st->nvofAvailable && info.adapter && !info.adapter->IsNvidia()) StatusDot(p.muted, StrPrintf("%s: %s", TR(Nvof), TR(NvofNoEngine)).c_str());
             else if (!st->nvofAvailable) StatusDot(p.warn, StrPrintf("%s: %s", TR(Nvof), TR(NotAvailable)).c_str());
             else StatusDot(p.warn, StrPrintf("%s: %s", TR(Nvof), st->nvofError.empty() ? TR(NotAvailable) : st->nvofError.c_str()).c_str());
         }
@@ -1693,7 +1700,8 @@ void MainUI::BlockAbout(Settings& s, const UiFrameInfo& info, UiEvents& ev, cons
     }
     if (info.status) {
         ImGui::TextDisabled("%s:", TR(NgxStatus)); ImGui::SameLine(); ImGui::TextUnformatted(info.status->ngxStatus.c_str());
-        ImGui::TextDisabled("%s:", TR(Nvof)); ImGui::SameLine(); ImGui::TextUnformatted(info.status->nvofAvailable ? TR(Available) : TR(NotAvailable));
+        ImGui::TextDisabled("%s:", TR(Nvof)); ImGui::SameLine();
+        ImGui::TextUnformatted(info.status->nvofAvailable ? TR(Available) : (info.adapter && !info.adapter->IsNvidia()) ? TR(NvofNoEngine) : TR(NotAvailable));
     }
     // Updates: whether to look at every start, which channel, a check by hand and the result of the last one.
     const ImGuiStyle& style = ImGui::GetStyle();
@@ -1723,7 +1731,12 @@ void MainUI::BlockAbout(Settings& s, const UiFrameInfo& info, UiEvents& ev, cons
         const Palette& p = Colors();
         if (st == UpChecking) ImGui::TextDisabled("%s", TR(UpdateChecking));
         else if (st == UpUpToDate) ImGui::TextDisabled("%s", StrPrintf(TR(UpdateUpToDate), info.appVersion.c_str()).c_str());
-        else if (st == UpAvailable) { ImGui::PushStyleColor(ImGuiCol_Text, p.accentHover); ImGui::TextWrapped("%s", StrPrintf(TR(UpdateVersionFmt), info.updateVersion.c_str(), info.appVersion.c_str()).c_str()); ImGui::PopStyleColor(); }
+        else if (st == UpAvailable) {
+            if (info.updatePrerelease) Pill(TR(ChannelPreview), WithAlpha(p.warn, 0.2f), p.warn);
+            else Pill(TR(ReleaseFull), WithAlpha(p.good, 0.2f), p.good);
+            ImGui::SameLine(0.0f, 6.0f);
+            ImGui::PushStyleColor(ImGuiCol_Text, p.accentHover); ImGui::TextWrapped("%s", StrPrintf(TR(UpdateVersionFmt), info.updateVersion.c_str(), info.appVersion.c_str()).c_str()); ImGui::PopStyleColor();
+        }
         else if (st == UpFailed) { ImGui::PushStyleColor(ImGuiCol_Text, p.bad); ImGui::TextWrapped("%s", info.updateWritable ? StrPrintf(TR(UpdateCheckFailed), info.updateError.c_str()).c_str() : TR(UpdateNotWritable)); ImGui::PopStyleColor(); }
     }
     ImGui::Spacing();
@@ -2877,7 +2890,7 @@ void MainUI::DrawTransformTools(Settings& s, const UiFrameInfo& info, UiEvents& 
     const bool live = !item && s.sourceMode == SourceSpout && info.sourceConnected;
     const bool locked = info.batchRunning || info.videoProcessing || info.videoFinishing;
     const float bsz = ImGui::GetFrameHeight();
-    if ((!item && !live) || info.fullscreen || locked || region.x < bsz * 9.0f || region.y < bsz * 4.0f) { m_cropEditing = false; m_cropHandle = -1; return; }
+    if ((!item && !live) || info.fullscreen || locked || region.x < bsz * 10.0f || region.y < bsz * 4.0f) { m_cropEditing = false; m_cropHandle = -1; return; }
     if (m_cropEditing && (!item || m_cropItem != item->id)) m_cropEditing = false;
     const Palette& p = Colors();
     const ImGuiStyle& style = ImGui::GetStyle();
@@ -2971,18 +2984,99 @@ void MainUI::DrawTransformTools(Settings& s, const UiFrameInfo& info, UiEvents& 
         return;
     }
 
-    // The tool row: a translucent pill that comes forward under the mouse.
+    // The tool row: a translucent pill that comes forward under the mouse. The grip at its left end moves it, and
+    // it tucks away at an edge of the picture, dropped past that edge or with the arrow at its right end; a small
+    // tab at the edge brings it back. Its place (fractions of the picture area) and the edge are kept in the settings.
+    const float pi = 3.14159265358979f;
+    const float gripW = std::round(bsz * 0.5f), tuckW = std::round(bsz * 0.75f);
     const int nBtn = item ? 6 : 5;
-    const float pillW = nBtn * bsz + (nBtn - 1) * gap + pad * 2.0f, pillH = bsz + pad * 2.0f;
-    const ImVec2 pill(origin.x + (region.x - pillW) * 0.5f, origin.y + region.y - pillH - 12.0f);
-    const bool over = ImGui::IsMousePosValid() && io.MousePos.x >= pill.x - 12.0f && io.MousePos.x <= pill.x + pillW + 12.0f
-                   && io.MousePos.y >= pill.y - 12.0f && io.MousePos.y <= pill.y + pillH + 12.0f;
+    const float pillW = gripW + tuckW + nBtn * bsz + (nBtn + 1) * gap + pad * 2.0f, pillH = bsz + pad * 2.0f;
+    const ImVec2 lo(origin.x + pillW * 0.5f + 4.0f, origin.y + pillH * 0.5f + 4.0f);                 // the range of the centre
+    const ImVec2 hi(origin.x + region.x - pillW * 0.5f - 4.0f, origin.y + region.y - pillH * 0.5f - 12.0f);
+    auto inside = [&](const ImVec2& c) { return ImVec2(std::max(lo.x, std::min(c.x, hi.x)), std::max(lo.y, std::min(c.y, hi.y))); };
+    ImVec2 centre = (s.toolRowX < 0.0f || s.toolRowY < 0.0f) ? ImVec2(origin.x + region.x * 0.5f, hi.y)
+                                                              : inside(ImVec2(origin.x + s.toolRowX * region.x, origin.y + s.toolRowY * region.y));
+    int edgeUnder = 0;   // while it is dragged: the edge the row has been taken past (1 left, 2 right, 3 top, 4 bottom)
+    if (m_toolRowDragging) {
+        const ImVec2 want(io.MousePos.x - m_toolRowDragOffset.x, io.MousePos.y - m_toolRowDragOffset.y);
+        const float out[4] = { origin.x - want.x, want.x - (origin.x + region.x), origin.y - want.y, want.y - (origin.y + region.y) };
+        float most = 0.0f;
+        for (int i = 0; i < 4; ++i) if (out[i] > most) { most = out[i]; edgeUnder = i + 1; }
+        centre = inside(want);
+        if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) {   // dropped: past an edge, it tucks away there
+            m_toolRowDragging = false;
+            s.toolRowX = (centre.x - origin.x) / region.x; s.toolRowY = (centre.y - origin.y) / region.y;
+            s.toolRowDock = edgeUnder;
+            ev.settingsChanged = true;
+            edgeUnder = 0;
+        }
+    }
+    if (edgeUnder) {   // the edge the row would tuck away at lights up
+        const ImU32 glow = WithAlpha(p.accent, 0.7f);
+        const float t = 3.0f;
+        switch (edgeUnder) {
+        case 1:  dl->AddRectFilled(origin, ImVec2(origin.x + t, origin.y + region.y), glow); break;
+        case 2:  dl->AddRectFilled(ImVec2(origin.x + region.x - t, origin.y), ImVec2(origin.x + region.x, origin.y + region.y), glow); break;
+        case 3:  dl->AddRectFilled(origin, ImVec2(origin.x + region.x, origin.y + t), glow); break;
+        default: dl->AddRectFilled(ImVec2(origin.x, origin.y + region.y - t), ImVec2(origin.x + region.x, origin.y + region.y), glow); break;
+        }
+    }
+
+    if (s.toolRowDock != 0) {
+        // Tucked away: a tab at the edge, where the row was, with an arrow pointing into the picture.
+        const int dock = std::clamp(s.toolRowDock, 1, 4);
+        const bool upright = dock <= 2;   // along the left or the right edge
+        const float tabL = std::round(bsz * 2.2f), tabT = std::round(bsz * 0.6f);
+        const float along = upright ? std::max(origin.y + 4.0f, std::min(centre.y - tabL * 0.5f, origin.y + region.y - tabL - 4.0f))
+                                    : std::max(origin.x + 4.0f, std::min(centre.x - tabL * 0.5f, origin.x + region.x - tabL - 4.0f));
+        ImVec2 a, b;
+        ImDrawFlags corners = ImDrawFlags_RoundCornersTop;
+        float angle = pi;
+        switch (dock) {
+        case 1:  a = ImVec2(origin.x, along); b = ImVec2(origin.x + tabT, along + tabL); corners = ImDrawFlags_RoundCornersRight; angle = -pi * 0.5f; break;
+        case 2:  a = ImVec2(origin.x + region.x - tabT, along); b = ImVec2(origin.x + region.x, along + tabL); corners = ImDrawFlags_RoundCornersLeft; angle = pi * 0.5f; break;
+        case 3:  a = ImVec2(along, origin.y); b = ImVec2(along + tabL, origin.y + tabT); corners = ImDrawFlags_RoundCornersBottom; angle = 0.0f; break;
+        default: a = ImVec2(along, origin.y + region.y - tabT); b = ImVec2(along + tabL, origin.y + region.y); break;
+        }
+        ImGui::SetCursorScreenPos(a);
+        const bool show = ImGui::InvisibleButton("##toolRowTab", ImVec2(b.x - a.x, b.y - a.y));
+        const bool hot = ImGui::IsItemHovered();
+        if (hot) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+        Tooltip(TR(TipToolRowShow));
+        const float tabLift = Animate(ImGui::GetID("##toolRowTabLift"), hot ? 1.0f : 0.0f, 14.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_Alpha, style.Alpha * (0.55f + 0.45f * tabLift));
+        dl->AddRectFilled(a, b, ImGui::GetColorU32(p.overlayBg), 6.0f, corners);
+        DrawChevron(dl, ImVec2((a.x + b.x) * 0.5f, (a.y + b.y) * 0.5f), bsz * 0.36f, angle, ImGui::GetColorU32(p.text));
+        ImGui::PopStyleVar();
+        if (show) { s.toolRowDock = 0; ev.settingsChanged = true; }
+        return;
+    }
+
+    const ImVec2 pill(centre.x - pillW * 0.5f, centre.y - pillH * 0.5f);
+    const bool over = m_toolRowDragging || (ImGui::IsMousePosValid() && io.MousePos.x >= pill.x - 12.0f && io.MousePos.x <= pill.x + pillW + 12.0f
+                                            && io.MousePos.y >= pill.y - 12.0f && io.MousePos.y <= pill.y + pillH + 12.0f);
     const float lift = Animate(ImGui::GetID("##xformTools"), over ? 1.0f : 0.0f, 14.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_Alpha, style.Alpha * (0.55f + 0.45f * lift));
     dl->AddRectFilled(pill, ImVec2(pill.x + pillW, pill.y + pillH), ImGui::GetColorU32(p.overlayBg), 6.0f);
     SourceTransform x = item ? item->transform : SourceTransform::Turned(s.spoutRotate, s.spoutFlipH, s.spoutFlipV);
     bool changed = false;
+    // The grip: two columns of dots. A drag from it moves the row; it keeps the mouse's offset from the centre.
     ImGui::SetCursorScreenPos(ImVec2(pill.x + pad, pill.y + pad));
+    ImGui::InvisibleButton("##toolRowGrip", ImVec2(gripW, bsz));
+    if (ImGui::IsItemActivated()) m_toolRowDragOffset = ImVec2(io.MousePos.x - centre.x, io.MousePos.y - centre.y);
+    if (ImGui::IsItemActive() && !m_toolRowDragging && ImGui::IsMouseDragging(ImGuiMouseButton_Left, 3.0f)) m_toolRowDragging = true;
+    const bool gripHot = ImGui::IsItemHovered() || m_toolRowDragging;
+    if (gripHot) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+    if (!m_toolRowDragging) Tooltip(TR(TipToolRowGrip));
+    {
+        const ImVec2 gmin = ImGui::GetItemRectMin(), gmax = ImGui::GetItemRectMax();
+        const ImVec2 gc((gmin.x + gmax.x) * 0.5f, (gmin.y + gmax.y) * 0.5f);
+        const ImU32 dot = ImGui::GetColorU32(gripHot ? p.text : p.textDim);
+        const float step = std::max(4.0f, std::round(bsz * 0.18f));
+        for (int col = -1; col <= 1; col += 2)
+            for (int row = -1; row <= 1; ++row) dl->AddCircleFilled(ImVec2(gc.x + col * step * 0.5f, gc.y + row * step), 1.3f, dot);
+    }
+    ImGui::SameLine(0.0f, gap);
     if (IconButton("##turnL", Icon::RotateLeft, ImVec2(bsz, bsz), TR(TipRotateLeft), ButtonKind::Plain)) { TurnTransform(x, false); changed = true; }
     ImGui::SameLine(0.0f, gap);
     if (IconButton("##turnR", Icon::RotateRight, ImVec2(bsz, bsz), TR(TipRotateRight), ButtonKind::Plain)) { TurnTransform(x, true); changed = true; }
@@ -3000,6 +3094,19 @@ void MainUI::DrawTransformTools(Settings& s, const UiFrameInfo& info, UiEvents& 
     ImGui::BeginDisabled(x.Identity());
     if (IconButton("##asItComes", Icon::Reset, ImVec2(bsz, bsz), TR(TipResetTransform), ButtonKind::Plain)) { x = SourceTransform(); changed = true; }
     ImGui::EndDisabled();
+    ImGui::SameLine(0.0f, gap);
+    {
+        // The arrow points at the nearest edge, where the row goes when it is pressed.
+        const float d[4] = { centre.x - origin.x, origin.x + region.x - centre.x, centre.y - origin.y, origin.y + region.y - centre.y };
+        int nearest = 3;
+        for (int i = 0; i < 3; ++i) if (d[i] < d[nearest]) nearest = i;
+        const float toEdge[4] = { pi * 0.5f, -pi * 0.5f, pi, 0.0f };
+        if (ChevronButton("##toolRowTuck", toEdge[nearest], ImVec2(tuckW, bsz), TR(TipToolRowTuck), ButtonKind::Plain)) {
+            s.toolRowX = (centre.x - origin.x) / region.x; s.toolRowY = (centre.y - origin.y) / region.y;
+            s.toolRowDock = nearest + 1;
+            ev.settingsChanged = true;
+        }
+    }
     ImGui::PopStyleVar();
     if (!changed) return;
     if (item) item->transform = x;
