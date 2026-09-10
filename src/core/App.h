@@ -45,6 +45,8 @@ struct CommandLine {
     int          edition = 0;             // --edition geforce|amd: fetch that edition of this program (1 GeForce, 2 Radeon) and swap to it
     std::vector<std::pair<std::string, std::string>> sets;      // --set key=value (settings)
     std::wstring dataDir;                 // --data-dir <folder>
+    bool         afterDeviceLoss = false; // --after-device-loss: started by an instance that lost the graphics device
+    double       loseDevice = -1.0;       // --lose-device <seconds> (development: report the device as lost after this long)
     std::string  error;                   // the first unknown option
 
     static CommandLine Parse();
@@ -239,6 +241,7 @@ private:
     void RecordPortVersion();              // an installation from before the record: taken as the latest when its installer file is the latest one
     void LogPortState(bool tail);          // its files next to the executable; tail: the last lines of its own log too
     void RelaunchSelf();                   // start the executable again and close this instance
+    void RelaunchAfterDeviceLoss();        // after Shutdown: keep the log, start the executable again with --after-device-loss
     int  RunAgainAndWait(const std::string& note);   // start the executable again with the same command line, wait, return its code
     static std::wstring EffectiveCaptureFolder(const Settings& s);
     std::wstring EffectiveCaptureFolder() const { return EffectiveCaptureFolder(m_settings); }
@@ -309,6 +312,8 @@ private:
     bool          m_systemLight = false;   // Windows app colours are light (read from the registry, refreshed on WM_SETTINGCHANGE)
     int           m_titleDark = -1;        // the title bar colour last handed to DWM (-1: not yet)
     bool          m_deviceLostReported = false;
+    bool          m_relaunchAfterLoss = false;   // the device was lost in an interactive session: start again after Shutdown
+    double        m_deviceLostTime = 0.0;
     bool          m_fontsDirty = true;
     bool          m_pendingResize = false;
     UINT          m_pendingWidth = 0, m_pendingHeight = 0;

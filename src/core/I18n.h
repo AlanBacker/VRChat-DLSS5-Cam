@@ -259,6 +259,7 @@ enum class Lang { English = 0, Chinese = 1, Japanese = 2, Korean = 3, Count = 4 
     X(Clear,              "Clear", "清除", "クリア", "지우기") \
     X(Close,              "Close", "关闭", "閉じる", "닫기") \
     X(DeviceRemoved,      "The graphics device was lost. Please restart the application.", "图形设备已丢失，请重新启动应用。", "グラフィックデバイスが失われました。アプリを再起動してください。", "그래픽 장치가 손실되었습니다. 앱을 다시 시작하세요.") \
+    X(DeviceRestarted,    "The graphics device was lost (the driver reset) and the application has started again. If this repeats, lower the load: a processing rate cap or a lower neural pass resolution.", "图形设备已丢失（驱动已重置），应用已自动重新启动。若反复出现，请降低负载：设置处理帧率上限或调低神经渲染分辨率。", "グラフィックデバイスが失われ（ドライバーがリセット）、アプリを自動で再起動しました。繰り返す場合は、処理レート上限の設定やニューラルパス解像度の引き下げで負荷を下げてください。", "그래픽 장치가 손실되어(드라이버 재설정) 앱이 자동으로 다시 시작되었습니다. 반복되면 처리 속도 상한을 설정하거나 뉴럴 패스 해상도를 낮춰 부하를 줄이세요.") \
     X(ErrorTitle,         "Error", "错误", "エラー", "오류") \
     X(NrNotNvidia,        "An NVIDIA RTX GPU is required for DLSS 5.", "DLSS 5 需要 NVIDIA RTX 显卡。", "DLSS 5 には NVIDIA RTX GPU が必要です。", "DLSS 5에는 NVIDIA RTX GPU가 필요합니다.") \
     X(Experimental,       "Experimental", "实验性", "実験的", "실험적") \

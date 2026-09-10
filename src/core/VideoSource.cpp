@@ -11,11 +11,18 @@
 namespace vdc {
 
 // A Media Foundation source reader with the parsed video type. Owned by VideoSource (preview, sequence) and VideoScanner.
+struct AudioTrack {
+    DWORD       stream = 0;
+    std::string name;                // codec, channels, sample rate, bitrate: for the log
+    UINT32      kbps = 0;
+};
+
 struct VideoReader {
     ComPtr<IMFSourceReader> reader;
     DWORD videoStream = 0, audioStream = 0;
     bool  hasAudioStream = false;
-    bool  audio = false;             // the audio stream is selected and decodes to PCM
+    std::vector<AudioTrack> audioTracks;   // every audio track of the file, in file order
+    bool  audio = false;             // an audio stream is selected and decodes to PCM
     GUID  subtype{};
     UINT  frameW = 0, frameH = 0;    // coded size
     LONG  stride = 0;
@@ -168,7 +175,8 @@ bool CreateReader(const std::wstring& path, bool withAudio, IMFDXGIDeviceManager
     }
     r.hardware = manager != nullptr;
 
-    // Streams: the first video stream, the first audio stream.
+    // Streams: the first video stream, and every audio stream (a phone's MOV can carry two: a stereo AAC track and
+    // a spatial one that Windows has no decoder for, and the file may list the spatial one first).
     bool haveVideo = false;
     UINT32 nativeW = 0, nativeH = 0;
     for (DWORD i = 0; i < 64; ++i) {
@@ -189,12 +197,23 @@ bool CreateReader(const std::wstring& path, bool withAudio, IMFDXGIDeviceManager
             mf::GetSize(native.Get(), MF_MT_FRAME_SIZE, nativeW, nativeH);
             UINT32 bps = 0;
             if (SUCCEEDED(native->GetUINT32(MF_MT_AVG_BITRATE, &bps)) && bps > 0) r.videoBitrateKbps = bps / 1000;
-        } else if (major == MFMediaType_Audio && !r.hasAudioStream) {
-            r.hasAudioStream = true;
-            r.audioStream = i;
-            UINT32 bytesPerSec = 0, bps = 0;
-            if (SUCCEEDED(native->GetUINT32(MF_MT_AUDIO_AVG_BYTES_PER_SECOND, &bytesPerSec)) && bytesPerSec > 0) r.audioBitrateKbps = bytesPerSec * 8 / 1000;
-            else if (SUCCEEDED(native->GetUINT32(MF_MT_AVG_BITRATE, &bps)) && bps > 0) r.audioBitrateKbps = bps / 1000;
+        } else if (major == MFMediaType_Audio) {
+            AudioTrack track;
+            track.stream = i;
+            UINT32 bytesPerSec = 0, bps = 0, channels = 0, rate = 0;
+            if (SUCCEEDED(native->GetUINT32(MF_MT_AUDIO_AVG_BYTES_PER_SECOND, &bytesPerSec)) && bytesPerSec > 0) track.kbps = bytesPerSec * 8 / 1000;
+            else if (SUCCEEDED(native->GetUINT32(MF_MT_AVG_BITRATE, &bps)) && bps > 0) track.kbps = bps / 1000;
+            native->GetUINT32(MF_MT_AUDIO_NUM_CHANNELS, &channels);
+            native->GetUINT32(MF_MT_AUDIO_SAMPLES_PER_SECOND, &rate);
+            GUID sub{};
+            native->GetGUID(MF_MT_SUBTYPE, &sub);
+            track.name = StrPrintf("%s, %u ch, %u Hz, %u kbit/s", mf::SubtypeName(sub).c_str(), channels, rate, track.kbps);
+            if (!r.hasAudioStream) {
+                r.hasAudioStream = true;
+                r.audioStream = i;
+                r.audioBitrateKbps = track.kbps;
+            }
+            r.audioTracks.push_back(std::move(track));
         }
     }
     if (!haveVideo) { error = "the file has no video stream"; return false; }
@@ -241,32 +260,45 @@ bool CreateReader(const std::wstring& path, bool withAudio, IMFDXGIDeviceManager
     if (r.videoBitrateKbps == 0 && r.durationSeconds > 0.5) {
         const uint64_t bytes = GetFileSizeBytes(path);
         if (bytes > 0) {
-            const double kbps = (double)bytes * 8.0 / r.durationSeconds / 1000.0 - (double)r.audioBitrateKbps;
+            double audioKbps = 0.0;
+            for (const AudioTrack& t : r.audioTracks) audioKbps += (double)t.kbps;
+            const double kbps = (double)bytes * 8.0 / r.durationSeconds / 1000.0 - audioKbps;
             if (kbps >= 100.0) r.videoBitrateKbps = (UINT32)(kbps * 0.98);   // a little container overhead
         }
     }
 
+    // The audio: the first track that decodes to PCM, in file order. A track without a decoder (Apple's spatial
+    // audio next to the AAC track of an iPhone MOV, for one) is skipped and said so in the log.
     if (withAudio && r.hasAudioStream) {
-        hr = r.reader->SetStreamSelection(r.audioStream, TRUE);
-        ComPtr<IMFMediaType> pcm;
-        if (SUCCEEDED(hr)) hr = mf::CreateMediaType(&pcm);
-        if (SUCCEEDED(hr)) {
-            pcm->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Audio);
-            pcm->SetGUID(MF_MT_SUBTYPE, MFAudioFormat_PCM);
-            pcm->SetUINT32(MF_MT_AUDIO_BITS_PER_SAMPLE, 16);
-            hr = r.reader->SetCurrentMediaType(r.audioStream, nullptr, pcm.Get());
+        for (size_t n = 0; n < r.audioTracks.size() && !r.audio; ++n) {
+            const AudioTrack& track = r.audioTracks[n];
+            hr = r.reader->SetStreamSelection(track.stream, TRUE);
+            ComPtr<IMFMediaType> pcm;
+            if (SUCCEEDED(hr)) hr = mf::CreateMediaType(&pcm);
+            if (SUCCEEDED(hr)) {
+                pcm->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Audio);
+                pcm->SetGUID(MF_MT_SUBTYPE, MFAudioFormat_PCM);
+                pcm->SetUINT32(MF_MT_AUDIO_BITS_PER_SAMPLE, 16);
+                hr = r.reader->SetCurrentMediaType(track.stream, nullptr, pcm.Get());
+            }
+            ComPtr<IMFMediaType> type;
+            if (SUCCEEDED(hr)) hr = r.reader->GetCurrentMediaType(track.stream, &type);
+            if (SUCCEEDED(hr) && type) {
+                r.audioStream = track.stream;
+                r.audioBitrateKbps = track.kbps;
+                r.audioType = type;
+                r.audioType->GetUINT32(MF_MT_AUDIO_SAMPLES_PER_SECOND, &r.audioRate);
+                r.audioType->GetUINT32(MF_MT_AUDIO_NUM_CHANNELS, &r.audioChannels);
+                r.audio = true;
+                if (r.audioTracks.size() > 1)
+                    Log::Info("Video: audio track %u of %u (%s) is used", (unsigned)n + 1, (unsigned)r.audioTracks.size(), track.name.c_str());
+            } else {
+                Log::Warn("Video: audio track %u of %u (%s) cannot be decoded (%s)%s", (unsigned)n + 1, (unsigned)r.audioTracks.size(),
+                          track.name.c_str(), FormatHr(hr).c_str(), n + 1 < r.audioTracks.size() ? "; trying the next one" : "; the output gets no audio");
+                r.reader->SetStreamSelection(track.stream, FALSE);
+            }
         }
-        if (SUCCEEDED(hr)) hr = r.reader->GetCurrentMediaType(r.audioStream, &r.audioType);
-        if (SUCCEEDED(hr) && r.audioType) {
-            r.audioType->GetUINT32(MF_MT_AUDIO_SAMPLES_PER_SECOND, &r.audioRate);
-            r.audioType->GetUINT32(MF_MT_AUDIO_NUM_CHANNELS, &r.audioChannels);
-            r.audio = true;
-        } else {
-            Log::Warn("Video: the audio stream cannot be decoded (%s); the output gets no audio", FormatHr(hr).c_str());
-            r.reader->SetStreamSelection(r.audioStream, FALSE);
-            r.audioType.Reset();
-            r.audio = false;
-        }
+        if (!r.audio) r.audioType.Reset();
     }
     return true;
 }
@@ -671,7 +703,8 @@ bool VideoSource::Open(GpuContext& gpu, const std::wstring& path, bool hardwareD
               WideToUtf8(path).c_str(), m_info.width, m_info.height, m_info.fileWidth, m_info.fileHeight, m_info.codec.c_str(),
               m_info.decoderOutput.c_str(), (double)r.fpsNum / (double)r.fpsDen, r.durationSeconds,
               (unsigned long long)m_info.frameEstimate, m_info.videoBitrateKbps, m_info.audioBitrateKbps, r.rotation, r.hardware ? "hardware" : "software",
-              r.hasAudioStream ? "yes" : "no", (NowSeconds() - t0) * 1000.0);
+              !r.hasAudioStream ? "no" : r.audioTracks.size() == 1 ? "yes" : StrPrintf("%u tracks", (unsigned)r.audioTracks.size()).c_str(),
+              (NowSeconds() - t0) * 1000.0);
     Log::Info("Video: preview frame at %.3f s, mean luma %.3f, read from a %s%s", m_previewSeconds, m_previewLuma, r.bufferKind.c_str(),
               first.skippedBlack ? StrPrintf(" (%d black frame%s at the start skipped)", first.skippedBlack, first.skippedBlack == 1 ? "" : "s").c_str() : "");
     return true;

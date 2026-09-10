@@ -174,6 +174,8 @@ public:
     bool                 TearingSupported() const { return m_tearing; }
     bool                 TypedUavStoreSupported(DXGI_FORMAT fmt) const;
     void                 NoteDeviceRemoved(const char* who);
+    // The card's own memory: what this process uses and the budget the system grants it (false when not available).
+    bool                 VideoMemory(uint64_t& usedBytes, uint64_t& budgetBytes) const;
 
     // The present queue (UI thread, high priority) and the processing queue (worker thread). The D3D11On12 device
     // used by Spout runs on the processing queue.

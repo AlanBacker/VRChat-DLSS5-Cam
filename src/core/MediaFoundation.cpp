@@ -151,6 +151,10 @@ std::string SubtypeName(const GUID& subtype) {
     if (printable) return text;
     if (subtype == MFVideoFormat_RGB32) return "RGB32";
     if (subtype == MFVideoFormat_ARGB32) return "ARGB32";
+    if (subtype == MFAudioFormat_AAC) return "AAC";
+    if (subtype == MFAudioFormat_MP3) return "MP3";
+    if (subtype == MFAudioFormat_PCM) return "PCM";
+    if (subtype == MFAudioFormat_Float) return "PCM float";
     return StrPrintf("0x%08X", (unsigned)code);
 }
 

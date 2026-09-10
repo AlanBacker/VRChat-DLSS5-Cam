@@ -47,6 +47,7 @@ constexpr int kVideoHeldRetries = 10;   // passes a video frame gets to produce 
 constexpr int kImageConvergePasses = 32;
 constexpr int kImageSettingsPasses = 24;
 constexpr double kPerfLogInterval = 15.0;
+constexpr double kDeviceLossRestartGuard = 60.0;   // a device lost again this soon after an automatic restart ends the program
 constexpr UINT WM_COPYGLOBALDATA = 0x0049;
 
 // Media library: thumbnails live in one atlas together with the seek-bar pictures of the opened video.
@@ -223,6 +224,8 @@ CommandLine CommandLine::Parse() {
             else if (cl.error.empty()) cl.error = "--set expects key=value";
         }
         else if (a == L"--data-dir") { if (const wchar_t* v = next(i)) cl.dataDir = v; }
+        else if (a == L"--after-device-loss") cl.afterDeviceLoss = true;
+        else if (a == L"--lose-device") cl.loseDevice = ParseSeconds(next(i));
         else if (!a.empty() && a[0] != L'-' && cl.open.empty() && FileExists(a)) cl.open = a;   // "Open with"
         else if (cl.error.empty()) cl.error = "unknown option " + WideToUtf8(a);
     }
@@ -261,6 +264,7 @@ int App::Run(HINSTANCE hInstance, int nCmdShow) {
         Frame();
     }
     Shutdown();
+    if (m_relaunchAfterLoss) RelaunchAfterDeviceLoss();
     return m_exitCode;
 }
 
@@ -296,6 +300,7 @@ bool App::Init(HINSTANCE hInstance, int nCmdShow) {
     Log::Info("Executable folder: %s", WideToUtf8(m_exeDir).c_str());
     Log::Info("Command line: %s", WideToUtf8(GetCommandLineW()).c_str());
     if (!m_cli.error.empty()) Log::Warn("Command line: %s", m_cli.error.c_str());
+    if (m_cli.afterDeviceLoss) Log::Info("Started again after the graphics device was lost (the previous log is log-device-loss.txt)");
 
 #if APP_EDITION_AMD
     // DLSS-NR-on-AMD read its settings file when it loaded, before this code ran. If the file still carries the
@@ -424,6 +429,7 @@ bool App::Init(HINSTANCE hInstance, int nCmdShow) {
         }
     }
     StartWorker();
+    if (m_cli.afterDeviceLoss && !m_headless) PostNotice(TR(DeviceRestarted), true);
     Log::Info("Startup complete");
 
     m_lastFrameTime = NowSeconds();
@@ -1530,13 +1536,17 @@ void App::WorkerMain() {
                 const double stages = g(GpuTimer::Convert) + g(GpuTimer::Guidance) + g(GpuTimer::OpticalFlow) + g(GpuTimer::Dlaa) +
                                       g(GpuTimer::Neural) + g(GpuTimer::Composite);
                 const double other = std::max(0.0, g(GpuTimer::Frame) - stages);
+                uint64_t vramUsed = 0, vramBudget = 0;
+                m_device.VideoMemory(vramUsed, vramBudget);
                 Log::Info("Perf: %s %.1f fps (sender %.1f, ui %.0f fps / %.2f ms gpu), cpu %.2f ms/frame (receive %.2f, wait %.2f, record %.2f, submit %.2f, update %.2f), "
-                          "gpu %.2f ms (convert %.2f, guidance %.2f, flow %.2f, dlaa %.2f, neural %.2f, composite %.2f, other %.2f), depth net %.1f ms x %u, frames %u",
+                          "gpu %.2f ms (convert %.2f, guidance %.2f, flow %.2f, dlaa %.2f, neural %.2f, composite %.2f, other %.2f), depth net %.1f ms x %u, frames %u, "
+                          "vram %llu / %llu MB",
                           videoRun.active ? "video" : imageMode ? "image passes" : previewPlaying ? "video playback" : videoMode ? "video preview" : "processing",
                           perf.frames / (now - perf.logTime), m_spout.SenderFps(),
                           m_uiFpsShared.load(), m_uiGpuMsShared.load(), cpu, perf.receive / n, perf.wait / n, perf.record / n, perf.submit / n, perf.update / n,
                           g(GpuTimer::Frame), g(GpuTimer::Convert), g(GpuTimer::Guidance), g(GpuTimer::OpticalFlow), g(GpuTimer::Dlaa),
-                          g(GpuTimer::Neural), g(GpuTimer::Composite), other, perf.depthRuns ? perf.depthMs / perf.depthRuns : 0.0, perf.depthRuns, perf.frames);
+                          g(GpuTimer::Neural), g(GpuTimer::Composite), other, perf.depthRuns ? perf.depthMs / perf.depthRuns : 0.0, perf.depthRuns, perf.frames,
+                          (unsigned long long)(vramUsed >> 20), (unsigned long long)(vramBudget >> 20));
             }
             perf.Reset(now);
         }
@@ -1636,11 +1646,28 @@ void App::Frame() {
         }
     }
 
+    if (m_cli.loseDevice >= 0.0 && !m_device.DeviceRemoved() && NowSeconds() - m_startTime >= m_cli.loseDevice) {
+        m_cli.loseDevice = -1.0;
+        m_device.NoteDeviceRemoved("--lose-device");
+    }
     if (m_device.DeviceRemoved()) {
         if (!m_deviceLostReported) {
             m_deviceLostReported = true;
-            FatalMessage(Utf8ToWide(TR(DeviceRemoved)));
+            m_deviceLostTime = NowSeconds();
             m_exitCode = 2;
+            // A driver reset under load (a live stream with VRChat on the same card, typically): an interactive
+            // session starts again by itself once this instance has closed and the driver is back. A scripted run
+            // exits, and so does a session that loses the device again soon after such a restart.
+            const bool scripted = m_headless || m_cli.process || m_cli.exitAfter >= 0.0;
+            const bool soonAgain = m_cli.afterDeviceLoss && m_deviceLostTime - m_startTime < kDeviceLossRestartGuard;
+            if (!scripted && !soonAgain) {
+                m_relaunchAfterLoss = true;
+                Log::Error("The graphics device was lost %.0f s after the start; the program starts again once this instance has closed",
+                           m_deviceLostTime - m_startTime);
+            } else {
+                if (soonAgain) Log::Error("The graphics device was lost again %.0f s after the automatic restart", m_deviceLostTime - m_startTime);
+                FatalMessage(Utf8ToWide(TR(DeviceRemoved)));
+            }
             PostQuitMessage(2);
         }
         m_inFrame = false;
@@ -2820,6 +2847,39 @@ void App::RelaunchSelf() {
     Log::Info("Restarting %s", WideToUtf8(exe).c_str());
     ShellExecuteW(nullptr, L"open", exe, nullptr, m_exeDir.c_str(), SW_SHOWNORMAL);
     if (m_hwnd) PostMessageW(m_hwnd, WM_CLOSE, 0, 0);
+}
+
+// After a loss of the graphics device (a driver reset): the log of the lost session is kept as log-device-loss.txt,
+// then this executable starts again with the same arguments and --after-device-loss, once the driver has had a few
+// seconds to come back. Called after Shutdown, so the log is closed and nothing here writes to it.
+void App::RelaunchAfterDeviceLoss() {
+    static constexpr double kDriverResetWait = 3.0;   // seconds after the loss before the new instance starts
+    CopyFileW(JoinPath(m_appDataDir, L"log.txt").c_str(), JoinPath(m_appDataDir, L"log-device-loss.txt").c_str(), FALSE);
+    while (NowSeconds() - m_deviceLostTime < kDriverResetWait) Sleep(100);
+    wchar_t exe[MAX_PATH * 2] = {};
+    GetModuleFileNameW(nullptr, exe, (DWORD)(sizeof(exe) / sizeof(exe[0])));
+    // The arguments of this instance, without the program name.
+    std::wstring args = GetCommandLineW();
+    size_t end = 0;
+    if (!args.empty() && args[0] == L'"') {
+        end = args.find(L'"', 1);
+        end = end == std::wstring::npos ? args.size() : end + 1;
+    } else {
+        end = std::min(args.find(L' '), args.size());
+    }
+    args.erase(0, end);
+    while (!args.empty() && args[0] == L' ') args.erase(0, 1);
+    if (args.find(L"--after-device-loss") == std::wstring::npos) args += args.empty() ? L"--after-device-loss" : L" --after-device-loss";
+    std::wstring cmdLine = L"\"" + std::wstring(exe) + L"\" " + args;
+    std::vector<wchar_t> cmd(cmdLine.begin(), cmdLine.end());
+    cmd.push_back(L'\0');
+    STARTUPINFOW si{};
+    si.cb = sizeof(si);
+    PROCESS_INFORMATION pi{};
+    if (CreateProcessW(exe, cmd.data(), nullptr, nullptr, FALSE, 0, nullptr, m_exeDir.c_str(), &si, &pi)) {
+        CloseHandle(pi.hThread);
+        CloseHandle(pi.hProcess);
+    }
 }
 
 int App::RunAgainAndWait(const std::string& note) {

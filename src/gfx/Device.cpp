@@ -361,6 +361,21 @@ void Device::UavBarrier(ID3D12GraphicsCommandList* cmd, ID3D12Resource* res) {
 void Device::NoteDeviceRemoved(const char* who) {
     if (m_deviceRemoved.exchange(true)) return;
     Log::Hr(LogLevel::Error, StrPrintf("Device removed (%s)", who).c_str(), m_device ? m_device->GetDeviceRemovedReason() : 0);
+    uint64_t used = 0, budget = 0;
+    if (VideoMemory(used, budget))
+        Log::Error("Video memory at the loss: %llu MB in use by this process, budget %llu MB", (unsigned long long)(used >> 20), (unsigned long long)(budget >> 20));
+}
+
+bool Device::VideoMemory(uint64_t& usedBytes, uint64_t& budgetBytes) const {
+    usedBytes = budgetBytes = 0;
+    if (!m_adapter) return false;
+    ComPtr<IDXGIAdapter3> adapter3;
+    if (FAILED(m_adapter->QueryInterface(IID_PPV_ARGS(&adapter3))) || !adapter3) return false;
+    DXGI_QUERY_VIDEO_MEMORY_INFO info{};
+    if (FAILED(adapter3->QueryVideoMemoryInfo(0, DXGI_MEMORY_SEGMENT_GROUP_LOCAL, &info))) return false;
+    usedBytes = info.CurrentUsage;
+    budgetBytes = info.Budget;
+    return true;
 }
 
 void Device::SelectAdapter(IDXGIFactory6* factory, bool /*debug*/) {

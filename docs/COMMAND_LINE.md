@@ -28,8 +28,10 @@ A bare `file` argument (what Windows passes for *Open with*) opens that picture 
 | `--edition <geforce\|amd>` | Fetch that edition of this program from the release page (this version or newer, pre-releases included) and swap to it the way an update does. The GeForce edition on a Radeon card offers the same as a button (**Get the Radeon edition…**), the Radeon edition on a GeForce card the reverse. Nothing happens when this is that edition already. |
 
 Exit codes: `0` when everything succeeded, `1` when a file failed to process (or the process ended with an unhandled
-C++ exception), `2` after a crash (`crash.txt` is written). A run without `--process`, `--headless` or `--exit-after`
-stays open like a normal session.
+C++ exception), `2` after a crash (`crash.txt` is written) or after the graphics device was lost. A run without
+`--process`, `--headless` or `--exit-after` stays open like a normal session; when such a session loses the graphics
+device (a driver reset) it starts itself again with `--after-device-loss` added to its arguments and keeps the log of
+the lost session as `log-device-loss.txt`, while a scripted run exits with code 2.
 
 ## Examples
 
