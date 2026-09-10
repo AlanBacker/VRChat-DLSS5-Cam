@@ -54,6 +54,9 @@ struct PipelineStatus {
     int         srQuality = 0;                  // NVSDK_NGX_PerfQuality_Value of the super resolution feature
     std::string srQualityName;                  // its name ("Quality", "Balanced", ...)
     UINT        nrPassWidth = 0, nrPassHeight = 0;   // neural pass size (equals the input unless reduced)
+    UINT        workWidth = 0, workHeight = 0;   // ceiling of the DLSS and neural stages: the output within 8192 a side
+    bool        nrPassCapped = false;           // the pass runs below what the neural pass resolution asks (runtime limits)
+    bool        dlaaTooLarge = false;           // DLAA asked for an output above 8192 a side: off for this size
     bool        dlaaActive = false;
     bool        dlaaFailed = false;
     std::string dlaaError;
@@ -96,6 +99,12 @@ struct DisplayView {
 class Pipeline {
 public:
     static constexpr UINT kDisplayBuffers = 4;
+    // Size limits of the NVIDIA features. DLSS refuses larger outputs ("must be less than or equal to 8192 x 8192");
+    // the DLSS 5 runtime (310.8 on an RTX 5090) creates its feature at 7680x5760 (44.2 megapixels) and answers
+    // PlatformError at 6912x6912 (47.8): the pass keeps to a pixel budget, lowered further when a size is refused.
+    static constexpr UINT   kDlssMaxSide = 8192;
+    static constexpr UINT64 kNrMaxPixels = 44500000;
+    static constexpr UINT64 kNrRetryMinPixels = 2000000;   // below this a refusal is not about the size
 
     // Main thread, before the processing thread starts / after it stopped.
     bool Init(Device& device, const std::wstring& exeDir, const std::wstring& appDataDir, std::wstring& error);
@@ -162,13 +171,14 @@ private:
         UINT srcW = 0, srcH = 0; DXGI_FORMAT srcFmt = DXGI_FORMAT_UNKNOWN;   // the source as the passes see it (turned, cropped)
         UINT rawW = 0, rawH = 0, xformBits = 0, cropX0 = 0, cropY0 = 0;      // the texture behind it and the orientation
         UINT inW = 0, inH = 0, outW = 0, outH = 0;
+        UINT workW = 0, workH = 0;                                           // DLSS and neural stages: the output within kDlssMaxSide
         int  upscaleMethod = 0;                                              // Settings::upscaleMode
         bool sr = false; int srQuality = 0;                                  // DLSS super resolution inW x inH -> outW x outH
         bool nvof = false; UINT nvofGrid = 2, nvofPerf = 10; bool nvofBidir = true;
         bool depthEst = false; UINT depthLongSide = 336; std::wstring depthModel;
         bool operator==(const Config& o) const {
             return srcW == o.srcW && srcH == o.srcH && srcFmt == o.srcFmt && inW == o.inW && inH == o.inH &&
-                   upscaleMethod == o.upscaleMethod && sr == o.sr && srQuality == o.srQuality &&
+                   workW == o.workW && workH == o.workH && upscaleMethod == o.upscaleMethod && sr == o.sr && srQuality == o.srQuality &&
                    rawW == o.rawW && rawH == o.rawH && xformBits == o.xformBits && cropX0 == o.cropX0 && cropY0 == o.cropY0 &&
                    outW == o.outW && outH == o.outH && nvof == o.nvof && nvofGrid == o.nvofGrid && nvofPerf == o.nvofPerf &&
                    nvofBidir == o.nvofBidir && depthEst == o.depthEst && depthLongSide == o.depthLongSide && depthModel == o.depthModel;
@@ -231,6 +241,10 @@ private:
     Config m_cfg;
     bool   m_built = false;
     UINT   m_srcW = 0, m_srcH = 0, m_inW = 0, m_inH = 0, m_outW = 0, m_outH = 0;
+    UINT   m_workW = 0, m_workH = 0;   // DLSS and neural stages: the output within kDlssMaxSide a side
+    UINT64 m_nrPassBudget = kNrMaxPixels;   // pixels the neural pass may have; a refused size lowers it (RunNeural)
+    int    m_nrBudgetSetting = 0;           // Settings::nrPassBudgetMp last applied
+    bool   m_nrPassCapped = false;          // the pass runs below what the settings ask
     UINT   m_gridW[3] = {}, m_gridH[3] = {};
     UINT   m_lumaW[3] = {}, m_lumaH[3] = {};
 

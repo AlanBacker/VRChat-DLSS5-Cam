@@ -1065,6 +1065,8 @@ void MainUI::BlockSource(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
                     ImGui::PopStyleColor();
                 }
             }
+            if (st->workWidth && (st->workWidth != st->outWidth || st->workHeight != st->outHeight))
+                Hint(StrPrintf(TR(UpscaleStatusCapped), st->workWidth, st->workHeight, st->outWidth, st->outHeight).c_str());
         } else {
             m_upscaleWarned = false;   // the next upscale gets the notice again
         }
@@ -1131,7 +1133,7 @@ void MainUI::BlockNeural(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         if (ComboIds(TR(Route), &idx, routes, fsrEntry ? 4 : 3, TR(TipRoute))) { s.nrRoute = idx - 1; ev.nrChanged = true; ev.settingsChanged = true; }
     }
     ImGui::Spacing();
-    EffectControls(s, ev, s.showAdvanced, s.nrEnabled);
+    EffectControls(s, ev, s.showAdvanced, s.nrEnabled, st);
     if (st && s.showAdvanced) {
         Readout(m_fonts, TR(GpuTime), FormatMsFixed(m_shown.gpuMs[(UINT)GpuTimer::Neural]));
         Readout(m_fonts, TR(Frames), StrPrintf("%llu", m_shown.processedFrames));
@@ -1143,7 +1145,7 @@ void MainUI::BlockNeural(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
 }
 
 // The effect controls of the DLSS 5 pass: shared by the sidebar and by the window of a library item's own values.
-void MainUI::EffectControls(Settings& s, UiEvents& ev, bool advanced, bool enabled) {
+void MainUI::EffectControls(Settings& s, UiEvents& ev, bool advanced, bool enabled, const PipelineStatus* st) {
     ImGui::BeginDisabled(!enabled);
     {
         DrawPresetRow(s, ev);
@@ -1197,6 +1199,8 @@ void MainUI::EffectControls(Settings& s, UiEvents& ev, bool advanced, bool enabl
                 else if (sel <= 9) { s.nrScaleMode = 0; s.nrInputScale = kNrPercents[sel - 7]; }
                 ch = true;
             }
+            if (st && s.nrEnabled && st->nrPassCapped && st->nrPassWidth)
+                Hint(StrPrintf(TR(NrPassCapped), st->nrPassWidth, st->nrPassHeight).c_str());
         }
         ImGui::Spacing();
         ImGui::TextUnformatted(TR(OutputBlend));
@@ -1681,7 +1685,7 @@ void MainUI::BlockDlaa(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         else if (!available) Pill(TR(Unsupported), WithAlpha(p.muted, 0.2f), p.muted);
         else Pill(TR(Inactive), WithAlpha(p.muted, 0.2f), p.muted);
     }
-    Hint(inSr ? TR(DlaaInSr) : TR(DlaaHint));
+    Hint(inSr ? TR(DlaaInSr) : (st && st->dlaaTooLarge) ? TR(DlaaTooLarge) : TR(DlaaHint));
     if (st && st->dlaaFailed && !st->dlaaError.empty()) {
         ImGui::PushStyleColor(ImGuiCol_Text, p.bad);
         ImGui::TextWrapped("%s", st->dlaaError.c_str());
@@ -2679,7 +2683,7 @@ void MainUI::DrawItemParams(Settings& s, const UiFrameInfo& info, UiEvents& ev, 
         if (lead->useOwn && lead->own) {
             ImGui::Spacing();
             UiEvents sub;
-            EffectControls(*lead->own, sub, s.showAdvanced, s.nrEnabled);
+            EffectControls(*lead->own, sub, s.showAdvanced, s.nrEnabled, nullptr);
             if (sub.nrChanged || sub.settingsChanged) {
                 changed = true;
                 for (LibraryItem* it : items) {

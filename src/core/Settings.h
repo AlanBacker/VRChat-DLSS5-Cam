@@ -73,6 +73,7 @@ struct Settings {
     int         nrInputScale = 100;     // 25..100 %: neural pass resolution as a share of the input (percentage mode)
     int         nrScaleMode = 0;        // 0 = percentage (nrInputScale), 1 = maximum resolution (nrMaxLongEdge cap)
     int         nrMaxLongEdge = 2160;   // resolution mode: cap the neural pass long edge; the pass never exceeds the picture
+    int         nrPassBudgetMp = 0;     // settings file only: starting pixel budget of the neural pass in megapixels (0 = built-in limit)
 
     // Frame guidance (motion vectors / depth)
     int   motionMode = MotionNvOpticalFlow;   // falls back to block matching when the hardware engine is unavailable

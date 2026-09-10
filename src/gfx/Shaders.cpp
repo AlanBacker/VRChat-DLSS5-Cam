@@ -601,7 +601,9 @@ void main(uint3 id : SV_DispatchThreadID) {
 // Composite: final image (for capture) and display image (compare modes, checkerboard, motion view).
 // Flags: 1 = keep alpha, 2 = checkerboard, 4 = bypass, 32 = original/motion are at a different resolution,
 //        64 = output blend (ParamC = tone transfer, ParamD = colour strength, ParamE = 1 / input exposure),
-//        128 = strengths above 1: amplify the difference between the result and the original (ParamF = gain).
+//        128 = strengths above 1: amplify the difference between the result and the original (ParamF = gain),
+//        256 = the processed picture is at Extra0.xy, below the output size (upsampled here), 1024 = the neural
+//        input is at Extra0.zw, 2048 = the neural base is at Extra1.zw.
 // IntA = compare mode (0 output, 1 original, 2 wipe, 3 motion, 4 depth). ParamA = wipe position, ParamB = motion scale.
 // 512 = the display buffer is two pictures wide: the original goes to its left half and the output to its right
 //       half, and the interface draws the wipe between them itself (at its own frame rate).
@@ -685,12 +687,14 @@ void main(uint3 id : SV_DispatchThreadID) {
     float2 uv = (float2(id.xy) + 0.5) / float2(DstWidth, DstHeight);
     bool scaled = (Flags & 32) != 0;
     float4 orig = scaled ? Original.SampleLevel(LinearClamp, uv, 0) : Original.Load(int3(id.xy, 0));
-    bool passScaled = (Flags & 256) != 0;   // neural textures at the pass resolution (Extra0.xy), upsampled here
-    float4 proc = passScaled ? CatmullRom(Processed, uv, Extra0.xy) : Processed.Load(int3(id.xy, 0));
+    // Textures below the output size are upsampled here (Catmull-Rom): the processed picture at Extra0.xy (256),
+    // the neural input at Extra0.zw (1024) and the neural base at Extra1.zw (2048).
+    float4 proc = (Flags & 256) ? CatmullRom(Processed, uv, Extra0.xy) : Processed.Load(int3(id.xy, 0));
     float3 outRgb = (Flags & 4) ? orig.rgb : proc.rgb;
     if (Flags & 64) {
-        float3 base = scaled ? NeuralBase.SampleLevel(LinearClamp, uv, 0).rgb : NeuralBase.Load(int3(id.xy, 0)).rgb;
-        float3 seen = passScaled ? CatmullRom(NeuralInput, uv, Extra0.xy).rgb
+        float3 base = (Flags & 2048) ? CatmullRom(NeuralBase, uv, Extra1.zw).rgb
+                : scaled ? NeuralBase.SampleLevel(LinearClamp, uv, 0).rgb : NeuralBase.Load(int3(id.xy, 0)).rgb;
+        float3 seen = (Flags & 1024) ? CatmullRom(NeuralInput, uv, Extra0.zw).rgb
                 : scaled ? NeuralInput.SampleLevel(LinearClamp, uv, 0).rgb : NeuralInput.Load(int3(id.xy, 0)).rgb;
         outRgb = Blend(base, seen, proc.rgb);
     }

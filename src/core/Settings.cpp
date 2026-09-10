@@ -110,6 +110,7 @@ bool Settings::ApplyText(const std::string& data) {
     r.Get("nrInputScale", nrInputScale);
     r.Get("nrScaleMode", nrScaleMode);
     r.Get("nrMaxLongEdge", nrMaxLongEdge);
+    r.Get("nrPassBudgetMp", nrPassBudgetMp);
     r.Get("motionMode", motionMode);
     r.Get("depthMode", depthMode);
     r.Get("searchRadius", searchRadius);
@@ -369,6 +370,7 @@ bool Settings::Save(const std::wstring& path) const {
     w.Put("nrInputScale", nrInputScale);
     w.Put("nrScaleMode", nrScaleMode);
     w.Put("nrMaxLongEdge", nrMaxLongEdge);
+    w.Put("nrPassBudgetMp", nrPassBudgetMp);
     w.Put("settingsVersion", settingsVersion);
     w.Put("motionMode", motionMode);
     w.Put("depthMode", depthMode);
@@ -455,6 +457,7 @@ void Settings::Clamp() {
     nrInputScale = std::clamp(nrInputScale, 25, 100);
     nrScaleMode = std::clamp(nrScaleMode, 0, 1);
     nrMaxLongEdge = std::clamp(nrMaxLongEdge, 256, 7680);
+    nrPassBudgetMp = std::clamp(nrPassBudgetMp, 0, 1000);
     processRateLimit = std::clamp(processRateLimit, 0, 240);
     nrGlobalTone = std::clamp(nrGlobalTone, 0.0f, 2.0f);
     nrLocalTone = std::clamp(nrLocalTone, 0.0f, 2.0f);

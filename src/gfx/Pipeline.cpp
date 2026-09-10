@@ -171,6 +171,14 @@ Pipeline::Config Pipeline::ComputeConfig(const SourceFrame& src, const Settings&
         c.outW = Even((UINT)s.customWidth);
         c.outH = s.keepAspect ? Even((UINT)std::lround((double)c.outW * c.srcH / c.srcW)) : Even((UINT)s.customHeight);
     }
+    // DLSS (super resolution and DLAA) takes outputs up to kDlssMaxSide a side and the neural pass has its pixel
+    // budget: a larger output is finished at the work size and resampled to the output by the composite.
+    c.workW = c.outW; c.workH = c.outH;
+    if (c.outW > kDlssMaxSide || c.outH > kDlssMaxSide) {
+        const double f = std::min((double)kDlssMaxSide / c.outW, (double)kDlssMaxSide / c.outH);
+        c.workW = std::min(kDlssMaxSide, Even((UINT)std::lround(c.outW * f)));
+        c.workH = std::min(kDlssMaxSide, Even((UINT)std::lround(c.outH * f)));
+    }
     c.inW = c.outW; c.inH = c.outH;
     c.upscaleMethod = s.upscaleMode;
     if (s.customResolution && (c.outW > c.srcW || c.outH > c.srcH)) ChooseUpscale(c, s);
@@ -197,17 +205,17 @@ const int kSrModes[5] = { NVSDK_NGX_PerfQuality_Value_UltraQuality, NVSDK_NGX_Pe
 // resampling) the conversion pass resamples the source to the output size and everything runs there.
 void Pipeline::ChooseUpscale(Config& c, const Settings& s) const {
     if (s.upscaleMode != 0 || m_dlssFailed || !m_ngx.Initialized() || !m_ngx.DlssAvailable()) return;
-    if (m_srModes.outW != c.outW || m_srModes.outH != c.outH) {
+    if (m_srModes.outW != c.workW || m_srModes.outH != c.workH) {
         m_srModes = SrModes{};
-        m_srModes.outW = c.outW; m_srModes.outH = c.outH;
+        m_srModes.outW = c.workW; m_srModes.outH = c.workH;
         std::string table;
         for (int i = 0; i < 5; ++i) {
-            m_srModes.ok[i] = m_ngx.DlssOptimalSettings(c.outW, c.outH, kSrModes[i], m_srModes.m[i]);
+            m_srModes.ok[i] = m_ngx.DlssOptimalSettings(c.workW, c.workH, kSrModes[i], m_srModes.m[i]);
             const NgxCore::DlssOptimal& m = m_srModes.m[i];
             table += StrPrintf("%s%s %ux%u (%ux%u..%ux%u)", i ? ", " : "", DlssFeature::QualityName(kSrModes[i]),
                                m.optW, m.optH, m.minW, m.minH, m.maxW, m.maxH);
         }
-        Log::Info("DLSS super resolution render sizes for %ux%u: %s", c.outW, c.outH, table.c_str());
+        Log::Info("DLSS super resolution render sizes for %ux%u: %s", c.workW, c.workH, table.c_str());
     }
     int best = -1; double bestDist = 0.0;
     for (int i = 0; i < 5; ++i) {
@@ -291,6 +299,7 @@ bool Pipeline::Rebuild(GpuContext& gpu, const Config& cfg) {
     ReleaseResources(gpu);
     m_cfg = cfg;
     m_srcW = cfg.srcW; m_srcH = cfg.srcH; m_inW = cfg.inW; m_inH = cfg.inH; m_outW = cfg.outW; m_outH = cfg.outH;
+    m_workW = cfg.workW; m_workH = cfg.workH;
     ID3D12Device* dev = gpu.Dev().D3D12();
     bool ok = true;
     ok &= CreateTex(gpu, m_color8, m_inW, m_inH, DXGI_FORMAT_R8G8B8A8_UNORM, true, L"color8");
@@ -307,10 +316,10 @@ bool Pipeline::Rebuild(GpuContext& gpu, const Config& cfg) {
     ok &= CreateTex(gpu, m_mv, m_inW, m_inH, DXGI_FORMAT_R16G16_FLOAT, true, L"motionVectors");
     ok &= CreateTex(gpu, m_conf, m_inW, m_inH, DXGI_FORMAT_R8_UNORM, true, L"confidence");
     ok &= CreateTex(gpu, m_depth, m_inW, m_inH, DXGI_FORMAT_R32_FLOAT, true, L"depth");
-    ok &= CreateTex(gpu, m_dlssOut, m_outW, m_outH, DXGI_FORMAT_R8G8B8A8_UNORM, true, L"dlssOut");
-    ok &= CreateTex(gpu, m_nrOut, m_outW, m_outH, DXGI_FORMAT_R8G8B8A8_UNORM, true, L"nrOut");
-    ok &= CreateTex(gpu, m_nrIn, m_inW, m_inH, DXGI_FORMAT_R8G8B8A8_UNORM, true, L"nrIn");
-    m_nrInW = m_inW; m_nrInH = m_inH; m_nrOutW = m_outW; m_nrOutH = m_outH; m_nrScaled = false;
+    ok &= CreateTex(gpu, m_dlssOut, m_workW, m_workH, DXGI_FORMAT_R8G8B8A8_UNORM, true, L"dlssOut");
+    ok &= CreateTex(gpu, m_nrOut, m_workW, m_workH, DXGI_FORMAT_R8G8B8A8_UNORM, true, L"nrOut");
+    ok &= CreateTex(gpu, m_nrIn, m_workW, m_workH, DXGI_FORMAT_R8G8B8A8_UNORM, true, L"nrIn");
+    m_nrInW = m_workW; m_nrInH = m_workH; m_nrOutW = m_workW; m_nrOutH = m_workH; m_nrScaled = false;
     ok &= CreateTex(gpu, m_final, m_outW, m_outH, DXGI_FORMAT_R8G8B8A8_UNORM, true, L"final");
     ok &= CreateDisplayBuffers(gpu, m_displayWide ? m_outW * 2 : m_outW, m_outH, m_displayWide);
     if (!ok) { ReleaseResources(gpu); return false; }
@@ -399,8 +408,9 @@ bool Pipeline::Rebuild(GpuContext& gpu, const Config& cfg) {
         ? StrPrintf(" (NVOF grid %u%s)", m_nvof.Grid(),
                     m_nvof.Bidirectional() ? (m_nvof.SinglePassBidirectional() ? ", bidirectional" : ", bidirectional two-pass") : "")
         : std::string();
-    const std::string upInfo = cfg.sr ? StrPrintf(" (DLSS super resolution, %s)", DlssFeature::QualityName(cfg.srQuality))
-                             : (m_outW > m_srcW || m_outH > m_srcH) ? std::string(" (resampled up)") : std::string();
+    std::string upInfo = cfg.sr ? StrPrintf(" (DLSS super resolution, %s)", DlssFeature::QualityName(cfg.srQuality))
+                       : (m_outW > m_srcW || m_outH > m_srcH) ? std::string(" (resampled up)") : std::string();
+    if (m_workW != m_outW || m_workH != m_outH) upInfo += StrPrintf(" (DLSS stages at %ux%u)", m_workW, m_workH);
     Log::Info("Pipeline resources: source %ux%u, input %ux%u, output %ux%u%s%s%s", m_srcW, m_srcH, m_inW, m_inH, m_outW, m_outH,
               upInfo.c_str(), nvofInfo.c_str(), m_depthInBuf ? StrPrintf(" (depth network %ux%u)", m_depthInferW, m_depthInferH).c_str() : "");
     return true;
@@ -913,7 +923,7 @@ bool Pipeline::RunDepthApply(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, bo
 bool Pipeline::DlssNeedsCreate(const Settings& s) const {
     const int quality = m_cfg.sr ? m_cfg.srQuality : (int)NVSDK_NGX_PerfQuality_Value_DLAA;
     return !m_dlss.Created() || m_dlss.RenderWidth() != m_inW || m_dlss.RenderHeight() != m_inH ||
-           m_dlss.Width() != m_outW || m_dlss.Height() != m_outH || m_dlss.Quality() != quality ||
+           m_dlss.Width() != m_workW || m_dlss.Height() != m_workH || m_dlss.Quality() != quality ||
            m_dlssCreatedPreset != s.dlaaPreset;
 }
 
@@ -924,7 +934,7 @@ bool Pipeline::RunDlss(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const Se
         if (m_dlss.Created()) { gpu.WaitIdle(); m_dlss.Release(m_ngx); }
         std::string err;
         const int quality = m_cfg.sr ? m_cfg.srQuality : (int)NVSDK_NGX_PerfQuality_Value_DLAA;
-        const bool created = m_dlss.Create(m_ngx, cmd, m_inW, m_inH, m_outW, m_outH, quality, s.dlaaPreset, err);
+        const bool created = m_dlss.Create(m_ngx, cmd, m_inW, m_inH, m_workW, m_workH, quality, s.dlaaPreset, err);
         gpu.BindHeaps(cmd);   // the runtime records with its own heaps
         if (!created) {
             m_dlssFailed = true; m_dlssError = err;
@@ -1056,6 +1066,18 @@ bool Pipeline::RunNeural(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const 
         const bool created = m_nr.Create(m_ngx, cmd, m_nrInW, m_nrInH, m_nrOutW, m_nrOutH, s.nrPreset, useCore, err);
         gpu.BindHeaps(cmd);   // the runtime records with its own heaps: back to ours before the next dispatch
         if (!created) {
+            // A refusal that looks like a size limit (the 310.8 builds answer PlatformError above about 45 megapixels,
+            // a card short of memory OutOfGPUMemory) lowers the pass budget: the next fresh frame creates the feature
+            // at a smaller pass size and the composite upsamples its change onto the picture. Neither an error the
+            // interface shows nor a build failure for the runtime fallback.
+            const UINT64 pixels = (UINT64)m_nrInW * m_nrInH;
+            if (pixels > kNrRetryMinPixels &&
+                (err.find("PlatformError") != std::string::npos || err.find("OutOfGPUMemory") != std::string::npos)) {
+                m_nrPassBudget = pixels * 3 / 4;
+                Log::Warn("DLSSNR: %s at %ux%u; the neural pass is tried again below %.1f megapixels", err.c_str(),
+                          m_nrInW, m_nrInH, (double)m_nrPassBudget / 1e6);
+                return false;
+            }
             m_nrFailed = true; m_nrError = err;
             Log::Error("DLSSNR: %s", err.c_str());
             LogRuntimeGenerationHint(gpu, m_nr.RuntimeVersion(), m_nr.RuntimePath());
@@ -1213,7 +1235,13 @@ void Pipeline::RunComposite(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, con
     if (s.checkerboard) flags |= 2;
     if (bypass) flags |= 4;
     if (m_inW != m_outW || m_inH != m_outH) flags |= 32;
-    const bool nrReduced = m_nrOutW != m_outW || m_nrOutH != m_outH;   // neural textures below the output size
+    // Textures below the output size are upsampled by the shader (Catmull-Rom): the processed picture (a reduced
+    // neural pass, or the DLSS stages at the work size), the neural input and the neural base.
+    if (processed.w != m_outW || processed.h != m_outH) {
+        flags |= 256;
+        d.constants.extra0[0] = (float)processed.w; d.constants.extra0[1] = (float)processed.h;
+    }
+    const bool nrReduced = neuralBase && neuralInput && (neuralInput->w != neuralBase->w || neuralInput->h != neuralBase->h);   // pass below its base
     if (!bypass && neuralBase && neuralInput &&
         (neuralInput != neuralBase || nrReduced || std::fabs(s.nrToneTransfer - 1.0f) > 1e-3f ||
          std::fabs(s.nrColorStrength - 1.0f) > 1e-3f || std::fabs(s.nrShadowGain - 1.0f) > 1e-3f ||
@@ -1229,9 +1257,13 @@ void Pipeline::RunComposite(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, con
                                  ? 1.0f / std::max(s.nrInputExposure, 0.01f) : 1.0f;
         d.constants.extra1[0] = s.nrShadowGain;
         d.constants.extra1[1] = s.nrHighlightGain;
-        if (nrReduced) {
-            flags |= 256;
-            d.constants.extra0[0] = (float)m_nrOutW; d.constants.extra0[1] = (float)m_nrOutH;
+        if (neuralInput->w != m_outW || neuralInput->h != m_outH) {
+            flags |= 1024;
+            d.constants.extra0[2] = (float)neuralInput->w; d.constants.extra0[3] = (float)neuralInput->h;
+        }
+        if (neuralBase->w != m_outW || neuralBase->h != m_outH) {
+            flags |= 2048;
+            d.constants.extra1[2] = (float)neuralBase->w; d.constants.extra1[3] = (float)neuralBase->h;
         }
     }
     // Strengths above 1: the runtime stops at 1, so the extra range amplifies the difference between the neural result
@@ -1374,6 +1406,7 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
     m_status.srcWidth = m_srcW; m_status.srcHeight = m_srcH;
     m_status.inWidth = m_inW; m_status.inHeight = m_inH;
     m_status.outWidth = m_outW; m_status.outHeight = m_outH;
+    m_status.workWidth = m_workW; m_status.workHeight = m_workH;
     m_status.upscaleMode = (m_outW > m_srcW || m_outH > m_srcH) ? (m_cfg.sr ? 1 : 2) : 0;
     m_status.srQuality = m_cfg.sr ? m_cfg.srQuality : 0;
     m_status.srQualityName = m_cfg.sr ? DlssFeature::QualityName(m_cfg.srQuality) : "";
@@ -1426,7 +1459,10 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
         m_captureArmed = false; m_nrBurst = 0; captureNow = true;
     }
     const bool nrWanted = s.nrEnabled && (!captureOnly || m_nrBurst > 0);
-    const bool dlssWanted = s.dlaaEnabled || m_cfg.sr;   // DLAA on request, super resolution whenever the config says so
+    // DLAA on request, for an output within DLSS's limit (the work size is the output itself); super resolution
+    // whenever the config says so.
+    const bool dlaaTooLarge = s.dlaaEnabled && !m_cfg.sr && (m_workW != m_outW || m_workH != m_outH);
+    const bool dlssWanted = (s.dlaaEnabled && !dlaaTooLarge) || m_cfg.sr;
     // Whenever the neural pass does not run (between capture bursts, switched off, failed, runtime not loaded) and
     // DLAA is off, nothing consumes the motion and depth guidance: those passes rest as well, so the picture only
     // goes through the conversion and the composite. The compare views of the motion or the depth keep them running.
@@ -1447,6 +1483,22 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
         nrPassW = std::max(64u, Even(m_outW * (UINT)s.nrInputScale / 100u));
         nrPassH = std::max(64u, Even(m_outH * (UINT)s.nrInputScale / 100u));
     }
+    // Runtime limits: the pass never exceeds the work size (kDlssMaxSide a side) nor the pixel budget (kNrMaxPixels,
+    // lowered when the runtime refuses a size, see RunNeural; nrPassBudgetMp in the settings sets the start value).
+    if (s.nrPassBudgetMp > 0 && m_nrBudgetSetting != s.nrPassBudgetMp) {
+        m_nrBudgetSetting = s.nrPassBudgetMp;
+        m_nrPassBudget = (UINT64)s.nrPassBudgetMp * 1000000ull;
+    }
+    const UINT askedW = nrPassW, askedH = nrPassH;
+    if (nrPassW > m_workW || nrPassH > m_workH) {
+        const double f = std::min((double)m_workW / nrPassW, (double)m_workH / nrPassH);
+        nrPassW = std::max(64u, Even((UINT)(nrPassW * f))); nrPassH = std::max(64u, Even((UINT)(nrPassH * f)));
+    }
+    if ((UINT64)nrPassW * nrPassH > m_nrPassBudget) {
+        const double f = std::sqrt((double)m_nrPassBudget / ((double)nrPassW * nrPassH));
+        nrPassW = std::max(64u, Even((UINT)(nrPassW * f))); nrPassH = std::max(64u, Even((UINT)(nrPassH * f)));
+    }
+    m_nrPassCapped = nrPassW < askedW || nrPassH < askedH;
     const UINT nrInW = nrPassW, nrInH = nrPassH, nrOutW = nrPassW, nrOutH = nrPassH;
     const bool nrScaled = nrInW != m_inW || nrInH != m_inH;
 
@@ -1648,6 +1700,8 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
 
     m_status.nrActive = nrOk;
     m_status.nrPassWidth = m_nrInW; m_status.nrPassHeight = m_nrInH;
+    m_status.nrPassCapped = m_nrPassCapped;
+    m_status.dlaaTooLarge = dlaaTooLarge;
     m_status.nrStandby = captureOnly && !nrOk && !m_nrFailed;
     m_status.nrFailed = m_nrFailed;
     m_status.nrError = m_nrError;

@@ -232,7 +232,7 @@ private:
     void PortActions(const UiFrameInfo& info, UiEvents& ev, bool portLoaded, bool card);   // DLSS-NR-on-AMD: installer state, restart, buttons
     void BlockInternals(Settings& s, const UiFrameInfo& info, UiEvents& ev);
     void BlockAbout(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts);
-    void EffectControls(Settings& s, UiEvents& ev, bool advanced, bool enabled);   // the DLSS 5 effect controls
+    void EffectControls(Settings& s, UiEvents& ev, bool advanced, bool enabled, const PipelineStatus* st);   // the DLSS 5 effect controls
     void DrawItemParams(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts);   // a library item's own values
     void DrawLibraryMenu(Settings& s, const UiFrameInfo& info, UiEvents& ev);      // the context menu of a card
     void DrawPresetRow(Settings& s, UiEvents& ev);                                   // the user's presets of the effect values
