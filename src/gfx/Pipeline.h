@@ -76,6 +76,7 @@ struct PipelineStatus {
     double      depthWarmupMs = 0.0;
     double      depthAgeMs = 0.0;                // time since the last network result was applied
     UINT64      depthInferences = 0;
+    bool        depthPending = false;   // estimated depth wanted, none applied yet, the estimator is starting or ready (a still picture waits)
     std::wstring depthModelPath;                 // effective model path
     bool        depthModelExists = false;
     float       statAvgCost = 0.0f, statMaxCost = 0.0f, statAvgMotion = 0.0f;

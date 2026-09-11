@@ -46,6 +46,8 @@ constexpr int kVideoHeldRetries = 10;   // passes a video frame gets to produce 
 // settles. Opening a picture (or loading the runtime) starts a longer run, a slider change a shorter one.
 constexpr int kImageConvergePasses = 32;
 constexpr int kImageSettingsPasses = 24;
+constexpr int    kImageDepthRearms = 2;          // times a still picture gets passes again once the depth estimator is ready
+constexpr double kImageDepthWaitSeconds = 20.0;  // longest a still picture's save waits for the depth estimator to start
 constexpr double kPerfLogInterval = 15.0;
 constexpr double kDeviceLossRestartGuard = 60.0;   // a device lost again this soon after an automatic restart ends the program
 constexpr UINT WM_COPYGLOBALDATA = 0x0049;
@@ -986,6 +988,8 @@ void App::WorkerMain() {
     std::string processingKey;               // Settings::ProcessingText() of the snapshot the still passes ran with
     int      activeMode = -1;
     int      passesLeft = 0;                 // image mode: passes still to run
+    int      depthRearms = 0;                // image mode: passes given again for the depth estimator (bounded per picture)
+    double   depthWaitStart = 0.0;           // image mode: when a save started waiting for the depth estimator (0: not waiting)
     bool     imageChanged = false;           // image texture recreated since the last processed frame
     bool     imageCapturePending = false;
     Command  imageCapture;
@@ -1263,6 +1267,18 @@ void App::WorkerMain() {
         }
         if (modeChanged) passesLeft = kImageConvergePasses;
 
+        // A still picture wants one depth estimate, captured on a pass. The estimator may become ready only after the
+        // passes ran out (it starts once the neural feature is created, then warms up): the picture gets passes again,
+        // so the estimate is captured (it then re-arms the passes once more, "landed" below). Bounded per picture.
+        if (stillMode && passesLeft == 0 && depthRearms < kImageDepthRearms) {
+            const PipelineStatus& st = m_pipeline.Status();
+            if (st.depthPending && st.depthState == (int)DepthEstimatorState::Ready) {
+                ++depthRearms;
+                Log::Info("Still passes: %d more (the depth estimator is ready, no estimate captured yet)", kImageSettingsPasses);
+                passesLeft = kImageSettingsPasses;
+            }
+        }
+
         // Source.
         SourceFrame src;
         bool fresh = false, changed = modeChanged;
@@ -1273,9 +1289,18 @@ void App::WorkerMain() {
             fresh = m_image.Loaded() && passesLeft > 0;
             if (imageCapturePending && (!m_image.Loaded() || !src.Connected())) imageCapturePending = false;
             if (imageCapturePending && passesLeft == 0 && src.hasFrame) {
-                // Save once the passes have settled: the capture rides on the next processed frame.
-                imageCapturePending = false;
-                m_pipeline.RequestCapture(imageCapture.path, imageCapture.keepAlpha, imageCapture.saveOriginal, m_image.Stem());
+                const PipelineStatus& st = m_pipeline.Status();
+                const bool estimatorStarting = st.depthPending && st.depthState == (int)DepthEstimatorState::Initializing;
+                if (estimatorStarting && (depthWaitStart == 0.0 || now - depthWaitStart < kImageDepthWaitSeconds)) {
+                    // The estimate is still to come: the save waits for the estimator (bounded), the passes above follow.
+                    if (depthWaitStart == 0.0) { depthWaitStart = now; Log::Info("Capture: waiting for the depth estimator"); }
+                } else {
+                    // Save once the passes have settled: the capture rides on the next processed frame.
+                    if (estimatorStarting) Log::Warn("Capture: the depth estimator did not start in time, saving without an estimate");
+                    depthWaitStart = 0.0;
+                    imageCapturePending = false;
+                    m_pipeline.RequestCapture(imageCapture.path, imageCapture.keepAlpha, imageCapture.saveOriginal, m_image.Stem());
+                }
             }
             // A batch item is done once its picture has been written.
             if (batch.active && batch.itemStarted && !batch.itemIsVideo && !imageCapturePending && !m_pipeline.CapturePending() &&
@@ -1389,7 +1414,10 @@ void App::WorkerMain() {
             const double tBegin = NowSeconds();
             ID3D12GraphicsCommandList* cmd = gpu.BeginFrame();
             const double tRecord = NowSeconds();
-            if (imageMode) { m_image.Upload(cmd, gpu); src = m_image.Frame(); imageChanged = false; }
+            if (imageMode) {
+                if (imageChanged) { depthRearms = 0; depthWaitStart = 0.0; }   // a new picture, a new estimate
+                m_image.Upload(cmd, gpu); src = m_image.Frame(); imageChanged = false;
+            }
             else if (videoMode) { m_video.Upload(cmd, gpu); src = m_video.Frame(!videoRun.active && !m_preview.running); videoChanged = false; }
             if (imageMode) src.transform = imageXform;
             else if (videoMode) src.transform = videoXform;
@@ -1416,9 +1444,9 @@ void App::WorkerMain() {
 
             const bool processed = fresh && src.Connected() && src.hasFrame;
             if (processed) {
+                const PipelineStatus& st = m_pipeline.Status();
                 if (stillMode && passesLeft > 0) --passesLeft;
                 ++fpsWindowFrames;
-                const PipelineStatus& st = m_pipeline.Status();
                 ++perf.frames;
                 perf.receive += receiveMs;
                 perf.wait += (tRecord - tBegin) * 1000.0;

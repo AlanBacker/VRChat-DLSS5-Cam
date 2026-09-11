@@ -1518,6 +1518,7 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
             m_status.sceneCut = false;
             m_status.motionModeActive = MotionZero;
             m_status.depthModeActive = DepthZero;
+            m_status.depthPending = false;
             if (NeuralCreated()) m_nrSkipped = true;   // between capture bursts: the history is stale when the pass resumes
             // A pending (re)start of the depth network worker goes ahead here (no feature is created on an idle
             // frame), so the network is warmed up by the time a capture wants it.
@@ -1630,7 +1631,9 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
             // its first estimate is applied do not count (the arming time-out above still bounds the wait).
             const DepthEstimatorState depthState = m_depthEst.State();
             const bool depthPending = depthWanted && !depthApplied &&
-                                      (depthState == DepthEstimatorState::Ready || depthState == DepthEstimatorState::Initializing);
+                                      (depthState == DepthEstimatorState::Ready || depthState == DepthEstimatorState::Initializing ||
+                                       (m_depthRestart && m_depthInBuf));   // the start itself may still wait for a feature
+            m_status.depthPending = depthPending;
             if (captureOnly && m_nrBurst > 0 && nrOk && !depthPending && --m_nrBurst == 0 && m_captureArmed) { m_captureArmed = false; captureNow = true; }
             m_haveHistory = true;
             m_cur = 1 - m_cur;
