@@ -77,6 +77,7 @@ struct UiFrameInfo {
     double                hoverCellTime = -1.0;
     std::wstring          nrRuntimePath;      // effective path
     bool                  nrRuntimeExists = false;
+    bool                  nrSetPathMissing = false;   // a runtime path is set but its file is not there (a bundled build serves)
     const char*           nrRuntimeBuild = nullptr;   // translated name of the loaded build (bundled, or the file next to the executable)
     bool                  nrRuntimeExhausted = false; // every runtime build failed on this adapter
     bool                  fsrDllExists = false;       // amd_fidelityfx_dx12.dll next to the executable (FSR host route)

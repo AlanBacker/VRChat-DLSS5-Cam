@@ -232,6 +232,7 @@ private:
     // the session, the next one takes over and the choice is kept in the settings (CheckRuntimeFallback).
     struct RuntimeCandidate { std::wstring path; const char* build; };   // build: the settings token
     std::vector<RuntimeCandidate> RuntimeCandidates() const;
+    std::wstring UserRuntimePath() const;        // the runtime file the user set, when it is there (else empty)
     std::wstring EffectiveRuntimePath() const;
     const char* RuntimeBuildName(const std::wstring& path) const;   // translated name of a candidate, null for another file
     void CheckRuntimeFallback();           // interface thread, after the status snapshot

@@ -1793,6 +1793,7 @@ void App::Frame() {
     info.hoverCellTime = m_hoverCellTime;
     info.nrRuntimePath = EffectiveRuntimePath();
     info.nrRuntimeExists = FileExists(info.nrRuntimePath);
+    info.nrSetPathMissing = !m_settings.nrDllPath.empty() && UserRuntimePath().empty();
     info.nrRuntimeBuild = RuntimeBuildName(m_status.nrRuntimePath);
     info.nrRuntimeExhausted = m_runtimeExhausted;
     info.fsrDllExists = FileExists(JoinPath(m_exeDir, L"amd_fidelityfx_dx12.dll"));
@@ -2242,6 +2243,8 @@ void App::RequestRuntimeLoad(bool announce) {
     c.type = Command::LoadRuntime;
     c.path = EffectiveRuntimePath();
     c.announce = announce;
+    if (!m_settings.nrDllPath.empty() && UserRuntimePath().empty())
+        Log::Warn("DLSS 5 runtime: the set file %s is not there; %s is used instead", m_settings.nrDllPath.c_str(), WideToUtf8(c.path).c_str());
     m_runtimeRequested = c.path;
     m_runtimeBlackSince = -1.0;
     PostCommand(std::move(c));
@@ -2772,8 +2775,18 @@ std::vector<App::RuntimeCandidate> App::RuntimeCandidates() const {
     return order;
 }
 
+// A file the user set counts as long as it is there. One that went away (an old folder deleted, a drive unplugged)
+// does not leave the neural pass without a runtime: the bundled builds serve until the path is cleared or points at
+// a file again, and the interface says so under the path.
+std::wstring App::UserRuntimePath() const {
+    if (m_settings.nrDllPath.empty()) return {};
+    const std::wstring set = Utf8ToWide(m_settings.nrDllPath);
+    return FileExists(set) ? set : std::wstring();
+}
+
 std::wstring App::EffectiveRuntimePath() const {
-    if (!m_settings.nrDllPath.empty()) return Utf8ToWide(m_settings.nrDllPath);
+    const std::wstring user = UserRuntimePath();
+    if (!user.empty()) return user;
     const std::vector<RuntimeCandidate> candidates = RuntimeCandidates();
     const std::wstring* last = nullptr;   // the last existing one: with every build failed, its error stays on view
     for (const RuntimeCandidate& c : candidates) {
@@ -2949,7 +2962,7 @@ void App::RestartRuntimeChoice() {
 // the user told. A file the user selected is never replaced.
 void App::CheckRuntimeFallback() {
     static constexpr double kBlackSeconds = 3.0;   // continuous black output before a build counts as failed
-    if (m_runtimeExhausted || m_runtimeRequested.empty() || !m_settings.nrDllPath.empty()) return;
+    if (m_runtimeExhausted || m_runtimeRequested.empty() || !UserRuntimePath().empty()) return;
     const PipelineStatus& st = m_status;
     if (st.nrRequestedPath != m_runtimeRequested) return;   // the processing thread has not reached the request
     bool failed = false;

@@ -1530,6 +1530,11 @@ void MainUI::BlockNgxRuntime(Settings& s, const UiFrameInfo& info, UiEvents& ev)
         Tip(TR(Browse));
         ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
         ImGui::TextUnformatted(TR(RuntimePath));
+        if (info.nrSetPathMissing) {
+            ImGui::PushStyleColor(ImGuiCol_Text, p.warn);
+            ImGui::TextWrapped("%s", TR(RuntimePathMissing));
+            ImGui::PopStyleColor();
+        }
         if (ImGui::SmallButton(TR(Reload))) ev.reloadRuntime = true;
     }
 #if APP_EDITION_AMD
