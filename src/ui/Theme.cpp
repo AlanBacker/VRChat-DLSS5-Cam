@@ -1,4 +1,5 @@
 #include "ui/Theme.h"
+#include "core/I18n.h"
 #include "imgui_internal.h"
 #include <cfloat>
 #include <cmath>
@@ -360,6 +361,7 @@ bool BeginDropdown(const char* label, const char* preview, ImGuiComboFlags flags
     const ImGuiID popupId = ImHashStr("##ComboPopup", 0, id);
     const float arrowW = ImGui::GetFrameHeight();
     const ImVec2 labelSize = ImGui::CalcTextSize(label, nullptr, true);
+    LabelSeen(label);
     const float w = ImGui::CalcItemWidth();
     const ImVec2 pos = window->DC.CursorPos;
     const ImRect bb(pos, ImVec2(pos.x + w, pos.y + labelSize.y + style.FramePadding.y * 2.0f));
@@ -967,7 +969,9 @@ void StatusDot(ImU32 color, const char* text) {
     dl->AddCircleFilled(ImVec2(pos.x + r + 1.0f, y), r, Col(color));
     ImGui::Dummy(ImVec2(r * 2.0f + 4.0f, h));
     ImGui::SameLine(0.0f, 4.0f);
+    ImGui::PushTextWrapPos(0.0f);   // a long line (a Japanese runtime note, a mirror error) wraps under itself, never past the edge
     ImGui::TextUnformatted(text);
+    ImGui::PopTextWrapPos();
 }
 
 void Pill(const char* text, ImU32 bg, ImU32 fg) {
@@ -995,6 +999,39 @@ bool ResetButton(bool enabled, float size) {
 }
 }
 
+// The label column. Labels are measured as they are drawn; the widest one so far sets the column, so the first
+// frame after a new label appears (the Advanced sections open, the language changes) still cuts it and the next
+// frame does not.
+static float      s_labelEm = 0.0f;
+static Lang       s_labelLang = Lang::English;
+
+void LabelSeen(const char* label) {
+    if (!label) return;
+    const char* end = ImGui::FindRenderedTextEnd(label);   // a "##id" label has nothing to show
+    if (end == label) return;
+    s_labelEm = std::max(s_labelEm, ImGui::CalcTextSize(label, end).x / ImGui::GetFontSize());
+}
+
+void TrailingLabel(const char* label) {
+    LabelSeen(label);
+    ImGui::TextUnformatted(label);
+}
+
+float LabelColumn(float rowWidth) {
+    if (I18n::Current() != s_labelLang) { s_labelLang = I18n::Current(); s_labelEm = 0.0f; }
+    const float em = ImGui::GetFontSize();
+    return std::min(std::max(7.5f, s_labelEm + 0.9f) * em, rowWidth * 0.5f);   // 0.9 em: the inner spacing and some air
+}
+
+// A row of buttons wraps instead of running past the edge: the next button stays on the line only when it fits
+// in the room right of the last item.
+void SameLineIfFits(const char* buttonLabel) {
+    ImGuiWindow* window = ImGui::GetCurrentWindow();
+    const ImGuiStyle& style = ImGui::GetStyle();
+    const float w = ImGui::CalcTextSize(buttonLabel, ImGui::FindRenderedTextEnd(buttonLabel)).x + style.FramePadding.x * 2.0f;
+    if (window->DC.CursorPosPrevLine.x + style.ItemSpacing.x + w <= window->WorkRect.Max.x) ImGui::SameLine();
+}
+
 bool SliderReset(const char* label, float* v, float minV, float maxV, float def, const char* fmt, const char* tooltip) {
     if (!SearchMatch(label, tooltip)) return false;
     ImGui::PushID(label);
@@ -1006,7 +1043,7 @@ bool SliderReset(const char* label, float* v, float minV, float maxV, float def,
     ImGui::SameLine(0.0f, style.ItemInnerSpacing.x);
     if (ResetButton(*v != def, resetW)) { *v = def; changed = true; }
     ImGui::SameLine(0.0f, style.ItemInnerSpacing.x);
-    ImGui::TextUnformatted(label);
+    TrailingLabel(label);
     ImGui::PopID();
     return changed;
 }
@@ -1022,7 +1059,7 @@ bool SliderIntReset(const char* label, int* v, int minV, int maxV, int def, cons
     ImGui::SameLine(0.0f, style.ItemInnerSpacing.x);
     if (ResetButton(*v != def, resetW)) { *v = def; changed = true; }
     ImGui::SameLine(0.0f, style.ItemInnerSpacing.x);
-    ImGui::TextUnformatted(label);
+    TrailingLabel(label);
     ImGui::PopID();
     return changed;
 }

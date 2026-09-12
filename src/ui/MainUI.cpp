@@ -494,7 +494,7 @@ std::string MainUI::StepLabel(const UndoStep& from, const UndoStep& to) {
     const char* label = nullptr;
     bool isBool = false;
 #define VDC_KEY(k, name, flag) if (firstKey == k) { label = TR(name); isBool = flag; }
-    VDC_KEY("nrEnabled", NrEnable, true) VDC_KEY("nrCaptureOnly", NrCaptureOnly, true) VDC_KEY("nrRoute", Route, false)
+    VDC_KEY("nrEnabled", NrEnable, true) VDC_KEY("nrCaptureOnly", NrCaptureOnly, true)
     VDC_KEY("nrStyle", Style, false) VDC_KEY("nrIntensity", Intensity, false)
     VDC_KEY("nrGlobalTone", GlobalTone, false) VDC_KEY("nrLocalTone", LocalTone, false) VDC_KEY("nrLocalStructure", LocalStructure, false)
     VDC_KEY("nrSkinStructure", SkinStructure, false) VDC_KEY("nrAutoMask", AutoMask, true) VDC_KEY("nrUiCorrection", UiCorrection, true)
@@ -1141,7 +1141,7 @@ void MainUI::DrawSidebar(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
     }
     SearchBegin(m_searchBuf);
     ImGui::BeginDisabled(locked);
-    ImGui::PushItemWidth(-ImGui::GetFontSize() * 7.5f);
+    ImGui::PushItemWidth(-LabelColumn(ImGui::GetContentRegionAvail().x));
     if (SectionHeader(TR(SecSource), "source")) { BlockSource(s, info, ev); SectionEnd(); }
     if (SectionHeader(TR(SecNeural), "neural")) { BlockNeural(s, info, ev); SectionEnd(); }
     if (SectionHeader(TR(SecCapture), "save")) { BlockSave(s, info, ev); SectionEnd(); }
@@ -1306,7 +1306,7 @@ void MainUI::BlockSource(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
             ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
             if (IconButton("##refresh", Icon::Refresh, ImVec2(ImGui::GetFrameHeight(), 0), TR(Refresh))) ev.refreshSenders = true;
             ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
-            ImGui::TextUnformatted(TR(Sender));
+            TrailingLabel(TR(Sender));
         }
         if (info.status && info.sourceConnected) {
             StatusDot(p.good, StrPrintf("%s  %ux%u  %s  %3.0f %s", info.senderName.c_str(), info.status->srcWidth, info.status->srcHeight,
@@ -1323,8 +1323,10 @@ void MainUI::BlockSource(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
     Help(TR(CustomResolutionHint));
     if (s.customResolution) {
         ImGui::Indent(6.0f);
+        LabelSeen(TR(Width));
         if (ImGui::InputInt(TR(Width), &s.customWidth, 2, 64)) { s.Clamp(); ev.settingsChanged = true; }
         ImGui::BeginDisabled(s.keepAspect);
+        LabelSeen(TR(Height));
         if (ImGui::InputInt(TR(Height), &s.customHeight, 2, 64)) { s.Clamp(); ev.settingsChanged = true; }
         ImGui::EndDisabled();
         if (ImGui::Checkbox(TR(KeepAspect), &s.keepAspect)) ev.settingsChanged = true;
@@ -1406,7 +1408,14 @@ void MainUI::BlockNeural(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         const float toggleW = ImGui::GetFrameHeight() * 0.86f * 1.8f + style.ItemInnerSpacing.x + ImGui::CalcTextSize(TR(Advanced)).x;
         ImGui::SameLine();
         const float rightEdge = ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x;
-        ImGui::SameLine(std::max(ImGui::GetCursorPosX(), rightEdge - toggleW));
+        if (rightEdge - toggleW >= ImGui::GetCursorPosX()) {
+            ImGui::SameLine(rightEdge - toggleW);
+        } else {
+            // No room after the state pill (a long label, a narrow sidebar): the switch takes the next line, still
+            // at the right end, rather than running past the edge.
+            ImGui::NewLine();
+            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x - toggleW);
+        }
         if (Toggle(TR(Advanced), &s.showAdvanced)) ev.settingsChanged = true;
         Tip(TR(TipAdvanced));
     }
@@ -1418,20 +1427,10 @@ void MainUI::BlockNeural(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
 
     // Runtime.
     ImGui::Spacing();
-    // The runtime rows differ by route: the NVIDIA runtime file, or the FSR host that DLSS-NR-on-AMD attaches to.
-    const int route = st ? st->nrRoute : EffectiveNrRoute(s.nrRoute, info.adapter && info.adapter->IsAmd());
-    if (route == RouteFsrHost) BlockFsrHost(s, info, ev);
+    // The runtime rows differ by edition: the NVIDIA runtime file the GeForce edition hosts, or the FSR host that
+    // DLSS-NR-on-AMD attaches to in the Radeon edition. The route is the edition's; there is nothing to choose.
+    if (EditionRoute() == RouteFsrHost) BlockFsrHost(s, info, ev);
     else BlockNgxRuntime(s, info, ev);
-    if (s.showAdvanced && !APP_EDITION_AMD) {   // the Radeon edition has only the FSR host route: nothing to choose
-        // The FSR host entry is there only when its runtime is present or the route is already chosen.
-        const bool fsrEntry = info.fsrDllExists || route == RouteFsrHost;
-        // Automatic, Direct, FSR host (the NGX core route was retired in 1.6.0; its value stays reserved).
-        const char* routes[] = { TR(RouteAuto), TR(RouteSnippet), TR(RouteFsr) };
-        static const int values[] = { RouteAuto, RouteSignedSnippet, RouteFsrHost };
-        int idx = 0;
-        for (int i = 0; i < 3; ++i) if (values[i] == s.nrRoute) idx = i;
-        if (ComboIds(TR(Route), &idx, routes, fsrEntry ? 3 : 2, TR(TipRoute))) { s.nrRoute = values[idx]; ev.nrChanged = true; ev.settingsChanged = true; }
-    }
     ImGui::Spacing();
     EffectControls(s, ev, s.showAdvanced, s.nrEnabled, st);
     if (st && s.showAdvanced) {
@@ -1516,7 +1515,7 @@ void MainUI::EffectControls(Settings& s, UiEvents& ev, bool advanced, bool enabl
     if (ch) { ev.nrChanged = true; ev.settingsChanged = true; }
     ImGui::Spacing();
     if (GhostButton(TR(ResetHistory))) ev.resetHistory = true;
-    ImGui::SameLine();
+    SameLineIfFits(TR(ResetDefaults));
     if (GhostButton(TR(ResetDefaults))) {
         s.nrPreset = 0; s.nrStyle = 0; s.nrIntensity = 1.0f; s.nrGlobalTone = 1.0f; s.nrLocalTone = 1.0f;
         s.nrLocalStructure = 1.0f; s.nrSkinStructure = -1.0f; s.nrAutoMask = false; s.nrUiCorrection = false;
@@ -1554,7 +1553,7 @@ void MainUI::BlockSave(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
         if (IconButton("##openfolder", Icon::OpenExternal, ImVec2(btnW, 0), TR(OpenFolder))) ev.openCaptureFolder = true;
         ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
-        ImGui::TextUnformatted(TR(CaptureFolder));
+        TrailingLabel(TR(CaptureFolder));
     }
     if (Toggle(TR(SaveOriginal), &s.saveOriginal)) ev.settingsChanged = true;
     if (s.showAdvanced) {
@@ -1615,7 +1614,7 @@ void MainUI::BlockView(Settings& s, const UiFrameInfo& /*info*/, UiEvents& ev) {
         if (Segmented("##theme", themes, 3, &s.theme, ImGui::CalcItemWidth())) ev.settingsChanged = true;
         Tip(TR(TipTheme));
         ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
-        ImGui::TextUnformatted(TR(Theme));
+        TrailingLabel(TR(Theme));
     }
     {
         const char* items[] = { TR(CompareOutput), TR(CompareOriginal), TR(CompareWipe), TR(CompareMotion), TR(CompareDepth) };
@@ -1645,7 +1644,7 @@ void MainUI::BlockView(Settings& s, const UiFrameInfo& /*info*/, UiEvents& ev) {
             if (IconButton("##resetview", Icon::Reset, ImVec2(resetW, 0), TR(ResetView), ButtonKind::Plain)) ResetView(true);
             ImGui::EndDisabled();
             ImGui::SameLine(0.0f, style.ItemInnerSpacing.x);
-            ImGui::TextUnformatted(TR(Zoom));
+            TrailingLabel(TR(Zoom));
             ImGui::PopID();
         }
     }
@@ -1673,6 +1672,7 @@ void MainUI::BlockGuidance(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         if (ComboIds(TR(MotionSource), &s.motionMode, items, 3, TR(TipMotion))) ev.settingsChanged = true;
     }
     if (s.motionMode == MotionCompute) {
+        LabelSeen(TR(SearchRadius));
         if (ImGui::SliderInt(TR(SearchRadius), &s.searchRadius, 2, 12, "%d px", ImGuiSliderFlags_AlwaysClamp)) ev.settingsChanged = true;
         Tip(TR(TipSearchRadius));
     } else if (s.motionMode == MotionNvOpticalFlow) {
@@ -1695,6 +1695,7 @@ void MainUI::BlockGuidance(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         }
     }
     if (s.motionMode != MotionZero) {
+        LabelSeen(TR(MotionConfidence));
         if (ImGui::SliderFloat(TR(MotionConfidence), &s.motionConfidence, 0.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) ev.settingsChanged = true;
         Tip(TR(TipConfidence));
     }
@@ -1731,6 +1732,7 @@ void MainUI::BlockGuidance(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
                 break;
             }
         }
+        LabelSeen(TR(DepthInterval));
         if (ImGui::SliderInt(TR(DepthInterval), &s.depthInterval, 1, 10, "%d", ImGuiSliderFlags_AlwaysClamp)) ev.settingsChanged = true;
         Tip(TR(TipDepthInterval));
         {
@@ -1752,13 +1754,14 @@ void MainUI::BlockGuidance(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
             if (FlatButton("...##depthmodel", ImVec2(btnW, 0))) ev.browseDepthModel = true;
             Tip(TR(Browse));
             ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
-            ImGui::TextUnformatted(TR(DepthModel));
+            TrailingLabel(TR(DepthModel));
             if (ImGui::SmallButton(StrPrintf("%s##depthreload", TR(Reload)).c_str())) ev.reloadDepth = true;
         }
     }
     if (Toggle(TR(AutoReset), &s.autoReset)) ev.settingsChanged = true;
     Help(TR(TipAutoReset));
     if (s.autoReset) {
+        LabelSeen(TR(CutThreshold));
         if (ImGui::SliderFloat(TR(CutThreshold), &s.cutThreshold, 0.01f, 0.5f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) ev.settingsChanged = true;
         Tip(TR(TipCutThreshold));
     }
@@ -1836,7 +1839,7 @@ void MainUI::BlockNgxRuntime(Settings& s, const UiFrameInfo& info, UiEvents& ev)
         if (FlatButton("...##runtime", ImVec2(btnW, 0))) ev.browseRuntime = true;
         Tip(TR(Browse));
         ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
-        ImGui::TextUnformatted(TR(RuntimePath));
+        TrailingLabel(TR(RuntimePath));
         if (info.nrSetPathMissing) {
             ImGui::PushStyleColor(ImGuiCol_Text, p.warn);
             ImGui::TextWrapped("%s", TR(RuntimePathMissing));
@@ -1844,13 +1847,14 @@ void MainUI::BlockNgxRuntime(Settings& s, const UiFrameInfo& info, UiEvents& ev)
         }
         if (ImGui::SmallButton(TR(Reload))) ev.reloadRuntime = true;
     }
-#if APP_EDITION_AMD
-    // The Radeon edition on a GeForce card: the GeForce edition is the one with the runtime builds.
-    if (info.adapter && info.adapter->IsNvidia()) {
+#if !APP_EDITION_AMD
+    // The GeForce edition on a Radeon card: the Radeon edition is the one that runs the FSR host.
+    if (info.adapter && info.adapter->IsAmd()) {
+        ImGui::Spacing();
         ImGui::PushStyleColor(ImGuiCol_Text, p.muted);
-        ImGui::TextWrapped("%s", TR(EditionHintAmdOnGeforce));
+        ImGui::TextWrapped("%s", TR(EditionHintGeforceOnAmd));
         ImGui::PopStyleColor();
-        if (FlatButton(TR(EditionGetGeforce))) ev.editionSwitch = true;
+        if (FlatButton(TR(EditionGetAmd))) ev.editionSwitch = true;
         Tip(TR(TipEditionSwitch));
     }
 #endif
@@ -1972,7 +1976,7 @@ void MainUI::PortActions(const UiFrameInfo& info, UiEvents& ev, bool portLoaded,
         else ImGui::TextWrapped("%s", TR(AmdPortRestartHint));
         ImGui::PopStyleColor();
         if (AccentButton(TR(RestartNow))) ev.restartApp = true;
-        if (info.portRestartIn >= 0) { ImGui::SameLine(); if (FlatButton(TR(Cancel))) ev.portRestartCancel = true; }
+        if (info.portRestartIn >= 0) { SameLineIfFits(TR(Cancel)); if (FlatButton(TR(Cancel))) ev.portRestartCancel = true; }
         return;
     }
     ImGui::BeginDisabled(busy);
@@ -1987,9 +1991,9 @@ void MainUI::PortActions(const UiFrameInfo& info, UiEvents& ev, bool portLoaded,
         Tip(TR(TipAmdPortRerun));
     }
     ImGui::EndDisabled();
-    ImGui::SameLine();
+    SameLineIfFits(TR(AmdPortLicense));
     if (FlatButton(TR(AmdPortLicense))) ev.portOpenLicense = true;
-    ImGui::SameLine();
+    SameLineIfFits(TR(AmdPortPage));
     if (FlatButton(TR(AmdPortPage))) ev.portOpenPage = true;
 }
 
@@ -2239,8 +2243,7 @@ void MainUI::DrawPicture(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
         if (info.fullscreen) FullscreenButton(info, ev, origin, region);   // a way out that is not a key
         // Nothing open yet: the three steps, with the ways to get a picture in. On the FSR host route without
         // DLSS-NR-on-AMD its installation (or, in the GeForce edition, the Radeon edition) comes first.
-        const int route = info.status ? info.status->nrRoute : EffectiveNrRoute(s.nrRoute, info.adapter && info.adapter->IsAmd());
-        const bool portStep = route == RouteFsrHost && !(info.status && !info.status->nrAmdPort.empty());
+        const bool portStep = EditionRoute() == RouteFsrHost && !(info.status && !info.status->nrAmdPort.empty());
         const float wrap = std::min(region.x * 0.8f, ImGui::GetFontSize() * 34.0f);
         const float blockH = ImGui::GetFontSize() * (portStep ? 21.0f : 13.0f);
         const float x = origin.x + (region.x - wrap) * 0.5f;
@@ -3000,7 +3003,7 @@ void MainUI::DrawItemParams(Settings& s, const UiFrameInfo& info, UiEvents& ev, 
     const std::string title = (n > 1 ? StrPrintf(TR(OwnParamsMany), n) : StrPrintf(TR(OwnParamsTitle), lead->name.c_str())) + "###itemparams";
     if (ImGui::Begin(title.c_str(), &open, ImGuiWindowFlags_NoScrollWithMouse)) {
         SmoothScroll(false, ImGui::GetFontSize() * 3.6f);
-        ImGui::PushItemWidth(-ImGui::GetFontSize() * 7.5f);
+        ImGui::PushItemWidth(-LabelColumn(ImGui::GetContentRegionAvail().x));
         const bool locked = info.batchRunning || info.videoProcessing || info.videoFinishing;
         ImGui::BeginDisabled(locked);
         bool changed = false;
@@ -3246,7 +3249,7 @@ void MainUI::DrawPresetRow(Settings& s, UiEvents& ev) {
         EndPopupFade();
     }
     ImGui::SameLine(0.0f, style.ItemInnerSpacing.x);
-    ImGui::TextUnformatted(TR(Preset));
+    TrailingLabel(TR(Preset));
     ImGui::PopID();
 }
 

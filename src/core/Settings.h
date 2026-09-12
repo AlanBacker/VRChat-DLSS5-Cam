@@ -9,20 +9,19 @@ enum MotionMode  { MotionZero = 0, MotionCompute = 1, MotionNvOpticalFlow = 2 };
 enum DepthMode   { DepthFlat = 0, DepthGradient = 1, DepthZero = 2, DepthEstimated = 3 };
 enum CompareMode { CompareOutput = 0, CompareOriginal = 1, CompareWipe = 2, CompareMotion = 3, CompareDepth = 4 };
 enum FitMode     { FitWindow = 0, FitOneToOne = 1 };
-enum NrRoute     { RouteAuto = -1, RouteSignedSnippet = 0, RouteNgxCore = 1, RouteFsrHost = 2 };
+enum NrRoute     { RouteSignedSnippet = 0, RouteFsrHost = 2 };   // 1 was the NGX core route, retired in 1.6.0
 enum SourceMode  { SourceSpout = 0, SourceImage = 1, SourceVideo = 2 };
 
 // The route the automatic choice takes: NVIDIA's runtime hosted directly on a GeForce card, the FSR host on a
 // Radeon card (where DLSS-NR-on-AMD attaches to the process), the direct route elsewhere so that its message says
 // what is missing.
-// The Radeon edition has only the FSR host route: the direct route hosts the NVIDIA runtime itself, which is never
-// what a Radeon user wants, and a chosen or automatic value cannot lead there.
-inline int EffectiveNrRoute(int route, bool amdCard) {
+// The route is a property of the edition, not a setting: the GeForce edition hosts nvngx_dlssnr.dll itself, the
+// Radeon edition runs the FSR host that DLSS-NR-on-AMD attaches to. There is nothing to choose.
+inline int EditionRoute() {
 #if APP_EDITION_AMD
-    (void)route; (void)amdCard;
     return RouteFsrHost;
 #else
-    return route == RouteAuto ? (amdCard ? RouteFsrHost : RouteSignedSnippet) : route;
+    return RouteSignedSnippet;
 #endif
 }
 
@@ -58,7 +57,6 @@ struct Settings {
     // DLSS 5 neural rendering (DLSSNR)
     bool        nrEnabled = true;
     bool        nrCaptureOnly = false;  // live source: the neural pass idles for the preview and runs for a burst before each capture
-    int         nrRoute = RouteAuto;         // NrRoute; -1 = the choice for the adapter (EffectiveNrRoute)
     std::string nrDllPath;             // UTF-8, empty = the bundled build for the adapter (runtimes\<build>\nvngx_dlssnr.dll)
     std::string nrRuntimeBuild;        // the build that took over after a failure: blackwell, universal, other or exe (the file
                                        // next to the executable); empty = the one for the adapter. Reload starts over.

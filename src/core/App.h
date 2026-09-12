@@ -237,7 +237,7 @@ private:
     const char* RuntimeBuildName(const std::wstring& path) const;   // translated name of a candidate, null for another file
     void CheckRuntimeFallback();           // interface thread, after the status snapshot
     void RestartRuntimeChoice();           // forget the failures and the kept build: the next load starts over
-    int  EffectiveRoute() const;           // the neural route in effect (Settings::nrRoute with the automatic choice resolved)
+    int  EffectiveRoute() const;           // the neural route: a property of the edition (EditionRoute)
     void PollPortSetup();                  // DLSS-NR-on-AMD installer progress (Radeon edition), told once per state
     void RecordPortVersion();              // an installation from before the record: taken as the latest when its installer file is the latest one
     void LogPortState(bool tail);          // its files next to the executable; tail: the last lines of its own log too

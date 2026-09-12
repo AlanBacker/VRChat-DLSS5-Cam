@@ -37,7 +37,7 @@ struct PipelineStatus {
     std::string nrRuntimeVersion;
     std::wstring nrRuntimePath;
     std::wstring nrRequestedPath;              // the file the last LoadNrRuntime was asked for, loaded or not
-    int         nrRoute = RouteSignedSnippet;   // the route in effect (the automatic choice resolved)
+    int         nrRoute = RouteSignedSnippet;   // the edition's route (EditionRoute)
     bool        nrFsrLoaded = false;            // FSR host route: amd_fidelityfx_dx12.dll is loaded
     std::string nrFsrVersion;                   // "FSR 3.1.4"
     std::string nrFsrError;                     // why the FSR runtime did not load
@@ -219,7 +219,7 @@ private:
     bool EnsureNeuralTextures(GpuContext& gpu, UINT inW, UINT inH, UINT outW, UINT outH, bool scaled);
     bool RunNeural(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const Settings& s, Tex& input, bool reset);
     bool RunFsrHost(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const Settings& s, Tex& input, bool reset);
-    int  Route(const Settings& s) const { return EffectiveNrRoute(s.nrRoute, m_isAmd); }
+    int  Route(const Settings&) const { return EditionRoute(); }
     bool NeuralCreated() const { return m_nr.Created() || m_fsr.Created(); }   // the feature or the FSR context
     bool NeuralNeedsCreate(const Settings& s, UINT inW, UINT inH, UINT outW, UINT outH) const;
     bool NeuralRouteReady(const Settings& s) const;

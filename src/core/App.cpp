@@ -2829,7 +2829,7 @@ const char* App::RuntimeBuildName(const std::wstring& path) const {
     return nullptr;
 }
 
-int App::EffectiveRoute() const { return EffectiveNrRoute(m_settings.nrRoute, m_device.Info().IsAmd()); }
+int App::EffectiveRoute() const { return EditionRoute(); }
 
 // The installer runs in its own window; each state change is told once. It leaves its weights file next to the
 // executable when it installed: then the release it came from is recorded and the application restarts by itself

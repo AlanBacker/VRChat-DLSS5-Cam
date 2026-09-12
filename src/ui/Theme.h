@@ -67,6 +67,13 @@ void SectionLabel(const char* text);                                            
 void Help(const char* text);                                                       // "?" marker with tooltip
 void StatusDot(ImU32 color, const char* text);                                     // coloured dot + text
 void Pill(const char* text, ImU32 bg, ImU32 fg);                                   // rounded badge
+// The label column: the room a control leaves for the label to its right. It is as wide as the widest trailing
+// label drawn so far in the current language (a ratchet in font sizes, started over on a language change), never
+// under 7.5 em and never more than half the row, so a long label (Japanese, English) is not cut at the edge.
+void  LabelSeen(const char* label);                                                // every trailing label reports itself
+void  TrailingLabel(const char* label);                                            // draws it and reports it
+float LabelColumn(float rowWidth);                                                 // PushItemWidth(-LabelColumn(avail))
+void  SameLineIfFits(const char* buttonLabel);                                     // SameLine() only when a button of this label has room left on the line
 bool SliderReset(const char* label, float* v, float minV, float maxV, float def, const char* fmt, const char* tooltip);
 bool SliderIntReset(const char* label, int* v, int minV, int maxV, int def, const char* fmt, const char* tooltip);
 bool FlatButton(const char* label, const ImVec2& size = ImVec2(0, 0));             // the ordinary button

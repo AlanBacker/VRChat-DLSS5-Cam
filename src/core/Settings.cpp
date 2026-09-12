@@ -88,7 +88,6 @@ bool Settings::ApplyText(const std::string& data) {
     r.Get("upscaleMode", upscaleMode);
     r.Get("nrEnabled", nrEnabled);
     r.Get("nrCaptureOnly", nrCaptureOnly);
-    r.Get("nrRoute", nrRoute);
     r.Get("nrDllPath", nrDllPath);
     r.Get("nrRuntimeBuild", nrRuntimeBuild);
     r.Get("nrPreset", nrPreset);
@@ -132,14 +131,6 @@ bool Settings::ApplyText(const std::string& data) {
         depthMode = Settings().depthMode;
         autoReset = Settings().autoReset;
     }
-    if (fileVersion < 4 && nrRoute == RouteSignedSnippet) {
-        // 1.4.0 added the automatic route choice (the FSR host on a Radeon card); files that kept the old default
-        // move to it.
-        nrRoute = RouteAuto;
-    }
-    // 1.6.0 retired the NGX core route (the driver's NGX runtime never accepted the DLSSNR feature); files that
-    // chose it go to the automatic choice. The value stays reserved.
-    if (nrRoute == RouteNgxCore) nrRoute = RouteAuto;
     settingsVersion = Settings().settingsVersion;
     r.Get("dlaaEnabled", dlaaEnabled);
     r.Get("dlaaPreset", dlaaPreset);
@@ -204,7 +195,6 @@ void PutParameters(Writer& w, const Settings& s) {
     w.Put("upscaleMode", s.upscaleMode);
     w.Put("nrEnabled", s.nrEnabled);
     w.Put("nrCaptureOnly", s.nrCaptureOnly);
-    w.Put("nrRoute", s.nrRoute);
     w.Put("nrPreset", s.nrPreset);
     w.Put("nrStyle", s.nrStyle);
     w.Put("nrIntensity", s.nrIntensity);
@@ -270,7 +260,6 @@ std::string Settings::ProcessingText(bool strengthsInPass) const {
     w.Put("hdrHighlightCompression", hdrHighlightCompression);
     w.Put("nrEnabled", nrEnabled);
     w.Put("nrCaptureOnly", nrCaptureOnly);
-    w.Put("nrRoute", nrRoute);
     w.Put("nrDllPath", nrDllPath);
     w.Put("nrRuntimeBuild", nrRuntimeBuild);
     if (strengthsInPass) {
@@ -355,7 +344,6 @@ bool Settings::Save(const std::wstring& path) const {
     w.Put("upscaleMode", upscaleMode);
     w.Put("nrEnabled", nrEnabled);
     w.Put("nrCaptureOnly", nrCaptureOnly);
-    w.Put("nrRoute", nrRoute);
     w.Put("nrDllPath", nrDllPath);
     w.Put("nrRuntimeBuild", nrRuntimeBuild);
     w.Put("nrPreset", nrPreset);
@@ -445,8 +433,6 @@ void Settings::Clamp() {
     customWidth = std::clamp(customWidth, 256, 7680);
     customHeight = std::clamp(customHeight, 256, 4320);
     upscaleMode = std::clamp(upscaleMode, 0, 1);
-    nrRoute = std::clamp(nrRoute, -1, 2);
-    if (nrRoute == RouteNgxCore) nrRoute = RouteAuto;   // retired in 1.6.0
     if (nrRuntimeBuild != "blackwell" && nrRuntimeBuild != "universal" && nrRuntimeBuild != "other" && nrRuntimeBuild != "exe") nrRuntimeBuild.clear();
     nrPreset = std::clamp(nrPreset, 0, 3);
     if (sidebarWidth != 0.0f) sidebarWidth = std::clamp(sidebarWidth, 16.0f, 48.0f);
