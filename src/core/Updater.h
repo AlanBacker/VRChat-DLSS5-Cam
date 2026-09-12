@@ -91,6 +91,7 @@ public:
         std::string error;                          // Failed: what went wrong
         double      downloadedMb = 0.0, totalMb = 0.0;
         std::wstring setupPath;                     // the installer file, once downloaded
+        std::string mirrorInUse;                    // the mirror site the look-up or the download went through; empty = GitHub itself
         unsigned long exitCode = 0;                 // Finished
         unsigned    generation = 0;                 // counts state changes, so the interface announces each once
     };
@@ -107,6 +108,9 @@ public:
     static bool TuneIni(const std::wstring& exeDir, std::string& changes);
 
     ~PortSetup();
+    // How GitHub is reached (Updater::Access): the look-up and the download go through the chosen mirror site
+    // too, with GitHub itself as the fallback. pick = the built-in site to try first.
+    void   SetAccess(int mode, const std::string& customSite, const std::string& pick);
     void   Check();                                 // look up the latest release (tag, date, installer)
     void   Install(const std::wstring& exeDir);     // download the installer next to the executable and start it
     Status Get() const;
@@ -118,6 +122,12 @@ private:
     void Join();
     bool RunCheck(std::string& error);
     bool RunInstall(const std::wstring& exeDir, std::string& error);
+    // The release entry the repository keeps (port.json) through one mirror site; false when the site does not
+    // answer or answers with something else.
+    bool FetchManifest(const std::string& site, int timeoutMs, std::string& body, std::string& error);
+    // The site to go through: the user's own, the one that answered last, or the fastest built-in site for
+    // port.json (measured); empty = GitHub directly. `body` receives port.json when a site delivered it on the way.
+    std::string ChooseSite(std::string& body);
     // Runs the setup without a window, feeding it the answers and capturing its console output, up to a
     // timeout (it is killed if the application is closing). Returns false when it could not run at all.
     bool RunSetupHidden(const std::wstring& path, const std::wstring& exeDir, const std::string& answers,
@@ -128,6 +138,9 @@ private:
     std::thread        m_thread;
     std::atomic<bool>  m_cancel{false};
     std::atomic<bool>  m_busy{false};
+    int                m_access = 0;               // Updater::Access
+    std::string        m_custom, m_pick;           // the user's own site; the built-in site to try first
+    std::string        m_site;                     // the site that answered last (this choice), tried first next time
 };
 
 } // namespace vdc

@@ -401,8 +401,10 @@ bool App::Init(HINSTANCE hInstance, int nCmdShow) {
     PushSettings();
     // On the FSR host route the NVIDIA runtime stays unloaded; the pipeline loads the FSR runtime itself.
     if (EffectiveRoute() != RouteFsrHost) RequestRuntimeLoad(false);
+    m_portSetup.SetAccess(m_settings.githubMirror, m_settings.githubMirrorCustom, m_settings.githubMirrorPick);
 #if APP_EDITION_AMD
-    if (!m_headless && !m_cli.process && m_settings.updateCheck) m_portSetup.Check();
+    // The look-up of a first start waits for the setup guide too: the user chooses how GitHub is reached there.
+    if (!m_headless && !m_cli.process && m_settings.updateCheck && m_settings.setupGuideSeen) m_portSetup.Check();
 #endif
     if (EffectiveRoute() == RouteFsrHost) LogPortState(false);
     // --edition: the other edition of this program is fetched and swapped in like an update, without a click.
@@ -1847,7 +1849,7 @@ void App::Frame() {
         info.mirrors.clear();
         for (const Updater::MirrorResult& m : us.mirrors) info.mirrors.push_back({ m.url, m.error, m.seconds, m.ok });
         // The site that answered fastest is remembered, and tried first next time.
-        if (m_settings.githubMirror == 1 && !us.mirrorInUse.empty() && us.mirrorInUse != m_settings.githubMirrorPick) { m_settings.githubMirrorPick = us.mirrorInUse; MarkSettingsDirty(); }
+        if (m_settings.githubMirror == 1 && !us.mirrorInUse.empty() && us.mirrorInUse != m_settings.githubMirrorPick) { m_settings.githubMirrorPick = us.mirrorInUse; MarkSettingsDirty(); m_portSetup.SetAccess(m_settings.githubMirror, m_settings.githubMirrorCustom, m_settings.githubMirrorPick); }
         if (us.generation != m_updateGenSeen) {
             m_updateGenSeen = us.generation;
             switch (us.state) {
@@ -2110,7 +2112,11 @@ void App::HandleEvents(ui::UiEvents& ev) {
     if (ev.guideClosed && !m_headless && !m_cli.process && m_settings.updateCheck && !m_startCheckDone) {
         m_startCheckDone = true;
         m_updater.SetAccess(m_settings.githubMirror, m_settings.githubMirrorCustom, m_settings.githubMirrorPick);
+        m_portSetup.SetAccess(m_settings.githubMirror, m_settings.githubMirrorCustom, m_settings.githubMirrorPick);
         m_updater.Check(APP_VERSION_STRING, m_settings.updateChannel == 1, false);
+#if APP_EDITION_AMD
+        m_portSetup.Check();
+#endif
     }
     if (ev.openDocs) OpenPath(DocsUrl());
     // Presets.
@@ -2178,6 +2184,7 @@ void App::HandleEvents(ui::UiEvents& ev) {
         m_settings.Clamp();
         MarkSettingsDirty();
         m_updater.SetAccess(m_settings.githubMirror, m_settings.githubMirrorCustom, m_settings.githubMirrorPick);
+        m_portSetup.SetAccess(m_settings.githubMirror, m_settings.githubMirrorCustom, m_settings.githubMirrorPick);
     }
     if (ev.hotkeyChanged && !m_headless) RegisterHotkey();
     if (ev.nrChanged) {

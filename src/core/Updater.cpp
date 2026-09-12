@@ -35,6 +35,9 @@ constexpr int kProbeTimeoutMs = 6000;
 constexpr const char*    kAssetName   = APP_EDITION_AMD ? "VRChatDLSS5Cam-win64-amd.zip" : "VRChatDLSS5Cam-win64.zip";
 constexpr const char*    kOtherAssetName = APP_EDITION_AMD ? "VRChatDLSS5Cam-win64.zip" : "VRChatDLSS5Cam-win64-amd.zip";   // an edition switch
 constexpr const wchar_t* kPortReleaseUrl = L"https://api.github.com/repos/danielblnc/DLSS-NR-on-AMD/releases/latest";
+// The same entry as the repository keeps it (port.json, rewritten by the manifest workflow daily and at every
+// release of this program): what the mirror sites can relay, since they do not relay the API.
+constexpr const char*    kPortManifestUrl = "https://raw.githubusercontent.com/AlanBacker/VRChat-DLSS5-Cam/main/port.json";
 constexpr const char*    kPortSetupName  = "dlssnr_on_amd_setup.exe";
 constexpr const wchar_t* kExeName     = L"VRChatDLSS5Cam.exe";
 
@@ -348,6 +351,28 @@ void RemoveTree(const std::wstring& dir) {
 }
 
 std::wstring Quote(const std::wstring& s) { return L"\"" + s + L"\""; }
+
+// The port's release entry as the API and port.json both shape it: the tag, the date, the page and the installer.
+bool ParsePortRelease(const std::string& body, PortSetup::Status& st, std::string& error) {
+    Json root;
+    if (!JsonReader(body).Parse(root) || root.type != Json::Object) { error = "unexpected answer"; return false; }
+    st.tag = root.Str("tag_name");
+    st.date = root.Str("published_at").substr(0, 10);
+    st.pageUrl = root.Str("html_url");
+    st.assetUrl.clear();
+    st.assetSize = 0;
+    if (const Json* assets = root.Find("assets")) {
+        if (assets->type == Json::Array) {
+            for (const Json& a : assets->arr) {
+                if (a.Str("name") != kPortSetupName) continue;
+                st.assetUrl = a.Str("browser_download_url");
+                st.assetSize = (unsigned long long)a.Num("size");
+            }
+        }
+    }
+    if (st.tag.empty() || st.assetUrl.empty()) { error = StrPrintf("the latest release carries no %s", kPortSetupName); return false; }
+    return true;
+}
 
 } // namespace
 
@@ -762,44 +787,110 @@ void PortSetup::SetState(State st, const std::string& error) {
     ++m_status.generation;
 }
 
+void PortSetup::SetAccess(int mode, const std::string& customSite, const std::string& pick) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    if (mode != m_access || customSite != m_custom) m_site.clear();   // a changed choice: the remembered site no longer applies
+    m_access = mode;
+    m_custom = customSite;
+    if (!pick.empty()) m_pick = pick;
+}
+
+bool PortSetup::FetchManifest(const std::string& site, int timeoutMs, std::string& body, std::string& error) {
+    body.clear();
+    // A changing query keeps a site's cache from answering with an old entry.
+    const std::string url = MirrorUrl(site, StrPrintf("%s?v=%llu", kPortManifestUrl, (unsigned long long)time(nullptr)));
+    const bool ok = HttpGet(Utf8ToWide(url), false, m_cancel, [&](const char* data, DWORD n, unsigned long long) {
+        if (body.size() + n > 1u * 1024u * 1024u) return false;
+        body.append(data, n);
+        return true;
+    }, error, timeoutMs);
+    if (ok && body.find("tag_name") == std::string::npos) { error = "unexpected answer"; return false; }
+    return ok;
+}
+
+std::string PortSetup::ChooseSite(std::string& body) {
+    int mode = 0;
+    std::string custom, pick, site;
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        mode = m_access; custom = m_custom; pick = m_pick; site = m_site;
+    }
+    body.clear();
+    if (mode == (int)Updater::Access::Direct) return std::string();
+    if (mode == (int)Updater::Access::Custom) return TrimSite(custom);
+    // The site that answered last, then the update check's pick; when neither answers, every built-in site at
+    // once and the fastest answer wins.
+    std::vector<std::string> first;
+    if (!site.empty()) first.push_back(site);
+    if (!pick.empty() && pick != site) first.push_back(pick);
+    for (const std::string& s : first) {
+        std::string err;
+        if (FetchManifest(s, 10000, body, err)) return s;
+        Log::Info("DLSS-NR-on-AMD: mirror site %s did not answer (%s)", s.c_str(), err.empty() ? "unexpected answer" : err.c_str());
+        if (m_cancel) return std::string();
+    }
+    const int n = (int)kMirrors.size();
+    std::vector<std::string> bodies((size_t)n);
+    std::vector<double> seconds((size_t)n, 1e9);
+    std::vector<std::thread> threads;
+    for (int i = 0; i < n; ++i) {
+        threads.emplace_back([&, i]() {
+            const auto t0 = std::chrono::steady_clock::now();
+            std::string err;
+            if (FetchManifest(kMirrors[(size_t)i], kProbeTimeoutMs, bodies[(size_t)i], err))
+                seconds[(size_t)i] = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+        });
+    }
+    for (std::thread& th : threads) th.join();
+    int best = -1;
+    for (int i = 0; i < n; ++i) if (seconds[(size_t)i] < 1e9 && (best < 0 || seconds[(size_t)i] < seconds[(size_t)best])) best = i;
+    if (best < 0) { Log::Info("DLSS-NR-on-AMD: none of the mirror sites delivered the release entry"); return std::string(); }
+    body = bodies[(size_t)best];
+    Log::Info("DLSS-NR-on-AMD: mirror site %s answered in %.2f s", kMirrors[(size_t)best].c_str(), seconds[(size_t)best]);
+    return kMirrors[(size_t)best];
+}
+
 bool PortSetup::RunCheck(std::string& error) {
-    std::string body;
-    if (!HttpGet(kPortReleaseUrl, true, m_cancel, [&](const char* data, DWORD n, unsigned long long) {
-            if (body.size() + n > 4u * 1024u * 1024u) return false;
-            body.append(data, n);
-            return true;
-        }, error)) {
-        Log::Warn("DLSS-NR-on-AMD: release lookup failed: %s", error.c_str());
-        return false;
-    }
-    Json root;
-    if (!JsonReader(body).Parse(root) || root.type != Json::Object) {
-        error = "unexpected answer from GitHub";
-        return false;
-    }
     Status st;
-    st.tag = root.Str("tag_name");
-    st.date = root.Str("published_at").substr(0, 10);
-    st.pageUrl = root.Str("html_url");
-    if (const Json* assets = root.Find("assets")) {
-        if (assets->type == Json::Array) {
-            for (const Json& a : assets->arr) {
-                if (a.Str("name") != kPortSetupName) continue;
-                st.assetUrl = a.Str("browser_download_url");
-                st.assetSize = (unsigned long long)a.Num("size");
-            }
+    std::string body, err;
+    std::string site = ChooseSite(body);
+    bool got = false;
+    if (!site.empty()) {
+        // Through a site the entry comes from the copy the repository keeps (the sites do not relay the API);
+        // GitHub itself answers when the site does not deliver it.
+        if (body.empty() && !FetchManifest(site, 15000, body, err))
+            Log::Warn("DLSS-NR-on-AMD: mirror site %s did not deliver the release entry (%s); asking GitHub itself", site.c_str(), err.c_str());
+        if (!body.empty()) {
+            if (ParsePortRelease(body, st, err)) got = true;
+            else Log::Warn("DLSS-NR-on-AMD: the release entry through %s: %s; asking GitHub itself", site.c_str(), err.c_str());
         }
     }
-    if (st.tag.empty() || st.assetUrl.empty()) {
-        error = StrPrintf("the latest release carries no %s", kPortSetupName);
-        return false;
+    if (!got) {
+        if (m_cancel) { error = "cancelled"; return false; }
+        site.clear();
+        body.clear();
+        if (!HttpGet(kPortReleaseUrl, true, m_cancel, [&](const char* data, DWORD n, unsigned long long) {
+                if (body.size() + n > 4u * 1024u * 1024u) return false;
+                body.append(data, n);
+                return true;
+            }, error)) {
+            Log::Warn("DLSS-NR-on-AMD: release lookup failed: %s", error.c_str());
+            return false;
+        }
+        if (!ParsePortRelease(body, st, error)) {
+            if (error == "unexpected answer") error = "unexpected answer from GitHub";
+            return false;
+        }
     }
     {
         std::lock_guard<std::mutex> lock(m_mutex);
         m_status.tag = st.tag; m_status.date = st.date; m_status.pageUrl = st.pageUrl;
         m_status.assetUrl = st.assetUrl; m_status.assetSize = st.assetSize;
+        m_status.mirrorInUse = site;
+        m_site = site;
     }
-    Log::Info("DLSS-NR-on-AMD: latest release %s (%s), %s %.1f MB", st.tag.c_str(), st.date.c_str(), kPortSetupName, st.assetSize / (1024.0 * 1024.0));
+    Log::Info("DLSS-NR-on-AMD: latest release %s (%s), %s %.1f MB%s%s", st.tag.c_str(), st.date.c_str(), kPortSetupName,
+              st.assetSize / (1024.0 * 1024.0), site.empty() ? "" : " through ", site.c_str());
     return true;
 }
 
@@ -842,20 +933,40 @@ bool PortSetup::RunInstall(const std::wstring& exeDir, std::string& error) {
     { std::lock_guard<std::mutex> lock(m_mutex); url = m_status.assetUrl; }
     const std::wstring path = JoinPath(exeDir, Utf8ToWide(kPortSetupName));
     const std::wstring part = path + L".part";
-    Log::Info("DLSS-NR-on-AMD: downloading %s", url.c_str());
-    FILE* f = nullptr;
-    if (_wfopen_s(&f, part.c_str(), L"wb") != 0 || !f) { error = "the installer could not be written next to the executable"; return false; }
     unsigned long long got = 0;
-    const bool ok = HttpGet(Utf8ToWide(url), false, m_cancel, [&](const char* data, DWORD n, unsigned long long total) {
-        if (fwrite(data, 1, n, f) != n) return false;
-        got += n;
-        std::lock_guard<std::mutex> lock(m_mutex);
-        m_status.downloadedMb = got / (1024.0 * 1024.0);
-        if (total) m_status.totalMb = total / (1024.0 * 1024.0);
-        return true;
-    }, error);
-    fclose(f);
-    if (!ok) { DeleteFileW(part.c_str()); return false; }
+    auto download = [&](const std::string& from, std::string& err) {
+        FILE* f = nullptr;
+        if (_wfopen_s(&f, part.c_str(), L"wb") != 0 || !f) { err = "the installer could not be written next to the executable"; return false; }
+        got = 0;
+        { std::lock_guard<std::mutex> lock(m_mutex); m_status.downloadedMb = 0.0; }
+        const bool ok = HttpGet(Utf8ToWide(from), false, m_cancel, [&](const char* data, DWORD n, unsigned long long total) {
+            if (fwrite(data, 1, n, f) != n) return false;
+            got += n;
+            std::lock_guard<std::mutex> lock(m_mutex);
+            m_status.downloadedMb = got / (1024.0 * 1024.0);
+            if (total) m_status.totalMb = total / (1024.0 * 1024.0);
+            return true;
+        }, err);
+        fclose(f);
+        if (!ok) DeleteFileW(part.c_str());
+        return ok;
+    };
+    // Through the mirror site in use when one is chosen; GitHub itself when the site does not deliver the file.
+    std::string unused;
+    const std::string site = ChooseSite(unused);
+    bool ok = false;
+    if (!site.empty() && !m_cancel) {
+        { std::lock_guard<std::mutex> lock(m_mutex); m_status.mirrorInUse = site; }
+        Log::Info("DLSS-NR-on-AMD: downloading %s through %s", url.c_str(), site.c_str());
+        ok = download(MirrorUrl(site, url), error);
+        if (!ok && !m_cancel) Log::Warn("DLSS-NR-on-AMD: the mirror site did not deliver the installer (%s); trying GitHub itself", error.c_str());
+    }
+    if (!ok && !m_cancel) {
+        { std::lock_guard<std::mutex> lock(m_mutex); m_status.mirrorInUse.clear(); }
+        Log::Info("DLSS-NR-on-AMD: downloading %s", url.c_str());
+        ok = download(url, error);
+    }
+    if (!ok) return false;
     if (!MoveFileExW(part.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING)) {
         error = "the installer could not be placed: " + LastErrorText();
         DeleteFileW(part.c_str());

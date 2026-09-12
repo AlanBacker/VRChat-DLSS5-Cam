@@ -1959,7 +1959,12 @@ void MainUI::PortActions(const UiFrameInfo& info, UiEvents& ev, bool portLoaded,
     if (ps) {
         switch (ps->state) {
             case PortSetup::State::Checking: StatusDot(p.muted, TR(AmdPortChecking)); break;
-            case PortSetup::State::Downloading: StatusDot(p.accent, StrPrintf(TR(AmdPortDownloading), ps->downloadedMb, ps->totalMb).c_str()); break;
+            case PortSetup::State::Downloading: {
+                std::string text = StrPrintf(TR(AmdPortDownloading), ps->downloadedMb, ps->totalMb);
+                if (!ps->mirrorInUse.empty()) text += " \xC2\xB7 " + ps->mirrorInUse;   // through a mirror site
+                StatusDot(p.accent, text.c_str());
+                break;
+            }
             case PortSetup::State::Installing: StatusDot(p.accent, TR(AmdPortInstalling)); break;
             case PortSetup::State::Launched: StatusDot(p.accent, TR(AmdPortInstallerRunning)); break;
             case PortSetup::State::Failed:

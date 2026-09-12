@@ -257,7 +257,9 @@ Where GitHub is slow or unreachable (mainland China, for one), *GitHub access* i
 and the download to a mirror site: **Mirror sites, the fastest one** measures eight known sites and uses the one that answers
 fastest (the *Measure the sites* button shows the result of each), **A mirror site of my own** takes a site of your own, and
 **GitHub directly** talks to GitHub itself. When no site answers, a window offers the other choices. Through a mirror the
-program reads the release list `updates.json` that this repository keeps in step with the releases.
+program reads the release list `updates.json` that this repository keeps in step with the releases. In the Radeon edition the
+look-up of DLSS-NR-on-AMD's latest release and the download of its installer go through the chosen site as well (the entry
+comes from `port.json`, which this repository refreshes daily).
 
 When a newer version exists, a window shows its version, its date and its release notes with three buttons.
 **Update now** downloads the release zip into `%LOCALAPPDATA%\VRChatDLSS5Cam\update`, unpacks it, closes the
