@@ -33,6 +33,9 @@ float AnimateFrom(ImGuiID id, float from, float target, float speed = 14.0f);  /
 float AnimateLinear(ImGuiID id, float target, float seconds);                  // constant speed; the whole way takes "seconds"
 void AnimateSnap(ImGuiID id, float value);                                     // jump without motion
 float Ease(float t);                                                           // smoothstep of 0..1
+// Fades and shifts what a window has drawn since vertex `fromVtx` (its draw list is edited in place): the bars
+// around the preview dip their content in step with the preview's own dip around a change of the source.
+void FadeDrawn(ImDrawList* dl, int fromVtx, float alpha, float dy);
 
 // Smooth scrolling for a window opened with ImGuiWindowFlags_NoScrollWithMouse: call right after Begin/BeginChild.
 // The wheel moves a target by "step" per notch and the window glides there; scrollbar drags are followed.

@@ -269,6 +269,17 @@ void AnimateSnap(ImGuiID id, float value) { *MotionValue(id, value) = value; }
 
 float Ease(float t) { t = ImSaturate(t); return t * t * (3.0f - 2.0f * t); }
 
+void FadeDrawn(ImDrawList* dl, int fromVtx, float alpha, float dy) {
+    if (!dl || (alpha >= 0.999f && std::fabs(dy) < 0.01f)) return;
+    const float a = ImSaturate(alpha);
+    for (int i = std::max(0, fromVtx); i < dl->VtxBuffer.Size; ++i) {
+        ImDrawVert& v = dl->VtxBuffer[i];
+        const ImU32 va = (ImU32)((float)((v.col >> IM_COL32_A_SHIFT) & 0xFF) * a + 0.5f);
+        v.col = (v.col & ~IM_COL32_A_MASK) | (va << IM_COL32_A_SHIFT);
+        v.pos.y += dy;
+    }
+}
+
 // Scrolling ---------------------------------------------------------------------------------
 
 namespace {

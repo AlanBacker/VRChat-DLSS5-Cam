@@ -30,7 +30,7 @@ enum class Lang { English = 0, Chinese = 1, Japanese = 2, Korean = 3, Count = 4 
     X(NrScaleEdgeFmt,     "Long edge up to %d px", "长边不超过 %d 像素", "長辺 %d px まで", "긴 변 최대 %d px") \
     X(NrScalePercentFmt,  "%d %% of the picture", "画面的 %d %%", "画像の %d %%", "화면의 %d %%") \
     X(NrPassCapped,       "The runtime's limit: the pass runs at %ux%u and its change is upsampled onto the picture.", "受运行时限制：神经渲染以 %ux%u 运行，其变化再放大叠加到画面上。", "ランタイムの上限により、パスは %ux%u で実行され、その変化を画像に拡大して加えます。", "런타임 한계로 패스는 %ux%u에서 실행되고 그 변화를 화면에 확대해 더합니다.") \
-    X(TipRoute,           "Automatic: the direct route on a GeForce card, the FSR host on a Radeon card. Direct: talk to nvngx_dlssnr.dll itself. NGX core: ask the NVIDIA NGX runtime to create the feature. FSR host: run an FSR 3.1 context at native size for DLSS-NR-on-AMD to attach to.", "自动：GeForce 显卡走直接加载，Radeon 显卡走 FSR 宿主。直接加载：直接调用 nvngx_dlssnr.dll。NGX 核心：通过 NVIDIA NGX 运行时创建功能。FSR 宿主：以原生尺寸运行一个 FSR 3.1 上下文，供 DLSS-NR-on-AMD 挂接。", "自動：GeForce では直接、Radeon では FSR ホスト。直接：nvngx_dlssnr.dll を直接呼び出します。NGX コア：NVIDIA NGX ランタイムに機能の作成を依頼します。FSR ホスト：DLSS-NR-on-AMD が取り付く FSR 3.1 コンテキストをネイティブサイズで動かします。", "자동: GeForce 카드는 직접, Radeon 카드는 FSR 호스트. 직접: nvngx_dlssnr.dll을 직접 호출합니다. NGX 코어: NVIDIA NGX 런타임에 기능 생성을 요청합니다. FSR 호스트: DLSS-NR-on-AMD가 붙을 FSR 3.1 컨텍스트를 원본 크기로 실행합니다.") \
+    X(TipRoute,           "Automatic: the direct route on a GeForce card, the FSR host on a Radeon card. Direct: talk to nvngx_dlssnr.dll itself. FSR host: run an FSR 3.1 context at native size for DLSS-NR-on-AMD to attach to.", "自动：GeForce 显卡走直接加载，Radeon 显卡走 FSR 宿主。直接加载：直接调用 nvngx_dlssnr.dll。FSR 宿主：以原生尺寸运行一个 FSR 3.1 上下文，供 DLSS-NR-on-AMD 挂接。", "自動：GeForce では直接、Radeon では FSR ホスト。直接：nvngx_dlssnr.dll を直接呼び出します。FSR ホスト：DLSS-NR-on-AMD が取り付く FSR 3.1 コンテキストをネイティブサイズで動かします。", "자동: GeForce 카드는 직접, Radeon 카드는 FSR 호스트. 직접: nvngx_dlssnr.dll을 직접 호출합니다. FSR 호스트: DLSS-NR-on-AMD가 붙을 FSR 3.1 컨텍스트를 원본 크기로 실행합니다.") \
     X(TipNvof,            "NVIDIA's hardware optical flow engine (Turing or newer, nvofapi64.dll from the GeForce driver; Radeon cards have no such engine); falls back to block matching when unavailable. Grid = spacing of the hardware vectors in source pixels: 4 px is the fastest and is upsampled to per-pixel vectors, 2 px and 1 px are finer but much slower at 4K.", "NVIDIA 的硬件光流引擎（Turing 及更新架构，使用 GeForce 驱动中的 nvofapi64.dll；Radeon 显卡没有这样的引擎），不可用时回退到块匹配。网格 = 硬件矢量的间距（源像素）：4 px 最快，会上采样为逐像素矢量；2 px、1 px 更精细，但在 4K 下明显更慢。", "NVIDIA のハードウェアオプティカルフローエンジン（Turing 以降、GeForce ドライバーの nvofapi64.dll。Radeon カードにはこのエンジンはありません）。利用できない場合はブロックマッチングにフォールバックします。グリッド = ハードウェアベクトルの間隔（ソースピクセル）：4 px が最速でピクセル単位に補間されます。2 px / 1 px はより精細ですが 4K では大幅に遅くなります。", "NVIDIA의 하드웨어 옵티컬 플로우 엔진(Turing 이상, GeForce 드라이버의 nvofapi64.dll. Radeon 카드에는 이런 엔진이 없습니다). 사용할 수 없으면 블록 매칭으로 대체합니다. 그리드 = 하드웨어 벡터 간격(소스 픽셀): 4 px가 가장 빠르고 픽셀 단위로 보간됩니다. 2 px / 1 px는 더 세밀하지만 4K에서는 훨씬 느립니다.") \
     X(TipAutoReset,       "Clear the temporal history when the matching cost jumps sharply (scene cut). Off by default: DLSS 5 recovers on its own, and every reset causes a visible pop.", "匹配代价突然跳变（镜头切换）时清空时间历史。默认关闭：DLSS 5 会自行恢复，而每次重置都会造成明显的画面跳动。", "マッチングコストが急激に跳ね上がったとき（シーンカット）に時間履歴をクリアします。既定ではオフ：DLSS 5 は自力で回復し、リセットのたびに目に見えるポップが生じます。", "매칭 비용이 급격히 뛸 때(장면 전환) 시간 히스토리를 지웁니다. 기본값은 꺼짐: DLSS 5는 스스로 복구되며, 초기화할 때마다 눈에 띄는 튐이 생깁니다.") \
     X(TipKeepAlpha,       "Store the camera's alpha channel (transparent background when VRChat streams with transparency).", "保存相机的 Alpha 通道（VRChat 以透明背景串流时保留透明）。", "カメラのアルファチャンネルを保存します（VRChat が透過付きで配信している場合は背景が透明になります）。", "카메라의 알파 채널을 저장합니다(VRChat이 투명 배경으로 스트리밍할 때 투명 유지).") \
@@ -39,7 +39,7 @@ enum class Lang { English = 0, Chinese = 1, Japanese = 2, Korean = 3, Count = 4 
     X(TipSearchRadius,    "Full-search radius at quarter resolution (larger = faster motion tracked, slower).", "四分之一分辨率下的全搜索半径（越大可追踪越快的运动，但更慢）。", "1/4 解像度での全探索半径（大きいほど速い動きを追跡できますが遅くなります）。", "1/4 해상도에서의 전체 탐색 반경(클수록 빠른 움직임을 추적하지만 느려집니다).") \
     X(TipConfidence,      "Vectors with lower matching confidence are damped towards zero.", "匹配置信度低于此值的矢量会被衰减为零。", "マッチング信頼度がこれより低いベクトルはゼロに向けて減衰されます。", "매칭 신뢰도가 이보다 낮은 벡터는 0으로 감쇠됩니다.") \
     X(TipCutThreshold,    "Average matching cost (0–1 luma) above which a scene cut is assumed.", "平均匹配代价（0–1 亮度）超过此值时视为场景切换。", "平均マッチングコスト（0–1 輝度）がこの値を超えるとシーンカットとみなします。", "평균 매칭 비용(0–1 휘도)이 이 값을 넘으면 장면 전환으로 간주합니다.") \
-    X(TipDlaaPreset,      "DLSS render preset (K = transformer model, default).", "DLSS 渲染预设（K = Transformer 模型，默认）。", "DLSS レンダープリセット（K = Transformer モデル、既定）。", "DLSS 렌더 프리셋(K = 트랜스포머 모델, 기본값).") \
+    X(TipDlaaPreset,      "DLSS render preset. K is the transformer model and the default; J to N are the presets the current runtime offers for DLAA, the older letters are gone from it.", "DLSS 渲染预设。K 为 Transformer 模型，也是默认值；J 到 N 是当前运行库为 DLAA 提供的预设，更早的字母已不再提供。", "DLSS レンダープリセット。K は Transformer モデルで既定値。J〜N は現在のランタイムが DLAA 向けに提供するプリセットで、それ以前の文字はもう提供されていません。", "DLSS 렌더 프리셋. K는 트랜스포머 모델이자 기본값이며, J~N은 현재 런타임이 DLAA에 제공하는 프리셋입니다. 그 이전 문자는 더 이상 제공되지 않습니다.") \
     X(Frames,             "Processed frames", "已处理帧", "処理済みフレーム", "처리된 프레임") \
     X(Resets,             "History resets", "历史重置次数", "履歴リセット回数", "히스토리 초기화 횟수") \
     X(Licenses,           "Third-party notices", "第三方声明", "サードパーティ表記", "서드파티 고지") \
@@ -130,7 +130,6 @@ enum class Lang { English = 0, Chinese = 1, Japanese = 2, Korean = 3, Count = 4 
     X(Browse,             "Browse…", "浏览…", "参照…", "찾아보기…") \
     X(Route,              "Host route", "加载方式", "ホスト方式", "호스트 방식") \
     X(RouteSnippet,       "Direct (signed snippet)", "直接加载（signed snippet）", "直接（signed snippet）", "직접(signed snippet)") \
-    X(RouteCore,          "NGX core (experimental)", "NGX 核心（实验性）", "NGX コア（実験的）", "NGX 코어(실험적)") \
     X(RouteAuto,          "Automatic", "自动", "自動", "자동") \
     X(RouteFsr,           "FSR host (for DLSS-NR-on-AMD)", "FSR 宿主（供 DLSS-NR-on-AMD 使用）", "FSR ホスト（DLSS-NR-on-AMD 用）", "FSR 호스트(DLSS-NR-on-AMD용)") \
     X(FsrHostName,        "FSR host", "FSR 宿主", "FSR ホスト", "FSR 호스트") \
@@ -209,6 +208,7 @@ enum class Lang { English = 0, Chinese = 1, Japanese = 2, Korean = 3, Count = 4 
     X(DepthInitializing,  "initializing…", "正在初始化…", "初期化中…", "초기화 중…") \
     X(DepthReady,         "ready", "就绪", "準備完了", "준비됨") \
     X(DepthUnavailable,   "unavailable, zero depth is used", "不可用，改用零深度", "利用不可、ゼロ深度を使用", "사용 불가, 0 깊이 사용") \
+    X(DepthWaitingSource, "waiting for a picture, it starts with the first frame", "等待画面，收到第一帧后启动", "映像待ち、最初のフレームで開始します", "화면 대기 중, 첫 프레임과 함께 시작합니다") \
     X(DepthModelMissing,  "Depth model not found. Re-extract the release package (models\\depth_anything_v2_small_fp16.onnx) or select a model file.", "未找到深度模型。请重新解压发布包（models\\depth_anything_v2_small_fp16.onnx）或选择模型文件。", "深度モデルが見つかりません。リリースパッケージを再展開する（models\\depth_anything_v2_small_fp16.onnx）か、モデルファイルを選択してください。", "깊이 모델을 찾을 수 없습니다. 릴리스 패키지를 다시 압축 해제하거나(models\\depth_anything_v2_small_fp16.onnx) 모델 파일을 선택하세요.") \
     X(NvofBidirectional,  "Bidirectional consistency check", "双向一致性检查", "双方向一貫性チェック", "양방향 일관성 검사") \
     X(TipNvofBidirectional, "Also computes the backward flow and lowers the confidence where forward and backward vectors disagree (occlusions, noise). Recommended. Driver API 5.0 computes both directions in one pass; older drivers run a second pass (about twice the flow time).", "同时计算反向光流，在正向与反向矢量不一致处（遮挡、噪声）降低置信度。推荐开启。驱动 API 5.0 一次即可算出双向光流；旧驱动需要第二遍（光流耗时约翻倍）。", "逆方向のフローも計算し、順方向と逆方向のベクトルが一致しない箇所（オクルージョン、ノイズ）の信頼度を下げます。推奨。ドライバー API 5.0 では一度に双方向を計算します。古いドライバーでは 2 回目のパスが必要です（フロー時間は約 2 倍）。", "역방향 플로우도 계산하여 정방향과 역방향 벡터가 일치하지 않는 곳(가림, 노이즈)의 신뢰도를 낮춥니다. 권장. 드라이버 API 5.0은 한 번에 양방향을 계산하고, 구형 드라이버는 두 번째 패스가 필요합니다(플로우 시간 약 2배).") \
@@ -542,6 +542,59 @@ enum class Lang { English = 0, Chinese = 1, Japanese = 2, Korean = 3, Count = 4 
     X(TipTheme,           "Dark or light interface. \"System\" follows the app colour setting of Windows.", "深色或浅色界面。“跟随系统”按 Windows 的应用颜色设置切换。", "ダークまたはライトの外観。「システム」は Windows のアプリの色設定に従います。", "어두운 또는 밝은 인터페이스. \"시스템\"은 Windows의 앱 색상 설정을 따릅니다.") \
     X(TipUndo,            "Undo the last change to the settings (Ctrl+Z)", "撤销上一次设置更改（Ctrl+Z）", "設定の直前の変更を元に戻す（Ctrl+Z）", "마지막 설정 변경을 취소합니다 (Ctrl+Z)") \
     X(TipRedo,            "Redo the change that was undone (Ctrl+Y)", "重做已撤销的更改（Ctrl+Y）", "元に戻した変更をやり直す（Ctrl+Y）", "취소한 변경을 다시 적용합니다 (Ctrl+Y)") \
+    X(GithubAccess,        "GitHub access", "GitHub 访问方式", "GitHub へのアクセス", "GitHub 접속 방식") \
+    X(MirrorWhy,           "In some regions, mainland China among them, GitHub is slow or cannot be reached. The update check and the download can go through a public mirror site that relays GitHub instead: the program measures the built-in sites and takes the fastest, or you enter a site of your own.", "在部分地区（例如中国大陆），访问 GitHub 很慢或者根本无法访问。检查更新与下载可以改走公共的 GitHub 加速镜像站：程序会对内置的站点自动测速并选用最快的一个，也可以填写你自己的镜像站地址。", "一部の地域（中国本土など）では GitHub が遅い、または接続できないことがあります。更新の確認とダウンロードは GitHub を中継する公開ミラーサイト経由にできます。内蔵サイトを測定して最速のものを使うか、自分のサイトを入力してください。", "일부 지역(중국 본토 등)에서는 GitHub가 느리거나 접속되지 않습니다. 업데이트 확인과 다운로드는 GitHub를 중계하는 공개 미러 사이트를 거칠 수 있습니다. 내장 사이트를 측정해 가장 빠른 곳을 쓰거나 직접 사이트를 입력하세요.") \
+    X(MirrorDirect,        "GitHub directly", "直连 GitHub", "GitHub に直接接続", "GitHub에 직접 연결") \
+    X(MirrorAuto,          "Mirror sites, the fastest one", "加速镜像站（自动测速选最快）", "ミラーサイト（最速を自動選択）", "미러 사이트(가장 빠른 곳 자동 선택)") \
+    X(MirrorCustom,        "A mirror site of my own", "自定义镜像站", "自分のミラーサイト", "직접 지정한 미러 사이트") \
+    X(MirrorCustomHint,    "The address of a site that relays GitHub, for example https://gh-proxy.com", "转发 GitHub 的镜像站地址，例如 https://gh-proxy.com", "GitHub を中継するサイトのアドレス（例: https://gh-proxy.com）", "GitHub를 중계하는 사이트 주소(예: https://gh-proxy.com)") \
+    X(MirrorTest,          "Measure the sites", "测速", "サイトを測定", "사이트 속도 측정") \
+    X(MirrorTesting,       "Measuring the sites\xE2\x80\xA6", "正在测速…", "サイトを測定しています…", "사이트를 측정하는 중…") \
+    X(MirrorNoAnswer,      "no answer", "无响应", "応答なし", "응답 없음") \
+    X(MirrorFastest,       "fastest", "最快", "最速", "가장 빠름") \
+    X(MirrorInUse,         "In use: %s", "当前使用：%s", "使用中: %s", "사용 중: %s") \
+    X(MirrorNotMeasured,   "The sites have not been measured yet; the next update check does that by itself.", "尚未测速；下次检查更新时会自动测速。", "まだ測定していません。次回の更新確認で自動的に測定します。", "아직 측정하지 않았습니다. 다음 업데이트 확인 때 자동으로 측정합니다.") \
+    X(MirrorFailTitle,     "The mirror sites did not answer", "镜像站无法访问", "ミラーサイトが応答しません", "미러 사이트가 응답하지 않습니다") \
+    X(MirrorFailText,      "The update check reached none of the built-in mirror sites. You can enter a mirror site of your own, or give the sites up and connect to GitHub directly.", "检查更新时无法访问任何内置镜像站。你可以填写自己的镜像站地址，或者放弃镜像站，改为直连 GitHub。", "更新の確認で内蔵ミラーサイトのどれにも到達できませんでした。自分のミラーサイトを入力するか、ミラーサイトをやめて GitHub に直接接続してください。", "업데이트 확인에서 내장 미러 사이트 어느 곳에도 접속하지 못했습니다. 직접 지정한 미러 사이트를 입력하거나, 미러 사이트를 포기하고 GitHub에 직접 연결하세요.") \
+    X(MirrorFailCustom,    "Your mirror site did not answer: %s", "你的镜像站无响应：%s", "指定したミラーサイトが応答しません: %s", "지정한 미러 사이트가 응답하지 않습니다: %s") \
+    X(MirrorCheckAgain,    "Check again", "重新检查", "もう一度確認", "다시 확인") \
+    X(GuideTitle,          "Setup guide", "设置向导", "セットアップガイド", "설정 가이드") \
+    X(GuideWelcome,        "Welcome", "欢迎", "ようこそ", "환영합니다") \
+    X(GuideWelcomeText,    "This short guide sets the language and the way GitHub is reached, and shows what the controls do. It takes about a minute, and it can be opened again at any time.", "这个简短的向导会帮你设置语言和 GitHub 访问方式，并介绍各个控件的用途。大约需要一分钟，之后随时可以再次打开。", "この短いガイドでは言語と GitHub への接続方法を設定し、各コントロールの役割を紹介します。1 分ほどで終わり、いつでも再び開けます。", "이 짧은 가이드는 언어와 GitHub 접속 방식을 설정하고, 각 컨트롤의 용도를 소개합니다. 1분 정도 걸리며 언제든 다시 열 수 있습니다.") \
+    X(GuideLanguageHint,   "The language of the interface; Auto follows Windows.", "界面语言；“自动”跟随 Windows 的语言。", "インターフェースの言語。自動は Windows に従います。", "인터페이스 언어입니다. 자동은 Windows를 따릅니다.") \
+    X(GuideThemeHint,      "The look of the interface; System follows the Windows setting.", "界面外观；“跟随系统”遵循 Windows 的设置。", "インターフェースの外観。システムは Windows の設定に従います。", "인터페이스 모양입니다. 시스템은 Windows 설정을 따릅니다.") \
+    X(GuidePageHow,        "How the program works", "程序是怎样工作的", "プログラムの仕組み", "프로그램 동작 방식") \
+    X(GuidePageSettings,   "What the settings do", "各项设置的用途", "各設定の役割", "각 설정의 역할") \
+    X(GuidePageWhere,      "Where to find things", "在哪里能找到什么", "どこに何があるか", "어디에 무엇이 있는지") \
+    X(GuideHowLiveT,       "Live", "实时", "ライブ", "라이브") \
+    X(GuideHowLive,        "While VRChat runs, the picture of its camera arrives through Spout. Pick the sender in the Source section, then press the capture button or the hotkey to save a frame as a lossless PNG.", "VRChat 运行时，其相机画面通过 Spout 传入。在“视频源”分节选择发送端，然后按拍照按钮或热键即可把当前帧保存为无损 PNG。", "VRChat の実行中、そのカメラの映像が Spout 経由で届きます。ソースセクションで送信元を選び、撮影ボタンかホットキーを押すとフレームがロスレス PNG で保存されます。", "VRChat이 실행 중이면 카메라 화면이 Spout으로 들어옵니다. 소스 섹션에서 송신자를 고른 뒤 촬영 버튼이나 단축키를 누르면 프레임이 무손실 PNG로 저장됩니다.") \
+    X(GuideHowFilesT,      "Pictures and videos", "图片与视频", "画像と動画", "사진과 동영상") \
+    X(GuideHowFiles,       "Drop files onto the window or add them to the library at the bottom. Each one is processed with the current settings and saved next to the original or into the chosen folder; several files run as a batch.", "把文件拖到窗口上，或加入底部的素材库。每个文件都会按当前设置处理，保存在原文件旁或所选文件夹中；多个文件可以批量处理。", "ファイルをウィンドウにドロップするか、下部のライブラリに追加します。各ファイルは現在の設定で処理され、元のファイルの隣か選んだフォルダーに保存されます。複数のファイルはバッチとして処理されます。", "파일을 창에 끌어다 놓거나 아래 라이브러리에 추가하세요. 각 파일은 현재 설정으로 처리되어 원본 옆이나 선택한 폴더에 저장되며, 여러 파일은 일괄 처리됩니다.") \
+    X(GuideHowLayoutT,     "The window", "窗口布局", "ウィンドウ", "창 구성") \
+    X(GuideHowLayout,      "The top bar switches between Live, Picture and Video. The sidebar on the right holds every setting in sections that fold. The preview in the middle shows the result: drag the split line to compare with the source, scroll to zoom, drag to pan.", "顶栏在实时、图片、视频之间切换。右侧侧边栏包含全部设置，按分节折叠。中间的预览显示处理结果：拖动分割线可与原图对比，滚轮缩放，拖动平移。", "上部のバーでライブ、画像、動画を切り替えます。右のサイドバーには折りたためるセクションにすべての設定があります。中央のプレビューには結果が表示され、分割線をドラッグして元と比較、スクロールで拡大、ドラッグで移動できます。", "상단 바에서 라이브, 사진, 동영상을 전환합니다. 오른쪽 사이드바에는 접을 수 있는 섹션에 모든 설정이 있습니다. 가운데 미리보기에 결과가 표시되며, 분할선을 끌어 원본과 비교하고, 스크롤로 확대하고, 끌어서 이동합니다.") \
+    X(GuideSetNeural,      "Intensity sets how strongly the picture is re-rendered (0 switches it off); Style chooses the look; Preset picks one of the runtime's model variants. These three are the ones to try first.", "“强度”决定重新渲染的程度（0 为关闭）；“风格”决定观感；“预设”选择运行库自带的模型变体。最值得先试的就是这三项。", "強度は画像をどれだけ再レンダリングするかを決めます（0 でオフ）。スタイルは見た目を、プリセットはランタイムのモデルバリアントを選びます。まずはこの 3 つを試してください。", "강도는 화면을 얼마나 다시 렌더링할지 정합니다(0이면 꺼짐). 스타일은 느낌을, 프리셋은 런타임의 모델 변형을 고릅니다. 이 세 가지를 먼저 만져 보세요.") \
+    X(GuideSetDetailT,     "Tone and structure", "色调与结构", "トーンと構造", "톤과 구조") \
+    X(GuideSetDetail,      "Shadows, highlights, local structure and skin structure add or take away contrast and detail. 1 is the runtime's own strength; above it the effect is emphasised, below it softened.", "阴影、高光、局部结构与皮肤结构会增减对比与细节。1 为运行库原本的强度，高于 1 加强，低于 1 减弱。", "シャドウ、ハイライト、ローカル構造、肌の構造はコントラストとディテールを増減します。1 がランタイム本来の強さで、それより上は強調、下は控えめになります。", "그림자, 하이라이트, 로컬 구조, 피부 구조는 대비와 디테일을 더하거나 뺍니다. 1이 런타임 본래의 강도이며, 그 위는 강조, 아래는 약화됩니다.") \
+    X(GuideSetBlendT,      "Output blend and resolution", "输出混合与分辨率", "出力ブレンドと解像度", "출력 블렌드와 해상도") \
+    X(GuideSetBlend,       "Output blend mixes the result with the source, so a change can be softened without switching it off. Neural pass resolution lowers the cost on a weaker card; DLSS super resolution renders a larger output at a much higher cost.", "“输出混合”把结果与原图按比例混合，可以柔化变化而不必关闭。“神经渲染分辨率”能降低弱一些的显卡的负担；“DLSS 超分辨率”输出更大的画面，但开销大得多。", "出力ブレンドは結果と元の画像を混ぜ、オフにせずに変化を和らげます。ニューラルパス解像度は非力なカードの負荷を下げ、DLSS 超解像はずっと高い負荷で大きな出力を描きます。", "출력 블렌드는 결과와 원본을 섞어 끄지 않고도 변화를 부드럽게 합니다. 뉴럴 패스 해상도는 약한 카드의 부담을 줄이고, DLSS 초해상도는 훨씬 큰 비용으로 더 큰 출력을 만듭니다.") \
+    X(GuideSetGuidanceT,   "Guidance, save, display", "引导、保存、显示", "ガイダンス、保存、表示", "가이던스, 저장, 표시") \
+    X(GuideSetGuidance,    "Motion and depth help the model keep the picture stable and tell near from far; the defaults suit most pictures. Capture holds the folder, the file format and the video output; Display holds the compare mode, the theme and the language.", "运动与深度信息帮助模型保持画面稳定并区分远近，默认值适合大多数画面。“拍照”分节包含保存文件夹、文件格式与视频输出；“显示”分节包含对比模式、主题与语言。", "モーションと深度はモデルが映像を安定させ、遠近を区別するのを助けます。既定値でほとんどの映像に合います。撮影にはフォルダー、ファイル形式、動画出力が、表示には比較モード、テーマ、言語があります。", "모션과 깊이는 모델이 화면을 안정시키고 원근을 구분하도록 돕습니다. 기본값이 대부분의 화면에 맞습니다. 촬영에는 폴더, 파일 형식, 동영상 출력이, 표시에는 비교 모드, 테마, 언어가 있습니다.") \
+    X(GuideSetTip,         "Not sure? Leave everything at its default and change only Intensity and Style. Every control has a tooltip, and the ? marks explain the rest.", "拿不准？保持默认，只调“强度”和“风格”即可。每个控件都有悬停提示，? 标记里有更多说明。", "迷ったら既定のままにして、強度とスタイルだけ変えてください。各コントロールにはツールチップがあり、? マークが残りを説明します。", "잘 모르겠다면 모두 기본값으로 두고 강도와 스타일만 바꾸세요. 모든 컨트롤에 도움말이 있고, ? 표시가 나머지를 설명합니다.") \
+    X(GuideWhereGuideT,    "This guide", "本向导", "このガイド", "이 가이드") \
+    X(GuideWhereGuide,     "Scroll the sidebar to its bottom, open the About section and press Setup guide.", "把右侧侧边栏滚动到底部，展开“关于”分节，点击“设置向导”。", "サイドバーを一番下までスクロールし、情報セクションを開いてセットアップガイドを押します。", "사이드바를 맨 아래로 내려 정보 섹션을 열고 설정 가이드를 누르세요.") \
+    X(GuideWhereDocsT,     "The documentation", "文档", "ドキュメント", "문서") \
+    X(GuideWhereDocs,      "The ? button at the top right, or Documentation in the About section: it describes every control.", "右上角的 ? 按钮，或“关于”分节里的“文档”：其中说明了每一个控件。", "右上の ? ボタン、または情報セクションのドキュメント。すべてのコントロールを説明しています。", "오른쪽 위 ? 버튼 또는 정보 섹션의 문서: 모든 컨트롤을 설명합니다.") \
+    X(GuideWhereSearchT,   "A setting by name", "按名称查找设置", "設定を名前で探す", "이름으로 설정 찾기") \
+    X(GuideWhereSearch,    "The search box above the sidebar shows only the controls whose name matches.", "侧边栏上方的搜索框只显示名称匹配的控件。", "サイドバー上部の検索ボックスは、名前が一致するコントロールだけを表示します。", "사이드바 위 검색 상자는 이름이 일치하는 컨트롤만 보여 줍니다.") \
+    X(GuideWhereLight,     "When this guide closes, these places light up for a moment.", "关闭向导后，这些位置会短暂高亮提示。", "このガイドを閉じると、これらの場所がしばらく光ります。", "이 가이드를 닫으면 해당 위치가 잠시 강조됩니다.") \
+    X(GuideStar,           "If you like the program, a star on GitHub and a like on its BOOTH page help it a lot. Thank you!", "如果你喜欢这个程序，欢迎在 GitHub 上点个 Star，并在 BOOTH 发布页点个喜欢。谢谢！", "気に入っていただけたら、GitHub のスターと BOOTH ページのスキが大きな支えになります。ありがとうございます！", "프로그램이 마음에 드신다면 GitHub 스타와 BOOTH 페이지의 좋아요가 큰 도움이 됩니다. 감사합니다!") \
+    X(GuideStarButton,     "Star on GitHub", "GitHub 点个 Star", "GitHub でスター", "GitHub에서 스타") \
+    X(GuideBoothButton,    "Like on BOOTH", "BOOTH 点个喜欢", "BOOTH でスキ", "BOOTH에서 좋아요") \
+    X(GuideNext,           "Next", "下一步", "次へ", "다음") \
+    X(GuideBack,           "Back", "上一步", "戻る", "이전") \
+    X(GuideSkip,           "Skip", "跳过", "スキップ", "건너뛰기") \
+    X(GuideFinish,         "Finish", "完成", "完了", "완료") \
+    X(GuideStepFmt,        "Step %d of %d", "第 %d 步，共 %d 步", "ステップ %d / %d", "%d / %d 단계") \
     X(EndOfVideo,         "End", "结束", "終了", "끝")
 
 enum class Str {

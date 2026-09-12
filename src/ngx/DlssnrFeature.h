@@ -39,9 +39,10 @@ public:
     // NGX core and therefore no NVIDIA driver. A runtime adapted for another vendor is only usable that way.
     bool SelfContained() const;
 
-    // useCore = create feature 18 through the NGX core instead of the snippet exports (experimental).
+    // Creates feature 18 through the snippet exports; the parameter block comes from the runtime when it exports
+    // one, else from the NGX core.
     bool Create(NgxCore& core, ID3D12GraphicsCommandList* cmd, UINT inW, UINT inH, UINT outW, UINT outH,
-                int preset, bool useCore, std::string& error);
+                int preset, std::string& error);
     void Release(NgxCore& core);
     bool Created() const { return m_feature != nullptr; }
     bool Evaluate(ID3D12GraphicsCommandList* cmd, const Inputs& in, const Params& p, std::string& error);
@@ -70,7 +71,6 @@ private:
     NVSDK_NGX_Parameter* m_params = nullptr;
     bool                 m_paramsFromRuntime = false;
     NVSDK_NGX_Handle*    m_feature = nullptr;
-    bool                 m_useCore = false;
     UINT                 m_inW = 0, m_inH = 0, m_outW = 0, m_outH = 0;
     UINT64               m_evaluateCount = 0;
     UINT64               m_failureCount = 0;

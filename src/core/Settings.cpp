@@ -134,9 +134,12 @@ bool Settings::ApplyText(const std::string& data) {
     }
     if (fileVersion < 4 && nrRoute == RouteSignedSnippet) {
         // 1.4.0 added the automatic route choice (the FSR host on a Radeon card); files that kept the old default
-        // move to it, an explicit NGX core choice stays.
+        // move to it.
         nrRoute = RouteAuto;
     }
+    // 1.6.0 retired the NGX core route (the driver's NGX runtime never accepted the DLSSNR feature); files that
+    // chose it go to the automatic choice. The value stays reserved.
+    if (nrRoute == RouteNgxCore) nrRoute = RouteAuto;
     settingsVersion = Settings().settingsVersion;
     r.Get("dlaaEnabled", dlaaEnabled);
     r.Get("dlaaPreset", dlaaPreset);
@@ -168,6 +171,10 @@ bool Settings::ApplyText(const std::string& data) {
     r.Get("toolRowDock", toolRowDock);
     r.Get("updateCheck", updateCheck);
     r.Get("updateChannel", updateChannel);
+    r.Get("githubMirror", githubMirror);
+    r.Get("githubMirrorCustom", githubMirrorCustom);
+    r.Get("githubMirrorPick", githubMirrorPick);
+    r.Get("setupGuideSeen", setupGuideSeen);
     r.Get("portConsent", portConsent);
     r.Get("portInstalledTag", portInstalledTag);
     r.Get("advancedControls", showAdvanced);
@@ -414,6 +421,10 @@ bool Settings::Save(const std::wstring& path) const {
     w.Put("toolRowDock", toolRowDock);
     w.Put("updateCheck", updateCheck);
     w.Put("updateChannel", updateChannel);
+    w.Put("githubMirror", githubMirror);
+    w.Put("githubMirrorCustom", githubMirrorCustom);
+    w.Put("githubMirrorPick", githubMirrorPick);
+    w.Put("setupGuideSeen", setupGuideSeen);
     w.Put("portConsent", portConsent);
     w.Put("portInstalledTag", portInstalledTag);
     w.Put("advancedControls", showAdvanced);
@@ -435,6 +446,7 @@ void Settings::Clamp() {
     customHeight = std::clamp(customHeight, 256, 4320);
     upscaleMode = std::clamp(upscaleMode, 0, 1);
     nrRoute = std::clamp(nrRoute, -1, 2);
+    if (nrRoute == RouteNgxCore) nrRoute = RouteAuto;   // retired in 1.6.0
     if (nrRuntimeBuild != "blackwell" && nrRuntimeBuild != "universal" && nrRuntimeBuild != "other" && nrRuntimeBuild != "exe") nrRuntimeBuild.clear();
     nrPreset = std::clamp(nrPreset, 0, 3);
     if (sidebarWidth != 0.0f) sidebarWidth = std::clamp(sidebarWidth, 16.0f, 48.0f);
@@ -443,6 +455,8 @@ void Settings::Clamp() {
     toolRowY = toolRowY < 0.0f ? -1.0f : std::clamp(toolRowY, 0.0f, 1.0f);   // (each key is applied, and clamped, on its own)
     toolRowDock = std::clamp(toolRowDock, 0, 4);
     updateChannel = std::clamp(updateChannel, 0, 1);
+    githubMirror = std::clamp(githubMirror, 0, 2);
+    setupGuideSeen = std::clamp(setupGuideSeen, 0, 1);
     nrStyle = std::clamp(nrStyle, 0, 2);
     sourceMode = std::clamp(sourceMode, 0, 2);
     spoutRotate = std::clamp(spoutRotate, 0, 3);
@@ -474,7 +488,8 @@ void Settings::Clamp() {
     if (nvofGrid != 1 && nvofGrid != 2 && nvofGrid != 4) nvofGrid = 4;
     if (nvofPerf != 5 && nvofPerf != 10 && nvofPerf != 20) nvofPerf = 10;
     cutThreshold = std::clamp(cutThreshold, 0.01f, 0.5f);
-    if (dlaaPreset != 0 && dlaaPreset != 10 && dlaaPreset != 11 && dlaaPreset != 12 && dlaaPreset != 13) dlaaPreset = 11;
+    // Default and J..N: the only presets the 310 runtime still offers for DLAA (A..G are gone from it).
+    if (dlaaPreset != 0 && (dlaaPreset < 10 || dlaaPreset > 14)) dlaaPreset = 11;
     compareMode = std::clamp(compareMode, 0, 4);
     wipePosition = std::clamp(wipePosition, 0.0f, 1.0f);
     fitMode = std::clamp(fitMode, 0, 1);

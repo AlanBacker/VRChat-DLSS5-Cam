@@ -1035,13 +1035,12 @@ bool Pipeline::NeuralNeedsCreate(const Settings& s, UINT inW, UINT inH, UINT out
            m_nr.OutputHeight() != outH || m_nrCreatedRoute != route || m_nrCreatedPreset != s.nrPreset;
 }
 
-// What the chosen route needs to be there. The core route goes through the NGX runtime; the snippet route hosts the
-// runtime DLL itself and only falls back to the core for the parameter block, so a runtime that brings its own runs
-// on an adapter the NGX core refuses. The FSR host route needs its own runtime (FsrHost::Load).
+// What the chosen route needs to be there. The snippet route hosts the runtime DLL itself and only falls back to the
+// NGX core for the parameter block, so a runtime that brings its own runs on an adapter the NGX core refuses. The
+// FSR host route needs its own runtime (FsrHost::Load).
 bool Pipeline::NeuralRouteReady(const Settings& s) const {
     const int route = Route(s);
     if (route == RouteFsrHost) return m_fsr.Loaded();
-    if (route == RouteNgxCore) return m_ngx.Initialized();
     return m_nr.RuntimeLoaded() && (m_nr.SelfContained() || m_ngx.Initialized());
 }
 
@@ -1059,11 +1058,10 @@ bool Pipeline::RunNeural(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const 
     if (m_nrFailed || !NeuralRouteReady(s)) return false;
     const int route = Route(s);
     if (route == RouteFsrHost) return RunFsrHost(gpu, cmd, s, input, reset);
-    const bool useCore = route == RouteNgxCore;
     if (NeuralNeedsCreate(s, m_nrInW, m_nrInH, m_nrOutW, m_nrOutH)) {
         if (m_nr.Created() || m_fsr.Created()) { gpu.WaitIdle(); m_nr.Release(m_ngx); m_fsr.Release(); }
         std::string err;
-        const bool created = m_nr.Create(m_ngx, cmd, m_nrInW, m_nrInH, m_nrOutW, m_nrOutH, s.nrPreset, useCore, err);
+        const bool created = m_nr.Create(m_ngx, cmd, m_nrInW, m_nrInH, m_nrOutW, m_nrOutH, s.nrPreset, err);
         gpu.BindHeaps(cmd);   // the runtime records with its own heaps: back to ours before the next dispatch
         if (!created) {
             // A refusal that looks like a size limit (the 310.8 builds answer PlatformError above about 45 megapixels,

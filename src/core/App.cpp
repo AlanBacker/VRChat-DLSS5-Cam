@@ -36,6 +36,7 @@ constexpr int      kHotkeyId = 1;
 constexpr UINT_PTR kSizeTimer = 1;
 constexpr const wchar_t* kWindowClass = L"VRChatDLSS5CamWindow";
 constexpr const wchar_t* kProjectUrl = L"https://github.com/AlanBacker/VRChat-DLSS5-Cam";
+constexpr const wchar_t* kBoothUrl = L"https://alanbacker.booth.pm/items/8821023";
 constexpr const wchar_t* kImagePatterns =
     L"*.png;*.jpg;*.jpeg;*.jpe;*.jfif;*.bmp;*.dib;*.tif;*.tiff;*.gif;*.webp;*.heic;*.heif;*.avif;*.jxr;*.wdp;*.hdp;*.ico;*.dds";
 constexpr const wchar_t* kVideoPatterns =
@@ -407,8 +408,10 @@ bool App::Init(HINSTANCE hInstance, int nCmdShow) {
     // --edition: the other edition of this program is fetched and swapped in like an update, without a click.
     const bool otherEdition = m_cli.edition == (APP_EDITION_AMD ? 1 : 2);
     if (m_cli.edition && !otherEdition) Log::Info("--edition: this is the %s edition already", APP_EDITION_AMD ? "Radeon" : "GeForce");
+    m_updater.SetAccess(m_settings.githubMirror, m_settings.githubMirrorCustom, m_settings.githubMirrorPick);
+    // The automatic check of a first start waits for the setup guide, where the user chooses how GitHub is reached.
     if (!m_headless && otherEdition) m_updater.Check(APP_VERSION_STRING, true, true, true);
-    else if (!m_headless && (m_cli.update || (!m_cli.process && m_settings.updateCheck))) m_updater.Check(APP_VERSION_STRING, m_settings.updateChannel == 1, false);
+    else if (!m_headless && (m_cli.update || (!m_cli.process && m_settings.updateCheck && m_settings.setupGuideSeen))) { m_startCheckDone = true; m_updater.Check(APP_VERSION_STRING, m_settings.updateChannel == 1, false); }
     // The previous session's file comes back only when the user asked for that.
     if (m_cli.open.empty() && m_settings.reopenLast) {
         if (m_settings.sourceMode == SourceImage && !m_settings.imagePath.empty()) {
@@ -1838,6 +1841,13 @@ void App::Frame() {
         info.updateDownloadedMb = us.downloadedMb;
         info.updateTotalMb = us.totalMb;
         info.updateProgress = us.totalMb > 0.0 ? (float)std::min(1.0, us.downloadedMb / us.totalMb) : 0.0f;
+        info.updaterBusy = m_updater.Busy();
+        info.mirrorProbing = us.probing;
+        info.mirrorInUse = us.mirrorInUse;
+        info.mirrors.clear();
+        for (const Updater::MirrorResult& m : us.mirrors) info.mirrors.push_back({ m.url, m.error, m.seconds, m.ok });
+        // The site that answered fastest is remembered, and tried first next time.
+        if (m_settings.githubMirror == 1 && !us.mirrorInUse.empty() && us.mirrorInUse != m_settings.githubMirrorPick) { m_settings.githubMirrorPick = us.mirrorInUse; MarkSettingsDirty(); }
         if (us.generation != m_updateGenSeen) {
             m_updateGenSeen = us.generation;
             switch (us.state) {
@@ -1854,6 +1864,7 @@ void App::Frame() {
                 break;
             case Updater::State::Failed:
                 if (us.download) m_ui.Toast(us.writable ? StrPrintf(TR(UpdateFailed), us.error.c_str()) : std::string(TR(UpdateNotWritable)), true);
+                else if (us.mirrorsFailed) info.mirrorPrompt = true;   // no mirror site answered: the popup offers a site of the user's own, or GitHub itself
                 else m_ui.Toast(StrPrintf(TR(UpdateCheckFailed), us.error.c_str()), true);
                 break;
             case Updater::State::Restarting: PostMessageW(m_hwnd, WM_CLOSE, 0, 0); break;
@@ -2094,6 +2105,13 @@ void App::HandleEvents(ui::UiEvents& ev) {
     if (ev.openLogFile) OpenPath(Log::FilePath());
     if (ev.openSettingsFolder) OpenPath(m_appDataDir);
     if (ev.openProjectPage) OpenPath(kProjectUrl);
+    if (ev.openBooth) OpenPath(kBoothUrl);
+    if (ev.mirrorProbe) m_updater.Probe();
+    if (ev.guideClosed && !m_headless && !m_cli.process && m_settings.updateCheck && !m_startCheckDone) {
+        m_startCheckDone = true;
+        m_updater.SetAccess(m_settings.githubMirror, m_settings.githubMirrorCustom, m_settings.githubMirrorPick);
+        m_updater.Check(APP_VERSION_STRING, m_settings.updateChannel == 1, false);
+    }
     if (ev.openDocs) OpenPath(DocsUrl());
     // Presets.
     if (ev.presetSave) {
@@ -2159,6 +2177,7 @@ void App::HandleEvents(ui::UiEvents& ev) {
     if (ev.settingsChanged) {
         m_settings.Clamp();
         MarkSettingsDirty();
+        m_updater.SetAccess(m_settings.githubMirror, m_settings.githubMirrorCustom, m_settings.githubMirrorPick);
     }
     if (ev.hotkeyChanged && !m_headless) RegisterHotkey();
     if (ev.nrChanged) {

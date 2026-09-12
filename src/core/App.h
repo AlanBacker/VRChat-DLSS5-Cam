@@ -363,6 +363,7 @@ private:
     ui::Fonts     m_fonts;
     ui::MainUI    m_ui;
     Updater       m_updater;               // looks for and installs a newer version
+    bool          m_startCheckDone = false; // the automatic update check of this start ran (it waits for the setup guide)
     PortSetup     m_portSetup;             // Radeon edition: fetches and starts the DLSS-NR-on-AMD installer on request
     PortSetup::Status m_portStatus;        // its state as last polled (the interface reads it)
     unsigned      m_portGenSeen = 0;

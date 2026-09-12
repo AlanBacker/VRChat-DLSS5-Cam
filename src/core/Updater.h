@@ -4,6 +4,7 @@
 #include <mutex>
 #include <string>
 #include <thread>
+#include <vector>
 
 namespace vdc {
 
@@ -13,6 +14,17 @@ namespace vdc {
 class Updater {
 public:
     enum class State { Idle, Checking, UpToDate, Available, Downloading, Extracting, Restarting, Failed };
+    // How GitHub is reached. GitHub is slow or unreachable in some regions (mainland China among them), so the
+    // check and the download can go through a public mirror site that relays github.com: the fastest of the
+    // built-in sites (measured), or one the user typed in. The sites relay github.com and raw.githubusercontent.com
+    // but not the API, so the release list then comes from the copy the repository keeps (updates.json).
+    enum class Access { Direct = 0, Mirror = 1, Custom = 2 };
+    struct MirrorResult {
+        std::string url, error;
+        double      seconds = 0.0;
+        bool        ok = false;             // answered with a valid release list
+    };
+    static const std::vector<std::string>& BuiltInMirrors();
     struct Release {
         std::string tag, version, date, notes, assetUrl, pageUrl;
         unsigned long long assetSize = 0;
@@ -30,11 +42,18 @@ public:
         bool        download = false;       // the state belongs to a download rather than a check
         bool        writable = true;        // the program folder can be written to
         unsigned    generation = 0;         // counts state changes, so the interface announces each once
+        std::vector<MirrorResult> mirrors;  // the built-in mirror sites as last measured, fastest first
+        bool        probing = false;        // the sites are being measured
+        unsigned    probeGeneration = 0;    // counts finished measurements
+        std::string mirrorInUse;            // the site the last check or download went through; empty = GitHub itself
+        bool        mirrorsFailed = false;  // Failed: no mirror site answered (the interface asks what to do)
     };
 
     ~Updater();
     // otherEdition: look for the other edition of this program instead (its archive, this version or newer).
     void   Check(const std::string& currentVersion, bool includePrerelease, bool manual, bool otherEdition = false);
+    void   SetAccess(int mode, const std::string& customSite, const std::string& pick);   // Access; pick = the site to try first
+    void   Probe();                         // measure the built-in mirror sites (Status::mirrors)
     void   Download(const std::wstring& exeDir, const std::wstring& stagingDir);
     Status Get() const;
     bool   Busy() const;
@@ -45,12 +64,17 @@ private:
     void Join();
     bool RunCheck(const std::string& currentVersion, bool includePrerelease, bool otherEdition, Release& out, bool& newer, std::string& error);
     bool RunDownload(const std::wstring& exeDir, const std::wstring& stagingDir, std::string& error);
+    bool FetchReleases(std::string& body, std::string& error);                 // the release list by the chosen access
+    std::string ProbeMirrors(const std::string& manifestUrl, std::string* bestBody);   // the fastest site, or empty
+    void SetMirrorInUse(const std::string& site);
 
     mutable std::mutex m_mutex;
     Status             m_status;
     std::thread        m_thread;
     std::atomic<bool>  m_cancel{false};
     std::atomic<bool>  m_busy{false};
+    int                m_access = 0;       // Access (under m_mutex)
+    std::string        m_custom, m_pick;
 };
 
 // The DLSS-NR-on-AMD installer (Radeon edition): a separate program under its own terms, nothing of it is part of

@@ -112,6 +112,13 @@ struct UiFrameInfo {
     bool                  updateHasAsset = false;   // the release carries the win64 zip
     bool                  updateWritable = true;    // the program folder takes new files
     bool                  updateShow = false;       // open the update popup (set for one frame)
+    bool                  updaterBusy = false;      // a check, a download or a measurement runs
+    // GitHub access (App copies the updater's measurement of the mirror sites).
+    struct MirrorRow { std::string url, error; double seconds = 0.0; bool ok = false; };
+    std::vector<MirrorRow> mirrors;                 // fastest first; empty until measured
+    bool                  mirrorProbing = false;
+    std::string           mirrorInUse;              // the site the last check or download went through; empty = GitHub itself
+    bool                  mirrorPrompt = false;     // open the "no site answered" popup (set for one frame)
     float                 updateProgress = 0.0f;
     double                updateDownloadedMb = 0.0, updateTotalMb = 0.0;
 };
@@ -139,6 +146,9 @@ struct UiEvents {
     bool updateStart = false;        // download and install the version found
     bool updateOpenPage = false;     // the release page in the browser
     bool updateCancel = false;       // stop a running download
+    bool mirrorProbe = false;        // measure the built-in mirror sites now
+    bool openBooth = false;          // the BOOTH page in the browser
+    bool guideClosed = false;        // the setup guide was closed (finished or skipped)
     bool browseRuntime = false;
     bool browseDepthModel = false;
     bool reloadDepth = false;
@@ -239,6 +249,7 @@ private:
     void DrawPresetRow(Settings& s, UiEvents& ev);                                   // the user's presets of the effect values
     void DrawTransformTools(Settings& s, const UiFrameInfo& info, UiEvents& ev, const ImVec2& origin, const ImVec2& region,
                             const ImVec2& imgPos, const ImVec2& imgSize, bool canvasHovered);   // turn / mirror / crop of the shown file
+    void ModeFadeContent(int fromVtx);
     void DrawFades(Settings& s, const UiFrameInfo& info, UiEvents& ev);              // the mode, fullscreen and start-up fades
     void RequestFullscreen();                                                        // the switch, behind a short dip to black
     void TrackUndo(const Settings& s, const UiFrameInfo& info);                    // records a settings or library change as an undo step
@@ -246,6 +257,11 @@ private:
     void GoToHistory(Settings& s, const UiFrameInfo& info, UiEvents& ev, int index);   // to an entry of the history list
     void DrawHistory(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts, const ImVec2& anchor);   // the history popup, under its button
     void DrawUpdatePopup(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts);
+    void MirrorControls(Settings& s, const UiFrameInfo& info, UiEvents& ev, float width, bool why);   // the GitHub access choice
+    void DrawMirrorPopup(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts);   // no mirror site answered
+    void DrawSetupGuide(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts);    // the first-start guide
+    void CloseGuide(Settings& s, UiEvents& ev, bool point);                                          // point = light up the places the guide named
+    void Spotlight(bool foreground);                                                                 // a pulsing ring around the last item, after the guide
     static std::vector<LibrarySnapshotItem> LibrarySnapshot(const UiFrameInfo& info);
     static bool SameLibrary(const std::vector<LibrarySnapshotItem>& a, const std::vector<LibrarySnapshotItem>& b);
     void ResetView(bool animate);                                                  // back to the fitted, centred picture
@@ -295,6 +311,19 @@ private:
     float  m_libraryDragH = 0.0f;
     float  m_thumbH = 0.0f;          // thumbnail height of the library cards, from the library's height
     bool   m_updateOpen = false;     // open the update popup on this frame
+    // The setup guide, and the places it points at once it closes.
+    bool   m_guideOpen = false;      // open the guide on this frame
+    bool   m_guideShowing = false;   // the guide is up
+    bool   m_guideAutoDone = false;  // the first-start opening was decided
+    int    m_guidePage = 0;
+    double m_guidePageTime = -1.0;   // when the page changed (its content fades in)
+    bool   m_updateDeferred = false; // an update popup waits for the guide to close
+    bool   m_mirrorOpen = false;     // open the mirror-sites popup on this frame
+    bool   m_openAbout = false;      // open the About section (once, in the sidebar)
+    double m_scrollToAbout = -1.0;   // the sidebar glides to the About section until this time (its fold opens over a few frames)
+    float  m_aboutY = -1.0f;         // the About header's place in the sidebar (content coordinates)
+    double m_spotAt = -1.0;          // the spotlight rings flash once, from this time ...
+    double m_spotUntil = -1.0;       // ... until this one
     bool   m_upscaleWarned = false;  // the notice about the cost of super resolution was shown for the current upscale
     bool   m_wipeDragging = false;
     // Seek bar: while the knob is dragged the bar follows the cursor and seeks are sent a few times per second;

@@ -8,7 +8,10 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <chrono>
+#include <ctime>
 #include <functional>
+#include <numeric>
 #include <vector>
 
 #ifndef WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_3
@@ -19,6 +22,15 @@ namespace vdc {
 namespace {
 
 constexpr const wchar_t* kReleasesUrl = L"https://api.github.com/repos/AlanBacker/VRChat-DLSS5-Cam/releases?per_page=20";
+// The same list as the repository keeps it (updates.json, rewritten by a workflow at every release): what the
+// mirror sites can relay, since they do not relay the API.
+constexpr const char*    kManifestUrl = "https://raw.githubusercontent.com/AlanBacker/VRChat-DLSS5-Cam/main/updates.json";
+// Public sites that relay GitHub as <site>/<full address>. Measured, fastest first, when the automatic choice runs.
+const std::vector<std::string> kMirrors = {
+    "https://gh-proxy.com", "https://edgeone.gh-proxy.org", "https://hk.gh-proxy.org", "https://gh.dpik.top",
+    "https://ghfast.top", "https://ghproxy.net", "https://gh.llkk.cc", "https://gh.ddlc.top",
+};
+constexpr int kProbeTimeoutMs = 6000;
 // Each edition updates itself with its own archive.
 constexpr const char*    kAssetName   = APP_EDITION_AMD ? "VRChatDLSS5Cam-win64-amd.zip" : "VRChatDLSS5Cam-win64.zip";
 constexpr const char*    kOtherAssetName = APP_EDITION_AMD ? "VRChatDLSS5Cam-win64.zip" : "VRChatDLSS5Cam-win64-amd.zip";   // an edition switch
@@ -38,9 +50,10 @@ std::string WinHttpErrorText(const char* where) {
     return StrPrintf("%s: %s", where, text.c_str());
 }
 
-// GET over WinHTTP; the sink gets every chunk with the total announced by the server (0 when unknown).
+// GET over WinHTTP; the sink gets every chunk with the total announced by the server (0 when unknown). timeoutMs
+// (when set) bounds each step of the request; the default allows a slow download to go on.
 bool HttpGet(const std::wstring& url, bool json, const std::atomic<bool>& cancel,
-             const std::function<bool(const char*, DWORD, unsigned long long)>& sink, std::string& error) {
+             const std::function<bool(const char*, DWORD, unsigned long long)>& sink, std::string& error, int timeoutMs = 0) {
     wchar_t host[256] = {}, path[4096] = {}, extra[4096] = {};
     URL_COMPONENTSW uc{};
     uc.dwStructSize = sizeof(uc);
@@ -55,7 +68,8 @@ bool HttpGet(const std::wstring& url, bool json, const std::atomic<bool>& cancel
     if (!session) session = WinHttpOpen(L"VRChatDLSS5Cam (Windows; update check)", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
                                         WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0);
     if (!session) { error = WinHttpErrorText("WinHttpOpen"); return false; }
-    WinHttpSetTimeouts(session, 10000, 10000, 30000, 30000);
+    if (timeoutMs > 0) WinHttpSetTimeouts(session, timeoutMs, timeoutMs, timeoutMs, timeoutMs);
+    else WinHttpSetTimeouts(session, 10000, 10000, 30000, 30000);
     DWORD protocols = WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_2 | WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_3;
     if (!WinHttpSetOption(session, WINHTTP_OPTION_SECURE_PROTOCOLS, &protocols, sizeof(protocols))) {
         protocols = WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_2;
@@ -104,6 +118,19 @@ bool HttpGet(const std::wstring& url, bool json, const std::atomic<bool>& cancel
     if (conn) WinHttpCloseHandle(conn);
     WinHttpCloseHandle(session);
     return ok;
+}
+
+// A mirror site relays the full original address after its own: <site>/<https://github.com/...>.
+std::string MirrorUrl(const std::string& site, const std::string& url) { return site + "/" + url; }
+
+// "https://host/" -> "https://host"; a bare host gets the scheme; blanks are dropped.
+std::string TrimSite(std::string s) {
+    while (!s.empty() && (s.back() == ' ' || s.back() == '\t' || s.back() == '/' || s.back() == '\r' || s.back() == '\n')) s.pop_back();
+    size_t a = 0;
+    while (a < s.size() && (s[a] == ' ' || s[a] == '\t')) ++a;
+    s.erase(0, a);
+    if (!s.empty() && s.find("://") == std::string::npos) s = "https://" + s;
+    return s;
 }
 
 // ---- A small JSON reader: enough for the release list.
@@ -258,6 +285,12 @@ int CompareVersion(const int a[3], const int b[3]) {
     return 0;
 }
 
+// A mirror site that answers with a login page or an error page instead of the list does not count.
+bool ValidReleaseList(const std::string& body) {
+    Json root;
+    return JsonReader(body).Parse(root) && root.type == Json::Array;
+}
+
 // The release notes are Markdown; the interface shows them as text, so the markers are taken off.
 std::string PlainNotes(const std::string& md) {
     std::string out;
@@ -368,11 +401,7 @@ void Updater::Check(const std::string& currentVersion, bool includePrerelease, b
 
 bool Updater::RunCheck(const std::string& currentVersion, bool includePrerelease, bool otherEdition, Release& out, bool& newer, std::string& error) {
     std::string body;
-    if (!HttpGet(kReleasesUrl, true, m_cancel, [&](const char* data, DWORD n, unsigned long long) {
-            if (body.size() + n > 8u * 1024u * 1024u) return false;
-            body.append(data, n);
-            return true;
-        }, error)) {
+    if (!FetchReleases(body, error)) {
         Log::Warn("Update check failed: %s", error.c_str());
         return false;
     }
@@ -432,6 +461,133 @@ bool Updater::RunCheck(const std::string& currentVersion, bool includePrerelease
     return true;
 }
 
+const std::vector<std::string>& Updater::BuiltInMirrors() { return kMirrors; }
+
+void Updater::SetAccess(int mode, const std::string& customSite, const std::string& pick) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_access = mode;
+    m_custom = customSite;
+    if (m_pick.empty() || !pick.empty()) m_pick = pick;   // a measured site is kept until the settings name another
+}
+
+void Updater::SetMirrorInUse(const std::string& site) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_status.mirrorInUse = site;
+    if (m_access == (int)Access::Mirror) m_pick = site;
+}
+
+// The release list: from the GitHub API directly, or the repository's copy through a mirror site.
+bool Updater::FetchReleases(std::string& body, std::string& error) {
+    int mode = 0;
+    std::string custom, pick;
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        mode = m_access; custom = m_custom; pick = m_pick;
+        m_status.mirrorsFailed = false;
+    }
+    auto fetch = [this](const std::wstring& url, int timeoutMs, std::string& b, std::string& err) {
+        b.clear();
+        return HttpGet(url, true, m_cancel, [&](const char* data, DWORD n, unsigned long long) {
+            if (b.size() + n > 8u * 1024u * 1024u) return false;
+            b.append(data, n);
+            return true;
+        }, err, timeoutMs);
+    };
+    auto failed = [this]() { std::lock_guard<std::mutex> lock(m_mutex); m_status.mirrorsFailed = true; };
+    if (mode == (int)Access::Direct) {
+        SetMirrorInUse(std::string());
+        return fetch(kReleasesUrl, 0, body, error);
+    }
+    // A changing query keeps a site's cache from answering with an old list.
+    const std::string manifest = StrPrintf("%s?v=%llu", kManifestUrl, (unsigned long long)time(nullptr));
+    if (mode == (int)Access::Custom) {
+        const std::string site = TrimSite(custom);
+        if (site.empty()) { error = "no mirror site address is set"; failed(); return false; }
+        std::string err;
+        if (fetch(Utf8ToWide(MirrorUrl(site, manifest)), 15000, body, err) && ValidReleaseList(body)) { SetMirrorInUse(site); return true; }
+        error = StrPrintf("%s: %s", site.c_str(), err.empty() ? "unexpected answer" : err.c_str());
+        failed();
+        return false;
+    }
+    if (!pick.empty()) {
+        std::string err;
+        if (fetch(Utf8ToWide(MirrorUrl(pick, manifest)), 10000, body, err) && ValidReleaseList(body)) { SetMirrorInUse(pick); return true; }
+        Log::Info("Update check: mirror site %s did not answer (%s); measuring the sites", pick.c_str(), err.empty() ? "unexpected answer" : err.c_str());
+    }
+    const std::string site = ProbeMirrors(manifest, &body);
+    if (site.empty()) { error = "none of the mirror sites answered"; failed(); return false; }
+    SetMirrorInUse(site);
+    return true;
+}
+
+// Asks every built-in site for the release list at once and ranks them by their answer time.
+std::string Updater::ProbeMirrors(const std::string& manifestUrl, std::string* bestBody) {
+    { std::lock_guard<std::mutex> lock(m_mutex); m_status.probing = true; }
+    const int n = (int)kMirrors.size();
+    std::vector<MirrorResult> results((size_t)n);
+    std::vector<std::string> bodies((size_t)n);
+    std::vector<std::thread> threads;
+    for (int i = 0; i < n; ++i) {
+        results[(size_t)i].url = kMirrors[(size_t)i];
+        threads.emplace_back([&, i]() {
+            MirrorResult& r = results[(size_t)i];
+            std::string& b = bodies[(size_t)i];
+            const auto t0 = std::chrono::steady_clock::now();
+            std::string err;
+            const bool ok = HttpGet(Utf8ToWide(MirrorUrl(r.url, manifestUrl)), true, m_cancel, [&](const char* data, DWORD c, unsigned long long) {
+                if (b.size() + c > 8u * 1024u * 1024u) return false;
+                b.append(data, c);
+                return true;
+            }, err, kProbeTimeoutMs);
+            r.seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+            r.ok = ok && ValidReleaseList(b);
+            if (!r.ok) r.error = err.empty() ? "unexpected answer" : err;
+        });
+    }
+    for (std::thread& t : threads) t.join();
+    std::vector<int> order((size_t)n);
+    std::iota(order.begin(), order.end(), 0);
+    std::stable_sort(order.begin(), order.end(), [&](int a, int b) {
+        const MirrorResult& ra = results[(size_t)a];
+        const MirrorResult& rb = results[(size_t)b];
+        if (ra.ok != rb.ok) return ra.ok;
+        return ra.ok ? ra.seconds < rb.seconds : a < b;
+    });
+    std::vector<MirrorResult> sorted;
+    for (int i : order) {
+        const MirrorResult& r = results[(size_t)i];
+        sorted.push_back(r);
+        if (r.ok) Log::Info("Mirror site %s answered in %.2f s", r.url.c_str(), r.seconds);
+        else Log::Info("Mirror site %s: %s (%.1f s)", r.url.c_str(), r.error.c_str(), r.seconds);
+    }
+    std::string best;
+    if (!sorted.empty() && sorted[0].ok) { best = sorted[0].url; if (bestBody) *bestBody = bodies[(size_t)order[0]]; }
+    {
+        std::lock_guard<std::mutex> lock(m_mutex);
+        m_status.mirrors = sorted;
+        m_status.probing = false;
+        ++m_status.probeGeneration;
+        if (!best.empty()) m_pick = best;
+    }
+    return best;
+}
+
+void Updater::Probe() {
+    if (m_busy) return;
+    Join();
+    m_cancel = false;
+    m_busy = true;
+    m_thread = std::thread([this]() {
+        const std::string manifest = StrPrintf("%s?v=%llu", kManifestUrl, (unsigned long long)time(nullptr));
+        const std::string best = ProbeMirrors(manifest, nullptr);
+        if (!best.empty()) {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            if (m_access == (int)Access::Mirror) m_status.mirrorInUse = best;
+        }
+        m_busy = false;
+    });
+}
+
 void Updater::Download(const std::wstring& exeDir, const std::wstring& stagingDir) {
     if (m_busy) return;
     Join();
@@ -475,19 +631,40 @@ bool Updater::RunDownload(const std::wstring& exeDir, const std::wstring& stagin
     if (!CreateDirectories(stagingDir)) { error = "the update folder could not be created"; return false; }
     const std::wstring zipPath = JoinPath(stagingDir, Utf8ToWide(rel.assetName.empty() ? std::string(kAssetName) : rel.assetName));
     const std::wstring filesDir = JoinPath(stagingDir, L"files");
-    Log::Info("Update: downloading %s", rel.assetUrl.c_str());
-    FILE* f = nullptr;
-    if (_wfopen_s(&f, zipPath.c_str(), L"wb") != 0 || !f) { error = "the download file could not be created"; return false; }
     unsigned long long got = 0;
-    const bool ok = HttpGet(Utf8ToWide(rel.assetUrl), false, m_cancel, [&](const char* data, DWORD n, unsigned long long total) {
-        if (fwrite(data, 1, n, f) != n) return false;
-        got += n;
+    auto download = [&](const std::string& url, std::string& err) {
+        FILE* f = nullptr;
+        if (_wfopen_s(&f, zipPath.c_str(), L"wb") != 0 || !f) { err = "the download file could not be created"; return false; }
+        got = 0;
+        const bool ok = HttpGet(Utf8ToWide(url), false, m_cancel, [&](const char* data, DWORD n, unsigned long long total) {
+            if (fwrite(data, 1, n, f) != n) return false;
+            got += n;
+            std::lock_guard<std::mutex> lock(m_mutex);
+            m_status.downloadedMb = got / (1024.0 * 1024.0);
+            if (total) m_status.totalMb = total / (1024.0 * 1024.0);
+            return true;
+        }, err);
+        fclose(f);
+        return ok;
+    };
+    // Through the mirror site in use when one is chosen; GitHub itself when the site does not deliver the file.
+    std::string site;
+    {
         std::lock_guard<std::mutex> lock(m_mutex);
-        m_status.downloadedMb = got / (1024.0 * 1024.0);
-        if (total) m_status.totalMb = total / (1024.0 * 1024.0);
-        return true;
-    }, error);
-    fclose(f);
+        if (m_access == (int)Access::Custom) site = TrimSite(m_custom);
+        else if (m_access == (int)Access::Mirror) site = m_pick;
+    }
+    bool ok = false;
+    if (!site.empty()) {
+        Log::Info("Update: downloading %s through %s", rel.assetUrl.c_str(), site.c_str());
+        ok = download(MirrorUrl(site, rel.assetUrl), error);
+        if (ok) SetMirrorInUse(site);
+        else if (!m_cancel) Log::Warn("Update: the mirror site did not deliver the file (%s); trying GitHub itself", error.c_str());
+    }
+    if (!ok && !m_cancel) {
+        Log::Info("Update: downloading %s", rel.assetUrl.c_str());
+        ok = download(rel.assetUrl, error);
+    }
     if (!ok) { Log::Warn("Update: download failed: %s", error.c_str()); return false; }
     Log::Info("Update: downloaded %.1f MB", got / (1024.0 * 1024.0));
 

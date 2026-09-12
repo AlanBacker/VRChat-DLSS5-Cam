@@ -1,0 +1,31 @@
+# Keeps updates.json (the release list the program reads through a GitHub mirror site) in step with the releases.
+name: Release manifest
+
+on:
+  release:
+    types: [published, edited, released, prereleased, unpublished, deleted]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  manifest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Write updates.json
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/${{ github.repository }}/releases?per_page=20" --jq '[.[] | select(.draft | not) | {tag_name, name, published_at, prerelease, html_url, body, assets: [.assets[] | {name, size, browser_download_url}]}]' > updates.json
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add updates.json
+          git diff --cached --quiet && exit 0
+          git commit -m "Update the release manifest [skip ci]"
+          git push

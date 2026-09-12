@@ -88,7 +88,7 @@ struct Settings {
     std::string depthModelPath;        // UTF-8, empty = <exe folder>\models\depth_anything_v2_small_fp16.onnx
     bool  autoReset = false;           // reset the temporal history on detected scene cuts (DLSS 5 recovers by itself)
     float cutThreshold = 0.10f;
-    int   settingsVersion = 4;         // bumped when defaults change; older files are migrated in Load()
+    int   settingsVersion = 5;         // bumped when defaults change; older files are migrated in Load()
 
     // DLAA pre-pass (DLSS super resolution at native resolution)
     bool dlaaEnabled = false;
@@ -127,6 +127,13 @@ struct Settings {
     // Updates
     bool updateCheck = true;           // look for a new version at every start
     int  updateChannel = 0;            // 0 = stable releases only, 1 = pre-releases too
+    // GitHub is slow or unreachable in some regions (mainland China among them): the update check and the download
+    // can go through a public GitHub mirror site instead. 0 = GitHub directly, 1 = the fastest of the built-in
+    // sites (measured), 2 = the site the user typed in.
+    int         githubMirror = 0;
+    std::string githubMirrorCustom;    // the user's own site, "https://host" (mode 2)
+    std::string githubMirrorPick;      // the built-in site that answered fastest last time (mode 1), tried first
+    int         setupGuideSeen = 0;    // the setup guide was shown once (first start, also after an update to 1.6.0)
     // DLSS-NR-on-AMD (Radeon edition): a separate program under its own licence, fetched from its own release page
     // at the user's request (PortSetup).
     bool        portConsent = false;   // the user agreed once to fetching and running its installer

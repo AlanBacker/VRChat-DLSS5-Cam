@@ -253,6 +253,12 @@ channel too, and the update window marks each release *Full release* or *Pre-rel
 updates at start* switches the check off, the *Check for updates* button runs it at any time, and the result of the
 last check is shown underneath.
 
+Where GitHub is slow or unreachable (mainland China, for one), *GitHub access* in the same section switches the check
+and the download to a mirror site: **Mirror sites, the fastest one** measures eight known sites and uses the one that answers
+fastest (the *Measure the sites* button shows the result of each), **A mirror site of my own** takes a site of your own, and
+**GitHub directly** talks to GitHub itself. When no site answers, a window offers the other choices. Through a mirror the
+program reads the release list `updates.json` that this repository keeps in step with the releases.
+
 When a newer version exists, a window shows its version, its date and its release notes with three buttons.
 **Update now** downloads the release zip into `%LOCALAPPDATA%\VRChatDLSS5Cam\update`, unpacks it, closes the
 application, replaces the program files and starts it again; the settings and the library are left alone, the
@@ -261,7 +267,8 @@ executable stays in place. **Release page** opens the release in the browser and
 not; the application says so, and the update can be applied by hand from the release page instead. A failed check or
 a failed update is shown as a notification.
 
-This request to `api.github.com` (and the download from `github.com` once an update is chosen) is the only network
+This request to `api.github.com` (and the download from `github.com` once an update is chosen), or the same through
+the chosen mirror site, is the only network
 access the application ever makes; nothing else is sent anywhere. Headless and `--process` runs never check on their
 own.
 
@@ -281,7 +288,7 @@ own.
 | Source | Paper white / Highlight compression | Shown only for floating-point (HDR) Spout textures: exposure reference and soft highlight roll-off before the neural pass. |
 | DLSS 5 | Enable DLSS 5 (DLSSNR) | Switches the neural pass on or off. Off releases the runtime; on loads it again from the file. |
 | DLSS 5 | Runtime path / Reload | The runtime file in use; empty means the bundled build for the installed card. *Reload* starts that choice over and loads the file again. |
-| DLSS 5 | Host route | *Automatic*: the direct route on a GeForce card, the FSR host on a Radeon card. *Direct*: host `nvngx_dlssnr.dll` itself. *NGX core*: create the feature through the NGX runtime. *FSR host*: run an FSR 3.1 context at native size for DLSS-NR-on-AMD to attach to (shown when `amd_fidelityfx_dx12.dll` is present). |
+| DLSS 5 | Host route | *Automatic*: the direct route on a GeForce card, the FSR host on a Radeon card. *Direct*: host `nvngx_dlssnr.dll` itself. *FSR host*: run an FSR 3.1 context at native size for DLSS-NR-on-AMD to attach to (shown when `amd_fidelityfx_dx12.dll` is present). |
 | DLSS 5 | Presets | Named sets of the DLSS 5 values: *+* saves the current ones, the list applies one, each entry can be overwritten, renamed or deleted. Kept in `presets.txt` in the settings folder. |
 | DLSS 5 | Style | Render style (default / natural / cinematic) passed to the runtime. |
 | DLSS 5 | Intensity | Overall strength of the neural pass, 0–2. Up to 1 it is the runtime's own strength; above 1 the application amplifies the difference between the neural result and the original (which can exaggerate artifacts). At 0 the picture is left untouched. |
@@ -303,7 +310,8 @@ own.
 | Display | Reopen the last file at start | Open the file from the previous session again at the next start. Off by default. |
 | Display | Processing rate cap | Live camera: process at most this many frames per second and skip the rest. 0 = every frame. |
 | About | Check for updates at start / Update channel / Check for updates | Look for a newer release at every start (on by default), on the *Stable* or the *Pre-release* channel, or right away with the button. The result of the last check is shown underneath. |
-| About | Open log file / Open settings folder / Documentation / Project page / Third-party notices / Reset all settings | Version, GPU and driver, this guide, and the maintenance buttons. |
+| About | GitHub access | *GitHub directly*, through the fastest of eight known mirror sites (*Measure the sites* shows how each answered), or through a mirror site of your own. For regions where GitHub is slow or unreachable. |
+| About | Open log file / Open settings folder / Documentation / Project page / Setup guide / Third-party notices / Reset all settings | Version, GPU and driver, this guide, the setup guide (the pages the first start shows: language, GitHub access, what the program does, what the settings do, where to find things), and the maintenance buttons. |
 
 Settings are stored in `%LOCALAPPDATA%\VRChatDLSS5Cam\settings.ini`; the log is `log.txt` in the same folder.
 
@@ -316,7 +324,7 @@ Command-line options (open files, process unattended, screenshots, headless runs
 
 - **"Waiting for VRChat Spout stream…"** – *Spout Stream* has to be enabled on VRChat's Stream camera, and the camera must be open. Other Spout senders are listed in the *Sender* box.
 - **"The runtime files are missing"** – the archive was not extracted completely: `runtimes\blackwell\nvngx_dlssnr.dll` and `runtimes\universal\nvngx_dlssnr.dll` belong next to `VRChatDLSS5Cam.exe`. Extract it again, or select a runtime file under *Runtime path*.
-- **Neural rendering failed** – the application switches to the other bundled build by itself and says so in a notice. When neither build starts, the message under the error says so; a newer graphics driver is the first thing to try, `log.txt` carries the NGX result code, and *Preset* 0 together with the *NGX core* route is worth trying. On a Radeon card the neural pass runs through the Radeon edition and DLSS-NR-on-AMD instead (see *AMD Radeon cards*).
+- **Neural rendering failed** – the application switches to the other bundled build by itself and says so in a notice. When neither build starts, the message under the error says so; a newer graphics driver is the first thing to try, `log.txt` carries the NGX result code, and *Preset* 0 is worth trying. On a Radeon card the neural pass runs through the Radeon edition and DLSS-NR-on-AMD instead (see *AMD Radeon cards*).
 - **FSR host runs, but the picture is unchanged** – DLSS-NR-on-AMD is not attached to the process: the DLSS 5 section reads *DLSS-NR-on-AMD: not loaded*. Install it there (**Install DLSS-NR-on-AMD…**); the application restarts by itself once the installer is through. When it is installed but not loaded, run its installer again. When it is loaded and nothing changes, open its overlay (**End** key) to see that it is enabled and try the other *Mode*; its own log (`dlssnr_on_amd.log` in the program folder; its last lines also end `log.txt`) says what it did. The port is a separate project with its own requirements.
 - **amd_fidelityfx_dx12.dll is missing** – the FSR host route needs that file next to the executable; the Radeon edition (`VRChatDLSS5Cam-win64-amd.zip`) carries it.
 - **Neural pass active, but the picture is black or unchanged** – every neural frame is compared with its input, and a warning appears when the runtime reports success but delivers a black or unchanged picture (`log.txt`: "DLSSNR output check"). Switching DLSS 5 off and on again starts it fresh. If it persists, that runtime build does not produce a picture on this GPU. (With *Intensity* at 0 an unchanged picture is normal and no warning is shown.)

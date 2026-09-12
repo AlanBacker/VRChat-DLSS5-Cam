@@ -163,7 +163,10 @@ void MainUI::Draw(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Font
         if (m_themeLight != Colors().light) SetThemeLight(ImGui::GetStyle(), m_themeLight);
     }
     if (!m_undoInit) { m_undoBase = { s.ParameterText(), LibrarySnapshot(info), std::string() }; m_undoInit = true; }
-    if (info.updateShow) m_updateOpen = true;
+    // The update popup waits while the setup guide is up; the guide shows the same access controls as the popup
+    // that a failed mirror check would open, so that one is not opened over it.
+    if (info.updateShow) { if (m_guideShowing) m_updateDeferred = true; else m_updateOpen = true; }
+    if (info.mirrorPrompt && !m_guideShowing) m_mirrorOpen = true;
     if (!io.WantTextInput && io.KeyCtrl && !io.KeyAlt) {
         if (ImGui::IsKeyPressed(ImGuiKey_Z, false)) ApplyUndo(s, info, ev, io.KeyShift);
         else if (ImGui::IsKeyPressed(ImGuiKey_Y, false)) ApplyUndo(s, info, ev, true);
@@ -273,13 +276,27 @@ void MainUI::Draw(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Font
         ImGui::BeginChild("##sidebar", ImVec2(sidebarW, bodyH), ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_NoScrollWithMouse);
         ImGui::SetScrollX(0.0f);   // the sidebar only ever scrolls vertically
         SmoothScroll(false, ImGui::GetFontSize() * 3.6f);
+        if (m_openAbout) {   // after the setup guide: the About section opens and the sidebar glides to it
+            m_openAbout = false;
+            ImGui::PushID("about");
+            ImGui::GetStateStorage()->SetBool(ImGui::GetID("##header"), true);
+            ImGui::PopID();
+        }
+        if (m_scrollToAbout > 0.0) {
+            if (ImGui::GetTime() < m_scrollToAbout) { if (m_aboutY >= 0.0f) SmoothScrollTo(m_aboutY); }
+            else m_scrollToAbout = -1.0;
+        }
+        const int vtx0 = ImGui::GetWindowDrawList()->VtxBuffer.Size;
         DrawSidebar(s, info, ev, fonts);
+        ModeFadeContent(vtx0);
         ImGui::EndChild();
         ImGui::PopClipRect();
     }
 
     DrawStatusBar(s, info, ev, fonts);
     DrawUpdatePopup(s, info, ev, fonts);
+    DrawMirrorPopup(s, info, ev, fonts);
+    DrawSetupGuide(s, info, ev, fonts);
     ImGui::End();
 
     if (s.showLog) DrawLogWindow(s, ev, fonts);
@@ -629,6 +646,285 @@ void MainUI::DrawUpdatePopup(Settings& /*s*/, const UiFrameInfo& info, UiEvents&
     EndPopupFade();
 }
 
+namespace {
+// "https://hk.gh-proxy.com/" -> "hk.gh-proxy.com": the sites are shown by their host name.
+std::string HostOf(const std::string& url) {
+    std::string s = url;
+    const size_t scheme = s.find("://");
+    if (scheme != std::string::npos) s.erase(0, scheme + 3);
+    const size_t slash = s.find('/');
+    if (slash != std::string::npos) s.erase(slash);
+    return s;
+}
+
+// One item of the guide's pages: a bold title, a dim paragraph and an accent bar along its left.
+void GuideItem(const Fonts& fonts, const char* title, const char* text) {
+    const Palette& p = Colors();
+    const float em = ImGui::GetFontSize();
+    ImGui::Indent(em * 0.9f);
+    const ImVec2 c = ImGui::GetCursorScreenPos();
+    ImGui::PushFont(fonts.Bold(), 0.0f);
+    ImGui::TextUnformatted(title);
+    ImGui::PopFont();
+    ImGui::PushStyleColor(ImGuiCol_Text, p.textDim);
+    ImGui::TextWrapped("%s", text);
+    ImGui::PopStyleColor();
+    const ImVec2 e = ImGui::GetCursorScreenPos();
+    ImGui::GetWindowDrawList()->AddRectFilled(ImVec2(c.x - em * 0.6f, c.y + 2.0f), ImVec2(c.x - em * 0.6f + 3.0f, e.y - 3.0f), WithAlpha(p.accent, 0.75f), 1.5f);
+    ImGui::Unindent(em * 0.9f);
+    ImGui::Spacing();
+}
+} // namespace
+
+// How GitHub is reached: directly, through the fastest of the built-in mirror sites, or through a site of the
+// user's own. Shared by the About section, the setup guide and the popup that a failed mirror check opens.
+void MainUI::MirrorControls(Settings& s, const UiFrameInfo& info, UiEvents& ev, float width, bool why) {
+    const Palette& p = Colors();
+    const ImGuiStyle& style = ImGui::GetStyle();
+    if (why) {
+        ImGui::PushStyleColor(ImGuiCol_Text, p.textDim);
+        ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + width);
+        ImGui::TextUnformatted(TR(MirrorWhy));
+        ImGui::PopTextWrapPos();
+        ImGui::PopStyleColor();
+        ImGui::Spacing();
+    }
+    const char* modes[] = { TR(MirrorDirect), TR(MirrorAuto), TR(MirrorCustom) };
+    for (int i = 0; i < 3; ++i) {
+        ImGui::PushID(i);
+        if (ImGui::RadioButton(modes[i], s.githubMirror == i) && s.githubMirror != i) { s.githubMirror = i; ev.settingsChanged = true; }
+        ImGui::PopID();
+    }
+    if (s.githubMirror == 2) {
+        char buf[512];
+        snprintf(buf, sizeof(buf), "%s", s.githubMirrorCustom.c_str());
+        ImGui::SetNextItemWidth(width);
+        if (ImGui::InputTextWithHint("##mirrorCustom", "https://", buf, sizeof(buf))) { s.githubMirrorCustom = buf; ev.settingsChanged = true; }
+        ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + width);
+        Hint(TR(MirrorCustomHint));
+        ImGui::PopTextWrapPos();
+    }
+    if (s.githubMirror == 1) {
+        ImGui::BeginDisabled(info.mirrorProbing || info.updaterBusy);
+        if (GhostButton(TR(MirrorTest), ImVec2(width, 0.0f))) ev.mirrorProbe = true;
+        ImGui::EndDisabled();
+        if (info.mirrorProbing) {
+            ImGui::TextDisabled("%s", TR(MirrorTesting));
+        } else if (info.mirrors.empty()) {
+            ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + width);
+            Hint(TR(MirrorNotMeasured));
+            ImGui::PopTextWrapPos();
+        } else {
+            for (size_t i = 0; i < info.mirrors.size(); ++i) {
+                const UiFrameInfo::MirrorRow& m = info.mirrors[i];
+                const std::string host = HostOf(m.url);
+                if (m.ok) StatusDot(i == 0 ? p.good : p.textDim, StrPrintf("%s  %.2f %s", host.c_str(), m.seconds, TR(Seconds)).c_str());
+                else StatusDot(p.bad, StrPrintf("%s  %s", host.c_str(), m.error.rfind("HTTP ", 0) == 0 ? m.error.c_str() : TR(MirrorNoAnswer)).c_str());   // "HTTP 404" says more than "no answer"
+                if (i == 0 && m.ok) { ImGui::SameLine(0.0f, style.ItemInnerSpacing.x); Pill(TR(MirrorFastest), WithAlpha(p.good, 0.18f), p.good); }
+            }
+        }
+    }
+    if (s.githubMirror != 0 && !info.mirrorInUse.empty()) ImGui::TextDisabled("%s", StrPrintf(TR(MirrorInUse), HostOf(info.mirrorInUse).c_str()).c_str());
+}
+
+// No mirror site answered the update check: the user picks a site of their own, gives the sites up, or waits.
+void MainUI::DrawMirrorPopup(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts) {
+    if (m_mirrorOpen) { ImGui::OpenPopup("##mirror"); m_mirrorOpen = false; }
+    ImGuiViewport* vp = ImGui::GetMainViewport();
+    if (ImGui::IsPopupOpen("##mirror"))
+        ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x + vp->WorkSize.x * 0.5f, vp->WorkPos.y + vp->WorkSize.y * 0.45f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    if (!BeginPopupFade("##mirror", ImGuiWindowFlags_NoMove)) return;
+    const Palette& p = Colors();
+    const float em = ImGui::GetFontSize();
+    const float w = em * 28.0f;
+    ImGui::Dummy(ImVec2(w, 0.0f));   // fixes the width from the first frame, so the paragraphs wrap at it
+    ImGui::PushFont(fonts.Bold(), ImGui::GetStyle().FontSizeBase * 1.15f);
+    ImGui::TextUnformatted(TR(MirrorFailTitle));
+    ImGui::PopFont();
+    ImGui::PushTextWrapPos(w);
+    ImGui::PushStyleColor(ImGuiCol_Text, p.textDim);
+    if (s.githubMirror == 2) ImGui::TextUnformatted(StrPrintf(TR(MirrorFailCustom), info.updateError.c_str()).c_str());
+    else ImGui::TextUnformatted(TR(MirrorFailText));
+    ImGui::PopStyleColor();
+    ImGui::PopTextWrapPos();
+    ImGui::Spacing();
+    MirrorControls(s, info, ev, w, false);
+    ImGui::Separator();
+    if (AccentButton(TR(MirrorCheckAgain), ImVec2(em * 9.0f, 0.0f))) { ev.updateCheckNow = true; ImGui::CloseCurrentPopup(); }
+    ImGui::SameLine();
+    if (FlatButton(TR(UpdateLater), ImVec2(em * 7.0f, 0.0f))) ImGui::CloseCurrentPopup();
+    EndPopupFade();
+}
+
+// A pulsing accent ring around the last item while the setup guide's pointers are lit (Spotlight is called after
+// the Setup guide and Documentation buttons and the top bar's ? button).
+void MainUI::Spotlight(bool foreground) {
+    const double now = ImGui::GetTime();
+    if (m_spotUntil < 0.0 || now < m_spotAt || now >= m_spotUntil) return;
+    // One flash: the ring comes up quickly, then fades while it widens a little.
+    const float p = (float)((now - m_spotAt) / (m_spotUntil - m_spotAt));
+    const float a = p < 0.15f ? p / 0.15f : 1.0f - Ease((p - 0.15f) / 0.85f);
+    const float grow = 3.0f + 3.0f * p;
+    const ImVec2 a0 = ImGui::GetItemRectMin(), a1 = ImGui::GetItemRectMax();
+    ImDrawList* dl = foreground ? ImGui::GetForegroundDrawList() : ImGui::GetWindowDrawList();
+    dl->AddRect(ImVec2(a0.x - grow, a0.y - grow), ImVec2(a1.x + grow, a1.y + grow), WithAlpha(Colors().accent, a), 6.0f, 2.0f);
+}
+
+void MainUI::CloseGuide(Settings& s, UiEvents& ev, bool point) {
+    s.setupGuideSeen = 1;
+    ev.settingsChanged = true;
+    ev.guideClosed = true;
+    m_guideShowing = false;
+    if (m_updateDeferred) { m_updateDeferred = false; m_updateOpen = true; }
+    if (!point) return;
+    // The places the last page names light up: the sidebar shows, the About section opens and the sidebar glides
+    // to it, and a ring flashes once around the Setup guide and Documentation buttons and the ? button in the top bar.
+    s.sidebarVisible = true;
+    m_searchBuf[0] = 0;
+    m_openAbout = true;
+    m_scrollToAbout = ImGui::GetTime() + 0.8;
+    m_spotAt = ImGui::GetTime() + 0.9;   // once the sidebar has glided to the About section
+    m_spotUntil = m_spotAt + 1.4;
+}
+
+// The setup guide: shown once at the first start (also the first start after the update that brought it), and
+// again from the About section. Language and theme, the GitHub access, what the program does, what the settings
+// do, and where to find things afterwards.
+void MainUI::DrawSetupGuide(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts) {
+    const double now = ImGui::GetTime();
+    if (!m_guideAutoDone && info.windowShown && m_startFade >= 0.0 && now - m_startFade > 0.7) {
+        m_guideAutoDone = true;
+        if (!s.setupGuideSeen) m_guideOpen = true;
+    }
+    if (m_guideOpen) { ImGui::OpenPopup("##guide"); m_guideOpen = false; m_guidePage = 0; m_guidePageTime = now; }
+    // Closed by a click outside or Escape: counts as seen, without the pointers.
+    if (m_guideShowing && !ImGui::IsPopupOpen("##guide")) CloseGuide(s, ev, false);
+    ImGuiViewport* vp = ImGui::GetMainViewport();
+    if (ImGui::IsPopupOpen("##guide"))
+        ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x + vp->WorkSize.x * 0.5f, vp->WorkPos.y + vp->WorkSize.y * 0.5f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    if (!BeginPopupFade("##guide", ImGuiWindowFlags_NoMove)) return;
+    m_guideShowing = true;
+    const Palette& p = Colors();
+    const ImGuiStyle& style = ImGui::GetStyle();
+    const float em = ImGui::GetFontSize();
+    const float w = std::max(em * 20.0f, std::min(em * 36.0f, vp->WorkSize.x - em * 4.0f));
+    const float pageH = std::max(em * 12.0f, std::min(em * 23.5f, vp->WorkSize.y - em * 11.0f));
+    constexpr int kPages = 5;
+
+    ImGui::PushFont(fonts.Bold(), style.FontSizeBase * 1.15f);
+    ImGui::TextUnformatted(TR(GuideTitle));
+    ImGui::PopFont();
+    {
+        const std::string step = StrPrintf(TR(GuideStepFmt), m_guidePage + 1, kPages);
+        ImGui::SameLine(w - ImGui::CalcTextSize(step.c_str()).x);
+        ImGui::TextDisabled("%s", step.c_str());
+    }
+    ImGui::Spacing();
+
+    // The page, in a child of fixed height so the window keeps its size; the content fades in on a page change.
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(0, 0, 0, 0));
+    ImGui::BeginChild("##guidePage", ImVec2(w, pageH), ImGuiChildFlags_None, ImGuiWindowFlags_None);
+    ImGui::PopStyleColor();
+    const int vtx0 = ImGui::GetWindowDrawList()->VtxBuffer.Size;
+    auto title = [&](const char* text) {
+        ImGui::PushFont(fonts.Bold(), style.FontSizeBase * 1.3f);
+        ImGui::TextUnformatted(text);
+        ImGui::PopFont();
+        ImGui::Spacing();
+    };
+    const float inner = ImGui::GetContentRegionAvail().x;
+    switch (m_guidePage) {
+    case 0: {
+        title(TR(GuideWelcome));
+        Hint(TR(GuideWelcomeText));
+        ImGui::Spacing(); ImGui::Spacing();
+        const char* items[] = { TR(LangAuto), "English", "简体中文", "日本語", "한국어" };
+        ImGui::SetNextItemWidth(inner * 0.55f);
+        if (ComboIds("##guideLang", &s.language, items, 5)) { ev.languageChanged = true; ev.settingsChanged = true; }
+        ImGui::SameLine(0.0f, style.ItemInnerSpacing.x);
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(TR(Language));
+        Hint(TR(GuideLanguageHint));
+        ImGui::Spacing();
+        const char* themes[] = { TR(ThemeSystem), TR(ThemeDark), TR(ThemeLight) };
+        if (Segmented("##guideTheme", themes, 3, &s.theme, inner * 0.55f)) ev.settingsChanged = true;
+        ImGui::SameLine(0.0f, style.ItemInnerSpacing.x);
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(TR(Theme));
+        Hint(TR(GuideThemeHint));
+        break;
+    }
+    case 1:
+        title(TR(GithubAccess));
+        MirrorControls(s, info, ev, inner, true);
+        break;
+    case 2:
+        title(TR(GuidePageHow));
+        GuideItem(fonts, TR(GuideHowLiveT), TR(GuideHowLive));
+        GuideItem(fonts, TR(GuideHowFilesT), TR(GuideHowFiles));
+        GuideItem(fonts, TR(GuideHowLayoutT), TR(GuideHowLayout));
+        break;
+    case 3:
+        title(TR(GuidePageSettings));
+        GuideItem(fonts, TR(SecNeural), TR(GuideSetNeural));
+        GuideItem(fonts, TR(GuideSetDetailT), TR(GuideSetDetail));
+        GuideItem(fonts, TR(GuideSetBlendT), TR(GuideSetBlend));
+        GuideItem(fonts, TR(GuideSetGuidanceT), TR(GuideSetGuidance));
+        ImGui::PushStyleColor(ImGuiCol_Text, p.accentHover);
+        ImGui::TextWrapped("%s", TR(GuideSetTip));
+        ImGui::PopStyleColor();
+        break;
+    default:
+        title(TR(GuidePageWhere));
+        GuideItem(fonts, TR(GuideWhereGuideT), TR(GuideWhereGuide));
+        GuideItem(fonts, TR(GuideWhereDocsT), TR(GuideWhereDocs));
+        GuideItem(fonts, TR(GuideWhereSearchT), TR(GuideWhereSearch));
+        ImGui::TextDisabled("%s", TR(GuideWhereLight));
+        ImGui::Spacing(); ImGui::Spacing();
+        ImGui::TextWrapped("%s", TR(GuideStar));
+        ImGui::Spacing();
+        if (AccentButton(TR(GuideStarButton), ImVec2(em * 10.0f, 0.0f))) ev.openProjectPage = true;
+        ImGui::SameLine();
+        if (GhostButton(TR(GuideBoothButton), ImVec2(em * 10.0f, 0.0f))) ev.openBooth = true;
+        break;
+    }
+    {
+        const float ft = m_guidePageTime >= 0.0 ? (float)std::min(1.0, (now - m_guidePageTime) / 0.28) : 1.0f;
+        if (ft < 1.0f) FadeDrawn(ImGui::GetWindowDrawList(), vtx0, Ease(ft), (1.0f - Ease(ft)) * em * 0.4f);
+    }
+    ImGui::EndChild();
+
+    // Step dots, then Skip at the left and Back / Next (Finish) at the right.
+    {
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        const ImVec2 c0 = ImGui::GetCursorScreenPos();
+        const float gap = 14.0f;
+        float x = c0.x + (w - gap * kPages) * 0.5f + gap * 0.5f;
+        const float y = c0.y + em * 0.55f;
+        for (int i = 0; i < kPages; ++i) {
+            const float t = Animate(ImGui::GetID(StrPrintf("##guideDot%d", i).c_str()), i == m_guidePage ? 1.0f : 0.0f, 14.0f);
+            dl->AddCircleFilled(ImVec2(x, y), 3.0f + 1.2f * t, Mix(WithAlpha(p.textDim, 0.4f), p.accent, t));
+            x += gap;
+        }
+        ImGui::Dummy(ImVec2(w, em * 1.1f));
+    }
+    ImGui::Separator();
+    const bool last = m_guidePage == kPages - 1;
+    const float bw = em * 7.0f;
+    if (!last) { if (FlatButton(TR(GuideSkip), ImVec2(bw, 0.0f))) { CloseGuide(s, ev, true); ImGui::CloseCurrentPopup(); } }
+    else ImGui::Dummy(ImVec2(bw, ImGui::GetFrameHeight()));
+    ImGui::SameLine(w - bw * 2.0f - style.ItemSpacing.x);
+    ImGui::BeginDisabled(m_guidePage == 0);
+    if (GhostButton(TR(GuideBack), ImVec2(bw, 0.0f))) { --m_guidePage; m_guidePageTime = now; }
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    if (AccentButton(last ? TR(GuideFinish) : TR(GuideNext), ImVec2(bw, 0.0f))) {
+        if (last) { CloseGuide(s, ev, true); ImGui::CloseCurrentPopup(); }
+        else { ++m_guidePage; m_guidePageTime = now; }
+    }
+    EndPopupFade();
+}
+
 void MainUI::ResetView(bool animate) {
     m_zoomTarget = 1.0f;
     m_panHome = animate;
@@ -768,6 +1064,7 @@ void MainUI::DrawTopBar(Settings& s, const UiFrameInfo& info, UiEvents& ev, cons
     }
     ImGui::SetCursorPosY(centred(frameH));
     if (IconButton("##docs", Icon::Help, ImVec2(frameH, frameH), TR(TipDocs), ButtonKind::Plain)) ev.openDocs = true;
+    Spotlight(true);
     ImGui::SameLine();
     ImGui::SetCursorPosY(centred(frameH));
     ImGui::SetNextItemWidth(langW);
@@ -865,6 +1162,7 @@ void MainUI::DrawSidebar(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
         if (SectionHeader(TR(SecInternals), "internals", false)) { BlockInternals(s, info, ev); SectionEnd(); }
         ImGui::PopStyleVar();
     }
+    m_aboutY = ImGui::GetCursorPosY() - style.WindowPadding.y;   // where the sidebar glides to after the setup guide
     if (SectionHeader(TR(SecAbout), "about", false)) { BlockAbout(s, info, ev, fonts); SectionEnd(); }
     const bool nothingFound = Searching() && SearchHits() == 0;
     SearchEnd();
@@ -1128,9 +1426,12 @@ void MainUI::BlockNeural(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         // The FSR host entry is always there in the Radeon edition; elsewhere only when its runtime is present or
         // the route is already chosen.
         const bool fsrEntry = APP_EDITION_AMD || info.fsrDllExists || route == RouteFsrHost;
-        const char* routes[] = { TR(RouteAuto), TR(RouteSnippet), TR(RouteCore), TR(RouteFsr) };
-        int idx = std::clamp(s.nrRoute + 1, 0, 3);
-        if (ComboIds(TR(Route), &idx, routes, fsrEntry ? 4 : 3, TR(TipRoute))) { s.nrRoute = idx - 1; ev.nrChanged = true; ev.settingsChanged = true; }
+        // Automatic, Direct, FSR host (the NGX core route was retired in 1.6.0; its value stays reserved).
+        const char* routes[] = { TR(RouteAuto), TR(RouteSnippet), TR(RouteFsr) };
+        static const int values[] = { RouteAuto, RouteSignedSnippet, RouteFsrHost };
+        int idx = 0;
+        for (int i = 0; i < 3; ++i) if (values[i] == s.nrRoute) idx = i;
+        if (ComboIds(TR(Route), &idx, routes, fsrEntry ? 3 : 2, TR(TipRoute))) { s.nrRoute = values[idx]; ev.nrChanged = true; ev.settingsChanged = true; }
     }
     ImGui::Spacing();
     EffectControls(s, ev, s.showAdvanced, s.nrEnabled, st);
@@ -1388,6 +1689,8 @@ void MainUI::BlockGuidance(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
             if (still && !st->nvofReady) StatusDot(p.muted, StrPrintf("%s: %s", TR(Nvof), TR(StaticPreview)).c_str());
             else if (st->nvofReady) StatusDot(p.good, StrPrintf("%s: %s (%u px%s)", TR(Nvof), TR(Available), st->nvofGrid, st->nvofBidirectional ? " \xE2\x87\x84" : "").c_str());
             else if (!st->nvofAvailable && info.adapter && !info.adapter->IsNvidia()) StatusDot(p.muted, StrPrintf("%s: %s", TR(Nvof), TR(NvofNoEngine)).c_str());
+            // No source yet: the engine is created with the first frame, so this is no failure either.
+            else if (st->srcWidth == 0 && st->nvofError.empty()) StatusDot(p.muted, StrPrintf("%s: %s", TR(Nvof), TR(DepthWaitingSource)).c_str());
             else if (!st->nvofAvailable) StatusDot(p.warn, StrPrintf("%s: %s", TR(Nvof), TR(NotAvailable)).c_str());
             else StatusDot(p.warn, StrPrintf("%s: %s", TR(Nvof), st->nvofError.empty() ? TR(NotAvailable) : st->nvofError.c_str()).c_str());
         }
@@ -1412,6 +1715,14 @@ void MainUI::BlockGuidance(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
             case (int)DepthEstimatorState::Initializing:
                 StatusDot(p.warn, StrPrintf("%s: %s", TR(DepthStatus), TR(DepthInitializing)).c_str());
                 break;
+            case (int)DepthEstimatorState::Unavailable:
+                if (st->depthMessage.empty()) {
+                    // The estimator has not started yet (it starts with the first frame and reports a missing model
+                    // or runtime itself), so this is no failure.
+                    StatusDot(p.muted, StrPrintf("%s: %s", TR(DepthStatus), TR(DepthWaitingSource)).c_str());
+                    break;
+                }
+                [[fallthrough]];
             default:
                 StatusDot(p.warn, StrPrintf("%s: %s", TR(DepthStatus), TR(DepthUnavailable)).c_str());
                 ImGui::PushStyleColor(ImGuiCol_Text, p.warn);
@@ -1470,9 +1781,6 @@ void MainUI::BlockNgxRuntime(Settings& s, const UiFrameInfo& info, UiEvents& ev)
         else StatusDot(p.good, StrPrintf("%s: %s %s", TR(Runtime), TR(Loaded), st->nrRuntimeVersion.c_str()).c_str());
     } else if (st && st->nrRuntimeIdle) {
         StatusDot(p.muted, StrPrintf("%s: %s %s", TR(Runtime), st->nrRuntimeVersion.c_str(), TR(RuntimeIdle)).c_str());
-    } else if (st && !st->ngxInitialized && st->nrRoute == RouteNgxCore) {
-        // Only the core route depends on the NGX runtime; the snippet route reports on the DLL itself.
-        StatusDot(p.bad, StrPrintf("%s: %s", TR(NgxStatus), st->ngxStatus.c_str()).c_str());
     } else {
         StatusDot(p.warn, StrPrintf("%s: %s", TR(Runtime), TR(NotLoaded)).c_str());
         if (!info.nrRuntimeExists) {
@@ -1697,9 +2005,13 @@ void MainUI::BlockDlaa(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         ImGui::PopStyleColor();
     }
     {
-        const char* presets[] = { "Default", "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O" };
+        // The 310 runtime offers Default and J..N for DLAA; the older letters are gone from it.
+        static const char* presets[] = { "Default", "J", "K", "L", "M", "N" };
+        static const int values[] = { 0, 10, 11, 12, 13, 14 };
+        int idx = 2;
+        for (int i = 0; i < 6; ++i) if (values[i] == s.dlaaPreset) idx = i;
         ImGui::BeginDisabled(!available);
-        if (ComboIds(TR(DlaaPreset), &s.dlaaPreset, presets, 16, TR(TipDlaaPreset))) { ev.dlaaChanged = true; ev.settingsChanged = true; }
+        if (ComboIds(TR(DlaaPreset), &idx, presets, 6, TR(TipDlaaPreset))) { s.dlaaPreset = values[idx]; ev.dlaaChanged = true; ev.settingsChanged = true; }
         ImGui::EndDisabled();
     }
     if (info.status) Readout(m_fonts, TR(GpuTime), FormatMsFixed(m_shown.gpuMs[(UINT)GpuTimer::Dlaa]));
@@ -1769,6 +2081,12 @@ void MainUI::BlockAbout(Settings& s, const UiFrameInfo& info, UiEvents& ev, cons
         ImGui::TextUnformatted(TR(UpdateChannel));
         Help(TR(TipUpdateChannel));
     }
+    // GitHub access: directly, or through a mirror site where GitHub is slow or unreachable.
+    ImGui::Spacing();
+    ImGui::TextUnformatted(TR(GithubAccess));
+    Help(TR(MirrorWhy));
+    MirrorControls(s, info, ev, fullW, false);
+    ImGui::Spacing();
     {
         const int st = info.updateState;
         const bool busy = st == UpChecking || st == UpDownloading || st == UpExtracting || st == UpRestarting;
@@ -1796,9 +2114,13 @@ void MainUI::BlockAbout(Settings& s, const UiFrameInfo& info, UiEvents& ev, cons
     ImGui::SameLine(0.0f, style.ItemSpacing.x);
     if (GhostButton(TR(OpenSettingsFolder), half)) ev.openSettingsFolder = true;
     if (GhostButton(TR(Documentation), half)) ev.openDocs = true;
+    Spotlight(false);
     ImGui::SameLine(0.0f, style.ItemSpacing.x);
     if (GhostButton(TR(ProjectPage), half)) ev.openProjectPage = true;
-    if (GhostButton(TR(Licenses), ImVec2(fullW, 0.0f))) ev.openLicenses = true;
+    if (GhostButton(TR(GuideTitle), half)) m_guideOpen = true;
+    Spotlight(false);
+    ImGui::SameLine(0.0f, style.ItemSpacing.x);
+    if (GhostButton(TR(Licenses), half)) ev.openLicenses = true;
     if (GhostButton(TR(ResetAllSettings), ImVec2(fullW, 0.0f))) ImGui::OpenPopup("##resetall");
     if (BeginPopupFade("##resetall")) {
         ImGui::TextUnformatted(TR(ResetAllSettings));
@@ -2331,6 +2653,7 @@ void MainUI::DrawLibrary(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
     ImGui::BeginChild("##library", size, ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     ImGui::PopStyleVar(2);
     ImGui::PopStyleColor();
+    const int vtxRow = ImGui::GetWindowDrawList()->VtxBuffer.Size;   // the tool row, faded around a mode switch
     std::vector<LibraryItem>* lib = info.library;
     const int count = lib ? (int)lib->size() : 0;
     int selected = 0;
@@ -2396,7 +2719,8 @@ void MainUI::DrawLibrary(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
             ImGui::EndDisabled();
         }
     }
-    if (fold <= 0.001f) { m_libDrag = false; ImGui::EndChild(); return; }
+    if (fold <= 0.001f) { m_libDrag = false; ModeFadeContent(vtxRow); ImGui::EndChild(); return; }
+    ModeFadeContent(vtxRow);
 
     // The strip.
     const float thumbH = m_thumbH > 0.0f ? m_thumbH : ImGui::GetFontSize() * 4.5f;
@@ -2407,6 +2731,7 @@ void MainUI::DrawLibrary(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
     ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(0, 0, 0, 0));
     ImGui::BeginChild("##strip", ImVec2(0, stripH), ImGuiChildFlags_None, ImGuiWindowFlags_HorizontalScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     ImGui::PopStyleColor();
+    const int vtxStrip = ImGui::GetWindowDrawList()->VtxBuffer.Size;
     ImGuiIO& io = ImGui::GetIO();
     SmoothScroll(true, cardW + style.ItemSpacing.x);
     if (count == 0) {
@@ -2419,6 +2744,7 @@ void MainUI::DrawLibrary(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
         ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + wrap);
         ImGui::TextDisabled("%s", TR(LibraryHint));
         ImGui::PopTextWrapPos();
+        ModeFadeContent(vtxStrip);
         ImGui::EndChild();
         ImGui::EndChild();
         return;
@@ -2612,6 +2938,7 @@ void MainUI::DrawLibrary(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
     }
     if (menuCard) { m_ctxItem = menuCard; m_libDrag = false; ImGui::OpenPopup("##libctx"); }
     DrawLibraryMenu(s, info, ev);
+    ModeFadeContent(vtxStrip);
     ImGui::EndChild();
     ImGui::EndChild();
 }
@@ -2714,6 +3041,7 @@ void MainUI::DrawStatusBar(Settings& s, const UiFrameInfo& info, UiEvents& /*ev*
     const Palette& p = Colors();
     ImGui::BeginChild("##status", ImVec2(0, 0), ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     ImGui::SetScrollX(0.0f);
+    const int vtx0 = ImGui::GetWindowDrawList()->VtxBuffer.Size;
     ImGui::SetCursorPosY(ImGui::GetStyle().ItemSpacing.y);
     // Monospace, padded figures throughout: nothing here may shift when a number changes.
     ImGui::PushFont(fonts.Mono(), 0.0f);
@@ -2772,6 +3100,7 @@ void MainUI::DrawStatusBar(Settings& s, const UiFrameInfo& info, UiEvents& /*ev*
         ImGui::TextUnformatted(capture.c_str());
         ImGui::PopStyleColor();
     }
+    ModeFadeContent(vtx0);
     ImGui::EndChild();
 }
 
@@ -3172,6 +3501,14 @@ void MainUI::RequestFullscreen() {
     m_fsSent = false;
     m_fsRise = false;
     m_fsFadeStart = ImGui::GetTime();
+}
+
+// The sidebar, the library and the status bar dip their content in step with the preview's cover around a change
+// of the source: what they drew this frame fades and drops a little, and the new content rises back into place.
+void MainUI::ModeFadeContent(int fromVtx) {
+    if (m_modeFade <= 0.001f) return;
+    const float t = Ease(m_modeFade);
+    FadeDrawn(ImGui::GetWindowDrawList(), fromVtx, 1.0f - t, ImGui::GetFontSize() * 0.45f * t);
 }
 
 // Painted last, over everything: the preview dips to its background around a change of the source, the whole

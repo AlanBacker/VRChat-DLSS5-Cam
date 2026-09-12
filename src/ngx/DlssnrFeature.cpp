@@ -317,7 +317,7 @@ bool DlssnrFeature::LoadRuntime(ID3D12Device* device, const std::wstring& dllPat
 void DlssnrFeature::UnloadRuntime() {
     if (m_feature) {
         unsigned long seh = 0;
-        if (!m_useCore && g_release) SafeRelease(g_release, m_feature, &seh);
+        if (g_release) SafeRelease(g_release, m_feature, &seh);
         m_feature = nullptr;
     }
     // A parameter block that came from the runtime has to go back before the module does.
@@ -342,10 +342,10 @@ void DlssnrFeature::UnloadRuntime() {
 }
 
 bool DlssnrFeature::Create(NgxCore& core, ID3D12GraphicsCommandList* cmd, UINT inW, UINT inH, UINT outW, UINT outH,
-                           int preset, bool useCore, std::string& error) {
+                           int preset, std::string& error) {
     Release(core);
-    if (!useCore && !RuntimeLoaded()) { error = "DLSSNR runtime is not loaded"; return false; }
-    const bool runtimeParams = !useCore && g_allocParams && g_destroyParams;
+    if (!RuntimeLoaded()) { error = "DLSSNR runtime is not loaded"; return false; }
+    const bool runtimeParams = g_allocParams && g_destroyParams;
     if (!runtimeParams && !core.Initialized()) { error = "NGX core is not initialized"; return false; }
 
     unsigned long seh = 0;
@@ -370,8 +370,7 @@ bool DlssnrFeature::Create(NgxCore& core, ID3D12GraphicsCommandList* cmd, UINT i
         DestroyParams(core);
         return false;
     }
-    const CreateFeatureFn createFn = useCore ? static_cast<CreateFeatureFn>(&NVSDK_NGX_D3D12_CreateFeature) : g_create;
-    const NVSDK_NGX_Result r = SafeCreate(createFn, cmd, m_params, &m_feature, &seh);
+    const NVSDK_NGX_Result r = SafeCreate(g_create, cmd, m_params, &m_feature, &seh);
     if (seh || NVSDK_NGX_FAILED(r) || !m_feature) {
         error = seh ? StrPrintf("DLSSNR CreateFeature raised exception 0x%08lx", seh)
                     : StrPrintf("DLSSNR CreateFeature failed (%s, 0x%08x)", NgxCore::ResultName(r), (unsigned)r);
@@ -379,21 +378,18 @@ bool DlssnrFeature::Create(NgxCore& core, ID3D12GraphicsCommandList* cmd, UINT i
         DestroyParams(core);
         return false;
     }
-    m_useCore = useCore;
     m_inW = inW; m_inH = inH; m_outW = outW; m_outH = outH;
     m_evaluateCount = 0;
     m_failureCount = 0;
-    Log::Info("DLSSNR feature created (%s): %ux%u -> %ux%u preset %d", useCore ? "NGX core" : "signed snippet",
-              inW, inH, outW, outH, preset);
+    Log::Info("DLSSNR feature created (signed snippet): %ux%u -> %ux%u preset %d", inW, inH, outW, outH, preset);
     return true;
 }
 
 void DlssnrFeature::Release(NgxCore& core) {
     if (m_feature) {
         unsigned long seh = 0;
-        const ReleaseFeatureFn fn = m_useCore ? static_cast<ReleaseFeatureFn>(&NVSDK_NGX_D3D12_ReleaseFeature) : g_release;
-        if (fn) {
-            const NVSDK_NGX_Result r = SafeRelease(fn, m_feature, &seh);
+        if (g_release) {
+            const NVSDK_NGX_Result r = SafeRelease(g_release, m_feature, &seh);
             if (seh) Log::Warn("DLSSNR ReleaseFeature raised exception 0x%08lx", seh);
             else if (NVSDK_NGX_FAILED(r)) Log::Warn("DLSSNR ReleaseFeature failed (%s)", NgxCore::ResultName(r));
         }
@@ -434,8 +430,7 @@ bool DlssnrFeature::Evaluate(ID3D12GraphicsCommandList* cmd, const Inputs& in, c
         ++m_failureCount;
         return false;
     }
-    const EvaluateFeatureFn fn = m_useCore ? static_cast<EvaluateFeatureFn>(&NVSDK_NGX_D3D12_EvaluateFeature) : g_evaluate;
-    const NVSDK_NGX_Result r = SafeEvaluate(fn, cmd, m_feature, m_params, &seh);
+    const NVSDK_NGX_Result r = SafeEvaluate(g_evaluate, cmd, m_feature, m_params, &seh);
     ++m_evaluateCount;
     if (seh) { error = StrPrintf("DLSSNR EvaluateFeature raised exception 0x%08lx", seh); ++m_failureCount; return false; }
     if (NVSDK_NGX_FAILED(r)) {
