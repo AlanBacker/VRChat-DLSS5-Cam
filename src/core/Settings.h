@@ -15,7 +15,16 @@ enum SourceMode  { SourceSpout = 0, SourceImage = 1, SourceVideo = 2 };
 // The route the automatic choice takes: NVIDIA's runtime hosted directly on a GeForce card, the FSR host on a
 // Radeon card (where DLSS-NR-on-AMD attaches to the process), the direct route elsewhere so that its message says
 // what is missing.
-inline int EffectiveNrRoute(int route, bool amdCard) { return route == RouteAuto ? (amdCard ? RouteFsrHost : RouteSignedSnippet) : route; }
+// The Radeon edition has only the FSR host route: the direct route hosts the NVIDIA runtime itself, which is never
+// what a Radeon user wants, and a chosen or automatic value cannot lead there.
+inline int EffectiveNrRoute(int route, bool amdCard) {
+#if APP_EDITION_AMD
+    (void)route; (void)amdCard;
+    return RouteFsrHost;
+#else
+    return route == RouteAuto ? (amdCard ? RouteFsrHost : RouteSignedSnippet) : route;
+#endif
+}
 
 struct Settings {
     // General

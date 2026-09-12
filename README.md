@@ -106,7 +106,7 @@ On this route the strengths of the neural pass up to 1 belong to DLSS-NR-on-AMD 
 stays at inline, which a saved frame needs, see below); this application's *Preset*, *Style* and strength values
 are not passed to it. The controls that act after the pass (*Output blend*, strengths above 1, *Neural pass resolution*) work as usual.
 DLSS-NR-on-AMD needs Windows 11, a Radeon RX 7000 or RX 9000 card and Adrenalin 26.1.1 or newer; its release page states the current
-requirements. *Host route* under *Advanced* selects the route by hand (*Automatic* picks the FSR host on a Radeon card and the direct route on
+requirements. The Radeon edition always uses the FSR host route. In the GeForce edition, *Host route* under *Advanced* selects the route by hand (*Automatic* picks the FSR host on a Radeon card and the direct route on
 a GeForce card).
 
 The Radeon edition has been run on an RX 9060 XT: still pictures at 720p and 4K, video files, batch processing from the command line and
@@ -288,7 +288,7 @@ own.
 | Source | Paper white / Highlight compression | Shown only for floating-point (HDR) Spout textures: exposure reference and soft highlight roll-off before the neural pass. |
 | DLSS 5 | Enable DLSS 5 (DLSSNR) | Switches the neural pass on or off. Off releases the runtime; on loads it again from the file. |
 | DLSS 5 | Runtime path / Reload | The runtime file in use; empty means the bundled build for the installed card. *Reload* starts that choice over and loads the file again. |
-| DLSS 5 | Host route | *Automatic*: the direct route on a GeForce card, the FSR host on a Radeon card. *Direct*: host `nvngx_dlssnr.dll` itself. *FSR host*: run an FSR 3.1 context at native size for DLSS-NR-on-AMD to attach to (shown when `amd_fidelityfx_dx12.dll` is present). |
+| DLSS 5 | Host route | *Automatic*: the direct route on a GeForce card, the FSR host on a Radeon card. *Direct*: host `nvngx_dlssnr.dll` itself. *FSR host*: run an FSR 3.1 context at native size for DLSS-NR-on-AMD to attach to (shown when `amd_fidelityfx_dx12.dll` is present). The Radeon edition always uses the FSR host and does not show this control. |
 | DLSS 5 | Presets | Named sets of the DLSS 5 values: *+* saves the current ones, the list applies one, each entry can be overwritten, renamed or deleted. Kept in `presets.txt` in the settings folder. |
 | DLSS 5 | Style | Render style (default / natural / cinematic) passed to the runtime. |
 | DLSS 5 | Intensity | Overall strength of the neural pass, 0–2. Up to 1 it is the runtime's own strength; above 1 the application amplifies the difference between the neural result and the original (which can exaggerate artifacts). At 0 the picture is left untouched. |

@@ -1422,10 +1422,9 @@ void MainUI::BlockNeural(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
     const int route = st ? st->nrRoute : EffectiveNrRoute(s.nrRoute, info.adapter && info.adapter->IsAmd());
     if (route == RouteFsrHost) BlockFsrHost(s, info, ev);
     else BlockNgxRuntime(s, info, ev);
-    if (s.showAdvanced) {
-        // The FSR host entry is always there in the Radeon edition; elsewhere only when its runtime is present or
-        // the route is already chosen.
-        const bool fsrEntry = APP_EDITION_AMD || info.fsrDllExists || route == RouteFsrHost;
+    if (s.showAdvanced && !APP_EDITION_AMD) {   // the Radeon edition has only the FSR host route: nothing to choose
+        // The FSR host entry is there only when its runtime is present or the route is already chosen.
+        const bool fsrEntry = info.fsrDllExists || route == RouteFsrHost;
         // Automatic, Direct, FSR host (the NGX core route was retired in 1.6.0; its value stays reserved).
         const char* routes[] = { TR(RouteAuto), TR(RouteSnippet), TR(RouteFsr) };
         static const int values[] = { RouteAuto, RouteSignedSnippet, RouteFsrHost };
