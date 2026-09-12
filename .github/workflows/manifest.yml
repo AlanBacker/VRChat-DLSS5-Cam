@@ -9,6 +9,12 @@ on:
 permissions:
   contents: write
 
+# Several release events fire at once (published + edited, say): the runs queue behind each other so the second
+# one finds the manifest already current instead of losing the push.
+concurrency:
+  group: release-manifest
+  cancel-in-progress: false
+
 jobs:
   manifest:
     runs-on: ubuntu-latest
