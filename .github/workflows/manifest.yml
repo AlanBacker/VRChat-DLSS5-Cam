@@ -1,9 +1,12 @@
-# Keeps updates.json (the release list the program reads through a GitHub mirror site) in step with the releases.
+# Keeps updates.json (the release list the program reads through a GitHub mirror site) in step with the releases,
+# and port.json (the latest release of DLSS-NR-on-AMD, which the Radeon edition reads the same way) current daily.
 name: Release manifest
 
 on:
   release:
     types: [published, edited, released, prereleased, unpublished, deleted]
+  schedule:
+    - cron: "23 3 * * *"
   workflow_dispatch:
 
 permissions:
@@ -27,11 +30,21 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh api "repos/${{ github.repository }}/releases?per_page=20" --jq '[.[] | select(.draft | not) | {tag_name, name, published_at, prerelease, html_url, body, assets: [.assets[] | {name, size, browser_download_url}]}]' > updates.json
+      - name: Write port.json
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # The port's latest release; a failed look-up keeps the entry from last time.
+          if gh api "repos/danielblnc/DLSS-NR-on-AMD/releases/latest" --jq '{tag_name, published_at, html_url, assets: [.assets[] | {name, size, browser_download_url}]}' > port.json.new; then
+            mv port.json.new port.json
+          else
+            rm -f port.json.new
+          fi
       - name: Commit
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add updates.json
+          git add updates.json port.json
           git diff --cached --quiet && exit 0
           git commit -m "Update the release manifest [skip ci]"
           git push
