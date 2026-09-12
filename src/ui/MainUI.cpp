@@ -1929,6 +1929,17 @@ void MainUI::BlockFsrHost(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
     ImGui::PushStyleColor(ImGuiCol_Text, p.muted);
     ImGui::TextWrapped("%s", TR(AmdPortRequirements));
     ImGui::PopStyleColor();
+#if APP_EDITION_AMD
+    // The Radeon edition on a GeForce card: the GeForce edition is the one with the runtime builds.
+    if (info.adapter && info.adapter->IsNvidia()) {
+        ImGui::Spacing();
+        ImGui::PushStyleColor(ImGuiCol_Text, p.muted);
+        ImGui::TextWrapped("%s", TR(EditionHintAmdOnGeforce));
+        ImGui::PopStyleColor();
+        if (FlatButton(TR(EditionGetGeforce))) ev.editionSwitch = true;
+        Tip(TR(TipEditionSwitch));
+    }
+#endif
 }
 
 // The installer's state, the restart after it, and the buttons: install (the first press is the consent), update to
