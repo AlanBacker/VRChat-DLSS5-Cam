@@ -2,6 +2,7 @@
 // in the middle with the video controls and the media library under it, a sidebar of plain sections on the right.
 #include "ui/MainUI.h"
 #include "ui/Theme.h"
+#include "core/Capture.h"
 #include "core/I18n.h"
 #include "core/Log.h"
 #include "core/Util.h"
@@ -59,14 +60,22 @@ void OpenCloseRow(const char* openLabel, bool loaded, bool& open, bool& close) {
 }
 constexpr float kZoomMin = 0.1f, kZoomMax = 8.0f;   // preview magnification limits, relative to the picture's pixels
 
-// A dimmed label with its value at the end of the line, in the monospace font and at a fixed column: a figure that
-// changes never pushes anything else around, and padded formats keep even its digits in place.
-void Readout(const Fonts* fonts, const char* label, const std::string& value) {
+// A dimmed label at the left and its value flush with the right edge of the row, in the monospace font: a
+// justified two-column list, so the figures line up at the right whatever the language's label widths, and a
+// figure that changes never pushes anything else around. A label with a tip carries its "?" mark right after it,
+// as the controls do. A value too wide for the room left (the search box narrows nothing, but a long label in a
+// narrow sidebar can) follows the label instead of running under it.
+void Readout(const Fonts* fonts, const char* label, const std::string& value, const char* tip = nullptr) {
     if (!SearchMatch(label, value.c_str())) return;
+    const float x0 = ImGui::GetCursorPosX();
+    const float rowW = ImGui::GetContentRegionAvail().x;
     ImGui::TextDisabled("%s:", label);
+    if (tip) Help(tip);
     const float labelEnd = ImGui::GetItemRectMax().x - ImGui::GetWindowPos().x + ImGui::GetScrollX();
-    ImGui::SameLine(std::max(ImGui::GetFontSize() * 9.0f, labelEnd + ImGui::GetStyle().ItemSpacing.x));
     if (fonts) ImGui::PushFont(fonts->Mono(), 0.0f);
+    const float w = ImGui::CalcTextSize(value.c_str()).x;
+    ImGui::SameLine();
+    ImGui::SetCursorPosX(std::max(x0 + rowW - w, labelEnd + ImGui::GetStyle().ItemSpacing.x));
     ImGui::TextDisabled("%s", value.c_str());
     if (fonts) ImGui::PopFont();
 }
@@ -512,6 +521,7 @@ std::string MainUI::StepLabel(const UndoStep& from, const UndoStep& to) {
     VDC_KEY("videoOutput", VideoOutput, false) VDC_KEY("videoBitrateMbps", Bitrate, false) VDC_KEY("videoKeepAudio", KeepAudio, true)
     VDC_KEY("videoHardwareDecode", HardwareDecode, true) VDC_KEY("customResolution", CustomResolution, true) VDC_KEY("customWidth", Width, false)
     VDC_KEY("customHeight", Height, false) VDC_KEY("keepAspect", KeepAspect, true)
+    VDC_KEY("captureName", CaptureName, false) VDC_KEY("outputName", OutputName, false)
 #undef VDC_KEY
     std::string value = firstValue;
     if (isBool) value = (value == "1" || value == "true") ? TR(HistoryOn) : TR(HistoryOff);
@@ -695,6 +705,14 @@ void MainUI::MirrorControls(Settings& s, const UiFrameInfo& info, UiEvents& ev, 
         if (ImGui::RadioButton(modes[i], s.githubMirror == i) && s.githubMirror != i) { s.githubMirror = i; ev.settingsChanged = true; }
         ImGui::PopID();
     }
+    // What follows the mode choice changes with it (the site box, the test button, the measured list, the site in
+    // use), so it fades in, drifting up a little, like a page of the guide: at its first appearance, on a change of
+    // mode, when a test starts and when its list arrives.
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    const int vtx0 = dl->VtxBuffer.Size;
+    const int state = s.githubMirror * 8 + (info.mirrorProbing ? 1 : 0) + (info.mirrors.empty() ? 0 : 2) + (info.mirrorInUse.empty() ? 0 : 4);
+    const double now = ImGui::GetTime();
+    if (state != m_mirrorBlockState) { m_mirrorBlockState = state; m_mirrorBlockTime = now; }
     if (s.githubMirror == 2) {
         char buf[512];
         snprintf(buf, sizeof(buf), "%s", s.githubMirrorCustom.c_str());
@@ -725,6 +743,10 @@ void MainUI::MirrorControls(Settings& s, const UiFrameInfo& info, UiEvents& ev, 
         }
     }
     if (s.githubMirror != 0 && !info.mirrorInUse.empty()) ImGui::TextDisabled("%s", StrPrintf(TR(MirrorInUse), HostOf(info.mirrorInUse).c_str()).c_str());
+    {
+        const float ft = (float)std::min(1.0, (now - m_mirrorBlockTime) / 0.28);
+        if (ft < 1.0f) FadeDrawn(dl, vtx0, Ease(ft), (1.0f - Ease(ft)) * ImGui::GetFontSize() * 0.4f);
+    }
 }
 
 // No mirror site answered the update check: the user picks a site of their own, gives the sites up, or waits.
@@ -1437,8 +1459,7 @@ void MainUI::BlockNeural(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         Readout(m_fonts, TR(GpuTime), FormatMsFixed(m_shown.gpuMs[(UINT)GpuTimer::Neural]));
         Readout(m_fonts, TR(Frames), StrPrintf("%llu", m_shown.processedFrames));
         Readout(m_fonts, TR(NrPassSize), st->nrActive && st->nrPassWidth ? StrPrintf("%ux%u", st->nrPassWidth, st->nrPassHeight) : std::string("-"));
-        Readout(m_fonts, TR(NrOutputCheck), st->nrActive && m_shown.nrOutDelta >= 0.0f ? StrPrintf("%5.3f", m_shown.nrOutDelta) : std::string("    -"));
-        Help(TR(TipNrOutputCheck));
+        Readout(m_fonts, TR(NrOutputCheck), st->nrActive && m_shown.nrOutDelta >= 0.0f ? StrPrintf("%5.3f", m_shown.nrOutDelta) : std::string("-"), TR(TipNrOutputCheck));
     }
     ImGui::Spacing();
 }
@@ -1536,8 +1557,7 @@ void MainUI::BlockSave(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
     Hint(TR(OutputHint));
     if (s.sourceMode != SourceSpout) {
         // What the run would take on this card, so a slow card can be judged before the wait.
-        Readout(m_fonts, TR(Estimate), EstimateText(s, info));
-        Help(TR(TipEstimate));
+        Readout(m_fonts, TR(Estimate), EstimateText(s, info), TR(TipEstimate));
     }
     {
         SyncBuffer(m_folderBuf, sizeof(m_folderBuf), s.captureFolder, m_folderEditing);
@@ -1554,6 +1574,20 @@ void MainUI::BlockSave(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         if (IconButton("##openfolder", Icon::OpenExternal, ImVec2(btnW, 0), TR(OpenFolder))) ev.openCaptureFolder = true;
         ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
         TrailingLabel(TR(CaptureFolder));
+    }
+    {
+        // The saved files' names, from a template; an empty box means the default it shows. Live captures and
+        // processed files have their own (a capture has no source name to build on), the mode says which is shown.
+        const bool live = s.sourceMode == SourceSpout;
+        std::string& tmpl = live ? s.captureName : s.outputName;
+        SyncBuffer(m_nameBuf, sizeof(m_nameBuf), tmpl, m_nameEditing);
+        const std::string hint = WideToUtf8(live ? Capture::kDefaultCaptureName : Capture::kDefaultOutputName);
+        ImGui::InputTextWithHint("##filename", hint.c_str(), m_nameBuf, sizeof(m_nameBuf));
+        m_nameEditing = ImGui::IsItemActive();
+        if (ImGui::IsItemDeactivatedAfterEdit()) { tmpl = m_nameBuf; ev.settingsChanged = true; }
+        ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
+        TrailingLabel(live ? TR(CaptureName) : TR(OutputName));
+        Help(TR(TipFileName));
     }
     if (Toggle(TR(SaveOriginal), &s.saveOriginal)) ev.settingsChanged = true;
     if (s.showAdvanced) {
@@ -2024,13 +2058,13 @@ void MainUI::BlockDlaa(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         ImGui::PopStyleColor();
     }
     {
-        // The 310 runtime offers Default and J..N for DLAA; the older letters are gone from it.
-        static const char* presets[] = { "Default", "J", "K", "L", "M", "N" };
-        static const int values[] = { 0, 10, 11, 12, 13, 14 };
-        int idx = 2;
-        for (int i = 0; i < 6; ++i) if (values[i] == s.dlaaPreset) idx = i;
+        // Every preset the NGX interface names, bound to the value the runtime receives as it is: which letters a
+        // runtime build honours is its own business (the tip says what the bundled one does), and a swapped-in
+        // runtime may differ. The value is never re-mapped here: an earlier build turned any letter outside its
+        // list into K before the runtime saw it, which looked like the preset could not be chosen.
+        static const char* presets[] = { "Default", "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O" };
         ImGui::BeginDisabled(!available);
-        if (ComboIds(TR(DlaaPreset), &idx, presets, 6, TR(TipDlaaPreset))) { s.dlaaPreset = values[idx]; ev.dlaaChanged = true; ev.settingsChanged = true; }
+        if (ComboIds(TR(DlaaPreset), &s.dlaaPreset, presets, 16, TR(TipDlaaPreset))) { ev.dlaaChanged = true; ev.settingsChanged = true; }
         ImGui::EndDisabled();
     }
     if (info.status) Readout(m_fonts, TR(GpuTime), FormatMsFixed(m_shown.gpuMs[(UINT)GpuTimer::Dlaa]));

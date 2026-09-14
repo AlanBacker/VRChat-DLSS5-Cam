@@ -22,7 +22,7 @@ as a batch. It is an ordinary Windows application: the VRChat process is never t
 - **Live camera.** VRChat's Stream Camera is received over Spout and previewed in real time with DLSS 5 applied.
   A global hotkey (`Ctrl+Alt+P`) saves a lossless PNG while VRChat stays in the foreground.
 - **Images and video files.** Screenshots and recordings can be dropped onto the window, adjusted and exported:
-  PNG for stills, MP4 (H.264 / HEVC, audio track preserved) or a PNG sequence for video.
+  PNG for stills, MP4 (H.264 / HEVC, audio track preserved) or a PNG sequence for video, named by a template of your own.
 - **Batch processing.** Every file that is opened is collected in the library below the preview. Any selection can
   be processed in a single run, either with the shared parameters or with per-file parameters, and each file can be
   turned, mirrored or cropped beforehand.
@@ -300,7 +300,7 @@ own.
 | DLSS 5 | Input exposure / Tone transfer / Colour strength | Output blend. Input exposure (0.25–4×) scales the picture the network sees and is undone afterwards. Tone transfer and colour strength (0–2) set how much of the neural pass's brightness and colour changes reach the output; 1 / 1 reproduces the neural result exactly, 0 keeps the original. |
 | DLSS 5 | Shadow strength / Highlight & glow strength | Output blend, 0–2: how much of the neural pass's darkening and of its brightening reaches the output. 1 / 1 = as rendered. |
 | DLSS 5 | Neural pass resolution | Sizes the neural pass: the full picture, a cap on its long edge (a large source, for example 8K, is processed at a fixed, smaller size) or a percentage of the picture. A reduced pass has its change upsampled onto the full-resolution picture; lower values cut the GPU load at the cost of the finest detail. |
-| Capture | Folder / Keep alpha / Also save the original / Hotkey / Time-lapse | Where and how photos and videos are saved. |
+| Capture | Folder / File name / Keep alpha / Also save the original / Hotkey / Time-lapse | Where and how photos and videos are saved. The file name comes from a template: `{name}` (the source file's name, *VRChat* for a live capture), `{date}`, `{time}`, `{size}`, `{width}`, `{height}`, `{insize}`, `{inwidth}`, `{inheight}`; anything else is kept as typed, and a name already taken gets `_2`, `_3`, … Live captures default to `VRChat_DLSS5_{date}_{time}_{size}`, processed pictures and videos to `{name}_DLSS5_{size}`. |
 | Capture | Estimated time | Rough processing time of the open image or video with the current settings, refined by every run. |
 | Frame guidance | Motion vectors | NVIDIA Optical Flow (with a forward/backward consistency check), GPU block matching, or none. |
 | Frame guidance | Depth | AI estimated (Depth Anything V2 Small on DirectML; update interval and network resolution adjustable), flat, gradient, or zero. |

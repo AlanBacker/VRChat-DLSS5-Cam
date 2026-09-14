@@ -151,7 +151,8 @@ private:
         double       resumeSec = 0.0;            // preview position to return to afterwards
         std::wstring folder;                     // capture folder
         std::wstring stem;
-        std::wstring outPath;                    // MP4 file or PNG folder (once known)
+        std::wstring nameTemplate;               // file-name template (Capture::Template)
+        std::wstring outPath;                    // MP4 file or PNG folder (once known: with the first frame's size)
         int          codec = 0;
         UINT32       bitrateKbps = 40000;
         bool         withAudio = false;

@@ -735,17 +735,10 @@ bool App::WorkerStartVideo(const Settings& settings, VideoRun& run, const std::w
     run.withAudio = settings.videoKeepAudio && !run.pngSequence && vi.hasAudio;
     run.folder = folder;
     run.stem = m_video.Stem();
+    run.nameTemplate = Capture::Template(settings.outputName, false);
+    run.outPath.clear();   // named with the first frame, once the output size is known
     run.resumeSec = m_video.PreviewSeconds();
     if (!CreateDirectories(folder)) { error = "cannot create the capture folder"; return false; }
-    if (run.pngSequence) {
-        std::wstring dir;
-        for (int n = 1; n < 10000; ++n) {
-            dir = JoinPath(folder, run.stem + L"_DLSS5" + (n == 1 ? std::wstring() : L"_" + std::to_wstring(n)));
-            if (!DirectoryExists(dir) && !FileExists(dir)) break;
-        }
-        if (!CreateDirectories(dir)) { error = "cannot create the output folder"; return false; }
-        run.outPath = dir;
-    }
     // Playback of the preview stops; the run has the decoder to itself.
     m_preview.playing = false;
     m_preview.running = false;
@@ -764,7 +757,7 @@ bool App::WorkerStartVideo(const Settings& settings, VideoRun& run, const std::w
     m_pipeline.RequestReset();
     Log::Info("Video: processing %s (%.3f s to %s, %llu frames expected) -> %s", WideToUtf8(m_video.Path()).c_str(), fromSec,
               toSec > 0.0 ? StrPrintf("%.3f s", toSec).c_str() : "the end", (unsigned long long)run.total,
-              run.pngSequence ? WideToUtf8(run.outPath).c_str() : run.codec == 1 ? "MP4 (HEVC)" : "MP4 (H.264)");
+              run.pngSequence ? "PNG sequence" : run.codec == 1 ? "MP4 (HEVC)" : "MP4 (H.264)");
     return true;
 }
 
@@ -778,8 +771,13 @@ void App::WorkerVideoFrame(VideoRun& run, std::vector<uint8_t>&& rgba, UINT w, U
         const VideoInfo& vi = m_video.Info();
         pts = (LONGLONG)((double)index * 10000000.0 * (double)vi.fpsDen / (double)std::max(1u, vi.fpsNum));
     }
-    ++run.delivered;
+    const VideoInfo& vi = m_video.Info();
     if (run.pngSequence) {
+        if (run.outPath.empty()) {
+            run.outPath = Capture::MakeFolderName(run.folder, run.nameTemplate, run.stem, vi.width, vi.height, w, h);
+            if (!CreateDirectories(run.outPath)) { run.error = "cannot create the output folder"; return; }
+        }
+        ++run.delivered;
         while (m_capture.Pending() > 4 && !run.cancel) Sleep(1);   // the PNG encoder is slower than the pipeline
         wchar_t name[64];
         swprintf_s(name, L"_%06llu.png", (unsigned long long)index);
@@ -790,9 +788,10 @@ void App::WorkerVideoFrame(VideoRun& run, std::vector<uint8_t>&& rgba, UINT w, U
         m_capture.Enqueue(std::move(job));
         return;
     }
+    ++run.delivered;
     if (!run.writerPrepared) {
         run.writerPrepared = true;
-        run.outPath = Capture::MakeVideoFileName(run.folder, run.stem, w, h, L"mp4");
+        run.outPath = Capture::MakeFileName(run.folder, run.nameTemplate, run.stem, vi.width, vi.height, w, h, L"", L"mp4");
         VideoWriterConfig cfg;
         cfg.path = run.outPath;
         cfg.fpsNum = m_video.Info().fpsNum; cfg.fpsDen = m_video.Info().fpsDen;
@@ -1304,7 +1303,8 @@ void App::WorkerMain() {
                     if (estimatorStarting) Log::Warn("Capture: the depth estimator did not start in time, saving without an estimate");
                     depthWaitStart = 0.0;
                     imageCapturePending = false;
-                    m_pipeline.RequestCapture(imageCapture.path, imageCapture.keepAlpha, imageCapture.saveOriginal, m_image.Stem());
+                    m_pipeline.RequestCapture(imageCapture.path, imageCapture.keepAlpha, imageCapture.saveOriginal, m_image.Stem(),
+                                              Capture::Template(settings.outputName, false));
                 }
             }
             // A batch item is done once its picture has been written.
@@ -1333,6 +1333,8 @@ void App::WorkerMain() {
                     ended = true;
                 } else if (!videoRun.pngSequence && m_videoWriter.Failed()) {
                     videoRun.error = m_videoWriter.Error(); ended = true;
+                } else if (videoRun.pngSequence && !videoRun.error.empty()) {
+                    ended = true;   // the output folder could not be made
                 } else if (videoRun.frameHeld) {
                     // The last frame produced no output (a feature was created on it): run it through again.
                     if (++videoRun.heldRetries > kVideoHeldRetries) {
@@ -1398,7 +1400,8 @@ void App::WorkerMain() {
             if (settings.timelapseSeconds > 0 && now - lastTimelapse >= (double)settings.timelapseSeconds) {
                 lastTimelapse = now;
                 if (m_spout.HasFrame() && m_pipeline.HasDisplay())
-                    m_pipeline.RequestCapture(EffectiveCaptureFolder(settings), settings.keepAlpha, settings.saveOriginal, L"");
+                    m_pipeline.RequestCapture(EffectiveCaptureFolder(settings), settings.keepAlpha, settings.saveOriginal, L"",
+                                              Capture::Template(settings.captureName, true));
             }
         }
 
@@ -2247,7 +2250,8 @@ void App::CaptureNow() {
         m_ui.Toast(TR(CaptureNoFrame), true);
         return;
     }
-    m_pipeline.RequestCapture(EffectiveCaptureFolder(), m_settings.keepAlpha, m_settings.saveOriginal, L"");
+    m_pipeline.RequestCapture(EffectiveCaptureFolder(), m_settings.keepAlpha, m_settings.saveOriginal, L"",
+                              Capture::Template(m_settings.captureName, true));
     WakeWorker();
     m_ui.Toast(TR(Capturing));
 }

@@ -138,7 +138,9 @@ public:
     void MarkDlaaDirty() { m_dlssDirtyReq = true; }
     void RetryFsrHost() { m_fsrRetryReq = true; }   // FSR host route: load amd_fidelityfx_dx12.dll again after a failure
     // baseName: empty = timestamped VRChat_DLSS5_... name; else "<baseName>_DLSS5_<w>x<h>.png" (still images).
-    void RequestCapture(const std::wstring& folder, bool keepAlpha, bool saveOriginal, const std::wstring& baseName);
+    // nameTemplate: the file-name template (Capture::Template) the names are built from.
+    void RequestCapture(const std::wstring& folder, bool keepAlpha, bool saveOriginal, const std::wstring& baseName,
+                        const std::wstring& nameTemplate);
     bool CapturePending() const;
     void StatusSnapshot(PipelineStatus& out) const;
 
@@ -383,6 +385,7 @@ private:
     int          m_nrBurst = 0;
     std::wstring m_captureFolder;
     std::wstring m_captureBase;
+    std::wstring m_captureName;           // file-name template
     bool         m_captureKeepAlpha = true;
     bool         m_captureOriginal = false;
     std::vector<Readback> m_readbacks;

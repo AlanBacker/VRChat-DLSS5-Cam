@@ -1,6 +1,7 @@
 #include "ngx/DlssFeature.h"
 #include "core/Log.h"
 #include "core/Util.h"
+#include <cstdio>
 
 namespace vdc {
 
@@ -109,8 +110,11 @@ bool DlssFeature::Create(NgxCore& core, ID3D12GraphicsCommandList* cmd, UINT ren
         return false;
     }
     m_renderW = renderW; m_renderH = renderH; m_width = outW; m_height = outH; m_quality = quality;
-    if (Upscales()) Log::Info("DLSS super resolution feature created: %ux%u -> %ux%u (%s, preset %d)", renderW, renderH, outW, outH, QualityName(quality), preset);
-    else Log::Info("DLAA feature created: %ux%u preset %d", outW, outH, preset);
+    char presetName[16];
+    if (preset >= 1 && preset <= 15) std::snprintf(presetName, sizeof(presetName), "%c (%d)", 'A' + preset - 1, preset);
+    else std::snprintf(presetName, sizeof(presetName), "default (%d)", preset);
+    if (Upscales()) Log::Info("DLSS super resolution feature created: %ux%u -> %ux%u (%s, preset %s)", renderW, renderH, outW, outH, QualityName(quality), presetName);
+    else Log::Info("DLAA feature created: %ux%u preset %s", outW, outH, presetName);
     return true;
 }
 

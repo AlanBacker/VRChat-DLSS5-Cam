@@ -286,10 +286,12 @@ private:
     char   m_runtimeBuf[1024] = {};
     char   m_depthModelBuf[1024] = {};
     char   m_folderBuf[1024] = {};
+    char   m_nameBuf[512] = {};      // the file-name template (of the mode's kind)
     char   m_senderBuf[256] = {};
     bool   m_runtimeEditing = false;
     bool   m_depthModelEditing = false;
     bool   m_folderEditing = false;
+    bool   m_nameEditing = false;
     float  m_zoom = 1.0f;          // manual magnification on top of the fit (1 = as fitted, or 1:1), moving toward m_zoomTarget
     float  m_zoomTarget = 1.0f;
     ImVec2 m_zoomAnchor = ImVec2(0, 0);   // the screen point kept in place while the zoom moves
@@ -319,6 +321,8 @@ private:
     double m_guidePageTime = -1.0;   // when the page changed (its content fades in)
     bool   m_updateDeferred = false; // an update popup waits for the guide to close
     bool   m_mirrorOpen = false;     // open the mirror-sites popup on this frame
+    int    m_mirrorBlockState = -1;  // the mirror controls' mode-specific part: what it showed last (its content fades in on a change)
+    double m_mirrorBlockTime = -1.0; // when that changed
     bool   m_openAbout = false;      // open the About section (once, in the sidebar)
     double m_scrollToAbout = -1.0;   // the sidebar glides to the About section until this time (its fold opens over a few frames)
     float  m_aboutY = -1.0f;         // the About header's place in the sidebar (content coordinates)

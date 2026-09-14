@@ -142,6 +142,8 @@ bool Settings::ApplyText(const std::string& data) {
     r.Get("processRateLimit", processRateLimit);
     r.Get("showOverlay", showOverlay);
     r.Get("captureFolder", captureFolder);
+    r.Get("captureName", captureName);
+    r.Get("outputName", outputName);
     r.Get("keepAlpha", keepAlpha);
     r.Get("saveOriginal", saveOriginal);
     r.Get("hotkeyEnabled", hotkeyEnabled);
@@ -389,6 +391,8 @@ bool Settings::Save(const std::wstring& path) const {
     w.Put("processRateLimit", processRateLimit);
     w.Put("showOverlay", showOverlay);
     w.Put("captureFolder", captureFolder);
+    w.Put("captureName", captureName);
+    w.Put("outputName", outputName);
     w.Put("keepAlpha", keepAlpha);
     w.Put("saveOriginal", saveOriginal);
     w.Put("hotkeyEnabled", hotkeyEnabled);
@@ -474,8 +478,9 @@ void Settings::Clamp() {
     if (nvofGrid != 1 && nvofGrid != 2 && nvofGrid != 4) nvofGrid = 4;
     if (nvofPerf != 5 && nvofPerf != 10 && nvofPerf != 20) nvofPerf = 10;
     cutThreshold = std::clamp(cutThreshold, 0.01f, 0.5f);
-    // Default and J..N: the only presets the 310 runtime still offers for DLAA (A..G are gone from it).
-    if (dlaaPreset != 0 && (dlaaPreset < 10 || dlaaPreset > 14)) dlaaPreset = 11;
+    // Every preset value the NGX interface names (Default, A..O); the runtime decides what each of them does. Never
+    // re-mapped to another letter here: the runtime must receive the chosen one.
+    dlaaPreset = std::clamp(dlaaPreset, 0, 15);
     compareMode = std::clamp(compareMode, 0, 4);
     wipePosition = std::clamp(wipePosition, 0.0f, 1.0f);
     fitMode = std::clamp(fitMode, 0, 1);

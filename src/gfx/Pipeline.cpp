@@ -476,11 +476,13 @@ void Pipeline::UnloadNrRuntime(GpuContext& gpu) {
     m_nrOutState = 0; m_nrOutDelta = -1.0f;   // the output check's verdict belonged to the released instance
 }
 
-void Pipeline::RequestCapture(const std::wstring& folder, bool keepAlpha, bool saveOriginal, const std::wstring& baseName) {
+void Pipeline::RequestCapture(const std::wstring& folder, bool keepAlpha, bool saveOriginal, const std::wstring& baseName,
+                              const std::wstring& nameTemplate) {
     std::lock_guard<std::mutex> lock(m_captureMutex);
     m_captureRequested = true;
     m_captureFolder = folder;
     m_captureBase = baseName;
+    m_captureName = nameTemplate;
     m_captureKeepAlpha = keepAlpha;
     m_captureOriginal = saveOriginal;
 }
@@ -1675,21 +1677,20 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
     if (m_displayTarget >= 0) m_hasDisplay = true;   // a skipped display write keeps the previous state: the results exist
 
     if (captureNow) {
-        std::wstring captureFolder, captureBase;
+        std::wstring captureFolder, captureBase, captureName;
         bool captureKeepAlpha = true, captureOriginal = false;
         {
             std::lock_guard<std::mutex> lock(m_captureMutex);
-            captureFolder = m_captureFolder; captureBase = m_captureBase;
+            captureFolder = m_captureFolder; captureBase = m_captureBase; captureName = m_captureName;
             captureKeepAlpha = m_captureKeepAlpha; captureOriginal = m_captureOriginal;
         }
-        const std::wstring outPath = captureBase.empty()
-            ? Capture::MakeFileName(captureFolder, m_outW, m_outH, L"")
-            : Capture::MakeImageFileName(captureFolder, captureBase, m_outW, m_outH, L"");
+        // The processed picture and its original share one time stamp; the original is named by the input size.
+        SYSTEMTIME now;
+        GetLocalTime(&now);
+        const std::wstring outPath = Capture::MakeFileName(captureFolder, captureName, captureBase, m_inW, m_inH, m_outW, m_outH, L"", L"png", &now);
         EnqueueReadback(gpu, cmd, m_final, outPath, captureKeepAlpha);
         if (captureOriginal) {
-            const std::wstring origPath = captureBase.empty()
-                ? Capture::MakeFileName(captureFolder, m_inW, m_inH, L"_original")
-                : Capture::MakeImageFileName(captureFolder, captureBase, m_inW, m_inH, L"_original");
+            const std::wstring origPath = Capture::MakeFileName(captureFolder, captureName, captureBase, m_inW, m_inH, m_inW, m_inH, L"_original", L"png", &now);
             EnqueueReadback(gpu, cmd, m_color8, origPath, captureKeepAlpha);
         }
     }

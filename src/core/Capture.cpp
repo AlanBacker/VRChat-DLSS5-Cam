@@ -3,6 +3,7 @@
 #include <wincodec.h>
 #include <wrl/client.h>
 #include <objbase.h>
+#include <cwctype>
 
 using Microsoft::WRL::ComPtr;
 
@@ -48,36 +49,71 @@ size_t Capture::Pending() const {
     return m_jobs.size();
 }
 
-std::wstring Capture::MakeFileName(const std::wstring& folder, UINT width, UINT height, const wchar_t* suffix) {
-    wchar_t buf[128];
-    swprintf_s(buf, L"VRChat_DLSS5_%s_%ux%u%s.png", TimestampForFileName().c_str(), width, height, suffix ? suffix : L"");
-    return JoinPath(folder, buf);
+const wchar_t* const Capture::kDefaultCaptureName = L"VRChat_DLSS5_{date}_{time}_{size}";
+const wchar_t* const Capture::kDefaultOutputName  = L"{name}_DLSS5_{size}";
+
+std::wstring Capture::Template(const std::string& utf8, bool liveCapture) {
+    std::wstring t = Utf8ToWide(utf8);
+    while (!t.empty() && iswspace(t.back())) t.pop_back();
+    size_t b = 0;
+    while (b < t.size() && iswspace(t[b])) ++b;
+    t.erase(0, b);
+    return t.empty() ? std::wstring(liveCapture ? kDefaultCaptureName : kDefaultOutputName) : t;
 }
 
-std::wstring Capture::MakeVideoFileName(const std::wstring& folder, const std::wstring& stem, UINT width, UINT height,
-                                        const wchar_t* ext) {
-    const std::wstring base = stem.empty() ? L"video" : stem;
-    for (int n = 1; n < 10000; ++n) {
-        wchar_t buf[256];
-        if (n == 1) swprintf_s(buf, L"_DLSS5_%ux%u.%s", width, height, ext);
-        else        swprintf_s(buf, L"_DLSS5_%ux%u_%d.%s", width, height, n, ext);
-        const std::wstring path = JoinPath(folder, base + buf);
-        if (!FileExists(path)) return path;
+std::wstring Capture::ExpandName(const std::wstring& tmpl, const std::wstring& name, UINT inW, UINT inH, UINT width, UINT height,
+                                 const SYSTEMTIME* at) {
+    SYSTEMTIME st;
+    if (at) st = *at; else GetLocalTime(&st);
+    wchar_t date[32], time[32];
+    swprintf_s(date, L"%04u-%02u-%02u", st.wYear, st.wMonth, st.wDay);
+    swprintf_s(time, L"%02u-%02u-%02u.%03u", st.wHour, st.wMinute, st.wSecond, st.wMilliseconds);
+    const std::wstring who = name.empty() ? L"VRChat" : name;
+    struct Token { const wchar_t* key; std::wstring value; };
+    const Token tokens[] = {
+        { L"{name}", who }, { L"{date}", date }, { L"{time}", time },
+        { L"{size}", std::to_wstring(width) + L"x" + std::to_wstring(height) },
+        { L"{width}", std::to_wstring(width) }, { L"{height}", std::to_wstring(height) },
+        { L"{insize}", std::to_wstring(inW) + L"x" + std::to_wstring(inH) },
+        { L"{inwidth}", std::to_wstring(inW) }, { L"{inheight}", std::to_wstring(inH) },
+    };
+    std::wstring out;
+    for (size_t i = 0; i < tmpl.size();) {
+        bool hit = false;
+        if (tmpl[i] == L'{') {
+            for (const auto& t : tokens) {
+                const size_t n = wcslen(t.key);
+                if (i + n <= tmpl.size() && _wcsnicmp(tmpl.c_str() + i, t.key, n) == 0) { out += t.value; i += n; hit = true; break; }
+            }
+        }
+        if (!hit) out += tmpl[i++];
     }
-    return JoinPath(folder, base + L"_DLSS5_" + TimestampForFileName() + L"." + ext);
+    // What a file name cannot hold (the separators too: the file stays in its folder) becomes "_"; Windows drops a
+    // trailing dot or blank itself, so they go here to keep the name and its extension together.
+    for (auto& c : out) if (c < 32 || wcschr(L"\\/:*?\"<>|", c)) c = L'_';
+    while (!out.empty() && (out.back() == L'.' || out.back() == L' ')) out.pop_back();
+    if (out.empty()) out = who;
+    return out;
 }
 
-std::wstring Capture::MakeImageFileName(const std::wstring& folder, const std::wstring& stem, UINT width, UINT height,
-                                        const wchar_t* suffix) {
-    std::wstring base = stem.empty() ? L"image" : stem;
+std::wstring Capture::MakeFileName(const std::wstring& folder, const std::wstring& tmpl, const std::wstring& name, UINT inW, UINT inH,
+                                   UINT width, UINT height, const wchar_t* suffix, const wchar_t* ext, const SYSTEMTIME* at) {
+    const std::wstring base = ExpandName(tmpl, name, inW, inH, width, height, at) + (suffix ? suffix : L"");
     for (int n = 1; n < 10000; ++n) {
-        wchar_t buf[256];
-        if (n == 1) swprintf_s(buf, L"_DLSS5_%ux%u%s.png", width, height, suffix ? suffix : L"");
-        else        swprintf_s(buf, L"_DLSS5_%ux%u%s_%d.png", width, height, suffix ? suffix : L"", n);
-        std::wstring path = JoinPath(folder, base + buf);
+        const std::wstring path = JoinPath(folder, base + (n == 1 ? std::wstring() : L"_" + std::to_wstring(n)) + L"." + ext);
         if (!FileExists(path)) return path;
     }
-    return MakeFileName(folder, width, height, suffix);
+    return JoinPath(folder, base + L"_" + TimestampForFileName() + L"." + ext);
+}
+
+std::wstring Capture::MakeFolderName(const std::wstring& folder, const std::wstring& tmpl, const std::wstring& name, UINT inW, UINT inH,
+                                     UINT width, UINT height) {
+    const std::wstring base = ExpandName(tmpl, name, inW, inH, width, height);
+    for (int n = 1; n < 10000; ++n) {
+        const std::wstring path = JoinPath(folder, base + (n == 1 ? std::wstring() : L"_" + std::to_wstring(n)));
+        if (!DirectoryExists(path) && !FileExists(path)) return path;
+    }
+    return JoinPath(folder, base + L"_" + TimestampForFileName());
 }
 
 void Capture::WorkerMain() {
