@@ -21,7 +21,8 @@ VRChat DLSS5 Cam 将 VRChat 相机的画面接入 GeForce RTX 显卡上的 NVIDI
 - **实时相机。** 通过 Spout 接收 VRChat 的 Stream 相机画面，实时预览 DLSS 5 处理后的结果。全局热键
   （`Ctrl+Alt+P`）在 VRChat 处于前台时同样有效，可直接保存无损 PNG。
 - **图片与视频文件。** 截图或录像可拖入窗口，调整参数后导出：图片输出 PNG，视频输出 MP4
-  （H.264 / HEVC，保留音轨）或 PNG 序列，文件名可用自定义模板生成。
+  （H.264 / HEVC，保留音轨）、PNG 序列或 GIF / APNG / WebP 动图，文件名可用自定义模板生成。GIF、APNG、WebP 动图
+  会像视频一样逐帧处理，并以原格式输出，每一帧的显示时长都保留。
 - **批量处理。** 载入的文件会集中在预览下方的素材库中，选中的部分可一次处理完成。既可以使用共用参数，
   也可以为单个文件设置独立参数，处理前还能旋转、镜像与裁切。
 - **真正的 DLSS 5 引导。** 由 NVIDIA Optical Flow 生成运动矢量，Depth Anything V2 提供深度图，一并送入网络，
@@ -40,7 +41,7 @@ VRChat DLSS5 Cam 将 VRChat 相机的画面接入 GeForce RTX 显卡上的 NVIDI
 | 显卡 | NVIDIA GeForce RTX。**RTX 50** 系列与 **RTX 40 / 30 / 20** 系列各有一份对应的运行库随压缩包附带（见下一行），任何一代都无需额外准备文件。**AMD Radeon RX 7000 / 9000** 使用 Radeon 版（`VRChatDLSS5Cam-win64-amd.zip`），神经渲染经由 DLSS-NR-on-AMD 完成——它是一个独立项目，可从程序内一键安装（见*AMD Radeon 显卡*）。其他厂商的显卡不会被拒绝：程序可作为查看器和录制工具使用。DLAA 与硬件光流仍仅限 NVIDIA，运动向量会改由块匹配提供。 |
 | DLSS 5 运行库 | 已附带。压缩包内含两份 `nvngx_dlssnr.dll` 310.8.0.0：`runtimes\blackwell\` 是随游戏发布的原版（RTX 50），`runtimes\universal\` 是社区为 RTX 40 / 30 / 20 适配的同一运行库。程序启动时选择与所装显卡对应的一份，失败时改试另一份。这两个文件是 NVIDIA 的软件，受 NVIDIA 的条款约束，不属于本项目 MIT 许可的源代码（见 `THIRD_PARTY_NOTICES.md`）；无需再从其他地方获取任何文件。 |
 | VRChat | 任何带有 Stream 相机 *Spout Stream* 选项的版本（桌面或 VR）。仅实时相机功能需要。 |
-| 视频文件 | Windows Media Foundation（Windows 自带）。N / KN 版本需要安装 *Media Feature Pack*；HEVC 文件可能需要 Microsoft Store 里的 *HEVC 视频扩展*。 |
+| 视频文件 | Windows Media Foundation（Windows 自带）。N / KN 版本需要安装 *Media Feature Pack*；HEVC 文件可能需要 Microsoft Store 里的 *HEVC 视频扩展*。GIF、APNG、WebP 动图无需额外组件：由程序自行解码和写入。 |
 
 ## 安装与启动
 
@@ -121,8 +122,8 @@ DLSS-NR-on-AMD 文件，并在结尾附上该项目自己的日志（程序目�
 
 文件可拖入窗口，也可通过 *视频源* 分节中的 *打开图片…* / *打开视频…* 载入。画面出现在预览中，所有滑块立刻对其生效。
 *打开…* 旁边的 ✕ 按钮用于重新关闭文件：处理停止，预览清空，文件仍保留在素材库中。按 **处理并保存 PNG**（图片）、
-**处理并保存视频**（视频）或热键，结果会写入源文件所在位置，文件名为 `<名称>_DLSS5_<宽>x<高>.png`、`.mp4`
-或一个装有 PNG 帧的文件夹。
+**处理并保存视频**（视频）或热键，结果会写入源文件所在位置，文件名为 `<名称>_DLSS5_<宽>x<高>.png`、`.mp4`、
+动图对应的 `.gif` / `.png`（APNG）/ `.webp`，或一个装有 PNG 帧的文件夹。
 
 <p align="center">
   <img src="images/video.png" width="900" alt="预览里打开了一个视频：分割对比，画面下方是播放、逐帧和范围控件">
@@ -130,8 +131,13 @@ DLSS-NR-on-AMD 文件，并在结尾附上该项目自己的日志（程序目�
 
 对于视频，预览下方的控件可让文件经过整条管线播放与暂停、逐帧步进，并在鼠标悬停于进度条时显示该位置的缩略画面。
 *起点设在这里* / *终点设在这里* 将处理范围（以及音频）限制在一段之内，*整段视频* 取消该限制。默认输出与源文件规格一致：
-相同的编码、帧率与码率。关闭 *同步原视频规格* 后，可自行选择 H.264、HEVC 或 PNG 序列以及码率。
+相同的编码、帧率与码率。关闭 *同步原视频规格* 后，可自行选择 H.264、HEVC、PNG 序列、GIF、APNG 或 WebP 以及码率。
 *拍照* 分节会给出当前设置下该文件所需的大致时间。
+
+GIF、APNG 和 WebP 动图会作为视频打开：播放、逐帧、范围等控件同样可用，每一帧保留各自的显示时长。开启 *同步原视频规格*
+时，结果以原格式写出并保留文件的循环次数（无损 WebP 仍为无损）；关闭后，任何动态素材都可保存为 MP4、PNG 序列、GIF、
+APNG 或 WebP，*WebP 质量* 决定压缩程度（100 为无损）。开启 *保留透明度（Alpha）* 时透明信息会一并保留（GIF 仅一位透明）。
+GIF 每帧最多 256 色，帧率最高 50 fps。
 
 ## 批量处理
 
@@ -230,8 +236,8 @@ DLSS-NR-on-AMD 文件，并在结尾附上该项目自己的日志（程序目�
 | 视频源 | 输入 | *VRChat 相机（Spout）*、*图片文件* 或 *视频文件*。 |
 | 视频源 | Spout 发送端 | 接收哪个 Spout 发送端；VRChat 的相机是 `VRCSender1`。 |
 | 视频源 | 自定义输出分辨率 | 按指定尺寸而非来源尺寸输出。大于来源即放大：*DLSS 超分辨率*（官方 DLSS 放大器按倍数选定渲染尺寸、从来源重建细节，神经渲染随后在放大后的画面上运行）或普通的*插值重采样*。超分辨率会成倍增加之后各阶段要处理的像素：速度会大幅下降、显存占用更高；实时串流请设置处理帧率上限。小于来源即缩小。DLSS 最大支持单边 8192 像素，神经渲染约 4500 万像素：更大的输出会先在限制内完成，再重采样到指定尺寸。 |
-| 视频源 | 同步原视频规格 | 仅视频，默认开启：输出使用源文件的编码（H.264 或 HEVC）、帧率和平均码率。 |
-| 视频源 | 保存为 / 码率 / 保留音频 | 关闭 *同步原视频规格* 后：*MP4 (H.264)*、*MP4 (HEVC)* 或 *PNG 序列*，编码器码率（5–200 Mbit/s），以及是否复制音轨。 |
+| 视频源 | 同步原视频规格 | 仅视频，默认开启：输出使用源文件的编码（H.264 或 HEVC）、帧率和平均码率。GIF、APNG、WebP 动图以原格式输出并保留循环次数。 |
+| 视频源 | 保存为 / 码率 / 保留音频 / WebP 质量 | 关闭 *同步原视频规格* 后：*MP4 (H.264)*、*MP4 (HEVC)*、*PNG 序列*、*GIF*、*APNG* 或 *WebP*；MP4 的编码器码率（5–200 Mbit/s）与是否复制音轨；WebP 动图的压缩质量（50–100，100 为无损）。 |
 | 视频源 | 硬件解码 | 在 GPU 上解码视频。若某个文件颜色异常或无法打开，建议关闭。 |
 | 视频源 | 白点 / 高光压缩 | 仅在浮点（HDR）Spout 纹理时显示：神经渲染之前的曝光基准和柔和的高光滚降。 |
 | DLSS 5 | 启用 DLSS 5（DLSSNR） | 打开或关闭神经渲染。关闭会释放运行库，打开时重新从文件加载。 |
@@ -319,6 +325,7 @@ VRChat Stream 相机 ──Spout──▶ D3D11on12 接收 ──▶ 转换（sR
       ▶ Depth Anything V2（ONNX Runtime DirectML，每 N 帧一次）──▶ 归一化深度，其间沿运动矢量重投影
       ▶ [DLSS SR / DLAA] ──▶ DLSSNR（nvngx_dlssnr.dll）──▶ 合成 / 对比 ──▶ 预览 + PNG 拍照
 视频文件 ──Media Foundation──▶ 解码（GPU）──▶ 同一条管线，逐帧 ──▶ MP4（H.264 / HEVC + AAC）或 PNG 序列
+GIF / APNG / WebP 动图 ──WIC / libwebp──▶ 解码 ──▶ 同一条管线，逐帧 ──▶ GIF / APNG / WebP（保留帧时长）、MP4 或 PNG 序列
 ```
 
 程序在 NGX 运行时之外托管 DLSS 5 神经渲染 snippet：直接加载 DLL，满足其模块名检查，并使用 `DLSSNR.*` NGX 参数约定
@@ -340,7 +347,9 @@ VRChat Stream 相机 ──Spout──▶ D3D11on12 接收 ──▶ 转换（sR
 视频文件由 Media Foundation 源读取器在独立线程上解码（通过 DXGI 设备管理器使用硬件解码器，软件回退）到一个短的帧队列。
 处理线程每次把一帧交给管线，并请求回读该帧的结果；回读按帧序收集后交给写入器，因此即使神经渲染慢于帧间隔，
 也不会跳帧或重复帧。写入器在自己的线程上把每帧转换成 NV12，连同解码出的音频样本一起送入 Media Foundation 接收器写入器
-（有硬件编码器时使用）（`src/core/VideoSource.cpp`、`src/core/VideoWriter.cpp`）。
+（有硬件编码器时使用）（`src/core/VideoSource.cpp`、`src/core/VideoWriter.cpp`）。动图走同一个源接口，但使用自己的读取器：
+GIF 与 APNG 的帧由 Windows Imaging Component 解码（APNG 的数据块先拼成单独的 PNG 帧），再按各自的处置与混合规则合成到画布上；
+WebP 动图由 libwebp 解码。写入器逐帧生成输出动图，帧延时按累计方式取整，长文件的时序也不会漂移（`src/core/AnimatedImage.cpp`）。
 
 </details>
 

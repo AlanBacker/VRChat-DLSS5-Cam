@@ -38,9 +38,10 @@ constexpr const wchar_t* kWindowClass = L"VRChatDLSS5CamWindow";
 constexpr const wchar_t* kProjectUrl = L"https://github.com/AlanBacker/VRChat-DLSS5-Cam";
 constexpr const wchar_t* kBoothUrl = L"https://alanbacker.booth.pm/items/8821023";
 constexpr const wchar_t* kImagePatterns =
-    L"*.png;*.jpg;*.jpeg;*.jpe;*.jfif;*.bmp;*.dib;*.tif;*.tiff;*.gif;*.webp;*.heic;*.heif;*.avif;*.jxr;*.wdp;*.hdp;*.ico;*.dds";
+    L"*.png;*.apng;*.jpg;*.jpeg;*.jpe;*.jfif;*.bmp;*.dib;*.tif;*.tiff;*.gif;*.webp;*.heic;*.heif;*.avif;*.jxr;*.wdp;*.hdp;*.ico;*.dds";
 constexpr const wchar_t* kVideoPatterns =
     L"*.mp4;*.m4v;*.mov;*.mkv;*.webm;*.avi;*.wmv;*.mpg;*.mpeg;*.ts;*.m2ts;*.mts;*.3gp;*.3g2;*.flv;*.asf";
+constexpr const wchar_t* kAnimationPatterns = L"*.gif;*.apng;*.png;*.webp";   // animated images open like videos
 constexpr int kVideoHeldRetries = 10;   // passes a video frame gets to produce output before it is skipped
 
 // Still images: the neural network is temporal, so a picture is run through it several times until the result
@@ -709,30 +710,51 @@ void App::WorkerLoadVideo(GpuContext& gpu, const std::wstring& path, bool hardwa
 }
 
 // Starts feeding the opened video (or the range fromSec..toSec of it) through the pipeline. The output file is
-// created when the first processed frame arrives (its size is only known then); frames go to an MP4 (VideoWriter)
-// or a PNG sequence (Capture).
+// created when the first processed frame arrives (its size is only known then); frames go to an MP4 (VideoWriter),
+// a PNG sequence (Capture) or an animated GIF / APNG / WebP (AnimWriter).
 bool App::WorkerStartVideo(const Settings& settings, VideoRun& run, const std::wstring& folder, double fromSec, double toSec,
                            std::string& error) {
     run = VideoRun{};
+    // A failure of the last run must not end this one before its first frame.
+    m_videoWriter.Reset();
+    m_animWriter.Reset();
     if (!m_video.Loaded()) { error = "no video is open"; return false; }
     const VideoInfo& vi = m_video.Info();
     fromSec = std::max(0.0, fromSec);
     if (toSec <= fromSec) toSec = 0.0;
     if (vi.durationSeconds > 0.0 && fromSec >= vi.durationSeconds) { error = "the range starts after the end of the video"; return false; }
-    if (settings.videoMatchSource) {
+    const bool animatedSource = vi.animation != AnimFormat::None;
+    if (settings.videoMatchSource && animatedSource) {
+        // An animated image comes back in its own format, with its loop count; a lossless source stays lossless.
+        run.animFormat = vi.animation;
+        run.animLoops = vi.loopCount;
+        run.animQuality = std::clamp(settings.webpQuality, 50, 100);
+        run.animLossless = vi.lossless || (vi.animation == AnimFormat::WebP && run.animQuality >= 100);
+        Log::Info("Video: output matched to the animated source: %s%s, %s", AnimFormatName(run.animFormat),
+                  run.animFormat != AnimFormat::WebP ? "" : run.animLossless ? " lossless" : StrPrintf(" quality %d", run.animQuality).c_str(),
+                  run.animLoops == 0 ? "loops forever" : StrPrintf("%d loop(s)", run.animLoops).c_str());
+    } else if (settings.videoMatchSource) {
         // The output follows the file: its codec (HEVC stays HEVC, everything else becomes H.264), its average bitrate
         // (a variable-bitrate source by its average) and, as always, its frame rate.
         run.pngSequence = false;
+        run.matchSource = true;
         run.codec = (vi.codec.find("HEV") != std::string::npos || vi.codec == "H265") ? 1 : 0;
         run.bitrateKbps = vi.videoBitrateKbps > 0 ? std::clamp(vi.videoBitrateKbps, 1000u, 400000u) : 40000u;
         Log::Info("Video: output matched to the source: %s, %u kbit/s, %u/%u fps%s", run.codec ? "HEVC" : "H.264", run.bitrateKbps,
                   vi.fpsNum, vi.fpsDen, vi.videoBitrateKbps ? "" : " (bitrate unknown: 40 Mbit/s)");
+    } else if (settings.videoOutput >= 3) {
+        run.animFormat = settings.videoOutput == 3 ? AnimFormat::Gif : settings.videoOutput == 4 ? AnimFormat::Apng : AnimFormat::WebP;
+        run.animLoops = animatedSource ? vi.loopCount : 0;
+        run.animQuality = std::clamp(settings.webpQuality, 50, 100);
+        run.animLossless = run.animFormat == AnimFormat::WebP && run.animQuality >= 100;
     } else {
         run.pngSequence = settings.videoOutput == 2;
         run.codec = settings.videoOutput == 1 ? 1 : 0;
         run.bitrateKbps = (UINT32)std::clamp(settings.videoBitrateMbps, 5, 200) * 1000u;
     }
-    run.withAudio = settings.videoKeepAudio && !run.pngSequence && vi.hasAudio;
+    run.withAudio = settings.videoKeepAudio && !run.pngSequence && run.animFormat == AnimFormat::None && vi.hasAudio;
+    // The processed frames carry the source's transparency when "Keep transparency" is on; only an animation can keep it.
+    run.keepAlpha = run.animFormat != AnimFormat::None && settings.keepAlpha && vi.hasAlpha;
     run.folder = folder;
     run.stem = m_video.Stem();
     run.nameTemplate = Capture::Template(settings.outputName, false);
@@ -757,7 +779,7 @@ bool App::WorkerStartVideo(const Settings& settings, VideoRun& run, const std::w
     m_pipeline.RequestReset();
     Log::Info("Video: processing %s (%.3f s to %s, %llu frames expected) -> %s", WideToUtf8(m_video.Path()).c_str(), fromSec,
               toSec > 0.0 ? StrPrintf("%.3f s", toSec).c_str() : "the end", (unsigned long long)run.total,
-              run.pngSequence ? "PNG sequence" : run.codec == 1 ? "MP4 (HEVC)" : "MP4 (H.264)");
+              run.animFormat != AnimFormat::None ? AnimFormatName(run.animFormat) : run.pngSequence ? "PNG sequence" : run.codec == 1 ? "MP4 (HEVC)" : "MP4 (H.264)");
     return true;
 }
 
@@ -789,8 +811,44 @@ void App::WorkerVideoFrame(VideoRun& run, std::vector<uint8_t>&& rgba, UINT w, U
         return;
     }
     ++run.delivered;
+    if (run.animFormat != AnimFormat::None) {
+        if (!run.writerPrepared) {
+            run.writerPrepared = true;
+            // An APNG keeps the extension its source came with (.png or .apng).
+            std::wstring extension = AnimFormatExtension(run.animFormat);
+            if (run.animFormat == AnimFormat::Apng && vi.animation == AnimFormat::Apng && LowerExtension(m_video.Path()) == L"apng") extension = L"apng";
+            run.outPath = Capture::MakeFileName(run.folder, run.nameTemplate, run.stem, vi.width, vi.height, w, h, L"", extension.c_str());
+            AnimWriterConfig cfg;
+            cfg.path = run.outPath;
+            cfg.format = run.animFormat;
+            cfg.loopCount = run.animLoops;
+            cfg.keepAlpha = run.keepAlpha;
+            cfg.quality = run.animQuality;
+            cfg.lossless = run.animLossless;
+            cfg.frameTicks = (LONGLONG)std::llround(10000000.0 * (double)vi.fpsDen / (double)std::max(1u, vi.fpsNum));
+            m_animWriter.Prepare(cfg);
+        }
+        m_animWriter.PushFrame(index, pts, duration, std::move(rgba), pitch, w, h);
+        return;
+    }
     if (!run.writerPrepared) {
         run.writerPrepared = true;
+        // The output follows the source, and a larger picture needs more bits for the same quality: the source's
+        // bitrate is scaled by the pixel count. Above 4096 a side the hardware H.264 encoders stop, so a matched
+        // H.264 output becomes HEVC there instead of going through the software encoder at a few frames a second
+        // (an H.264 output the list asked for by name stays H.264).
+        if (run.matchSource && (UINT64)w * h > (UINT64)vi.width * vi.height && vi.width && vi.height) {
+            const double f = (double)((UINT64)w * h) / (double)((UINT64)vi.width * vi.height);
+            const UINT32 scaled = (UINT32)std::clamp(std::llround(run.bitrateKbps * f), 1000LL, 400000LL);
+            Log::Info("Video output: %ux%u is %.1f times the source's pixels, so its %u kbit/s become %u kbit/s",
+                      w, h, f, run.bitrateKbps, scaled);
+            run.bitrateKbps = scaled;
+        }
+        if (run.matchSource && run.codec == 0 && (w > 4096 || h > 4096)) {
+            run.codec = 1;
+            Log::Info("Video output: %ux%u is past the hardware H.264 encoders, so the matched output is written as "
+                      "HEVC (the hardware encoder takes it)", w, h);
+        }
         run.outPath = Capture::MakeFileName(run.folder, run.nameTemplate, run.stem, vi.width, vi.height, w, h, L"", L"mp4");
         VideoWriterConfig cfg;
         cfg.path = run.outPath;
@@ -818,7 +876,14 @@ bool App::WorkerEndVideo(GpuContext& gpu, VideoRun& run, FrameSink& sink, bool c
     std::string error = run.error;
     if (run.pngSequence) {
         while (m_capture.Pending() > 0) Sleep(5);
-    } else if (run.writerPrepared) {
+    } else if (run.animFormat != AnimFormat::None && run.writerPrepared) {
+        if (completed) {
+            std::string err;
+            if (!m_animWriter.Finish(err)) { ok = false; if (error.empty()) error = err; }
+        } else {
+            m_animWriter.Abort();
+        }
+    } else if (run.animFormat == AnimFormat::None && run.writerPrepared) {
         ComPtr<IMFSample> a;
         while (m_video.PopAudio(a)) m_videoWriter.PushAudio(a);
         if (completed) {
@@ -1327,12 +1392,15 @@ void App::WorkerMain() {
             } else {
                 src = m_video.Frame(false);
                 // Sound goes to the output as it is decoded, so the decoder never waits on a full audio queue.
-                if (!videoRun.pngSequence && m_videoWriter.Running()) { ComPtr<IMFSample> a; while (m_video.PopAudio(a)) m_videoWriter.PushAudio(a); }
+                const bool mp4Run = !videoRun.pngSequence && videoRun.animFormat == AnimFormat::None;
+                if (mp4Run && m_videoWriter.Running()) { ComPtr<IMFSample> a; while (m_video.PopAudio(a)) m_videoWriter.PushAudio(a); }
                 bool ended = false, completed = false;
                 if (videoRun.cancel) {
                     ended = true;
-                } else if (!videoRun.pngSequence && m_videoWriter.Failed()) {
+                } else if (mp4Run && m_videoWriter.Failed()) {
                     videoRun.error = m_videoWriter.Error(); ended = true;
+                } else if (videoRun.animFormat != AnimFormat::None && m_animWriter.Failed()) {
+                    videoRun.error = m_animWriter.Error(); ended = true;
                 } else if (videoRun.pngSequence && !videoRun.error.empty()) {
                     ended = true;   // the output folder could not be made
                 } else if (videoRun.frameHeld) {
@@ -1504,6 +1572,10 @@ void App::WorkerMain() {
                 info.videoHasAudio = vi.hasAudio;
                 info.videoHardwareDecode = vi.hardwareDecode;
                 info.videoBitrateKbps = vi.videoBitrateKbps;
+                info.videoAnimation = (int)vi.animation;
+                info.videoLoopCount = vi.loopCount;
+                info.videoLossless = vi.lossless;
+                info.videoHasAlpha = vi.hasAlpha;
                 if (videoRun.active && videoRun.delivered >= 8 && now - videoRun.startTime > 0.5) {
                     runCostSec = (now - videoRun.startTime) / (double)videoRun.delivered;
                     runCostPixels = (double)vi.width * (double)vi.height;
@@ -1774,6 +1846,10 @@ void App::Frame() {
     info.videoHasAudio = m_source.videoHasAudio;
     info.videoHardwareDecode = m_source.videoHardwareDecode;
     info.videoBitrateKbps = m_source.videoBitrateKbps;
+    info.videoAnimation = m_source.videoAnimation;
+    info.videoLoopCount = m_source.videoLoopCount;
+    info.videoLossless = m_source.videoLossless;
+    info.videoHasAlpha = m_source.videoHasAlpha;
     info.videoProcessing = m_source.videoProcessing;
     info.videoFinishing = m_source.videoFinishing;
     info.videoFrame = m_source.videoFrame;
@@ -3156,7 +3232,8 @@ void App::BrowseVideo() {
     dlg->SetOptions(opts | FOS_FORCEFILESYSTEM | FOS_FILEMUSTEXIST);
     const std::wstring videosLabel = Utf8ToWide(TR(VideoFilter));
     const std::wstring title = Utf8ToWide(TR(OpenVideo));
-    const COMDLG_FILTERSPEC filters[] = { { videosLabel.c_str(), kVideoPatterns }, { L"All files", L"*.*" } };
+    const std::wstring videoPatterns = std::wstring(kVideoPatterns) + L";" + kAnimationPatterns;
+    const COMDLG_FILTERSPEC filters[] = { { videosLabel.c_str(), videoPatterns.c_str() }, { L"All files", L"*.*" } };
     dlg->SetFileTypes(2, filters);
     dlg->SetTitle(title.c_str());
     StartInFolderOf(dlg.Get(), m_settings.videoPath);

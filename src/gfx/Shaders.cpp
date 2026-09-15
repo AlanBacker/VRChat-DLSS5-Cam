@@ -48,10 +48,10 @@ float3 LinearToSrgb(float3 c) {
 float3 CompressHighlights(float3 c, float strength) {
     const float knee = 0.8;
     float m = max(c.r, max(c.g, c.b));
-    if (m <= knee || strength <= 0.0) return c;
-    float over = (m - knee) / (1.0 - knee);
+    float over = max(m - knee, 0.0) / (1.0 - knee);
     float soft = knee + (1.0 - knee) * (1.0 - exp(-over));
-    return c * lerp(1.0, soft / m, strength);
+    float scale = (m > knee && strength > 0.0) ? lerp(1.0, soft / max(m, 1e-6), strength) : 1.0;
+    return c * scale;
 }
 
 // Raw texel of a texel of the turned, mirrored, cropped picture.
@@ -229,7 +229,7 @@ void main(uint3 gid : SV_GroupID, uint tid : SV_GroupIndex) {
         int W = 2 * R + 1;
         int N = W * W;
         [loop] for (int c = int(tid); c < N; c += 64) {
-            int2 mv = int2(c % W - R, c / W - R);
+            int2 mv = int2(int(uint(c) % uint(W)) - R, int(uint(c) / uint(W)) - R);
             float raw = Sad(origin, mv);
             float cost = raw + lambda * (abs(mv.x) + abs(mv.y));
             if (cost < bestCost) { bestCost = cost; bestRaw = raw; bestMv = mv; }
@@ -279,7 +279,7 @@ void main(uint3 gid : SV_GroupID, uint tid : SV_GroupIndex) {
         int N = W * W;
         bestCost = 1e9; bestRaw = 1e9; bestMv = center;
         if (int(tid) < N) {
-            int2 d = int2(int(tid) % W - r, int(tid) / W - r);
+            int2 d = int2(int(tid % uint(W)) - r, int(tid / uint(W)) - r);
             int2 mv = center + d;
             bestRaw = Sad(origin, mv);
             bestCost = bestRaw + lambda * (abs(mv.x) + abs(mv.y));
@@ -581,10 +581,10 @@ float3 LinearToSrgb(float3 c) {
 float3 CompressHighlights(float3 c, float strength) {
     const float knee = 0.8;
     float m = max(c.r, max(c.g, c.b));
-    if (m <= knee || strength <= 0.0) return c;
-    float over = (m - knee) / (1.0 - knee);
+    float over = max(m - knee, 0.0) / (1.0 - knee);
     float soft = knee + (1.0 - knee) * (1.0 - exp(-over));
-    return c * lerp(1.0, soft / m, strength);
+    float scale = (m > knee && strength > 0.0) ? lerp(1.0, soft / max(m, 1e-6), strength) : 1.0;
+    return c * scale;
 }
 
 [numthreads(8, 8, 1)]
@@ -791,18 +791,18 @@ RWTexture2D<float2> OutMv    : register(u1);
 RWTexture2D<float>  OutDepth : register(u2);
 
 float3 SrgbToLinear(float3 c) {
-    return c <= 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4);
+    return c <= 0.04045 ? c / 12.92 : pow(max((c + 0.055) / 1.055, 0.0), 2.4);
 }
 float3 LinearToSrgb(float3 c) {
     c = saturate(c);
-    return c <= 0.0031308 ? c * 12.92 : 1.055 * pow(c, 1.0 / 2.4) - 0.055;
+    return c <= 0.0031308 ? c * 12.92 : 1.055 * pow(max(c, 0.0), 1.0 / 2.4) - 0.055;
 }
 float3 CompressHighlights(float3 c, float strength) {
     // Soft shoulder above 1: keeps the picture in range after a gain without clipping the bright parts flat.
     float m = max(c.r, max(c.g, c.b));
-    if (m <= 1.0) return c;
-    float t = 1.0 + (m - 1.0) / (m - 1.0 + strength);
-    return c * (t / m);
+    float t = 1.0 + max(m - 1.0, 0.0) / max(m - 1.0 + strength, 1e-6);
+    float scale = m > 1.0 ? t / m : 1.0;
+    return c * scale;
 }
 
 [numthreads(8, 8, 1)]
@@ -825,8 +825,11 @@ void main(uint3 id : SV_DispatchThreadID) {
         c.rgb = LinearToSrgb(lin);
     }
     OutColor[id.xy] = c;
-    OutMv[id.xy] = Mv.SampleLevel(LinearClamp, uv, 0) * float2(ScaleX, ScaleY);
-    OutDepth[id.xy] = Depth.SampleLevel(LinearClamp, uv, 0);
+    // The guidance only comes along when it does not already have the pass's size (Flags & 2).
+    if (Flags & 2) {
+        OutMv[id.xy] = Mv.SampleLevel(LinearClamp, uv, 0) * float2(ScaleX, ScaleY);
+        OutDepth[id.xy] = Depth.SampleLevel(LinearClamp, uv, 0);
+    }
 }
 )HLSL";
 

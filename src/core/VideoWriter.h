@@ -35,6 +35,8 @@ public:
     bool Finish(std::string& error);
     // Stops early; the frames written so far stay in a playable file.
     void Abort();
+    // Stops and forgets an earlier failure, so a new run starts clean.
+    void Reset();
 
     bool                Running() const { return m_running; }
     bool                Failed() const { std::lock_guard<std::mutex> lock(m_mutex); return m_failed; }
@@ -63,6 +65,7 @@ private:
     bool                    m_audio = false;
     bool                    m_opened = false;
     bool                    m_hardware = false;
+    bool                    m_hevcFallback = false;     // H.264 refused the picture, HEVC is being tried
     UINT                    m_w = 0, m_h = 0;
     bool                    m_baseSet = false;
     LONGLONG                m_base = 0;                 // time stamp of the first frame

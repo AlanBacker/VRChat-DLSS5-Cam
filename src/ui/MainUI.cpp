@@ -118,6 +118,13 @@ std::string FormatEstimate(double seconds) {
 
 bool IsHevc(const std::string& codec) { return codec.find("HEV") != std::string::npos || codec == "H265"; }
 
+// "loops forever" / "plays once" / "plays N times" of an animated image.
+std::string LoopText(int loops) {
+    if (loops <= 0) return TR(LoopForever);
+    if (loops == 1) return TR(LoopOnce);
+    return StrPrintf(TR(LoopTimes), loops);
+}
+
 // The text of a library item's state badge (null: none).
 const char* StateText(const LibraryItem& it) {
     if (it.probe == 2) return TR(StateUnreadable);
@@ -519,6 +526,7 @@ std::string MainUI::StepLabel(const UndoStep& from, const UndoStep& to) {
     VDC_KEY("processRateLimit", RateLimit, false) VDC_KEY("showOverlay", Overlay, true) VDC_KEY("keepAlpha", KeepAlpha, true)
     VDC_KEY("saveOriginal", SaveOriginal, true) VDC_KEY("timelapseSeconds", Timelapse, false) VDC_KEY("videoMatchSource", MatchSource, true)
     VDC_KEY("videoOutput", VideoOutput, false) VDC_KEY("videoBitrateMbps", Bitrate, false) VDC_KEY("videoKeepAudio", KeepAudio, true)
+    VDC_KEY("webpQuality", WebpQuality, false)
     VDC_KEY("videoHardwareDecode", HardwareDecode, true) VDC_KEY("customResolution", CustomResolution, true) VDC_KEY("customWidth", Width, false)
     VDC_KEY("customHeight", Height, false) VDC_KEY("keepAspect", KeepAspect, true)
     VDC_KEY("captureName", CaptureName, false) VDC_KEY("outputName", OutputName, false)
@@ -1249,8 +1257,19 @@ void MainUI::BlockSource(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         if (info.videoLoaded) {
             StatusDot(p.good, StrPrintf("%s  %ux%u  %.3g %s  %s", info.videoName.c_str(), info.videoWidth, info.videoHeight, info.videoFps, TR(Fps),
                                         FormatDuration(info.videoDurationSeconds).c_str()).c_str());
-            ImGui::TextDisabled("%s: %s (%s)  \xC2\xB7  %s", TR(VideoDecoder), info.videoCodec.c_str(),
-                                info.videoHardwareDecode ? TR(HwLabel) : TR(SwLabel), info.videoHasAudio ? TR(Audio) : TR(NoAudio));
+            if (info.videoAnimation != 0) {
+                // An animated image: its format, frame count, loop count and transparency.
+                const char* kDot = "  \xC2\xB7  ";
+                std::string line = info.videoCodec;
+                if (info.videoAnimation == 3 && info.videoLossless) line += " (lossless)";
+                line += kDot + StrPrintf(TR(AnimFrames), (unsigned long long)info.videoFrames);
+                line += kDot + LoopText(info.videoLoopCount);
+                if (info.videoHasAlpha) line += kDot + std::string(TR(Transparent));
+                ImGui::TextDisabled("%s", line.c_str());
+            } else {
+                ImGui::TextDisabled("%s: %s (%s)  \xC2\xB7  %s", TR(VideoDecoder), info.videoCodec.c_str(),
+                                    info.videoHardwareDecode ? TR(HwLabel) : TR(SwLabel), info.videoHasAudio ? TR(Audio) : TR(NoAudio));
+            }
             if (info.videoProcessing) {
                 const unsigned long long total = std::max(info.videoFrames, info.videoFrame);
                 const float frac = total ? (float)((double)info.videoFrame / (double)total) : 0.0f;
@@ -1273,7 +1292,19 @@ void MainUI::BlockSource(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
             // The output follows the opened file by default: same codec, average bitrate and frame rate.
             if (Toggle(TR(MatchSource), &s.videoMatchSource)) ev.settingsChanged = true;
             Help(TR(TipMatchSource));
-            if (s.videoMatchSource) {
+            if (s.videoMatchSource && info.videoLoaded && info.videoAnimation != 0) {
+                // An animated image comes back in its own format; only a lossy WebP has a quality to choose.
+                const bool webp = info.videoAnimation == 3;
+                const bool lossless = info.videoLossless || (webp && s.webpQuality >= 100);
+                const std::string fmt = webp && lossless ? info.videoCodec + " (lossless)" : info.videoCodec;
+                const std::string loop = LoopText(info.videoLoopCount);
+                ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x);
+                ImGui::TextDisabled(TR(MatchedAnim), fmt.c_str(), loop.c_str());
+                ImGui::PopTextWrapPos();
+                if (webp && !info.videoLossless) {
+                    if (SliderIntReset(TR(WebpQuality), &s.webpQuality, 50, 100, 90, "%d", TR(TipWebpQuality))) ev.settingsChanged = true;
+                }
+            } else if (s.videoMatchSource) {
                 if (info.videoLoaded) {
                     const std::string rate = info.videoBitrateKbps > 0 ? StrPrintf("%.1f Mbit/s", info.videoBitrateKbps / 1000.0) : std::string(TR(BitrateUnknown));
                     ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x);
@@ -1283,15 +1314,17 @@ void MainUI::BlockSource(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
                 if (Toggle(TR(KeepAudio), &s.videoKeepAudio)) ev.settingsChanged = true;
                 Help(TR(TipKeepAudio));
             } else {
-                const char* outputs[] = { TR(VideoOutputH264), TR(VideoOutputHevc), TR(VideoOutputPng) };
-                if (ComboIds(TR(VideoOutput), &s.videoOutput, outputs, 3, TR(TipVideoOutput))) ev.settingsChanged = true;
-                if (s.videoOutput != 2) {
+                const char* outputs[] = { TR(VideoOutputH264), TR(VideoOutputHevc), TR(VideoOutputPng), TR(VideoOutputGif), TR(VideoOutputApng), TR(VideoOutputWebP) };
+                if (ComboIds(TR(VideoOutput), &s.videoOutput, outputs, 6, TR(TipVideoOutput))) ev.settingsChanged = true;
+                if (s.videoOutput == 0 || s.videoOutput == 1) {
                     if (SliderIntReset(TR(Bitrate), &s.videoBitrateMbps, 5, 200, 40, "%d Mbit/s", TR(TipBitrate))) ev.settingsChanged = true;
                     if (Toggle(TR(KeepAudio), &s.videoKeepAudio)) ev.settingsChanged = true;
                     Help(TR(TipKeepAudio));
+                } else if (s.videoOutput == 5) {
+                    if (SliderIntReset(TR(WebpQuality), &s.webpQuality, 50, 100, 90, "%d", TR(TipWebpQuality))) ev.settingsChanged = true;
                 }
             }
-            if (s.showAdvanced) {
+            if (s.showAdvanced && info.videoAnimation == 0) {
                 if (Toggle(TR(HardwareDecode), &s.videoHardwareDecode)) ev.settingsChanged = true;
                 Help(TR(TipHardwareDecode));
             }
@@ -1668,7 +1701,7 @@ void MainUI::BlockView(Settings& s, const UiFrameInfo& /*info*/, UiEvents& ev) {
             const float resetW = ImGui::GetFrameHeight();
             ImGui::SetNextItemWidth(ImGui::CalcItemWidth() - resetW - style.ItemInnerSpacing.x);
             float pct = m_zoomTarget * m_baseScale * 100.0f;
-            if (ImGui::SliderFloat("##z", &pct, kZoomMin * 100.0f, kZoomMax * 100.0f, "%.0f%%", ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_AlwaysClamp)) {
+            if (ImGui::SliderFloat("##z", &pct, m_zoomFloor * 100.0f, kZoomMax * 100.0f, "%.0f%%", ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_AlwaysClamp)) {
                 m_zoom = m_zoomTarget = pct / (100.0f * std::max(m_baseScale, 1e-6f));
                 m_panHome = false;
             }
@@ -2340,8 +2373,12 @@ void MainUI::DrawPicture(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
     // Image rectangle: fitted to the view or 1:1, times the manual magnification (wheel, slider; double-click resets).
     // In the wipe compare the display holds the original and the output side by side; each half is the picture.
     const float texW = (float)(info.displayWide ? info.displayWidth / 2 : info.displayWidth), texH = (float)info.displayHeight;
-    m_baseScale = (s.fitMode == FitWindow) ? std::min(region.x / texW, region.y / texH) : 1.0f;
-    const float zoomMin = kZoomMin / m_baseScale, zoomMax = kZoomMax / m_baseScale;
+    const float fitScale = std::min(region.x / texW, region.y / texH);   // the whole picture within the view
+    m_baseScale = (s.fitMode == FitWindow) ? fitScale : 1.0f;
+    // The magnification may always come down to the fitted view: a portrait 8K picture fits a small window only
+    // below kZoomMin, and a floor at kZoomMin left it too large for the view with nothing to zoom out to.
+    m_zoomFloor = std::min(kZoomMin, fitScale);
+    const float zoomMin = m_zoomFloor / m_baseScale, zoomMax = kZoomMax / m_baseScale;
     m_zoomTarget = std::clamp(m_zoomTarget, zoomMin, zoomMax);
     m_zoom = std::clamp(m_zoom, zoomMin, zoomMax);
     const ImVec2 centre(origin.x + region.x * 0.5f, origin.y + region.y * 0.5f);

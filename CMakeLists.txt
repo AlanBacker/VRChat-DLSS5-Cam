@@ -30,6 +30,7 @@ include(cmake/FetchFidelityFX.cmake)
 # Monocular depth estimation for the frame-guidance stage (the neural renderer
 # wants a depth buffer, a Spout stream has none). Downloaded from NuGet / Hugging Face.
 include(cmake/FetchOnnxRuntime.cmake)
+include(cmake/FetchLibWebP.cmake)
 
 # --- Third party (vendored) ----------------------------------------------------
 add_library(imgui STATIC
@@ -70,6 +71,7 @@ set(APP_SOURCES
   src/core/MediaFoundation.cpp
   src/core/VideoSource.cpp
   src/core/VideoWriter.cpp
+  src/core/AnimatedImage.cpp
   src/core/MediaLibrary.cpp
   src/gfx/Device.cpp
   src/gfx/ThumbnailAtlas.cpp
@@ -87,7 +89,8 @@ set(APP_SOURCES
 
 # The .manifest source is merged by CMake into the linker-generated manifest (per-monitor DPI, UTF-8 code page).
 add_executable(VRChatDLSS5Cam WIN32 ${APP_SOURCES} resources/app.rc resources/app.manifest)
-target_include_directories(VRChatDLSS5Cam PRIVATE src third_party/nvof ${NGX_INCLUDE_DIR} ${FFX_INCLUDE_DIR} ${ORT_INCLUDE_DIR} ${DML_INCLUDE_DIR})
+target_include_directories(VRChatDLSS5Cam PRIVATE src third_party/nvof ${NGX_INCLUDE_DIR} ${FFX_INCLUDE_DIR} ${ORT_INCLUDE_DIR} ${DML_INCLUDE_DIR}
+  ${LIBWEBP_INCLUDE_DIR})
 target_compile_definitions(VRChatDLSS5Cam PRIVATE
   UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX _CRT_SECURE_NO_WARNINGS
   APP_VERSION_STRING="${PROJECT_VERSION}"
@@ -98,7 +101,7 @@ target_compile_definitions(VRChatDLSS5Cam PRIVATE
   APP_EDITION_AMD=$<BOOL:${APP_EDITION_AMD}>)
 target_compile_options(VRChatDLSS5Cam PRIVATE /W4 /MP /utf-8 /permissive- /EHsc /wd4100 /wd4201 /wd4324)
 target_link_libraries(VRChatDLSS5Cam PRIVATE
-  imgui spout ${NGX_STATIC_LIB}
+  imgui spout ${NGX_STATIC_LIB} ${LIBWEBP_LIBRARIES}
   d3d12 d3d11 dxgi d3dcompiler dxguid windowscodecs mfuuid
   ole32 shell32 shlwapi user32 gdi32 dwmapi comctl32 advapi32 psapi version winmm winhttp)
 set_target_properties(VRChatDLSS5Cam PROPERTIES OUTPUT_NAME "VRChatDLSS5Cam")
@@ -128,7 +131,8 @@ endif()
 add_custom_command(TARGET VRChatDLSS5Cam POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_if_different "${FFX_DX12_DLL}" "$<TARGET_FILE_DIR:VRChatDLSS5Cam>/amd_fidelityfx_dx12.dll"
   COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:VRChatDLSS5Cam>/licenses"
-  COMMAND ${CMAKE_COMMAND} -E copy_if_different "${FFX_LICENSE_FILE}" "$<TARGET_FILE_DIR:VRChatDLSS5Cam>/licenses/FidelityFX-SDK-LICENSE.txt")
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different "${FFX_LICENSE_FILE}" "$<TARGET_FILE_DIR:VRChatDLSS5Cam>/licenses/FidelityFX-SDK-LICENSE.txt"
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different "${LIBWEBP_LICENSE_FILE}" "$<TARGET_FILE_DIR:VRChatDLSS5Cam>/licenses/libwebp-COPYING.txt")
 
 # --- Packaging -----------------------------------------------------------------
 install(TARGETS VRChatDLSS5Cam RUNTIME DESTINATION .)
@@ -136,6 +140,7 @@ install(FILES "${NGX_DLSS_DLL}" "${ORT_DLL}" "${ORT_PROVIDERS_SHARED_DLL}" "${DM
 install(DIRECTORY "${ORT_LICENSE_DIR}/" DESTINATION licenses)
 install(FILES "${FFX_DX12_DLL}" DESTINATION .)
 install(FILES "${FFX_LICENSE_FILE}" DESTINATION licenses RENAME FidelityFX-SDK-LICENSE.txt)
+install(FILES "${LIBWEBP_LICENSE_FILE}" DESTINATION licenses RENAME libwebp-COPYING.txt)
 if(VDC_FETCH_DEPTH_MODEL)
   install(FILES "${DEPTH_MODEL_FILE}" DESTINATION models)
 endif()

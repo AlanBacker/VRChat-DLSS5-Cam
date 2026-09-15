@@ -38,9 +38,10 @@ struct Settings {
     std::string imagePath;             // UTF-8, the picture opened in image mode (reopened at startup)
     std::string videoPath;             // UTF-8, the video opened in video mode (reopened at startup)
     bool videoMatchSource = true;      // output codec and bitrate follow the opened file (the frame rate always does)
-    int  videoOutput = 0;              // 0 = MP4 (H.264), 1 = MP4 (HEVC), 2 = PNG sequence
+    int  videoOutput = 0;              // 0 = MP4 (H.264), 1 = MP4 (HEVC), 2 = PNG sequence, 3 = GIF, 4 = APNG, 5 = WebP
     int  videoBitrateMbps = 40;        // MP4 video bitrate
     bool videoKeepAudio = true;        // copy the sound track into the MP4 (AAC)
+    int  webpQuality = 90;             // animated WebP output: 50..100, 100 = lossless
     bool videoHardwareDecode = true;   // decode with the GPU when the driver offers it
 
     // Resolution

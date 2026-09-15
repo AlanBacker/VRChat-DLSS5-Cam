@@ -1,4 +1,5 @@
 #include "core/ImageSource.h"
+#include "core/AnimatedImage.h"
 #include "core/Log.h"
 #include <wincodec.h>
 #include <propvarutil.h>
@@ -60,7 +61,7 @@ bool ImageSource::IsSupportedExtension(const std::wstring& path) {
     if (dot == std::wstring::npos) return false;
     std::wstring ext = path.substr(dot + 1);
     for (auto& c : ext) c = (wchar_t)std::towlower(c);
-    static const wchar_t* kExt[] = { L"png", L"jpg", L"jpeg", L"jpe", L"jfif", L"bmp", L"dib", L"tif", L"tiff", L"gif",
+    static const wchar_t* kExt[] = { L"png", L"apng", L"jpg", L"jpeg", L"jpe", L"jfif", L"bmp", L"dib", L"tif", L"tiff", L"gif",
                                      L"webp", L"heic", L"heif", L"avif", L"jxr", L"wdp", L"hdp", L"ico", L"dds" };
     for (const wchar_t* e : kExt) if (ext == e) return true;
     return false;
@@ -111,22 +112,33 @@ bool ImageSource::Load(GpuContext& gpu, const std::wstring& path, std::string& e
 
     ComPtr<IWICBitmapDecoder> decoder;
     hr = factory->CreateDecoderFromFilename(path.c_str(), nullptr, GENERIC_READ, WICDecodeMetadataCacheOnDemand, &decoder);
-    if (FAILED(hr)) {
-        if (hr == WINCODEC_ERR_COMPONENTNOTFOUND) error = "no decoder installed for this image format";
-        else error = "cannot decode the file: " + FormatHr(hr);
-        return false;
-    }
     ComPtr<IWICBitmapFrameDecode> frame;
-    hr = decoder->GetFrame(0, &frame);
-    if (FAILED(hr)) { error = "GetFrame failed: " + FormatHr(hr); return false; }
-
+    ComPtr<IWICBitmapSource> source;
     UINT w = 0, h = 0;
-    frame->GetSize(&w, &h);
+    if (hr == WINCODEC_ERR_COMPONENTNOTFOUND && IsWebPPath(path)) {
+        // No WebP codec in this Windows: libwebp decodes the picture.
+        std::vector<uint8_t> pixels;
+        if (!DecodeStillWebP(path, w, h, pixels, error)) return false;
+        ComPtr<IWICBitmap> bitmap;
+        hr = factory->CreateBitmapFromMemory(w, h, GUID_WICPixelFormat32bppBGRA, w * 4, (UINT)pixels.size(), pixels.data(), &bitmap);
+        if (FAILED(hr)) { error = "cannot wrap the decoded picture: " + FormatHr(hr); return false; }
+        source = bitmap;
+        Log::Info("Image: %s decoded with libwebp (no WebP codec installed)", WideToUtf8(path).c_str());
+    } else {
+        if (FAILED(hr)) {
+            if (hr == WINCODEC_ERR_COMPONENTNOTFOUND) error = "no decoder installed for this image format";
+            else error = "cannot decode the file: " + FormatHr(hr);
+            return false;
+        }
+        hr = decoder->GetFrame(0, &frame);
+        if (FAILED(hr)) { error = "GetFrame failed: " + FormatHr(hr); return false; }
+        frame->GetSize(&w, &h);
+        source = frame;
+    }
     if (w == 0 || h == 0) { error = "the image is empty"; return false; }
     const UINT fileW = w, fileH = h;   // as stored (recorded once the old picture is released below)
 
-    ComPtr<IWICBitmapSource> source = frame;
-    const UINT orientation = ReadOrientation(frame.Get());
+    const UINT orientation = frame ? ReadOrientation(frame.Get()) : 1;
     if (orientation != 1) {
         ComPtr<IWICBitmapFlipRotator> rot;
         if (SUCCEEDED(factory->CreateBitmapFlipRotator(&rot)) &&

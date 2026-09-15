@@ -343,7 +343,18 @@ enum class Lang { English = 0, Chinese = 1, Japanese = 2, Korean = 3, Count = 4 
     X(VideoOutputH264,    "MP4 (H.264)", "MP4 (H.264)", "MP4 (H.264)", "MP4 (H.264)") \
     X(VideoOutputHevc,    "MP4 (HEVC)", "MP4 (HEVC)", "MP4 (HEVC)", "MP4 (HEVC)") \
     X(VideoOutputPng,     "PNG sequence", "PNG 序列", "PNG 連番", "PNG 시퀀스") \
-    X(TipVideoOutput,     "MP4 files are encoded by Windows Media Foundation (with the GPU encoder when the driver offers one). A PNG sequence writes every processed frame losslessly into its own folder: large, but nothing is lost.", "MP4 由 Windows Media Foundation 编码（驱动提供时使用 GPU 编码器）。PNG 序列会把每一帧无损地写入单独的文件夹，体积很大，但不丢失任何细节。", "MP4 は Windows Media Foundation でエンコードされます（ドライバーが対応していれば GPU エンコーダーを使用）。PNG 連番は処理した各フレームを専用フォルダーにロスレスで書き出します。サイズは大きくなりますが、劣化はありません。", "MP4는 Windows Media Foundation으로 인코딩됩니다(드라이버가 지원하면 GPU 인코더 사용). PNG 시퀀스는 처리된 모든 프레임을 별도 폴더에 무손실로 저장합니다. 용량은 크지만 손실이 없습니다.") \
+    X(VideoOutputGif,     "GIF", "GIF", "GIF", "GIF") \
+    X(VideoOutputApng,    "APNG", "APNG", "APNG", "APNG") \
+    X(VideoOutputWebP,    "WebP", "WebP", "WebP", "WebP") \
+    X(WebpQuality,        "WebP quality", "WebP 质量", "WebP 品質", "WebP 품질") \
+    X(TipWebpQuality,     "Compression of an animated WebP: higher is better and larger. 100 writes lossless frames.", "WebP 动图的压缩质量：越高画质越好、文件越大。100 为无损。", "WebP アニメーションの圧縮品質。高いほど高画質で大きくなります。100 はロスレスです。", "WebP 애니메이션의 압축 품질. 높을수록 화질이 좋고 파일이 커집니다. 100은 무손실입니다.") \
+    X(AnimFrames,         "%llu frames", "%llu 帧", "%llu フレーム", "%llu 프레임") \
+    X(LoopForever,        "loops forever", "无限循环", "無限ループ", "무한 반복") \
+    X(LoopOnce,           "plays once", "播放一次", "1 回再生", "1회 재생") \
+    X(LoopTimes,          "plays %d times", "播放 %d 次", "%d 回再生", "%d회 재생") \
+    X(Transparent,        "transparency", "含透明", "透過あり", "투명 포함") \
+    X(MatchedAnim,        "Output: %s, %s, frame timing kept", "输出：%s，%s，保留每帧时长", "出力: %s、%s、フレーム時間を維持", "출력: %s, %s, 프레임 시간 유지") \
+    X(TipVideoOutput,     "MP4 files are encoded by Windows Media Foundation (with the GPU encoder when the driver offers one). A PNG sequence writes every processed frame losslessly into its own folder: large, but nothing is lost. GIF, APNG and WebP write an animated image with the timing of every frame kept: GIF with 256 colours per frame and one-bit transparency, APNG lossless, WebP lossy or lossless (quality 100).", "MP4 由 Windows Media Foundation 编码（驱动提供时使用 GPU 编码器）。PNG 序列会把每一帧无损地写入单独的文件夹，体积很大，但不丢失任何细节。GIF、APNG、WebP 会输出动图并保留每一帧的时长：GIF 每帧 256 色、仅支持一位透明；APNG 无损；WebP 可有损或无损（质量 100）。", "MP4 は Windows Media Foundation でエンコードされます（ドライバーが対応していれば GPU エンコーダーを使用）。PNG 連番は処理した各フレームを専用フォルダーにロスレスで書き出します。サイズは大きくなりますが、劣化はありません。GIF・APNG・WebP は各フレームの表示時間を保ったアニメーション画像を書き出します。GIF は 1 フレーム 256 色で透過は 1 ビット、APNG はロスレス、WebP は非可逆または可逆（品質 100）です。", "MP4는 Windows Media Foundation으로 인코딩됩니다(드라이버가 지원하면 GPU 인코더 사용). PNG 시퀀스는 처리된 모든 프레임을 별도 폴더에 무손실로 저장합니다. 용량은 크지만 손실이 없습니다. GIF, APNG, WebP는 각 프레임의 표시 시간을 유지한 애니메이션 이미지를 저장합니다. GIF는 프레임당 256색에 1비트 투명, APNG는 무손실, WebP는 손실 또는 무손실(품질 100)입니다.") \
     X(Bitrate,            "Bitrate", "码率", "ビットレート", "비트레이트") \
     X(TipBitrate,         "Average video bitrate of the MP4. 40 Mbit/s keeps 4K footage nearly free of compression artefacts; lower values give smaller files.", "MP4 的平均视频码率。40 Mbit/s 可让 4K 画面几乎没有压缩痕迹；数值越低文件越小。", "MP4 の平均ビデオビットレート。40 Mbit/s なら 4K 映像でも圧縮ノイズがほとんど出ません。値を下げるとファイルが小さくなります。", "MP4의 평균 비디오 비트레이트. 40 Mbit/s면 4K 영상에서도 압축 흔적이 거의 없습니다. 값을 낮추면 파일이 작아집니다.") \
     X(KeepAudio,          "Keep audio", "保留音频", "音声を保持", "오디오 유지") \
@@ -418,11 +429,11 @@ enum class Lang { English = 0, Chinese = 1, Japanese = 2, Korean = 3, Count = 4 
     X(HideLibrary,        "Hide the library", "收起素材库", "ライブラリを隠す", "라이브러리 숨기기") \
     X(Thumbnails,         "Thumbnails", "缩略图", "サムネイル", "썸네일") \
     X(NrStrengthHint,     "1.00 is the runtime's own look. Below it the effect fades out, above it the change is amplified.", "1.00 为运行库的原始效果；小于 1 逐渐减弱，大于 1 会放大变化。", "1.00 がランタイム本来の仕上がりです。これより小さいと効果が弱まり、大きいと変化が強調されます。", "1.00이 런타임 본래의 결과입니다. 이보다 작으면 효과가 약해지고, 크면 변화가 강조됩니다.") \
-    X(OutputHint,         "Where the results go. Pictures are saved as lossless PNG, videos as MP4 or a PNG sequence.", "结果保存的位置。图片保存为无损 PNG，视频保存为 MP4 或 PNG 序列。", "結果の保存先です。画像はロスレス PNG、動画は MP4 または PNG 連番として保存されます。", "결과가 저장되는 위치입니다. 이미지는 무손실 PNG로, 동영상은 MP4 또는 PNG 시퀀스로 저장됩니다.") \
+    X(OutputHint,         "Where the results go. Pictures are saved as lossless PNG, videos as MP4 or a PNG sequence, animations as GIF, APNG or WebP.", "结果保存的位置。图片保存为无损 PNG，视频保存为 MP4 或 PNG 序列，动图保存为 GIF、APNG 或 WebP。", "結果の保存先です。画像はロスレス PNG、動画は MP4 または PNG 連番、アニメーションは GIF・APNG・WebP として保存されます。", "결과가 저장되는 위치입니다. 이미지는 무손실 PNG로, 동영상은 MP4 또는 PNG 시퀀스로, 애니메이션은 GIF, APNG 또는 WebP로 저장됩니다.") \
     X(PreviewLuma,        "Brightness", "亮度", "明るさ", "밝기") \
     X(ItemRemoved,        "Removed", "已移除", "削除しました", "제거됨") \
     X(MatchSource,        "Match the source", "同步原视频规格", "元動画の仕様に合わせる", "원본 영상 규격에 맞추기") \
-    X(TipMatchSource,     "The MP4 takes the codec (H.264 or HEVC), the average bitrate and the frame rate of the opened file, so the result looks like the original at the same size. A variable-bitrate source is matched by its average. Off, the format and bitrate below are used.", "输出 MP4 采用原视频的编码（H.264 或 HEVC）、平均码率和帧率，成片与原片规格一致、体积相近；动态码率的视频按其平均码率同步。关闭后使用下方手动设置的格式和码率。", "出力 MP4 は元ファイルのコーデック（H.264 または HEVC）、平均ビットレート、フレームレートを引き継ぎます。可変ビットレートの動画は平均値で合わせます。オフにすると下の形式とビットレートを使います。", "출력 MP4는 원본 파일의 코덱(H.264 또는 HEVC), 평균 비트레이트, 프레임 속도를 그대로 따릅니다. 가변 비트레이트 영상은 평균값으로 맞춥니다. 끄면 아래의 형식과 비트레이트를 사용합니다.") \
+    X(TipMatchSource,     "The MP4 takes the codec (H.264 or HEVC), the average bitrate and the frame rate of the opened file, so the result looks like the original at the same size. A variable-bitrate source is matched by its average. Off, the format and bitrate below are used. An animated GIF, APNG or WebP comes back in the same format with its loop count.", "输出 MP4 采用原视频的编码（H.264 或 HEVC）、平均码率和帧率，成片与原片规格一致、体积相近；动态码率的视频按其平均码率同步。关闭后使用下方手动设置的格式和码率。GIF、APNG、WebP 动图会以原格式输出并保留循环次数。", "出力 MP4 は元ファイルのコーデック（H.264 または HEVC）、平均ビットレート、フレームレートを引き継ぎます。可変ビットレートの動画は平均値で合わせます。オフにすると下の形式とビットレートを使います。GIF・APNG・WebP のアニメーションは同じ形式でループ回数も引き継いで書き出します。", "출력 MP4는 원본 파일의 코덱(H.264 또는 HEVC), 평균 비트레이트, 프레임 속도를 그대로 따릅니다. 가변 비트레이트 영상은 평균값으로 맞춥니다. 끄면 아래의 형식과 비트레이트를 사용합니다. GIF, APNG, WebP 애니메이션은 같은 형식으로 반복 횟수를 유지해 저장합니다.") \
     X(MatchedSpecs,       "Output: %s, %s, %.3g fps", "输出：%s，%s，%.3g fps", "出力: %s、%s、%.3g fps", "출력: %s, %s, %.3g fps") \
     X(BitrateUnknown,     "bitrate unknown, 40 Mbit/s", "码率未知，按 40 Mbit/s", "ビットレート不明、40 Mbit/s", "비트레이트 알 수 없음, 40 Mbit/s") \
     X(Estimate,           "Estimated time", "预计处理时间", "推定処理時間", "예상 처리 시간") \

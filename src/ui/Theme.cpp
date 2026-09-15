@@ -318,7 +318,10 @@ void SmoothScroll(bool horizontal, float step) {
     const float wheel = io.MouseWheel + io.MouseWheelH;
     float* newTarget = nullptr;
     float t = 0.0f;
-    if (wheel != 0.0f && !io.KeyCtrl && !io.KeyAlt && ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows | ImGuiHoveredFlags_AllowWhenBlockedByActiveItem)) {
+    // A list opened from the window (a dropdown, a menu) keeps the wheel for itself: without NoPopupHierarchy the
+    // window that opened it counts as hovered too and would scroll away underneath the list.
+    if (wheel != 0.0f && !io.KeyCtrl && !io.KeyAlt &&
+        ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows | ImGuiHoveredFlags_NoPopupHierarchy | ImGuiHoveredFlags_AllowWhenBlockedByActiveItem)) {
         ImGuiStorage& st = w->StateStorage;
         const ImGuiID axisKey = horizontal ? 0x1u : 0x2u;
         const float scroll = horizontal ? w->Scroll.x : w->Scroll.y;

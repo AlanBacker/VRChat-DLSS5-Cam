@@ -1,4 +1,5 @@
 #include "core/MediaLibrary.h"
+#include "core/AnimatedImage.h"
 #include "core/ImageSource.h"
 #include "core/Log.h"
 #include <wincodec.h>
@@ -12,7 +13,9 @@ namespace vdc {
 bool IsLibraryFile(const std::wstring& path, bool& isVideo) {
     isVideo = VideoSource::IsSupportedExtension(path);
     if (isVideo) return true;
-    return ImageSource::IsSupportedExtension(path);
+    if (!ImageSource::IsSupportedExtension(path)) return false;
+    isVideo = ProbeAnimatedImage(path) != AnimFormat::None;   // an animated GIF, APNG or WebP is handled like a video
+    return true;
 }
 
 namespace {
@@ -208,18 +211,30 @@ void LibraryScanner::ProbeImage(const ScanRequest& r, ScanResult& out) {
     if (FAILED(hr)) { out.error = "WIC unavailable: " + FormatHr(hr); return; }
     ComPtr<IWICBitmapDecoder> decoder;
     hr = factory->CreateDecoderFromFilename(r.path.c_str(), nullptr, GENERIC_READ, WICDecodeMetadataCacheOnDemand, &decoder);
-    if (FAILED(hr)) {
-        out.error = hr == WINCODEC_ERR_COMPONENTNOTFOUND ? "no decoder installed for this image format" : "cannot decode the file: " + FormatHr(hr);
-        return;
-    }
     ComPtr<IWICBitmapFrameDecode> frame;
-    hr = decoder->GetFrame(0, &frame);
-    if (FAILED(hr)) { out.error = "GetFrame failed: " + FormatHr(hr); return; }
+    ComPtr<IWICBitmapSource> source;
     UINT w = 0, h = 0;
-    frame->GetSize(&w, &h);
+    if (hr == WINCODEC_ERR_COMPONENTNOTFOUND && IsWebPPath(r.path)) {
+        // No WebP codec in this Windows: libwebp decodes the picture.
+        std::vector<uint8_t> pixels;
+        std::string e;
+        if (!DecodeStillWebP(r.path, w, h, pixels, e)) { out.error = e; return; }
+        ComPtr<IWICBitmap> bitmap;
+        hr = factory->CreateBitmapFromMemory(w, h, GUID_WICPixelFormat32bppBGRA, w * 4, (UINT)pixels.size(), pixels.data(), &bitmap);
+        if (FAILED(hr)) { out.error = "cannot wrap the decoded picture: " + FormatHr(hr); return; }
+        source = bitmap;
+    } else {
+        if (FAILED(hr)) {
+            out.error = hr == WINCODEC_ERR_COMPONENTNOTFOUND ? "no decoder installed for this image format" : "cannot decode the file: " + FormatHr(hr);
+            return;
+        }
+        hr = decoder->GetFrame(0, &frame);
+        if (FAILED(hr)) { out.error = "GetFrame failed: " + FormatHr(hr); return; }
+        frame->GetSize(&w, &h);
+        source = frame;
+    }
     if (!w || !h) { out.error = "the image is empty"; return; }
-    ComPtr<IWICBitmapSource> source = frame;
-    const UINT orientation = Orientation(frame.Get());
+    const UINT orientation = frame ? Orientation(frame.Get()) : 1;
     if (orientation != 1) {
         ComPtr<IWICBitmapFlipRotator> rot;
         if (SUCCEEDED(factory->CreateBitmapFlipRotator(&rot)) && SUCCEEDED(rot->Initialize(source.Get(), TransformFor(orientation)))) {

@@ -80,6 +80,7 @@ bool Settings::ApplyText(const std::string& data) {
     r.Get("videoOutput", videoOutput);
     r.Get("videoBitrateMbps", videoBitrateMbps);
     r.Get("videoKeepAudio", videoKeepAudio);
+    r.Get("webpQuality", webpQuality);
     r.Get("videoHardwareDecode", videoHardwareDecode);
     r.Get("customResolution", customResolution);
     r.Get("customWidth", customWidth);
@@ -186,6 +187,7 @@ void PutParameters(Writer& w, const Settings& s) {
     w.Put("videoOutput", s.videoOutput);
     w.Put("videoBitrateMbps", s.videoBitrateMbps);
     w.Put("videoKeepAudio", s.videoKeepAudio);
+    w.Put("webpQuality", s.webpQuality);
     w.Put("videoHardwareDecode", s.videoHardwareDecode);
     w.Put("spoutRotate", s.spoutRotate);
     w.Put("spoutFlipH", s.spoutFlipH);
@@ -338,6 +340,7 @@ bool Settings::Save(const std::wstring& path) const {
     w.Put("videoOutput", videoOutput);
     w.Put("videoBitrateMbps", videoBitrateMbps);
     w.Put("videoKeepAudio", videoKeepAudio);
+    w.Put("webpQuality", webpQuality);
     w.Put("videoHardwareDecode", videoHardwareDecode);
     w.Put("customResolution", customResolution);
     w.Put("customWidth", customWidth);
@@ -450,8 +453,9 @@ void Settings::Clamp() {
     nrStyle = std::clamp(nrStyle, 0, 2);
     sourceMode = std::clamp(sourceMode, 0, 2);
     spoutRotate = std::clamp(spoutRotate, 0, 3);
-    videoOutput = std::clamp(videoOutput, 0, 2);
+    videoOutput = std::clamp(videoOutput, 0, 5);
     videoBitrateMbps = std::clamp(videoBitrateMbps, 5, 200);
+    webpQuality = std::clamp(webpQuality, 50, 100);
     nrIntensity = std::clamp(nrIntensity, 0.0f, 2.0f);
     nrInputExposure = std::clamp(nrInputExposure, 0.25f, 4.0f);
     nrToneTransfer = std::clamp(nrToneTransfer, 0.0f, 2.0f);

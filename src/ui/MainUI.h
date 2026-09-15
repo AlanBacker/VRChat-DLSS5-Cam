@@ -50,6 +50,10 @@ struct UiFrameInfo {
     bool                  videoHasAudio = false;
     bool                  videoHardwareDecode = false;
     UINT32                videoBitrateKbps = 0;     // average video bitrate of the file (0 = unknown)
+    int                   videoAnimation = 0;       // AnimFormat of an animated image source (0 = a video file)
+    int                   videoLoopCount = 0;       // animation: 0 = forever
+    bool                  videoLossless = false;    // animation: no lossy compression
+    bool                  videoHasAlpha = false;    // animation: the frames carry transparency
     bool                  videoProcessing = false;  // the file is being run through the pipeline
     bool                  videoFinishing = false;
     UINT64                videoFrame = 0;           // frames delivered to the output
@@ -294,6 +298,7 @@ private:
     bool   m_nameEditing = false;
     float  m_zoom = 1.0f;          // manual magnification on top of the fit (1 = as fitted, or 1:1), moving toward m_zoomTarget
     float  m_zoomTarget = 1.0f;
+    float  m_zoomFloor = 0.1f;     // lowest magnification relative to the picture's pixels: kZoomMin, or the fitted view when that is smaller
     ImVec2 m_zoomAnchor = ImVec2(0, 0);   // the screen point kept in place while the zoom moves
     bool   m_panHome = false;      // the pan glides back to the centre
     float  m_baseScale = 1.0f;     // preview pixels per picture pixel at zoom 1, from the last preview draw

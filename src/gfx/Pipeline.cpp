@@ -994,11 +994,15 @@ bool Pipeline::EnsureNeuralTextures(GpuContext& gpu, UINT inW, UINT inH, UINT ou
 
 // The network may look at an exposed copy of its input (a paper-white scale for the neural pass only); the composite
 // pass undoes the gain, so the output keeps the original brightness and only the character of the result changes.
-// With a reduced pass resolution the copy is also the box-filtered small picture, with the guidance resampled to it.
+// With a reduced pass resolution the copy is also the box-filtered small picture, with the guidance resampled to it
+// when the guidance is not already the pass's size (super resolution leaves it at the render size).
 Pipeline::Tex& Pipeline::PrepareNeuralInput(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const Settings& s, Tex& base) {
     m_nrInExposed = false;
     const bool exposed = std::fabs(s.nrInputExposure - 1.0f) >= 1e-3f;
-    if (!m_nrIn.Valid() || (!exposed && !m_nrScaled)) return base;
+    // With super resolution the picture the pass starts from is the DLSS output, larger than the guidance: a pass
+    // below it must be given the small picture, or the network would see its top left corner blown over the frame.
+    const bool resize = base.w != m_nrInW || base.h != m_nrInH;
+    if (!m_nrIn.Valid() || (!exposed && !resize && !m_nrScaled)) return base;
     Transition(cmd, base, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
     Transition(cmd, m_nrIn, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
     DispatchDesc d;
@@ -1007,18 +1011,20 @@ Pipeline::Tex& Pipeline::PrepareNeuralInput(GpuContext& gpu, ID3D12GraphicsComma
     d.constants.paramA = s.nrInputExposure;
     d.srv[0] = base.srv;
     d.uav[0] = m_nrIn.uav;
-    if (m_nrScaled) {
-        Transition(cmd, m_mv, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
-        Transition(cmd, m_depth, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
-        Transition(cmd, m_nrMv, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
-        Transition(cmd, m_nrDepth, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+    if (m_nrScaled || resize) {
         d.id = ShaderId::NeuralPrep;
-        d.constants.flags = exposed ? 1u : 0u;
+        d.constants.flags = (exposed ? 1u : 0u) | (m_nrScaled ? 2u : 0u);   // bit 2: the guidance comes along
         d.constants.intA = std::max(1u, (base.w + m_nrInW - 1) / m_nrInW);  // taps per axis cover the source footprint
-        d.constants.scaleX = (float)m_nrInW / (float)m_inW;                 // motion vectors in the pass's pixels
-        d.constants.scaleY = (float)m_nrInH / (float)m_inH;
-        d.srv[1] = m_mv.srv; d.srv[2] = m_depth.srv;
-        d.uav[1] = m_nrMv.uav; d.uav[2] = m_nrDepth.uav;
+        if (m_nrScaled) {
+            Transition(cmd, m_mv, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+            Transition(cmd, m_depth, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+            Transition(cmd, m_nrMv, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+            Transition(cmd, m_nrDepth, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+            d.constants.scaleX = (float)m_nrInW / (float)m_inW;             // motion vectors in the pass's pixels
+            d.constants.scaleY = (float)m_nrInH / (float)m_inH;
+            d.srv[1] = m_mv.srv; d.srv[2] = m_depth.srv;
+            d.uav[1] = m_nrMv.uav; d.uav[2] = m_nrDepth.uav;
+        }
     } else {
         d.id = ShaderId::Expose;
     }

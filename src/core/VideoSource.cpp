@@ -663,12 +663,60 @@ bool VideoSource::OpenPreviewReader(bool hardware, std::string& error) {
     return false;
 }
 
+// The VideoInfo of an animated image: exact frame count, the most common frame interval as the rate, no sound.
+static void FillAnimInfo(const AnimReader& a, VideoInfo& info) {
+    info = VideoInfo{};
+    info.width = info.fileWidth = a.Width();
+    info.height = info.fileHeight = a.Height();
+    a.FrameRate(info.fpsNum, info.fpsDen);
+    info.durationSeconds = ToSeconds(a.Duration());
+    info.frameEstimate = a.FrameCount();
+    info.codec = AnimFormatName(a.Format());
+    info.decoderOutput = "BGRA";
+    if (info.durationSeconds > 0.0) info.videoBitrateKbps = (UINT32)std::llround((double)a.FileBytes() * 8.0 / info.durationSeconds / 1000.0);
+    info.animation = a.Format();
+    info.loopCount = a.LoopCount();
+    info.lossless = a.Lossless();
+    info.hasAlpha = a.HasAlpha();
+}
+
+bool VideoSource::OpenAnimation(GpuContext& gpu, const std::wstring& path, std::string& error) {
+    const double t0 = NowSeconds();
+    StopSequence();
+    auto anim = std::make_unique<AnimReader>();
+    if (!anim->Open(path, error)) return false;
+    if (std::max(anim->Width(), anim->Height()) > kMaxLongSide) {
+        error = StrPrintf("the animation is too large (%ux%u; at most %u pixels on the long side)", anim->Width(), anim->Height(), kMaxLongSide);
+        return false;
+    }
+    std::vector<uint8_t> first;
+    if (!anim->Decode(0, first, error)) return false;
+    const std::wstring previous = m_path;
+    m_path = path;
+    if (!CreateTexture(gpu, anim->Width(), anim->Height(), error)) { m_path = previous; return false; }
+    m_preview.reset();
+    m_anim = std::move(anim);
+    FillAnimInfo(*m_anim, m_info);
+    m_previewSeconds = 0.0;
+    m_previewLuma = MeanLuma(first, m_info.width, m_info.height);
+    SetPending(std::move(first));
+    Log::Info("Animation: %s %ux%u (%s, %llu frames, %.3f fps, %.2f s, %s, %s, %s, %llu bytes) in %.0f ms",
+              WideToUtf8(path).c_str(), m_info.width, m_info.height, m_info.codec.c_str(), (unsigned long long)m_info.frameEstimate,
+              (double)m_info.fpsNum / (double)m_info.fpsDen, m_info.durationSeconds,
+              m_info.loopCount == 0 ? "loops forever" : StrPrintf("plays %d time%s", m_info.loopCount, m_info.loopCount == 1 ? "" : "s").c_str(),
+              m_info.hasAlpha ? "with transparency" : "opaque", m_info.lossless ? "lossless" : "lossy",
+              (unsigned long long)m_anim->FileBytes(), (NowSeconds() - t0) * 1000.0);
+    return true;
+}
+
 bool VideoSource::Open(GpuContext& gpu, const std::wstring& path, bool hardwareDecode, std::string& error) {
     error.clear();
     const double t0 = NowSeconds();
+    if (ProbeAnimatedImage(path) != AnimFormat::None) return OpenAnimation(gpu, path, error);
     if (!mf::Available(error)) return false;
     StopSequence();
     m_preview.reset();
+    m_anim.reset();
     if (hardwareDecode && !m_decoder.Ready()) {
         std::string e;
         if (!m_decoder.Create(gpu.Dev().Adapter(), e)) Log::Warn("Video: hardware decoding unavailable (%s)", e.c_str());
@@ -716,6 +764,21 @@ bool VideoSource::SeekPreview(double seconds, std::string& error) {
     if (m_info.durationSeconds > 0.0) seconds = std::min(seconds, std::max(0.0, m_info.durationSeconds - FrameSeconds() * 0.5));
     seconds = std::max(0.0, seconds);
     const LONGLONG target = ToPts(seconds);
+    if (Animated()) {
+        if (!m_anim) {
+            auto a = std::make_unique<AnimReader>();
+            if (!a->Open(m_path, error)) return false;
+            if (a->Width() != m_info.width || a->Height() != m_info.height) { error = "the picture size changed"; return false; }
+            m_anim = std::move(a);
+        }
+        const size_t i = m_anim->FrameAt(target);
+        std::vector<uint8_t> bgra;
+        if (!m_anim->Decode(i, bgra, error)) return false;
+        m_previewSeconds = ToSeconds(m_anim->Frame(i).pts);
+        m_previewLuma = MeanLuma(bgra, m_info.width, m_info.height);
+        SetPending(std::move(bgra));
+        return true;
+    }
     for (int attempt = 0; attempt < 2; ++attempt) {
         if (!m_preview && !OpenPreviewReader(m_info.hardwareDecode, error)) return false;
         DecodedFrame f;
@@ -736,6 +799,7 @@ bool VideoSource::SeekPreview(double seconds, std::string& error) {
 void VideoSource::Close(GpuContext& gpu) {
     StopSequence();
     m_preview.reset();
+    m_anim.reset();
     ReleaseTexture(gpu);
     m_path.clear();
     m_info = VideoInfo{};
@@ -752,6 +816,28 @@ bool VideoSource::StartSequence(bool withAudio, double fromSeconds, double toSec
     error.clear();
     StopSequence();
     if (!Loaded()) { error = "no video is open"; return false; }
+    if (Animated()) {
+        auto a = std::make_unique<AnimReader>();
+        if (!a->Open(m_path, error)) return false;
+        if (a->Width() != m_info.width || a->Height() != m_info.height) { error = "the picture size changed"; return false; }
+        m_seqStartPts = ToPts(std::max(0.0, fromSeconds));
+        m_seqEndPts = toSeconds > 0.0 ? ToPts(toSeconds) : 0;
+        if (m_seqEndPts > 0 && m_seqEndPts <= m_seqStartPts) m_seqEndPts = 0;
+        {
+            std::lock_guard<std::mutex> lock(m_qm);
+            m_queue.clear();
+            m_audioQueue.clear();
+            m_seqDone = false;
+            m_seqError.clear();
+        }
+        m_audioType = nullptr;
+        m_info.audioRate = m_info.audioChannels = 0;
+        m_animSeq = std::move(a);
+        m_seqStop = false;
+        m_seqRunning = true;
+        m_seqThread = std::thread([this] { AnimMain(); });
+        return true;
+    }
     auto r = std::make_unique<VideoReader>();
     bool hw = m_info.hardwareDecode;
     if (!CreateReader(m_path, withAudio, hw ? m_decoder.manager.Get() : nullptr, *r, error)) {
@@ -855,6 +941,41 @@ void VideoSource::DecodeMain() {
     if (SUCCEEDED(coHr)) CoUninitialize();
 }
 
+// The sequence thread of an animated image: the frames whose interval touches [start, end) in file order.
+void VideoSource::AnimMain() {
+    const HRESULT coHr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    AnimReader& a = *m_animSeq;
+    UINT64 index = 0;
+    std::string err;
+    for (size_t i = 0; i < a.FrameCount() && !m_seqStop.load(std::memory_order_acquire); ++i) {
+        const AnimFrameInfo fi = a.Frame(i);
+        if (fi.pts + fi.duration <= m_seqStartPts) continue;
+        if (m_seqEndPts > 0 && fi.pts >= m_seqEndPts) break;
+        VideoFrameData f;
+        if (!a.Decode(i, f.bgra, err)) {
+            std::lock_guard<std::mutex> lock(m_qm);
+            if (m_seqError.empty()) m_seqError = err;
+            break;
+        }
+        f.width = a.Width(); f.height = a.Height();
+        f.index = index++;
+        f.pts = fi.pts;
+        f.duration = fi.duration;
+        std::unique_lock<std::mutex> lock(m_qm);
+        m_spaceCv.wait(lock, [&] { return m_queue.size() < kQueueFrames || m_seqStop.load(); });
+        if (m_seqStop.load()) break;
+        m_queue.push_back(std::move(f));
+        lock.unlock();
+        m_qcv.notify_all();
+    }
+    {
+        std::lock_guard<std::mutex> lock(m_qm);
+        m_seqDone = true;
+    }
+    m_qcv.notify_all();
+    if (SUCCEEDED(coHr)) CoUninitialize();
+}
+
 VideoSource::Next VideoSource::NextFrame(double timeoutSeconds, VideoFrameData& timing) {
     std::unique_lock<std::mutex> lock(m_qm);
     if (!m_seqRunning) return Next::End;
@@ -899,6 +1020,7 @@ void VideoSource::StopSequence() {
     m_spaceCv.notify_all();
     if (m_seqThread.joinable()) m_seqThread.join();
     m_seq.reset();
+    m_animSeq.reset();
     {
         std::lock_guard<std::mutex> lock(m_qm);
         m_queue.clear();
@@ -917,6 +1039,14 @@ VideoScanner::~VideoScanner() = default;
 bool VideoScanner::Open(const std::wstring& path, IMFDXGIDeviceManager* manager, std::string& error) {
     error.clear();
     Close();
+    if (ProbeAnimatedImage(path) != AnimFormat::None) {
+        auto a = std::make_unique<AnimReader>();
+        if (!a->Open(path, error)) return false;
+        FillAnimInfo(*a, m_info);
+        m_anim = std::move(a);
+        m_path = path;
+        return true;
+    }
     if (!mf::Available(error)) return false;
     auto r = std::make_unique<VideoReader>();
     if (!CreateReader(path, false, manager, *r, error)) {
@@ -935,6 +1065,7 @@ bool VideoScanner::Open(const std::wstring& path, IMFDXGIDeviceManager* manager,
 
 void VideoScanner::Close() {
     m_reader.reset();
+    m_anim.reset();
     m_info = VideoInfo{};
     m_path.clear();
     m_manager = nullptr;
@@ -943,9 +1074,17 @@ void VideoScanner::Close() {
 bool VideoScanner::Thumbnail(double seconds, bool skipBlack, UINT w, UINT h, std::vector<uint8_t>& bgra, double& gotSeconds,
                              std::string& error) {
     error.clear();
-    if (!m_reader) { error = "no video is open"; return false; }
+    if (!m_reader && !m_anim) { error = "no video is open"; return false; }
     if (m_info.durationSeconds > 0.0) seconds = std::min(seconds, std::max(0.0, m_info.durationSeconds - 0.01));
     const LONGLONG target = ToPts(std::max(0.0, seconds));
+    if (m_anim) {
+        const size_t i = m_anim->FrameAt(target);
+        std::vector<uint8_t> frame;
+        if (!m_anim->Decode(i, frame, error)) return false;
+        FitThumbnail(frame, m_anim->Width(), m_anim->Height(), w, h, bgra);
+        gotSeconds = ToSeconds(m_anim->Frame(i).pts);
+        return true;
+    }
     for (int attempt = 0; attempt < 2; ++attempt) {
         DecodedFrame f;
         if (SeekReader(*m_reader, target, error) &&

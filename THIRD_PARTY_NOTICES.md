@@ -87,6 +87,15 @@ the terms of its license, which permits redistribution of the DirectML binaries 
 applications. The license and third-party notices are shipped in
 `licenses/DirectML-LICENSE.txt` and `licenses/DirectML-ThirdPartyNotices.txt`.
 
+## libwebp
+
+libwebp (the WebP codec library), Copyright (c) 2010, Google Inc. All rights reserved.
+BSD 3-Clause License. https://chromium.googlesource.com/webm/libwebp
+Downloaded at configure time from the project's GitHub mirror (tag v1.6.0, verified by its
+SHA-256) and linked statically into the application: it decodes and writes animated WebP
+files, and decodes still WebP pictures on systems without the Windows WebP codec. The
+license text is shipped in `licenses/libwebp-COPYING.txt`.
+
 ## Depth Anything V2 Small
 
 Depth Anything V2 Small, Copyright (c) the Depth Anything V2 authors, Apache License 2.0.

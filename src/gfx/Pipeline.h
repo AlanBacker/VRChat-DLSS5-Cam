@@ -106,6 +106,9 @@ public:
     static constexpr UINT   kDlssMaxSide = 8192;
     static constexpr UINT64 kNrMaxPixels = 44500000;
     static constexpr UINT64 kNrRetryMinPixels = 2000000;   // below this a refusal is not about the size
+    // Known and left alone: at 7680x4320 the 310.8 runtime answers some content (a black frame with white text) with
+    // flashing colour blocks although it reports success; a smaller pass composited onto the picture did not cure
+    // it, and moving pictures come out clean, so the pass keeps the size that is asked for.
 
     // Main thread, before the processing thread starts / after it stopped.
     bool Init(Device& device, const std::wstring& exeDir, const std::wstring& appDataDir, std::wstring& error);

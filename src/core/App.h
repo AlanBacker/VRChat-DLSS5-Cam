@@ -9,6 +9,7 @@
 #include "core/SpoutReceiver.h"
 #include "core/ImageSource.h"
 #include "core/VideoSource.h"
+#include "core/AnimatedImage.h"
 #include "core/VideoWriter.h"
 #include "gfx/Device.h"
 #include "gfx/Pipeline.h"
@@ -88,6 +89,10 @@ private:
         bool         videoHasAudio = false;
         bool         videoHardwareDecode = false;
         UINT32       videoBitrateKbps = 0;       // average video bitrate of the file (0 = unknown)
+        int          videoAnimation = 0;         // AnimFormat of an animated image source (0 = a video file)
+        int          videoLoopCount = 0;         // animation: 0 = forever
+        bool         videoLossless = false;      // animation: no lossy compression
+        bool         videoHasAlpha = false;      // animation: the frames carry transparency
         bool         videoProcessing = false;    // the file is being run through the pipeline
         bool         videoFinishing = false;     // the encoder writes the tail of the file
         UINT64       videoFrame = 0;             // frames delivered to the output
@@ -155,7 +160,13 @@ private:
         std::wstring outPath;                    // MP4 file or PNG folder (once known: with the first frame's size)
         int          codec = 0;
         UINT32       bitrateKbps = 40000;
+        bool         matchSource = false;        // the output follows the file: its bitrate scales with the picture
         bool         withAudio = false;
+        AnimFormat   animFormat = AnimFormat::None;   // the output is an animated image (GIF, APNG, WebP)
+        int          animLoops = 0;              // 0 = forever
+        int          animQuality = 90;           // WebP
+        bool         animLossless = false;       // WebP
+        bool         keepAlpha = false;          // the transparency of the frames goes into the animation
         bool         writerPrepared = false;
         std::map<UINT64, std::pair<LONGLONG, LONGLONG>> times;   // frame index -> (pts, duration)
         std::string  error;
@@ -359,6 +370,7 @@ private:
     ImageSource   m_image;                 // processing thread
     VideoSource   m_video;                 // processing thread
     VideoWriter   m_videoWriter;           // processing thread
+    AnimWriter    m_animWriter;            // processing thread: GIF / APNG / WebP output
     VideoPreview  m_preview;               // processing thread
     Capture       m_capture;
     ui::Fonts     m_fonts;

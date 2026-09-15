@@ -49,6 +49,7 @@ void VideoWriter::Prepare(const VideoWriterConfig& cfg) {
     m_writer.Reset();
     m_opened = false;
     m_hardware = false;
+    m_hevcFallback = false;
     m_w = m_h = 0;
     m_baseSet = false;
     m_base = 0;
@@ -115,6 +116,13 @@ void VideoWriter::Abort() {
     if (m_thread.joinable()) m_thread.join();
 }
 
+void VideoWriter::Reset() {
+    Abort();
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_failed = false;
+    m_error.clear();
+}
+
 void VideoWriter::Fail(const std::string& error) {
     {
         std::lock_guard<std::mutex> lock(m_mutex);
@@ -155,9 +163,46 @@ bool VideoWriter::OpenFile(UINT w, UINT h, bool withAudio, std::string& error) {
     mf::SetRatio(out.Get(), MF_MT_FRAME_RATE, m_cfg.fpsNum, m_cfg.fpsDen);
     mf::SetRatio(out.Get(), MF_MT_PIXEL_ASPECT_RATIO, 1, 1);
     out->SetUINT32(MF_MT_MPEG2_PROFILE, hevc ? (UINT32)eAVEncH265VProfile_Main_420_8 : (UINT32)eAVEncH264VProfile_High);
+    const double fps = (double)m_cfg.fpsNum / (double)std::max(1u, m_cfg.fpsDen);
+    if (!hevc) {
+        // Beyond H.264 level 5.2 (4K at 60 fps is the last stream inside it) the encoder must be told the level the
+        // stream needs (6, 6.1 or 6.2), or it refuses the media type outright.
+        const double mbPerFrame = (double)((m_w + 15) / 16) * (double)((m_h + 15) / 16);
+        const double mbPerSec = mbPerFrame * fps;
+        if (mbPerFrame > 36864.0 || mbPerSec > 2228224.0)
+            out->SetUINT32(MF_MT_MPEG2_LEVEL, mbPerSec > 8355840.0 ? 62u : mbPerSec > 4177920.0 ? 61u : 60u);
+    }
+    // The encoder does not take the picture: an H.264 stream is retried as HEVC, which the hardware encoders accept up
+    // to 8192x8192, before giving up.
+    auto refused = [&](HRESULT code, const char* stage) -> bool {
+        if (code != MF_E_TOPO_CODEC_NOT_FOUND && code != MF_E_INVALIDMEDIATYPE) {
+            error = StrPrintf("the %s encoder rejected the picture format (%s): %s", codecName, stage, FormatHr(code).c_str());
+            return false;
+        }
+        if (!hevc && !m_hevcFallback) {
+            Log::Warn("Video output: the H.264 encoder does not accept %ux%u at %.3f fps (%s); writing HEVC instead", m_w, m_h, fps,
+                      FormatHr(code).c_str());
+            m_hevcFallback = true;
+            m_cfg.codec = 1;
+            return true;
+        }
+        if (m_hevcFallback)
+            error = StrPrintf("neither the H.264 nor the HEVC encoder of this system accepts %ux%u at %.3f fps; lower the output resolution "
+                              "or choose the PNG sequence (%s)", m_w, m_h, fps, FormatHr(code).c_str());
+        else if (code == MF_E_TOPO_CODEC_NOT_FOUND)
+            error = StrPrintf("no %s encoder is available on this system%s (%s)", codecName, hevc ? "; try H.264" : "", FormatHr(code).c_str());
+        else
+            error = StrPrintf("the %s encoder does not accept %ux%u at %.3f fps%s (%s)", codecName, m_w, m_h, fps,
+                              hevc ? "; try H.264 or a smaller output" : "", FormatHr(code).c_str());
+        return false;
+    };
     DWORD videoStream = 0;
     hr = writer->AddStream(out.Get(), &videoStream);
-    if (FAILED(hr)) { error = StrPrintf("cannot add the %s video stream: %s", codecName, FormatHr(hr).c_str()); return false; }
+    if (FAILED(hr)) {
+        if (!refused(hr, "video stream")) return false;
+        writer.Reset();
+        return OpenFile(w, h, withAudio, error);
+    }
 
     ComPtr<IMFMediaType> in;
     hr = mf::CreateMediaType(&in);
@@ -176,11 +221,9 @@ bool VideoWriter::OpenFile(UINT w, UINT h, bool withAudio, std::string& error) {
     in->SetUINT32(MF_MT_VIDEO_PRIMARIES, MFVideoPrimaries_BT709);
     hr = writer->SetInputMediaType(videoStream, in.Get(), nullptr);
     if (FAILED(hr)) {
-        if (hr == MF_E_TOPO_CODEC_NOT_FOUND || hr == MF_E_INVALIDMEDIATYPE)
-            error = StrPrintf("no %s encoder is available on this system%s (%s)", codecName, hevc ? "; try H.264" : "", FormatHr(hr).c_str());
-        else
-            error = StrPrintf("the %s encoder rejected the picture format: %s", codecName, FormatHr(hr).c_str());
-        return false;
+        if (!refused(hr, "input type")) return false;
+        writer.Reset();
+        return OpenFile(w, h, withAudio, error);
     }
 
     bool audio = false;
@@ -219,10 +262,12 @@ bool VideoWriter::OpenFile(UINT w, UINT h, bool withAudio, std::string& error) {
 
     hr = writer->BeginWriting();
     if (FAILED(hr)) {
-        if (hr == MF_E_TOPO_CODEC_NOT_FOUND)
-            error = StrPrintf("no %s encoder is available on this system%s (%s)", codecName, hevc ? "; try H.264" : "", FormatHr(hr).c_str());
-        else
-            error = "BeginWriting: " + FormatHr(hr);
+        if (hr == MF_E_TOPO_CODEC_NOT_FOUND || hr == MF_E_INVALIDMEDIATYPE) {
+            if (!refused(hr, "begin")) return false;
+            writer.Reset();
+            return OpenFile(w, h, withAudio, error);
+        }
+        error = "BeginWriting: " + FormatHr(hr);
         return false;
     }
     // Which encoder the writer picked (hardware transforms carry a device URL).
@@ -251,6 +296,9 @@ bool VideoWriter::OpenFile(UINT w, UINT h, bool withAudio, std::string& error) {
     Log::Info("Video output: %s %ux%u %s %u kbit/s, %.3f fps, %s, %s encoder", WideToUtf8(m_cfg.path).c_str(), m_w, m_h, codecName,
               m_cfg.bitrateKbps, (double)m_cfg.fpsNum / (double)std::max(1u, m_cfg.fpsDen), audio ? "AAC audio" : "no audio",
               m_hardware ? "hardware" : "software");
+    if (!m_hardware && !hevc && (m_w > 4096 || m_h > 4096))
+        Log::Info("Video output: the hardware H.264 encoders stop at 4096x4096, so the slower software encoder writes this file; "
+                  "HEVC output would use the hardware encoder");
     return true;
 }
 

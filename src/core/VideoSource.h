@@ -1,6 +1,8 @@
 // VRChat DLSS5 Cam - video file source (Media Foundation): a seekable still preview, a paced or as-fast-as-possible
 // frame sequence over a time range with its sound track, and thumbnails for the media library and the seek bar.
+// Animated images (GIF, APNG, animated WebP) come through the same interface, decoded by AnimReader instead.
 #pragma once
+#include "core/AnimatedImage.h"
 #include "core/MediaFoundation.h"
 #include "core/SourceFrame.h"
 #include "gfx/Device.h"
@@ -36,8 +38,12 @@ struct VideoInfo {
     UINT32 videoBitrateKbps = 0;              // average video bitrate of the file (0 = unknown)
     UINT32 audioBitrateKbps = 0;
     bool   hardwareDecode = false;            // the GPU decoder is in use
-    std::string codec;                        // "HEVC", "H.264", ...
+    std::string codec;                        // "HEVC", "H.264", ... ("GIF", "APNG", "WebP" for an animation)
     std::string decoderOutput;                // "NV12", "RGB32", ...
+    AnimFormat animation = AnimFormat::None;  // the file is an animated image (frame count exact, no sound)
+    int    loopCount = 0;                     // animation: 0 = forever
+    bool   lossless = false;                  // animation: no lossy compression (APNG, lossless WebP)
+    bool   hasAlpha = false;                  // animation: the frames carry transparency
 };
 
 struct VideoReader;   // a Media Foundation source reader with its parsed video type (VideoSource.cpp)
@@ -95,16 +101,20 @@ public:
     const std::wstring& Path() const { return m_path; }
     std::wstring Stem() const;
     const VideoInfo& Info() const { return m_info; }
+    bool Animated() const { return m_info.animation != AnimFormat::None; }
     IMFDXGIDeviceManager* DecoderManager() const { return m_decoder.manager.Get(); }
 
+    // Video container extensions; animated images are recognised by content (ProbeAnimatedImage).
     static bool IsSupportedExtension(const std::wstring& path);
 
 private:
     bool CreateTexture(GpuContext& gpu, UINT w, UINT h, std::string& error);
     void ReleaseTexture(GpuContext& gpu);
     bool OpenPreviewReader(bool hardware, std::string& error);
+    bool OpenAnimation(GpuContext& gpu, const std::wstring& path, std::string& error);
     void SetPending(std::vector<uint8_t>&& bgra);
     void DecodeMain();
+    void AnimMain();
 
     ComPtr<ID3D12Resource>  m_tex;
     D3D12_CPU_DESCRIPTOR_HANDLE m_srv{};
@@ -121,6 +131,8 @@ private:
     DecoderDevice m_decoder;
 
     std::unique_ptr<VideoReader> m_preview;    // kept open so the preview can seek
+    std::unique_ptr<AnimReader>  m_anim;       // the preview reader of an animated image
+    std::unique_ptr<AnimReader>  m_animSeq;    // its sequence reader (own decode state for the thread)
     double m_previewSeconds = 0.0;
     float  m_previewLuma = 0.0f;
 
@@ -145,7 +157,7 @@ public:
     ~VideoScanner();
     bool Open(const std::wstring& path, IMFDXGIDeviceManager* manager, std::string& error);
     void Close();
-    bool Opened() const { return m_reader != nullptr; }
+    bool Opened() const { return m_reader != nullptr || m_anim != nullptr; }
     const VideoInfo& Info() const { return m_info; }
     // The frame covering `seconds`, fitted into w x h BGRA. skipBlack passes over leading black frames like the still
     // preview does. gotSeconds receives the time of the frame used.
@@ -154,6 +166,7 @@ public:
 
 private:
     std::unique_ptr<VideoReader> m_reader;
+    std::unique_ptr<AnimReader>  m_anim;
     VideoInfo    m_info;
     std::wstring m_path;
     IMFDXGIDeviceManager* m_manager = nullptr;

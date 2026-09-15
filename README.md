@@ -22,7 +22,9 @@ as a batch. It is an ordinary Windows application: the VRChat process is never t
 - **Live camera.** VRChat's Stream Camera is received over Spout and previewed in real time with DLSS 5 applied.
   A global hotkey (`Ctrl+Alt+P`) saves a lossless PNG while VRChat stays in the foreground.
 - **Images and video files.** Screenshots and recordings can be dropped onto the window, adjusted and exported:
-  PNG for stills, MP4 (H.264 / HEVC, audio track preserved) or a PNG sequence for video, named by a template of your own.
+  PNG for stills, MP4 (H.264 / HEVC, audio track preserved), a PNG sequence or an animated GIF / APNG / WebP for video,
+  named by a template of your own. Animated GIF, APNG and WebP files are processed frame by frame like videos and come
+  back in the same format, with the timing of every frame kept.
 - **Batch processing.** Every file that is opened is collected in the library below the preview. Any selection can
   be processed in a single run, either with the shared parameters or with per-file parameters, and each file can be
   turned, mirrored or cropped beforehand.
@@ -44,7 +46,7 @@ as a batch. It is an ordinary Windows application: the VRChat process is never t
 | Graphics card | NVIDIA GeForce RTX. The **RTX 50** series and the **RTX 40 / 30 / 20** series each have a build of the runtime in the archive (next row), so nothing has to be added for any of them. **AMD Radeon RX 7000 / 9000** with the Radeon edition (`VRChatDLSS5Cam-win64-amd.zip`), which runs the neural pass through DLSS-NR-on-AMD, a separate project installed from the application (see *AMD Radeon cards*). Cards from other vendors are not refused: the application works as a viewer and recorder on them. DLAA and the hardware optical flow stay NVIDIA-only, and block matching takes over as the motion source. |
 | DLSS 5 runtime | Included. The archive carries `nvngx_dlssnr.dll` 310.8.0.0 in two builds: `runtimes\blackwell\` holds the build as shipped with games (RTX 50) and `runtimes\universal\` a community-adapted build of the same runtime for RTX 40 / 30 / 20. The build for the installed card is chosen at start and the other is tried when it fails. Both files are NVIDIA's software under NVIDIA's terms and are not part of this project's MIT-licensed source (see `THIRD_PARTY_NOTICES.md`); nothing has to be obtained from anywhere else. |
 | VRChat | Any build with the Stream Camera *Spout Stream* option (desktop or VR). Required for the live camera only. |
-| Video files | Windows Media Foundation (part of Windows). The N / KN editions require the *Media Feature Pack*; HEVC files may require the *HEVC Video Extensions* from the Microsoft Store. |
+| Video files | Windows Media Foundation (part of Windows). The N / KN editions require the *Media Feature Pack*; HEVC files may require the *HEVC Video Extensions* from the Microsoft Store. Animated GIF, APNG and WebP files need nothing extra: the application decodes and writes them itself. |
 
 ## Getting started
 
@@ -149,7 +151,7 @@ A file can be dropped onto the window or opened with *Open image…* / *Open vid
 picture appears in the preview and every slider takes effect on it immediately. The ✕ button beside *Open…* closes
 the file again: processing stops, the preview empties and the file stays in the library. **Process & save PNG**
 (images), **Process & save video** (videos) or the hotkey writes the result next to the source file as
-`<name>_DLSS5_<w>x<h>.png`, `.mp4` or a folder of PNG frames.
+`<name>_DLSS5_<w>x<h>.png`, `.mp4`, `.gif` / `.png` (APNG) / `.webp` for an animation, or a folder of PNG frames.
 
 <p align="center">
   <img src="docs/images/video.png" width="900" alt="A video open in the preview with the wipe compare and the play, step and range controls under the picture">
@@ -158,8 +160,15 @@ the file again: processing stops, the preview empties and the file stays in the 
 For video, the controls under the preview play and pause the file through the whole pipeline, step one frame at a
 time, and show a thumbnail of the frame under the cursor on the seek bar. *Start here* / *End here* limit the
 processing (and the audio) to a range, and *Whole video* clears it. By default the output matches the source: same
-codec, frame rate and bitrate. With *Match the source* switched off, H.264, HEVC or a PNG sequence and the bitrate
-can be chosen manually. The *Capture* section shows roughly how long the file will take with the current settings.
+codec, frame rate and bitrate. With *Match the source* switched off, H.264, HEVC, a PNG sequence, GIF, APNG or WebP
+and the bitrate can be chosen manually. The *Capture* section shows roughly how long the file will take with the
+current settings.
+
+An animated GIF, APNG or animated WebP opens as a video: the same play, step and range controls apply, and every frame
+keeps its own display time. With *Match the source* the result is written in the same format with the file's loop
+count (a lossless WebP stays lossless); with it off, any moving source can be saved as MP4, a PNG sequence, GIF, APNG
+or WebP, and *WebP quality* sets the compression (100 = lossless). Transparency is kept when *Keep transparency
+(alpha)* is on (GIF: one bit). A GIF holds 256 colours per frame and at most 50 frames per second.
 
 ## Batch processing
 
@@ -284,8 +293,8 @@ own.
 | Source | Input | *VRChat camera (Spout)*, *Image file* or *Video file*. |
 | Source | Sender | Which Spout sender to receive; VRChat's camera is `VRCSender1`. |
 | Source | Custom output resolution | Output at a chosen size instead of the source size. Larger than the source = upscaling: *DLSS super resolution* (the official DLSS upscaler rebuilds the detail from the source at a render size chosen for the ratio, then the neural pass works on the large picture) or plain *Resampling*. Super resolution multiplies the pixels every later stage has to process: expect a large drop in speed and more video memory in use; for a live stream set a processing rate cap. Smaller = downscaling. DLSS works up to 8192 pixels a side and the neural pass up to about 45 megapixels: a larger output is finished within those limits and resampled to the requested size. |
-| Source | Match the source | Videos only, on by default: the output uses the codec (H.264 or HEVC), the frame rate and the average bitrate of the source file. |
-| Source | Save as / Bitrate / Keep audio | With *Match the source* off: *MP4 (H.264)*, *MP4 (HEVC)* or *PNG sequence*, the encoder bitrate (5–200 Mbit/s), and whether the audio track is copied. |
+| Source | Match the source | Videos only, on by default: the output uses the codec (H.264 or HEVC), the frame rate and the average bitrate of the source file. An animated GIF, APNG or WebP comes back in the same format with its loop count. |
+| Source | Save as / Bitrate / Keep audio / WebP quality | With *Match the source* off: *MP4 (H.264)*, *MP4 (HEVC)*, *PNG sequence*, *GIF*, *APNG* or *WebP*; the encoder bitrate (5–200 Mbit/s) and whether the audio track is copied for MP4; the compression of an animated WebP (50–100, 100 = lossless). |
 | Source | Hardware decoding | Decode the video on the GPU. Best switched off when a file shows wrong colours or fails to open. |
 | Source | Paper white / Highlight compression | Shown only for floating-point (HDR) Spout textures: exposure reference and soft highlight roll-off before the neural pass. |
 | DLSS 5 | Enable DLSS 5 (DLSSNR) | Switches the neural pass on or off. Off releases the runtime; on loads it again from the file. |
@@ -376,6 +385,7 @@ VRChat Stream Camera ──Spout──▶ D3D11on12 receive ──▶ convert (s
       ▶ Depth Anything V2 (ONNX Runtime DirectML, every N frames) ──▶ normalized depth, reprojected in between
       ▶ [DLSS SR / DLAA] ──▶ DLSSNR (nvngx_dlssnr.dll) ──▶ composite / compare ──▶ preview + PNG capture
 Video file ──Media Foundation──▶ decode (GPU) ──▶ same pipeline, one frame at a time ──▶ MP4 (H.264 / HEVC + AAC) or PNG sequence
+Animated GIF / APNG / WebP ──WIC / libwebp──▶ decode ──▶ same pipeline, one frame at a time ──▶ GIF / APNG / WebP (frame timing kept), MP4 or PNG sequence
 ```
 
 The application hosts the DLSS 5 neural-rendering snippet outside the NGX runtime: the DLL is loaded directly, its
@@ -405,7 +415,11 @@ manager, software fallback) into a short frame queue. The processing thread hand
 asks for a readback of that frame's result; readbacks are collected in frame order and passed to the writer, so no frame
 is skipped or duplicated even when the neural pass takes longer than the frame interval. The writer converts each frame
 to NV12 on a thread of its own and feeds a Media Foundation sink writer (hardware encoder where available) together with
-the decoded audio samples (`src/core/VideoSource.cpp`, `src/core/VideoWriter.cpp`).
+the decoded audio samples (`src/core/VideoSource.cpp`, `src/core/VideoWriter.cpp`). An animated image goes through the
+same source interface with its own reader: GIF and APNG frames are decoded by Windows Imaging Component (the APNG
+chunks are assembled into single PNG frames first) and composited onto the canvas with their disposal and blend rules,
+animated WebP by libwebp; the writer builds the output animation frame by frame with the source delays rounded
+cumulatively, so long files keep their timing (`src/core/AnimatedImage.cpp`).
 
 </details>
 
