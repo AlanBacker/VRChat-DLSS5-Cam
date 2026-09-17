@@ -1742,7 +1742,7 @@ void MainUI::BlockView(Settings& s, const UiFrameInfo& /*info*/, UiEvents& ev) {
     ImGui::Spacing();
 }
 
-// The AI assistant: an MCP server on 127.0.0.1 that lets an assistant work the program through the same actions
+// MCP: a server that lets a client work the program through the same actions
 // as this interface. The switch, the port, whether it may change anything, its state and the client configuration.
 void MainUI::BlockMcp(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
     const Palette& p = Colors();
@@ -1781,7 +1781,7 @@ void MainUI::BlockMcp(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
     if (Toggle(TR(McpReadOnly), &s.mcpReadOnly)) ev.settingsChanged = true;
     Help(TR(TipMcpReadOnly));
     if (SearchMatch(TR(McpCopyConfig), TR(TipMcpCopyConfig))) {   // shows with the section's title or its buttons
-        // The state: a badge and the address, then how much the assistants have done.
+        // The state: a badge and the address, then how much the clients have done.
         ImGui::Spacing();
         if (info.mcpRunning) {
             Pill(TR(McpOn), WithAlpha(p.good, 0.2f), p.good);

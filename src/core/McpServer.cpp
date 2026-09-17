@@ -264,7 +264,7 @@ const std::vector<McpSettingInfo> kSettings = {
     { "githubMirrorCustom", "updates", "string", "", "The user's own mirror site (https://host)." },
     { "mcpEnabled", "mcp", "bool", "", "This MCP server runs whenever the program does." },
     { "mcpPort", "mcp", "int", "1024..65535", "TCP port of the server on 127.0.0.1." },
-    { "mcpReadOnly", "mcp", "bool", "", "The assistant may look but not change anything." },
+    { "mcpReadOnly", "mcp", "bool", "", "Clients may look but not change anything." },
     { "mcpToken", "mcp", "string", "", "When set, every request must carry it as a bearer token." },
     { "mcpBind", "mcp", "enum", "0 = this computer only, 1 = the local network", "Where the server listens; other computers need a key." },
     { "mcpLocalNoKey", "mcp", "bool", "", "A client on this computer needs no key." },
@@ -862,7 +862,7 @@ bool McpServer::Authorize(const Request& r, McpCaller& caller, Response& out) {
         if (!found) {
             out.status = 401;
             out.extraHeaders = "WWW-Authenticate: Bearer\r\n";
-            out.body = R"json({"error":"unknown key: the user creates keys in the sidebar (AI assistant section)"})json";
+            out.body = R"json({"error":"unknown key: the user creates keys in the sidebar (MCP section)"})json";
             return false;
         }
     } else if (r.local && a.localNoKey) {
@@ -874,7 +874,7 @@ bool McpServer::Authorize(const Request& r, McpCaller& caller, Response& out) {
         out.status = 401;
         out.extraHeaders = "WWW-Authenticate: Bearer\r\n";
         out.body = r.local ? R"json({"error":"a key is required (Authorization: Bearer <key>): the user creates one in the sidebar, or switches on 'This computer needs no key'"})json"
-                           : R"json({"error":"a key is required (Authorization: Bearer <key>): the user creates one in the sidebar (AI assistant section)"})json";
+                           : R"json({"error":"a key is required (Authorization: Bearer <key>): the user creates one in the sidebar (MCP section)"})json";
         return false;
     }
     if (a.readOnly) caller.role = McpRoleViewer;
@@ -1080,7 +1080,7 @@ Json McpServer::CallTool(const std::string& name, const Json& args, const McpCal
     { std::lock_guard<std::mutex> lock(m_mutex); readOnly = m_access.readOnly; }
     if (!allowed) {
         std::string why;
-        if (readOnly) why = "The MCP server is in read-only mode: " + name + " would change something. The user can switch it off in the sidebar (AI assistant section).";
+        if (readOnly) why = "The MCP server is in read-only mode: " + name + " would change something. The user can switch it off in the sidebar (MCP section).";
         else if (caller.role == McpRoleJobs) why = "The key " + caller.keyName + " has the jobs role: it sends files with upload and submit and follows them with jobs; " + name + " needs an admin key.";
         else why = "The key " + caller.keyName + " has the viewer role: it only looks; " + name + " needs " + (tool->jobs ? "a jobs or an admin key." : "an admin key.");
         call->Fail(why, Json::Obj().Set("reason", "not_allowed").Set("role", RoleName(caller.role)));
@@ -1161,7 +1161,7 @@ std::string McpServer::InfoPage(const Request& r, const McpCaller& caller) {
     h += "<li>On this computer: <code>" + HtmlEscape(Url(st.port)) + "</code>" + (a.localNoKey ? " <small>(no key needed here)</small>" : " <small>(a key is needed)</small>") + "</li>";
     if (st.bind == 1) {
         for (const std::string& addr : LocalAddresses()) h += "<li>From the local network: <code>" + HtmlEscape(Url(addr, st.port)) + "</code> <small>(a key is needed)</small></li>";
-        h += "</ul><p>Other computers need the Windows firewall to allow the port (the sidebar has a button for that) and a key from the sidebar's AI assistant section. "
+        h += "</ul><p>Other computers need the Windows firewall to allow the port (the sidebar has a button for that) and a key from the sidebar's MCP section. "
              "From outside the network, use a VPN such as Tailscale or a reverse proxy that adds HTTPS: this server speaks plain HTTP.</p>";
     } else {
         h += "</ul><p>The server listens on this computer only. Set <i>Reach</i> to <i>Local network</i> in the sidebar to let other computers connect (with a key).</p>";

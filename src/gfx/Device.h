@@ -203,7 +203,7 @@ public:
     // be in the RENDER_TARGET state, i.e. after the interface is drawn and before the barrier to PRESENT) into a
     // readback buffer. FinishScreenshot waits for the frame's fence and returns the pixels as tightly packed RGBA8.
     bool BeginScreenshot(ID3D12GraphicsCommandList* cmd);
-    // A region of any RGBA8 texture (the display buffer, for the assistant's preview) through the same readback
+    // A region of any RGBA8 texture (the display buffer, for the MCP preview) through the same readback
     // buffer: FinishScreenshot returns it. `state` is the texture's state before and after the copy.
     bool BeginReadback(ID3D12GraphicsCommandList* cmd, ID3D12Resource* res, D3D12_RESOURCE_STATES state, UINT x, UINT y, UINT w, UINT h);
     bool FinishScreenshot(UINT64 fence, std::vector<uint8_t>& rgba, UINT& width, UINT& height);

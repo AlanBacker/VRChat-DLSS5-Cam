@@ -305,7 +305,7 @@ private:
     LibraryItem* FindItem(unsigned id);
     void RequestScreenshot(const std::wstring& path);
 
-    // The MCP server (AppMcp.cpp): the assistant's calls run on the interface thread between the interface's draw
+    // The MCP server (AppMcp.cpp): a client's calls run on the interface thread between the interface's draw
     // and the handling of its events, so they take the widgets' paths.
     struct McpWaiter {
         std::shared_ptr<McpCall> call;

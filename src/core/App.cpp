@@ -1783,7 +1783,7 @@ void App::Frame() {
         m_splash.Close();
     }
 
-    // The assistant's preview recorded with the previous frame.
+    // The MCP preview recorded with the previous frame.
     if (m_mcpShot.call) McpFinishPreview();
     // The screenshot recorded with the previous frame.
     if (m_device.ScreenshotPending()) {
@@ -2165,7 +2165,7 @@ void App::RunCommandLineActions() {
         if (m_pendingScreenshot.empty() && !m_device.ScreenshotPending() && m_capture.Pending() == 0) quit("--exit-after reached");
         return;
     }
-    // A headless session an assistant asked for (--mcp-port), or one whose MCP server is switched on (a server for
+    // A headless session a client asked for (--mcp-port), or one whose MCP server is switched on (a server for
     // the bots), stays until --exit-after or the window's close: the clients' calls are its task.
     if (m_headless && !m_cli.process && (m_mcpSessionPort > 0 || m_settings.mcpEnabled)) return;
     if ((m_headless || m_cli.process) && screenshotsFlushed && processDone && elapsed >= 1.0) {
@@ -2311,7 +2311,7 @@ void App::HandleEvents(ui::UiEvents& ev) {
         def.sourceMode = m_settings.sourceMode;
         def.imagePath = m_settings.imagePath;
         def.videoPath = m_settings.videoPath;
-        def.mcpEnabled = m_settings.mcpEnabled; def.mcpPort = m_settings.mcpPort;      // the assistant's own connection stays
+        def.mcpEnabled = m_settings.mcpEnabled; def.mcpPort = m_settings.mcpPort;      // the client's own connection stays
         def.mcpReadOnly = m_settings.mcpReadOnly; def.mcpToken = m_settings.mcpToken;
         def.mcpBind = m_settings.mcpBind; def.mcpLocalNoKey = m_settings.mcpLocalNoKey; def.mcpKeepHours = m_settings.mcpKeepHours;
         def.mcpQueueMax = m_settings.mcpQueueMax; def.mcpQueuePerKey = m_settings.mcpQueuePerKey; def.mcpUploadMaxMb = m_settings.mcpUploadMaxMb;

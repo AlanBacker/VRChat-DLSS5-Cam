@@ -158,10 +158,10 @@ struct Settings {
     bool showLog = false;
     bool debugLayer = false;
     bool reopenLast = false;           // open the picture or video of the previous session again at start
-    // AI assistant (McpServer): an assistant drives the program through the same actions as the interface.
+    // MCP (McpServer): a client drives the program through the same actions as the interface.
     bool        mcpEnabled = false;    // the server runs whenever the program does
     int         mcpPort = 51550;       // TCP port on 127.0.0.1
-    bool        mcpReadOnly = false;   // the assistant may look but not change anything
+    bool        mcpReadOnly = false;   // clients may look but not change anything
     std::string mcpToken;              // legacy single key (an admin key); the keys of clients live in mcp-keys.json
     int         mcpBind = 0;           // 0 = this computer only (127.0.0.1), 1 = the local network (every address of this computer)
     bool        mcpLocalNoKey = true;  // a client on this computer needs no key (the bridge, Claude Desktop here)

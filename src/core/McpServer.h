@@ -1,11 +1,11 @@
-// VRChat DLSS5 Cam - MCP (Model Context Protocol) server: an AI assistant works the program the way the interface does,
-// and other computers' assistants (chat bots, for example) send it files to process through a job queue.
+// VRChat DLSS5 Cam - MCP (Model Context Protocol) server: an MCP client works the program the way the interface does,
+// and other computers' clients (chat bots, for example) send it files to process through a job queue.
 //
 // The server speaks the Streamable HTTP transport of MCP (POST /mcp with JSON-RPC 2.0) on 127.0.0.1, or on every
 // address of this computer when the user opens it to the local network; the program started with --mcp is a stdio
 // bridge to it, so the usual client configuration ("command": this executable, "args": ["--mcp"]) works with Claude
 // Desktop, Claude Code, Cursor and every other client. Every tool call travels to the interface thread and runs there
-// between the interface's own draw and its events: what the assistant does shows in the window, enters the undo
+// between the interface's own draw and its events: what the client does shows in the window, enters the undo
 // history and is saved like a change made by hand.
 //
 // Access: a client on this computer needs no key (unless the user says so); every other client carries one of the
@@ -80,7 +80,7 @@ struct McpTool {
     bool        hidden;        // not listed: the server's own internal calls (_upload, _download)
 };
 
-// A setting the assistant may read and write, with what the interface knows about it.
+// A setting a client may read and write, with what the interface knows about it.
 struct McpSettingInfo {
     const char* key;
     const char* group;

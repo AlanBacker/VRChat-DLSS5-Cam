@@ -1,11 +1,11 @@
-# AI assistant (MCP server)
+# MCP server
 
-VRChat DLSS5 Cam has an [MCP](https://modelcontextprotocol.io) (Model Context Protocol) server. An AI assistant that
-speaks MCP (Claude Desktop, Claude Code, Cursor, chat bots and the other clients) can open pictures and videos, change
+VRChat DLSS5 Cam has an [MCP](https://modelcontextprotocol.io) (Model Context Protocol) server. An MCP client
+(Claude Desktop, Claude Code, Cursor, a chat bot or another client) can open pictures and videos, change
 every setting, run the library, save captures and look at the preview, through the same actions as the window.
-Whatever the assistant does shows in the interface, enters the undo history and is saved like a change made by hand.
+Whatever the client does shows in the interface, enters the undo history and is saved like a change made by hand.
 
-Other computers can send it work too: a bot (a chat-group bot, a script, an assistant on another PC) uploads a picture
+Other computers can send it work too: a bot (a chat-group bot, a script, a client on another PC) uploads a picture
 or a video with a **key**, the file waits in a **queue**, and the bot is told its place and when its turn comes, then
 downloads the result. One PC with a strong graphics card can serve several bots at once this way.
 
@@ -14,7 +14,7 @@ requests from web pages (a browser sends an `Origin` header; only local origins 
 
 ## Turning it on
 
-Sidebar, section **AI assistant (MCP)**:
+Sidebar, section **MCP**:
 
 - **Run the MCP server** starts it, and it runs whenever the program does. The state line shows the address
   (`http://127.0.0.1:51550/mcp` by default) and how many calls came in.
@@ -22,7 +22,7 @@ Sidebar, section **AI assistant (MCP)**:
   computers reach it at the addresses shown, each with a key from the list). **Allow through Windows Firewall** adds
   the rule the port needs; it asks for administrator rights once.
 - **Port** changes the TCP port (1024 to 65535).
-- **Read only** lets the assistants look (status, settings, log, preview) but change nothing; jobs do not run either.
+- **Read only** lets clients look (status, settings, log, preview) but change nothing; jobs do not run either.
 - **Keys**: one row per key with its role, last use and call count, a button that copies the key again and one that
   removes it. Type a name (the bot's, the person's), choose a role, **Add key**: the key is copied to the clipboard
   and kept in `mcp-keys.json` in the settings folder.
@@ -62,7 +62,7 @@ Cursor take this block in their MCP configuration file (the path is the installe
 
 Claude Desktop: Settings → Developer → Edit Config (`claude_desktop_config.json`). Cursor: Settings → MCP → Add new
 server (`~/.cursor/mcp.json`). Other options after `--mcp` travel to the program it starts, for example
-`"args": ["--mcp", "--data-dir", "D:\\vdc-assistant"]` keeps the assistant's session apart from your own settings.
+`"args": ["--mcp", "--data-dir", "D:\\vdc-mcp"]` keeps the client's session apart from your own settings.
 
 **Direct HTTP** (the program is running with the switch on): the server speaks MCP's Streamable HTTP transport at
 `http://127.0.0.1:51550/mcp`. Claude Code:
@@ -78,7 +78,7 @@ settings folder (`%LOCALAPPDATA%\VRChatDLSS5Cam`); it is rotated at 1 MB.
 
 Step by step, on the PC that runs the program (the server):
 
-1. Sidebar → **AI assistant (MCP)** → **Run the MCP server** on.
+1. Sidebar → **MCP** → **Run the MCP server** on.
 2. **Reach** → **Local network**, then **Allow through Windows Firewall** (accept the administrator prompt).
 3. **Keys** → type a name for the client (say `qq-bot`), role **Jobs**, **Add key**. The key is on the clipboard now:
    paste it somewhere safe and give it to that client. One key per bot or person, so a lost one can be removed alone.
@@ -130,7 +130,7 @@ What a bot does, and what it hears back:
    when the time is up, always with the current state (never an error), so a bot can poll in 30-second steps without
    an awkward silence. A `wait=true` on `submit` does the same for short jobs.
 4. **Fetch the result**: `jobs result` answers with the job's `outputs` (name, URL, bytes) and, for a picture,
-   an inline copy scaled to `max_edge` pixels so an assistant can look at it. The files come from
+   an inline copy scaled to `max_edge` pixels so a client can look at it. The files come from
    `GET /download/<jobId>/<name>` (or `/0`, `/1` for the first, second output) with the same key; another key's
    job answers 403. The bot posts the picture or the link to its chat.
 5. **Clean up**: finished jobs and their files stay for **Keep results** hours (24 by default) and are deleted then;
@@ -162,7 +162,7 @@ if job["state"] == "done":
     png = requests.get(job["outputs"][0]["url"], headers=H).content
 ```
 
-## What the assistant can do
+## What a client can do
 
 | Tool | What it does |
 | --- | --- |
@@ -213,8 +213,8 @@ automatic log-on or a remote desktop tool that keeps the session, and let the pr
 
 ## Notes
 
-- Calls run on the interface thread between the window's own draw and its events, one after the other, so an
-  assistant and a person can use the program at the same time; what the assistant changes is undoable with Ctrl+Z.
+- Calls run on the interface thread between the window's own draw and its events, one after the other, so a
+  client and a person can use the program at the same time; what the client changes is undoable with Ctrl+Z.
 - A minimized window draws nothing: `preview` asks for `window restore` first. Everything else works while
   minimized, and in a `--headless` run (`preview view=output` works there too; `window` is a no-op).
 - `set_settings` refuses `imagePath` and `videoPath` (use `open`) and the MCP server's own keys (`mcp*`: the user

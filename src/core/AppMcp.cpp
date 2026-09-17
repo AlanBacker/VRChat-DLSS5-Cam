@@ -1,4 +1,4 @@
-// VRChat DLSS5 Cam - the MCP tools: what an assistant may do. Every tool runs on the interface thread between the
+// VRChat DLSS5 Cam - the MCP tools: what a client may do. Every tool runs on the interface thread between the
 // interface's draw and the handling of its events, so it takes the same paths as the widgets: the same event
 // flags, the same undo history, the same toasts and the same saved settings.
 #include "core/App.h"
