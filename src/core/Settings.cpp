@@ -188,6 +188,13 @@ bool Settings::ApplyText(const std::string& data, bool wholeFile) {
     r.Get("mcpPort", mcpPort);
     r.Get("mcpReadOnly", mcpReadOnly);
     r.Get("mcpToken", mcpToken);
+    r.Get("mcpBind", mcpBind);
+    r.Get("mcpLocalNoKey", mcpLocalNoKey);
+    r.Get("mcpKeepHours", mcpKeepHours);
+    r.Get("mcpQueueMax", mcpQueueMax);
+    r.Get("mcpQueuePerKey", mcpQueuePerKey);
+    r.Get("mcpUploadMaxMb", mcpUploadMaxMb);
+    r.Get("mcpJobFolder", mcpJobFolder);
     Clamp();
     return r.used == keys;
 }
@@ -446,6 +453,13 @@ std::string Settings::Text() const {
     w.Put("mcpPort", mcpPort);
     w.Put("mcpReadOnly", mcpReadOnly);
     w.Put("mcpToken", mcpToken);
+    w.Put("mcpBind", mcpBind);
+    w.Put("mcpLocalNoKey", mcpLocalNoKey);
+    w.Put("mcpKeepHours", mcpKeepHours);
+    w.Put("mcpQueueMax", mcpQueueMax);
+    w.Put("mcpQueuePerKey", mcpQueuePerKey);
+    w.Put("mcpUploadMaxMb", mcpUploadMaxMb);
+    w.Put("mcpJobFolder", mcpJobFolder);
     return w.out;
 }
 
@@ -464,6 +478,11 @@ void Settings::Clamp() {
     customHeight = std::clamp(customHeight, 256, 4320);
     upscaleMode = std::clamp(upscaleMode, 0, 1);
     mcpPort = std::clamp(mcpPort, 1024, 65535);
+    mcpBind = std::clamp(mcpBind, 0, 1);
+    mcpKeepHours = std::clamp(mcpKeepHours, 1, 720);
+    mcpQueueMax = std::clamp(mcpQueueMax, 1, 500);
+    mcpQueuePerKey = std::clamp(mcpQueuePerKey, 1, 100);
+    mcpUploadMaxMb = std::clamp(mcpUploadMaxMb, 1, 65536);
     if (nrRuntimeBuild != "blackwell" && nrRuntimeBuild != "universal" && nrRuntimeBuild != "other" && nrRuntimeBuild != "exe") nrRuntimeBuild.clear();
     nrPreset = std::clamp(nrPreset, 0, 3);
     if (sidebarWidth != 0.0f) sidebarWidth = std::clamp(sidebarWidth, 16.0f, 48.0f);

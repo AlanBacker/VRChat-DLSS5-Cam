@@ -297,8 +297,14 @@ it for you):
 ```
 
 Claude Code: `claude mcp add --transport http vrchat-dlss5-cam http://127.0.0.1:51550/mcp` while the program runs
-with the switch on. The server listens on `127.0.0.1` only and never connects anywhere; **Read only** limits the
-assistant to looking. Every tool is described in [docs/MCP.md](docs/MCP.md).
+with the switch on. By default the server listens on `127.0.0.1` only and never connects anywhere; **Read only**
+limits the assistant to looking.
+
+Other computers can send work too: set **Reach** to **Local network**, add a **key** per bot or person (roles
+**Jobs**, **Admin**, **Viewer**), and a chat bot or a script on another PC uploads a picture or a video, is told at
+once its place in the **queue** and when its turn comes, and downloads the result later. One PC with a strong card
+can serve several bots this way; the sidebar shows the running job and can cancel it. Every tool, the queue's rules
+and a minimal bot are described in [docs/MCP.md](docs/MCP.md).
 
 ## Settings reference
 

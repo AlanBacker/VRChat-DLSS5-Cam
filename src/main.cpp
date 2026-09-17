@@ -273,12 +273,12 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
         for (int i = 1; argv && i < argc; ++i) {
             const std::wstring a = argv[i];
             if (a == L"--mcp") continue;
-            if (a == L"--mcp-port" || a == L"--data-dir") { ++i; continue; }
+            if (a == L"--mcp-port" || a == L"--data-dir" || a == L"--mcp-url" || a == L"--mcp-key") { ++i; continue; }
             if (!pass.empty()) pass += L' ';
             pass += a.find(L' ') == std::wstring::npos ? a : L"\"" + a + L"\"";
         }
         if (argv) LocalFree(argv);
-        return vdc::McpServer::BridgeMain(exe, cl.mcpPort, cl.dataDir, pass);
+        return vdc::McpServer::BridgeMain(exe, cl.mcpPort, cl.dataDir, pass, cl.mcpUrl, cl.mcpKey);
     }
     InstallCrashHandlers();
     return RunGuarded(hInstance, nCmdShow);

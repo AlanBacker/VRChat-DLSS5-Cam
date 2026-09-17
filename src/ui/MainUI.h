@@ -14,6 +14,13 @@
 
 namespace vdc::ui {
 
+struct McpKeyView {
+    std::string name;
+    int         role = 1;        // McpRole
+    double      lastAge = -1.0;  // seconds since its last call, -1 = never
+    long long   calls = 0;
+};
+
 struct UserPreset {
     std::string name;
     std::string text;
@@ -111,6 +118,11 @@ struct UiFrameInfo {
     std::string           mcpLastTool;
     double                mcpLastAge = -1.0;          // seconds since the last call, -1 = none
     std::string           mcpConfig;                  // the JSON block for an MCP client's configuration file
+    bool                  mcpNetwork = false;         // reachable from the local network (mcpBind = 1)
+    std::vector<std::string> mcpAddresses;            // the URLs other computers reach it at
+    std::vector<McpKeyView>  mcpKeys;                 // the access keys, in file order
+    int                   mcpJobsQueued = 0, mcpJobsRunning = 0, mcpJobsDone = 0;
+    std::string           mcpJob;                     // "owner: file" of the AI job running now, empty when none
     const std::vector<UserPreset>* presets = nullptr;   // the user's presets, in file order
     size_t                capturePending = 0;
     std::string           lastCapture;
@@ -218,6 +230,11 @@ struct UiEvents {
     bool openDocs = false;           // the documentation in the browser (in the interface's language)
     bool mcpOpenPage = false;        // the server's information page in the browser
     bool mcpOpenDocs = false;        // docs/MCP.md in the browser
+    bool mcpOpenJobs = false;        // the jobs folder in Explorer
+    bool mcpFirewall = false;        // let the port through the Windows firewall (asks for elevation)
+    bool mcpKeyAdd = false, mcpKeyRemove = false, mcpKeyCopy = false;   // on the key named mcpKeyName
+    std::string mcpKeyName;
+    int         mcpKeyRole = 1;
     // Presets: saved under a name (a new one, or an existing one to replace), renamed, removed.
     bool        presetSave = false;
     std::string presetName;          // presetSave / presetRename: the name to store under
@@ -312,6 +329,10 @@ private:
     bool   m_runtimeEditing = false;
     bool   m_depthModelEditing = false;
     bool   m_folderEditing = false;
+    char   m_mcpKeyBuf[64] = {};      // the name of the key being added
+    int    m_mcpKeyRole = 1;
+    char   m_mcpJobFolderBuf[1024] = {};
+    bool   m_mcpJobFolderEditing = false;
     bool   m_nameEditing = false;
     float  m_zoom = 1.0f;          // manual magnification on top of the fit (1 = as fitted, or 1:1), moving toward m_zoomTarget
     float  m_zoomTarget = 1.0f;

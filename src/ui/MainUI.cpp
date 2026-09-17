@@ -5,6 +5,7 @@
 #include "core/Capture.h"
 #include "core/I18n.h"
 #include "core/Log.h"
+#include "core/McpServer.h"
 #include "core/Util.h"
 #include "core/VideoSource.h"
 #include "imgui_internal.h"
@@ -1005,7 +1006,8 @@ void MainUI::DrawTopBar(Settings& s, const UiFrameInfo& info, UiEvents& ev, cons
 
     // Status badge.
     const bool haveSenders = info.senders && !info.senders->empty();
-    const std::string batchBadge = info.batchRunning ? StrPrintf(TR(BatchRunning), std::min(info.batchIndex + 1, info.batchCount), info.batchCount) : std::string();
+    const std::string batchBadge = !info.mcpJob.empty() ? std::string(TR(McpJobBadge))
+                                 : info.batchRunning ? StrPrintf(TR(BatchRunning), std::min(info.batchIndex + 1, info.batchCount), info.batchCount) : std::string();
     const char* badge = info.batchRunning ? batchBadge.c_str()
                       : videoMode ? (info.videoProcessing ? TR(VideoProcessing) : info.videoLoaded ? TR(VideoLabel) : TR(NoVideo))
                       : imageMode ? (info.imageLoaded ? TR(ImageLabel) : TR(NoImage))
@@ -1147,7 +1149,7 @@ void MainUI::DrawSidebar(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
         ImGui::PushStyleColor(ImGuiCol_Text, WithAlpha(p.warn, lockT));
         ImGui::PushClipRect(b0, ImVec2(b0.x + w - cancelW - 4.0f, b0.y + bannerH), true);
         ImGui::SetCursorScreenPos(ImVec2(b0.x + 12.0f + frameH * 0.8f, b0.y + (bannerH - ImGui::GetTextLineHeight()) * 0.5f));
-        ImGui::TextUnformatted(TR(LockedWhileBusy));
+        ImGui::TextUnformatted(info.mcpJob.empty() ? TR(LockedWhileBusy) : StrPrintf(TR(McpJobRunningFmt), info.mcpJob.c_str()).c_str());
         ImGui::PopClipRect();
         ImGui::PopStyleColor();
         if (cancellable) {
@@ -1745,9 +1747,32 @@ void MainUI::BlockView(Settings& s, const UiFrameInfo& /*info*/, UiEvents& ev) {
 void MainUI::BlockMcp(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
     const Palette& p = Colors();
     const ImGuiStyle& style = ImGui::GetStyle();
+    const float fullW = ImGui::GetContentRegionAvail().x;
+    const float halfW = std::floor((fullW - style.ItemSpacing.x) * 0.5f);
+    const ImVec2 half(halfW, 0.0f);
+    const float btnW = ImGui::GetFrameHeight() * 1.6f;
+    auto ageText = [](double age) {
+        if (age < 60.0) return StrPrintf("%.0f s", age);
+        if (age < 3600.0) return StrPrintf("%.0f min", age / 60.0);
+        if (age < 86400.0) return StrPrintf("%.1f h", age / 3600.0);
+        return StrPrintf("%.0f d", age / 86400.0);
+    };
     Hint(TR(McpHint));
     if (Toggle(TR(McpEnable), &s.mcpEnabled)) ev.settingsChanged = true;
     Help(TR(TipMcp));
+    {
+        const char* items[] = { TR(McpReachLocal), TR(McpReachNetwork) };
+        if (ComboIds(TR(McpReach), &s.mcpBind, items, 2, TR(TipMcpReach))) ev.settingsChanged = true;
+    }
+    if (s.mcpBind == 1 && !Searching()) {
+        if (info.mcpKeys.empty()) {
+            ImGui::PushStyleColor(ImGuiCol_Text, p.warn);
+            ImGui::TextWrapped("%s", TR(McpNetworkNoKeys));
+            ImGui::PopStyleColor();
+        }
+        if (GhostButton(TR(McpFirewall), ImVec2(fullW, 0.0f))) ev.mcpFirewall = true;
+        Tooltip(TR(TipMcpFirewall));
+    }
     if (SearchMatch(TR(McpPort), TR(TipMcpPort))) {
         LabelSeen(TR(McpPort));
         if (ImGui::InputInt(TR(McpPort), &s.mcpPort, 1, 100)) { s.Clamp(); ev.settingsChanged = true; }
@@ -1756,12 +1781,13 @@ void MainUI::BlockMcp(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
     if (Toggle(TR(McpReadOnly), &s.mcpReadOnly)) ev.settingsChanged = true;
     Help(TR(TipMcpReadOnly));
     if (SearchMatch(TR(McpCopyConfig), TR(TipMcpCopyConfig))) {   // shows with the section's title or its buttons
-        // The state: a badge and the address, then how much the assistant has done.
+        // The state: a badge and the address, then how much the assistants have done.
         ImGui::Spacing();
         if (info.mcpRunning) {
             Pill(TR(McpOn), WithAlpha(p.good, 0.2f), p.good);
             ImGui::SameLine(0.0f, 6.0f);
             ImGui::TextWrapped("%s", info.mcpUrl.c_str());
+            for (const std::string& a : info.mcpAddresses) ImGui::TextDisabled("%s", a.c_str());
             if (info.mcpSession && !s.mcpEnabled) ImGui::TextDisabled("%s", TR(McpSessionNote));
         } else if (!info.mcpError.empty()) {
             Pill(TR(McpOff), WithAlpha(p.bad, 0.2f), p.bad);
@@ -1774,17 +1800,9 @@ void MainUI::BlockMcp(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
             ImGui::SameLine(0.0f, 6.0f);
             ImGui::TextDisabled("%s", info.mcpUrl.c_str());
         }
-        if (info.mcpCalls > 0) {
-            std::string age;
-            if (info.mcpLastAge < 60.0) age = StrPrintf("%.0f s", info.mcpLastAge);
-            else if (info.mcpLastAge < 3600.0) age = StrPrintf("%.0f min", info.mcpLastAge / 60.0);
-            else age = StrPrintf("%.1f h", info.mcpLastAge / 3600.0);
-            ImGui::TextDisabled("%s", StrPrintf(TR(McpCallsFmt), info.mcpCalls, info.mcpLastTool.c_str(), age.c_str()).c_str());
-        } else if (info.mcpRunning) ImGui::TextDisabled("%s", TR(McpNoCalls));
+        if (info.mcpCalls > 0) ImGui::TextDisabled("%s", StrPrintf(TR(McpCallsFmt), info.mcpCalls, info.mcpLastTool.c_str(), ageText(info.mcpLastAge).c_str()).c_str());
+        else if (info.mcpRunning) ImGui::TextDisabled("%s", TR(McpNoCalls));
         ImGui::Spacing();
-        const float fullW = ImGui::GetContentRegionAvail().x;
-        const float halfW = std::floor((fullW - style.ItemSpacing.x) * 0.5f);
-        const ImVec2 half(halfW, 0.0f);
         if (GhostButton(TR(McpCopyConfig), ImVec2(fullW, 0.0f))) { ImGui::SetClipboardText(info.mcpConfig.c_str()); Toast(TR(McpCopied)); }
         Tooltip(TR(TipMcpCopyConfig));
         if (GhostButton(TR(McpCopyUrl), half)) { ImGui::SetClipboardText(info.mcpUrl.c_str()); Toast(TR(McpUrlCopied)); }
@@ -1793,6 +1811,92 @@ void MainUI::BlockMcp(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         if (GhostButton(TR(McpOpenPage), half)) ev.mcpOpenPage = true;
         ImGui::EndDisabled();
         if (GhostButton(TR(Documentation), ImVec2(fullW, 0.0f))) ev.mcpOpenDocs = true;
+    }
+    // The keys: one row each, then the field for a new one. A key's secret is copied when it is made and on demand.
+    if (SearchMatch(TR(McpKeys), TR(TipMcpRole))) {
+        ImGui::Spacing();
+        ImGui::TextDisabled("%s", TR(McpKeys));
+        Help(TR(TipMcpRole));
+        if (info.mcpKeys.empty()) ImGui::TextDisabled("%s", TR(McpNoKeys));
+        for (const McpKeyView& k : info.mcpKeys) {
+            ImGui::PushID(k.name.c_str());
+            const char* role = k.role == McpRoleAdmin ? TR(McpRoleAdmin) : k.role == McpRoleJobs ? TR(McpRoleJobs) : TR(McpRoleViewer);
+            const ImU32 rc = k.role == McpRoleAdmin ? p.accent : k.role == McpRoleJobs ? p.good : p.textDim;
+            const float rowY = ImGui::GetCursorPosY();
+            if (IconButton("##copy", Icon::Save, ImVec2(btnW, 0), TR(McpKeyCopy), ButtonKind::Plain)) { ev.mcpKeyCopy = true; ev.mcpKeyName = k.name; }
+            ImGui::SameLine(0.0f, style.ItemInnerSpacing.x);
+            if (IconButton("##remove", Icon::Close, ImVec2(btnW, 0), TR(McpKeyRemove), ButtonKind::Plain)) { ev.mcpKeyRemove = true; ev.mcpKeyName = k.name; }
+            ImGui::SameLine(0.0f, style.ItemSpacing.x);
+            ImGui::SetCursorPosY(rowY + (ImGui::GetFrameHeight() - ImGui::GetTextLineHeight()) * 0.5f);
+            ImGui::TextUnformatted(k.name.c_str());
+            ImGui::SameLine(0.0f, 6.0f);
+            Pill(role, WithAlpha(rc, 0.2f), rc);
+            if (ImGui::IsItemHovered()) Tooltip(TR(TipMcpRole));
+            ImGui::SameLine(0.0f, 6.0f);
+            if (k.lastAge < 0.0) ImGui::TextDisabled("%s", TR(McpKeyNever));
+            else ImGui::TextDisabled("%s", StrPrintf(TR(McpKeyUsedFmt), ageText(k.lastAge).c_str(), k.calls).c_str());
+            ImGui::PopID();
+        }
+        {
+            const char* roles[] = { TR(McpRoleViewer), TR(McpRoleJobs), TR(McpRoleAdmin) };
+            const float roleW = std::floor(fullW * 0.3f);
+            const float addW = ImGui::CalcTextSize(TR(McpAddKey)).x + style.FramePadding.x * 2.0f + 6.0f;
+            ImGui::SetNextItemWidth(fullW - roleW - addW - style.ItemInnerSpacing.x * 2.0f);
+            ImGui::InputTextWithHint("##keyname", TR(McpKeyNameHint), m_mcpKeyBuf, sizeof(m_mcpKeyBuf));
+            const bool enter = ImGui::IsItemDeactivatedAfterEdit() && ImGui::IsKeyPressed(ImGuiKey_Enter, false);
+            ImGui::SameLine(0.0f, style.ItemInnerSpacing.x);
+            ImGui::SetNextItemWidth(roleW);
+            ImGui::Combo("##keyrole", &m_mcpKeyRole, roles, 3);
+            ImGui::SameLine(0.0f, style.ItemInnerSpacing.x);
+            ImGui::BeginDisabled(m_mcpKeyBuf[0] == 0);
+            if (FlatButton(TR(McpAddKey), ImVec2(addW, 0)) || (enter && m_mcpKeyBuf[0])) {
+                ev.mcpKeyAdd = true; ev.mcpKeyName = m_mcpKeyBuf; ev.mcpKeyRole = m_mcpKeyRole;
+                m_mcpKeyBuf[0] = 0;
+            }
+            ImGui::EndDisabled();
+            Tooltip(TR(TipMcpAddKey));
+        }
+    }
+    // The jobs the clients sent: counts, the folder, and how long the results stay.
+    if (SearchMatch(TR(McpJobs), TR(TipMcpKeepHours))) {
+        ImGui::Spacing();
+        ImGui::TextDisabled("%s", TR(McpJobs));
+        ImGui::SameLine(0.0f, 6.0f);
+        ImGui::TextDisabled("%s", StrPrintf(TR(McpJobsFmt), info.mcpJobsQueued, info.mcpJobsRunning, info.mcpJobsDone).c_str());
+        if (!info.mcpJob.empty()) { ImGui::SameLine(0.0f, 6.0f); Pill(info.mcpJob.c_str(), WithAlpha(p.warn, 0.2f), p.warn); }
+        LabelSeen(TR(McpKeepHours));
+        if (ImGui::InputInt(TR(McpKeepHours), &s.mcpKeepHours, 1, 24)) { s.Clamp(); ev.settingsChanged = true; }
+        Tip(TR(TipMcpKeepHours));
+        if (GhostButton(TR(McpOpenJobs), ImVec2(fullW, 0.0f))) ev.mcpOpenJobs = true;
+    }
+    if (s.showAdvanced || Searching()) {
+        if (SearchMatch(TR(McpQueueMax), TR(TipMcpQueueMax))) {
+            LabelSeen(TR(McpQueueMax));
+            if (ImGui::InputInt(TR(McpQueueMax), &s.mcpQueueMax, 1, 10)) { s.Clamp(); ev.settingsChanged = true; }
+            Tip(TR(TipMcpQueueMax));
+        }
+        if (SearchMatch(TR(McpQueuePerKey), TR(TipMcpQueuePerKey))) {
+            LabelSeen(TR(McpQueuePerKey));
+            if (ImGui::InputInt(TR(McpQueuePerKey), &s.mcpQueuePerKey, 1, 5)) { s.Clamp(); ev.settingsChanged = true; }
+            Tip(TR(TipMcpQueuePerKey));
+        }
+        if (SearchMatch(TR(McpUploadMax), TR(TipMcpUploadMax))) {
+            LabelSeen(TR(McpUploadMax));
+            if (ImGui::InputInt(TR(McpUploadMax), &s.mcpUploadMaxMb, 64, 1024)) { s.Clamp(); ev.settingsChanged = true; }
+            Tip(TR(TipMcpUploadMax));
+        }
+        if (Toggle(TR(McpLocalNoKey), &s.mcpLocalNoKey)) ev.settingsChanged = true;
+        Help(TR(TipMcpLocalNoKey));
+        if (SearchMatch(TR(McpJobFolder), TR(TipMcpJobFolder))) {
+            SyncBuffer(m_mcpJobFolderBuf, sizeof(m_mcpJobFolderBuf), s.mcpJobFolder, m_mcpJobFolderEditing);
+            ImGui::SetNextItemWidth(ImGui::CalcItemWidth());
+            ImGui::InputTextWithHint("##mcpjobfolder", TR(TipMcpJobFolder), m_mcpJobFolderBuf, sizeof(m_mcpJobFolderBuf));
+            m_mcpJobFolderEditing = ImGui::IsItemActive();
+            if (ImGui::IsItemDeactivatedAfterEdit()) { s.mcpJobFolder = m_mcpJobFolderBuf; ev.settingsChanged = true; }
+            ImGui::SameLine(0.0f, style.ItemInnerSpacing.x);
+            TrailingLabel(TR(McpJobFolder));
+            Tip(TR(TipMcpJobFolder));
+        }
     }
     ImGui::Spacing();
 }

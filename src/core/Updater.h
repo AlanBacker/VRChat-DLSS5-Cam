@@ -1,12 +1,19 @@
 #pragma once
 #include <windows.h>
 #include <atomic>
+#include <functional>
 #include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
 
 namespace vdc {
+
+// GET over WinHTTP; the sink gets every chunk with the total announced by the server (0 when unknown) and returns
+// false to stop. timeoutMs (when set) bounds each step of the request. Used by the updater, the port set-up and the
+// MCP jobs that fetch their input from a URL.
+bool HttpGet(const std::wstring& url, bool json, const std::atomic<bool>& cancel,
+             const std::function<bool(const char*, DWORD, unsigned long long)>& sink, std::string& error, int timeoutMs = 0);
 
 // Looks for a newer release of the program on GitHub, downloads it and hands the swap of the program files to a
 // script that runs once the program has closed. All of it runs on its own thread; Get() hands back a copy of the

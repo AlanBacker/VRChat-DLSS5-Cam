@@ -612,11 +612,11 @@ enum class Lang { English = 0, Chinese = 1, Japanese = 2, Korean = 3, Count = 4 
     X(GuideFinish,         "Finish", "完成", "完了", "완료") \
     X(GuideStepFmt,        "Step %d of %d", "第 %d 步，共 %d 步", "ステップ %d / %d", "%d / %d 단계") \
     X(SecMcp,             "AI assistant (MCP)", "AI 助手（MCP）", "AI アシスタント（MCP）", "AI 어시스턴트(MCP)") \
-    X(McpHint,            "An AI assistant (Claude, Cursor and other MCP clients) can open files, change the settings, run and save pictures and look at the preview, through the same actions as this window. Nothing leaves this computer: the server listens on 127.0.0.1 only.", "AI 助手（Claude、Cursor 等 MCP 客户端）可以像在此窗口中一样打开文件、修改设置、处理并保存图片、查看预览。一切都在本机进行：服务器只监听 127.0.0.1。", "AI アシスタント（Claude、Cursor などの MCP クライアント）が、このウィンドウと同じ操作でファイルを開き、設定を変え、処理して保存し、プレビューを見られます。すべてこの PC の中で完結し、サーバーは 127.0.0.1 だけで待ち受けます。", "AI 어시스턴트(Claude, Cursor 등 MCP 클라이언트)가 이 창과 같은 동작으로 파일을 열고, 설정을 바꾸고, 처리·저장하고, 미리보기를 볼 수 있습니다. 모든 것은 이 PC 안에서만 이루어지며 서버는 127.0.0.1에서만 수신합니다.") \
+    X(McpHint,            "An AI assistant (Claude, Cursor, chat bots and other MCP clients) can open files, change the settings, process and save pictures and videos and look at the preview, through the same actions as this window. Other computers may send jobs with a key: they wait in a queue, and each caller is told its place and when its turn comes.", "AI 助手（Claude、Cursor、聊天机器人等 MCP 客户端）可以像在此窗口中一样打开文件、修改设置、处理并保存图片和视频、查看预览。其他电脑可凭密钥提交任务：任务排队等候，每个调用方都会得知自己的位置和轮到的时间。", "AI アシスタント（Claude、Cursor、チャットボットなどの MCP クライアント）が、このウィンドウと同じ操作でファイルを開き、設定を変え、画像や動画を処理して保存し、プレビューを見られます。他の PC は鍵を使ってジョブを送れます。ジョブはキューで待ち、各呼び出し元に順番と開始時刻が伝えられます。", "AI 어시스턴트(Claude, Cursor, 챗봇 등 MCP 클라이언트)가 이 창과 같은 동작으로 파일을 열고, 설정을 바꾸고, 사진과 영상을 처리·저장하고, 미리보기를 볼 수 있습니다. 다른 PC는 키로 작업을 보낼 수 있으며, 작업은 대기열에서 기다리고 각 호출자는 자기 순서와 차례를 안내받습니다.") \
     X(McpEnable,          "Run the MCP server", "运行 MCP 服务器", "MCP サーバーを実行", "MCP 서버 실행") \
     X(TipMcp,             "The server runs whenever the program does. An assistant started through the bridge (VRChatDLSS5Cam.exe --mcp) starts the program and its server by itself, whatever this switch says.", "程序运行时服务器就一直运行。通过桥接方式（VRChatDLSS5Cam.exe --mcp）接入的助手会自动启动程序和服务器，与此开关无关。", "プログラムの実行中はサーバーも動き続けます。ブリッジ（VRChatDLSS5Cam.exe --mcp）経由のアシスタントは、このスイッチに関わらずプログラムとサーバーを自分で起動します。", "프로그램이 실행되는 동안 서버도 계속 실행됩니다. 브리지(VRChatDLSS5Cam.exe --mcp)로 접속한 어시스턴트는 이 스위치와 관계없이 프로그램과 서버를 스스로 시작합니다.") \
     X(McpPort,            "Port", "端口", "ポート", "포트") \
-    X(TipMcpPort,         "TCP port on 127.0.0.1 (1024 to 65535). The address is http://127.0.0.1:<port>/mcp.", "127.0.0.1 上的 TCP 端口（1024 到 65535）。地址为 http://127.0.0.1:<端口>/mcp。", "127.0.0.1 の TCP ポート（1024〜65535）。アドレスは http://127.0.0.1:<ポート>/mcp です。", "127.0.0.1의 TCP 포트(1024~65535). 주소는 http://127.0.0.1:<포트>/mcp 입니다.") \
+    X(TipMcpPort,         "TCP port (1024 to 65535). The address is http://<address>:<port>/mcp.", "TCP 端口（1024 到 65535）。地址为 http://<地址>:<端口>/mcp。", "TCP ポート（1024〜65535）。アドレスは http://<アドレス>:<ポート>/mcp です。", "TCP 포트(1024~65535). 주소는 http://<주소>:<포트>/mcp 입니다.") \
     X(McpReadOnly,        "Read only", "只读", "読み取り専用", "읽기 전용") \
     X(TipMcpReadOnly,     "The assistant may look (status, settings, log, preview) but not change anything.", "助手只能查看（状态、设置、日志、预览），不能做任何修改。", "アシスタントは見るだけ（状態、設定、ログ、プレビュー）で、何も変更できません。", "어시스턴트는 보기만 할 수 있고(상태, 설정, 로그, 미리보기) 아무것도 바꿀 수 없습니다.") \
     X(McpOn,              "Listening", "监听中", "待ち受け中", "수신 대기 중") \
@@ -631,6 +631,50 @@ enum class Lang { English = 0, Chinese = 1, Japanese = 2, Korean = 3, Count = 4 
     X(McpCopyUrl,         "Copy URL", "复制地址", "URL をコピー", "URL 복사") \
     X(McpUrlCopied,       "URL copied", "已复制地址", "URL をコピーしました", "URL을 복사했습니다") \
     X(McpOpenPage,        "Open in the browser", "在浏览器中打开", "ブラウザで開く", "브라우저에서 열기") \
+    X(McpReach,           "Reach", "可访问范围", "到達範囲", "접근 범위") \
+    X(McpReachLocal,      "This computer only", "仅本机", "この PC のみ", "이 PC만") \
+    X(McpReachNetwork,    "Local network", "局域网", "ローカルネットワーク", "로컬 네트워크") \
+    X(TipMcpReach,        "This computer only: the server listens on 127.0.0.1 and this computer's clients need no key. Local network: other computers (and the bots on them) reach it at the addresses shown, each with a key from the list below. Never open the port to the internet directly.", "仅本机：服务器只监听 127.0.0.1，本机的客户端无需密钥。局域网：其他电脑（以及上面的机器人）可通过下方显示的地址访问，每个都需要列表中的一把密钥。切勿把端口直接暴露到公网。", "この PC のみ: サーバーは 127.0.0.1 だけで待ち受け、この PC のクライアントに鍵は不要です。ローカルネットワーク: 他の PC（とその上のボット）が表示されたアドレスで接続でき、それぞれ下の一覧の鍵が必要です。ポートをインターネットに直接公開しないでください。", "이 PC만: 서버는 127.0.0.1에서만 수신하며 이 PC의 클라이언트는 키가 필요 없습니다. 로컬 네트워크: 다른 PC(와 그 위의 봇)가 표시된 주소로 접속하며 각각 아래 목록의 키가 필요합니다. 포트를 인터넷에 직접 열지 마세요.") \
+    X(McpNetworkNoKeys,   "Add a key below: other computers can only connect with one.", "请先在下方添加密钥：其他电脑必须凭密钥才能连接。", "下で鍵を追加してください。他の PC は鍵がないと接続できません。", "아래에서 키를 추가하세요. 다른 PC는 키가 있어야만 접속할 수 있습니다.") \
+    X(McpFirewall,        "Allow through Windows Firewall", "允许通过 Windows 防火墙", "Windows ファイアウォールで許可", "Windows 방화벽 허용") \
+    X(TipMcpFirewall,     "Adds a firewall rule for the port (asks for administrator rights). Without it other computers cannot connect.", "为该端口添加防火墙规则（需要管理员权限）。没有它，其他电脑无法连接。", "このポートのファイアウォール規則を追加します（管理者権限を求めます）。これがないと他の PC は接続できません。", "이 포트의 방화벽 규칙을 추가합니다(관리자 권한 요청). 없으면 다른 PC가 접속할 수 없습니다.") \
+    X(McpFirewallDoneFmt, "Firewall rule added for port %d", "已为端口 %d 添加防火墙规则", "ポート %d のファイアウォール規則を追加しました", "포트 %d의 방화벽 규칙을 추가했습니다") \
+    X(McpFirewallDenied,  "The firewall rule was not added (administrator rights refused)", "未添加防火墙规则（管理员权限被拒绝）", "ファイアウォール規則は追加されませんでした（管理者権限が拒否されました）", "방화벽 규칙이 추가되지 않았습니다(관리자 권한 거부)") \
+    X(McpKeys,            "Keys", "密钥", "鍵", "키") \
+    X(McpNoKeys,          "No keys yet. Clients on this computer need none.", "尚无密钥。本机的客户端无需密钥。", "鍵はまだありません。この PC のクライアントには不要です。", "아직 키가 없습니다. 이 PC의 클라이언트에는 필요 없습니다.") \
+    X(McpKeyNameHint,     "Name (a bot, a person)", "名称（机器人、人）", "名前（ボット、人）", "이름(봇, 사람)") \
+    X(McpRoleViewer,      "Viewer", "只看", "閲覧", "보기") \
+    X(McpRoleJobs,        "Jobs", "任务", "ジョブ", "작업") \
+    X(McpRoleAdmin,       "Admin", "管理", "管理者", "관리자") \
+    X(TipMcpRole,         "Jobs: may send files to process and fetch its own results, nothing else. Admin: everything this window can do, including the other keys' jobs. Viewer: looks only.", "任务：只能提交文件处理并取回自己的结果。管理：此窗口能做的一切，包括其他密钥的任务。只看：只能查看。", "ジョブ: ファイルを送って処理させ、自分の結果を取るだけ。管理者: このウィンドウでできることすべて（他の鍵のジョブも）。閲覧: 見るだけ。", "작업: 파일을 보내 처리하고 자신의 결과만 가져옵니다. 관리자: 이 창에서 할 수 있는 모든 것(다른 키의 작업 포함). 보기: 보기만.") \
+    X(McpAddKey,          "Add key", "添加密钥", "鍵を追加", "키 추가") \
+    X(TipMcpAddKey,       "Creates the key and copies its secret to the clipboard. Give it to that client; it is kept in mcp-keys.json and copied again with the button.", "创建密钥并把密文复制到剪贴板。把它交给对应客户端；密钥保存在 mcp-keys.json 中，可用按钮再次复制。", "鍵を作り、その秘密文字列をクリップボードにコピーします。相手のクライアントに渡してください。mcp-keys.json に保存され、ボタンで再度コピーできます。", "키를 만들고 비밀 문자열을 클립보드에 복사합니다. 해당 클라이언트에 전달하세요. mcp-keys.json에 보관되며 버튼으로 다시 복사할 수 있습니다.") \
+    X(McpKeyNameTaken,    "That name is taken (local and token are reserved)", "该名称已被使用（local 和 token 为保留名）", "その名前は使われています（local と token は予約済み）", "그 이름은 이미 사용 중입니다(local과 token은 예약됨)") \
+    X(McpKeyCreatedFmt,   "Key %s created and copied", "已创建并复制密钥 %s", "鍵 %s を作成してコピーしました", "키 %s을(를) 만들고 복사했습니다") \
+    X(McpKeyRemovedFmt,   "Key %s removed", "已删除密钥 %s", "鍵 %s を削除しました", "키 %s을(를) 삭제했습니다") \
+    X(McpKeyCopied,       "Key copied", "已复制密钥", "鍵をコピーしました", "키를 복사했습니다") \
+    X(McpKeyCopy,         "Copy the key", "复制密钥", "鍵をコピー", "키 복사") \
+    X(McpKeyRemove,       "Remove the key", "删除密钥", "鍵を削除", "키 삭제") \
+    X(McpKeyNever,        "never used", "从未使用", "未使用", "사용한 적 없음") \
+    X(McpKeyUsedFmt,      "%s ago, %lld calls", "%s 前，%lld 次调用", "%s 前、%lld 回", "%s 전, %lld회") \
+    X(McpJobs,            "Jobs", "任务", "ジョブ", "작업") \
+    X(McpJobsFmt,         "%d waiting · %d running · %d kept", "%d 等待 · %d 运行中 · %d 已保留", "待機 %d · 実行中 %d · 保存 %d", "대기 %d · 실행 중 %d · 보관 %d") \
+    X(McpOpenJobs,        "Open jobs folder", "打开任务文件夹", "ジョブフォルダーを開く", "작업 폴더 열기") \
+    X(McpKeepHours,       "Keep results (h)", "结果保留（小时）", "結果の保持（時間）", "결과 보관(시간)") \
+    X(TipMcpKeepHours,    "Hours a finished job's files stay on disk for the client to download (1 to 720).", "完成任务的文件在磁盘上保留多少小时供客户端下载（1 到 720）。", "完了したジョブのファイルをクライアントが取れるよう保持する時間（1〜720）。", "완료된 작업의 파일을 클라이언트가 내려받을 수 있도록 보관하는 시간(1~720).") \
+    X(McpQueueMax,        "Queue limit", "队列上限", "キュー上限", "대기열 상한") \
+    X(TipMcpQueueMax,     "Jobs that may wait at once, over all keys; further ones are refused with a 'try again later' and the time to wait.", "所有密钥合计可同时等待的任务数；超出的会被拒绝，并告知稍后重试及需等待的时间。", "全鍵合計で同時に待機できるジョブ数。超えた分は「後で再試行」と待ち時間を添えて断られます。", "모든 키를 합쳐 동시에 대기할 수 있는 작업 수. 넘치는 작업은 '나중에 다시'와 대기 시간을 안내하며 거절됩니다.") \
+    X(McpQueuePerKey,     "Per key", "每密钥上限", "鍵ごと", "키당") \
+    X(TipMcpQueuePerKey,  "Jobs one key may have waiting or running at once.", "一把密钥可同时等待或运行的任务数。", "1 つの鍵が同時に待機・実行できるジョブ数。", "키 하나가 동시에 대기·실행할 수 있는 작업 수.") \
+    X(McpUploadMax,       "Upload limit (MB)", "上传上限（MB）", "アップロード上限（MB）", "업로드 상한(MB)") \
+    X(TipMcpUploadMax,    "Largest file a client may send.", "客户端可发送的最大文件。", "クライアントが送れる最大ファイルサイズ。", "클라이언트가 보낼 수 있는 최대 파일 크기.") \
+    X(McpLocalNoKey,      "This computer needs no key", "本机无需密钥", "この PC に鍵は不要", "이 PC는 키 불필요") \
+    X(TipMcpLocalNoKey,   "Clients on this computer (the bridge, Claude Desktop, Cursor) connect without a key. Off: they need one too.", "本机的客户端（桥接、Claude Desktop、Cursor）无需密钥即可连接。关闭后它们也需要密钥。", "この PC のクライアント（ブリッジ、Claude Desktop、Cursor）は鍵なしで接続できます。オフにするとそれらにも鍵が必要です。", "이 PC의 클라이언트(브리지, Claude Desktop, Cursor)는 키 없이 접속합니다. 끄면 이들도 키가 필요합니다.") \
+    X(McpJobFolder,       "Job folder", "任务文件夹", "ジョブフォルダー", "작업 폴더") \
+    X(TipMcpJobFolder,    "Where the clients' inputs and results are kept. Empty: the program's data folder.", "存放客户端输入和结果的位置。留空则使用程序的数据文件夹。", "クライアントの入力と結果を置く場所。空欄ならプログラムのデータフォルダー。", "클라이언트의 입력과 결과를 두는 곳. 비우면 프로그램의 데이터 폴더.") \
+    X(McpJobRunningFmt,   "AI job running (%s)", "AI 任务运行中（%s）", "AI ジョブ実行中（%s）", "AI 작업 실행 중(%s)") \
+    X(McpJobBadge,        "AI job", "AI 任务", "AI ジョブ", "AI 작업") \
+    X(McpJobEndedFmt,     "AI job of %s: %s %s", "%s 的 AI 任务：%s %s", "%s の AI ジョブ: %s %s", "%s의 AI 작업: %s %s") \
     X(EndOfVideo,         "End", "结束", "終了", "끝")
 
 enum class Str {

@@ -87,7 +87,8 @@ set(APP_SOURCES
   src/ui/Fonts.cpp
   src/ui/MainUI.cpp
   src/core/McpServer.cpp
-  src/core/AppMcp.cpp)
+  src/core/AppMcp.cpp
+  src/core/AppMcpJobs.cpp)
 
 # The .manifest source is merged by CMake into the linker-generated manifest (per-monitor DPI, UTF-8 code page).
 add_executable(VRChatDLSS5Cam WIN32 ${APP_SOURCES} resources/app.rc resources/app.manifest)

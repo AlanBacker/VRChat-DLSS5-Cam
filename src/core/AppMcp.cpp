@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <ctime>
 #include <cwctype>
 #include <map>
 
@@ -160,14 +161,16 @@ void App::SyncMcp() {
         if (m_mcp.Running()) { m_mcp.Stop(); m_mcpRunningPort = 0; }
         return;
     }
-    m_mcp.SetReadOnly(m_settings.mcpReadOnly);
-    m_mcp.SetToken(m_settings.mcpToken);
-    if (m_mcp.Running() && m_mcpRunningPort == port) return;
+    const std::string sig = StrPrintf("%d|%d|%d|%s|%s|%zu", (int)m_settings.mcpReadOnly, (int)m_settings.mcpLocalNoKey, m_settings.mcpUploadMaxMb,
+                                      m_settings.mcpToken.c_str(), m_settings.mcpJobFolder.c_str(), m_mcpKeys.size());
+    if (sig != m_mcpAccessSig || !m_mcpAccessPushed) { m_mcpAccessSig = sig; McpPushAccess(); }
+    if (m_mcp.Running() && m_mcpRunningPort == port && m_mcpRunningBind == m_settings.mcpBind) return;
     const double now = NowSeconds();
     if (m_mcpRunningPort == port && m_mcpRetryTime >= 0.0 && now - m_mcpRetryTime < 10.0) return;   // a failed start is tried again now and then
     m_mcpRetryTime = now;
     m_mcpRunningPort = port;
-    m_mcp.Start(port, [this](std::shared_ptr<McpCall> call) {
+    m_mcpRunningBind = m_settings.mcpBind;
+    m_mcp.Start(port, m_settings.mcpBind, [this](std::shared_ptr<McpCall> call) {
         { std::lock_guard<std::mutex> lock(m_mcpMutex); m_mcpQueue.push_back(std::move(call)); }
         if (m_hwnd) PostMessageW(m_hwnd, WM_NULL, 0, 0);   // wakes the minimized loop
     });
@@ -203,6 +206,26 @@ void App::FillMcpInfo(ui::UiFrameInfo& info) const {
     info.mcpLastAge = st.lastTime >= 0.0 ? NowSeconds() - st.lastTime : -1.0;
     info.mcpSession = m_mcpSessionPort > 0;
     info.mcpConfig = McpConfigText();
+    info.mcpNetwork = m_settings.mcpBind == 1;
+    info.mcpAddresses.clear();
+    if (m_settings.mcpBind == 1) for (const std::string& addr : McpServer::LocalAddresses()) info.mcpAddresses.push_back(McpServer::Url(addr, st.running ? st.port : m_settings.mcpPort));
+    info.mcpKeys.clear();
+    const double now = NowSeconds();
+    for (const McpKey& k : m_mcpKeys) {
+        ui::McpKeyView v;
+        v.name = k.name; v.role = k.role; v.calls = k.calls;
+        v.lastAge = k.lastUsed > 0 ? (double)(std::time(nullptr) - k.lastUsed) : -1.0;
+        info.mcpKeys.push_back(v);
+    }
+    (void)now;
+    info.mcpJobsQueued = info.mcpJobsRunning = info.mcpJobsDone = 0;
+    for (const McpJob& j : m_mcpJobs) {
+        if (j.state == McpJob::Queued) ++info.mcpJobsQueued;
+        else if (j.state == McpJob::Running) ++info.mcpJobsRunning;
+        else ++info.mcpJobsDone;
+    }
+    info.mcpJob.clear();
+    if (const McpJob* r = McpFindJob(m_mcpJobRunning)) info.mcpJob = r->owner + ": " + r->inputName;
 }
 
 // The queued calls run now; the waiters are looked at every frame.
@@ -292,7 +315,8 @@ Json App::McpStatusJson() const {
              .Set("sidebar", m_settings.sidebarVisible).Set("libraryStrip", m_settings.libraryVisible))
         .Set("rates", Json::Obj().Set("uiFps", m_fps).Set("processingFps", m_source.processingFps).Set("frameIntervalMs", st.frameIntervalMs)
              .Set("neuralMs", st.gpuMs[(UINT)GpuTimer::Neural]).Set("processedFrames", st.processedFrames))
-        .Set("mcp", Json::Obj().Set("readOnly", m_settings.mcpReadOnly).Set("calls", m_mcp.Get().calls));
+        .Set("mcp", Json::Obj().Set("readOnly", m_settings.mcpReadOnly).Set("network", m_settings.mcpBind == 1).Set("calls", m_mcp.Get().calls)
+             .Set("keys", (long long)m_mcpKeys.size()).Set("jobs", McpQueueJson()));
     return j;
 }
 
@@ -415,7 +439,8 @@ void App::McpExecute(const std::shared_ptr<McpCall>& call, const ui::UiFrameInfo
     const Json& a = call->args;
     const bool busy = m_source.batchRunning || m_libraryBatchRunning || m_source.videoProcessing || m_source.videoFinishing;
 
-    if (name == "get_status") { Reply(call, McpStatusJson()); return; }
+    if (McpExecuteJobs(call, ev)) return;
+    if (name == "get_status") { Reply(call, call->caller.role == McpRoleJobs ? McpStatusReduced() : McpStatusJson()); return; }
 
     if (name == "describe_settings") {
         const std::string group = a.Str("group"), key = a.Str("key");
@@ -472,7 +497,7 @@ void App::McpExecute(const std::shared_ptr<McpCall>& call, const ui::UiFrameInfo
             const std::string& k = kv.first;
             if (k == "imagePath" || k == "videoPath") { refused.Push(k + ": use the open tool"); continue; }
             if (k == "settingsVersion") { refused.Push(k); continue; }
-            if (k == "mcpEnabled" || k == "mcpPort" || k == "mcpReadOnly" || k == "mcpToken") { refused.Push(k + ": the user sets up the MCP server in the sidebar"); continue; }
+            if (k.rfind("mcp", 0) == 0) { refused.Push(k + ": the user sets up the MCP server in the sidebar"); continue; }
             std::string text = kv.second.Text();
             if (kv.second.type == Json::Null || kv.second.type == Json::Array || kv.second.type == Json::Object) { refused.Push(k + ": a scalar value is needed"); continue; }
             if (!m_settings.Apply(k, text)) { unknown.Push(k); continue; }
@@ -983,7 +1008,7 @@ void App::McpFinishPreview() {
 void App::DrainMcpMinimized() {
     bool any;
     { std::lock_guard<std::mutex> lock(m_mcpMutex); any = !m_mcpQueue.empty(); }
-    if (!any && m_mcpWaiters.empty() && m_mcpPreviews.empty()) return;
+    if (!any && m_mcpWaiters.empty() && m_mcpPreviews.empty() && m_mcpJobWaiters.empty()) return;
     ui::UiFrameInfo info;
     info.status = &m_status;
     info.library = &m_library;

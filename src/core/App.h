@@ -51,6 +51,8 @@ struct CommandLine {
     double       loseDevice = -1.0;       // --lose-device <seconds> (development: report the device as lost after this long)
     bool         mcp = false;             // --mcp: the stdio bridge for MCP clients (no window; relays to the running program)
     int          mcpPort = 0;             // --mcp-port <port>: run the MCP server on this port for this session (the bridge starts the program so)
+    std::string  mcpUrl;                  // --mcp-url <http://host:port/mcp>: the bridge talks to that server (another computer) and starts nothing
+    std::string  mcpKey;                  // --mcp-key <key>: the key the bridge presents
     std::string  error;                   // the first unknown option
 
     static CommandLine Parse();
@@ -128,6 +130,7 @@ private:
         bool         isVideo = false;
         double       inSec = 0.0, outSec = 0.0;
         std::shared_ptr<Settings> own;           // the item's own effect values (a copy), or null
+        bool         ownAll = false;             // own holds the whole settings the item runs with (an MCP job), not only the effects
         SourceTransform transform;               // the item's orientation and crop
     };
     struct BatchEvent {
@@ -342,6 +345,85 @@ private:
     Json McpSourceJson() const;
     Json McpLibraryJson() const;
 
+    // Jobs (AppMcpJobs.cpp): files sent by clients (bots), run one after the other whenever the user's own work
+    // leaves the program idle. Their batch items and probes carry ids from kMcpJobIdBase up, so the library never
+    // sees them.
+    static constexpr unsigned kMcpJobIdBase = 0x40000000u;
+    struct McpJob {
+        enum State { Queued = 0, Running, Done, Failed, Cancelled };
+        std::string  id;                     // short and random: the client's handle
+        std::string  owner;                  // the key's name
+        std::string  label, clientRef;       // the client's own notes, echoed back
+        State        state = Queued;
+        std::wstring folder;                 // <mcp>\jobs\<id>: the input under in\, the results beside it
+        std::wstring inputPath;
+        std::string  inputName;
+        bool         isVideo = false;
+        double       inSec = 0.0, outSec = 0.0;
+        std::shared_ptr<Settings> settings;  // the whole settings the job runs with
+        std::string  preset;
+        Json         overrides;
+        long long    submitted = 0, started = 0, finished = 0;   // Unix seconds
+        std::vector<std::string> outputs;    // file names in the folder
+        std::string  error;
+        double       progress = 0.0;
+        double       runSeconds = 0.0;       // Done: how long the run took
+        int          probe = 0;              // 0 = pending, 1 = read, 2 = failed
+        UINT         width = 0, height = 0;
+        double       duration = 0.0, fps = 0.0;
+        unsigned     itemId = 0;             // the batch item's and the probe's id
+        bool         fetching = false;       // the input is being downloaded
+        bool         restarted = false;      // was running when the program last closed: queued again
+        bool         finishing = false;      // the batch ended; the last picture may still be in the encoder
+        bool         cancelAsked = false;
+        bool         seen = false;           // the processing thread took the job (its Processing event arrived)
+        double       startedMono = 0.0;      // NowSeconds when the batch was posted
+    };
+    struct McpJobWaiter {
+        std::shared_ptr<McpCall> call;
+        std::string  jobId;
+        double       deadline = 0.0;
+        bool         withInline = false;     // jobs result: the picture comes along
+        int          maxEdge = 1024;
+        double       inlineRetryUntil = 0.0;   // a fresh output may still be held by a scanner: tried again for a moment
+    };
+    struct McpUpload {
+        std::string  id, name, owner;
+        std::wstring path;
+        uint64_t     bytes = 0;
+        long long    created = 0;            // Unix seconds
+    };
+    struct McpFetchResult { std::string jobId; bool ok = false; std::string error; uint64_t bytes = 0; };
+    void McpJobsInit();                                                    // the keys and the jobs from disk
+    void McpJobsTick();                                                    // the scheduler, once per frame (also minimized)
+    void McpJobsShutdown();
+    bool McpExecuteJobs(const std::shared_ptr<McpCall>& call, ui::UiEvents& ev);   // submit, upload, jobs, _upload, _download; false = not one of them
+    void McpJobEvent(const BatchEvent& e);
+    void McpJobBatchEnded();
+    void McpJobProbed(const ScanResult& r);
+    void McpJobCaptured(const std::wstring& path, unsigned tag, bool ok, const std::string& error);
+    void McpJobStart(McpJob& job);
+    void McpJobFinish(McpJob& job, int state, const std::string& error);
+    McpJob* McpFindJob(const std::string& id);
+    const McpJob* McpFindJob(const std::string& id) const;
+    void McpJobOrder(std::vector<const McpJob*>& queued) const;            // the queued jobs in the order they will run
+    double McpJobEstimate(const McpJob& job) const;                        // seconds of processing
+    void McpQueuePosition(const McpJob& job, int& position, double& etaSeconds) const;
+    Json McpJobJson(const McpJob& job, const std::string& host) const;
+    Json McpJobsJson(const McpCaller& caller) const;
+    Json McpQueueJson() const;                                             // the jobs block of get_status
+    Json McpStatusReduced() const;                                         // what the jobs role sees
+    void McpSaveJobs();
+    void McpLoadJobs();
+    void McpSweep();                                                       // old jobs, uploads and part files
+    std::wstring McpRoot() const;                                          // where the jobs live
+    void McpLoadKeys();
+    void McpSaveKeys();
+    void McpPushAccess();                                                  // the keys and the switches to the server
+    std::string McpAddKey(const std::string& name, int role);              // returns the secret
+    bool McpRemoveKey(const std::string& name);
+    void McpAllowFirewall();                                               // asks Windows to let the port through (elevation prompt)
+
     // Processing thread.
     void StartWorker();
     void StopWorker();
@@ -502,6 +584,26 @@ private:
     int            m_mcpSessionPort = 0;          // --mcp-port: serve for this session whatever the setting says
     double         m_mcpRangeIn = 0.0, m_mcpRangeOut = 0.0, m_mcpRangeTime = -1.0;   // the range just posted (the snapshot follows later)
     double         m_mcpRetryTime = -1.0;
+    std::vector<McpKey> m_mcpKeys;
+    std::wstring   m_mcpKeysPath;
+    bool           m_mcpKeysDirty = false;
+    double         m_mcpKeysSaveTime = -1.0;
+    std::vector<McpJob> m_mcpJobs;
+    std::vector<McpUpload> m_mcpUploads;
+    std::vector<McpJobWaiter> m_mcpJobWaiters;
+    std::string    m_mcpJobRunning;               // the job whose batch runs (or finishes)
+    bool           m_mcpJobsDirty = false;
+    double         m_mcpSweepTime = -1.0;
+    unsigned       m_mcpNextItemId = kMcpJobIdBase;
+    std::map<std::string, long long> m_mcpOwnerLastStart;   // fairness between keys
+    double         m_mcpSecPerMp = 0.02;                     // processing seconds per megapixel, learned from finished jobs
+    std::mutex     m_mcpFetchMutex;
+    std::vector<McpFetchResult> m_mcpFetchResults;           // download threads -> interface thread
+    std::atomic<bool> m_mcpFetchCancel{false};
+    std::atomic<int>  m_mcpFetchLive{0};
+    bool           m_mcpAccessPushed = false;
+    std::string    m_mcpAccessSig;              // what SetAccess was last given: pushed again when it changes
+    int            m_mcpRunningBind = -1;
 };
 
 } // namespace vdc

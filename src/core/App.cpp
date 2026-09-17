@@ -232,6 +232,8 @@ CommandLine CommandLine::Parse() {
         else if (a == L"--lose-device") cl.loseDevice = ParseSeconds(next(i));
         else if (a == L"--mcp") cl.mcp = true;
         else if (a == L"--mcp-port") { if (const wchar_t* v = next(i)) cl.mcpPort = std::clamp(_wtoi(v), 1024, 65535); }
+        else if (a == L"--mcp-url") { if (const wchar_t* v = next(i)) cl.mcpUrl = WideToUtf8(v); }
+        else if (a == L"--mcp-key") { if (const wchar_t* v = next(i)) cl.mcpKey = WideToUtf8(v); }
         else if (!a.empty() && a[0] != L'-' && cl.open.empty() && FileExists(a)) cl.open = a;   // "Open with"
         else if (cl.error.empty()) cl.error = "unknown option " + WideToUtf8(a);
     }
@@ -270,6 +272,7 @@ int App::Run(HINSTANCE hInstance, int nCmdShow) {
             }
             SyncMcp();
             DrainMcpMinimized();
+            McpJobsTick();
             if (m_settingsDirtyTime >= 0.0 && NowSeconds() - m_settingsDirtyTime > 1.0) SaveSettings();
             continue;
         }
@@ -447,6 +450,7 @@ bool App::Init(HINSTANCE hInstance, int nCmdShow) {
     StartWorker();
     if (m_cli.afterDeviceLoss && !m_headless) PostNotice(TR(DeviceRestarted), true);
     m_mcpSessionPort = m_cli.mcpPort;
+    McpJobsInit();
     SyncMcp();
     Log::Info("Startup complete");
 
@@ -583,6 +587,7 @@ void App::ApplyDpi(float scale) {
 
 void App::Shutdown() {
     StopMcp();
+    McpJobsShutdown();
     if (m_deviceReady && EffectiveRoute() == RouteFsrHost) LogPortState(true);
     m_updater.Cancel();
     m_splash.Close();
@@ -1268,6 +1273,12 @@ void App::WorkerMain() {
                 else if (m_video.Loaded()) m_video.Close(gpu);
                 imageXform = ended.restoreImageXform;
                 videoXform = ended.restoreVideoXform;
+                // The interface's own settings again: the last item's values must not linger on the user's picture.
+                {
+                    std::lock_guard<std::mutex> lock(m_shared.mutex);
+                    settings = m_shared.settings;
+                }
+                m_pipeline.MarkNrDirty();
                 imageChanged = videoChanged = true;
                 passesLeft = kImageConvergePasses;
                 PostBatchEvent(0, LibraryItem::Idle, "", "");   // the batch is over
@@ -1281,7 +1292,7 @@ void App::WorkerMain() {
                 std::lock_guard<std::mutex> lock(m_shared.mutex);
                 settings = m_shared.settings;
             }
-            if (item.own) settings.CopyEffects(*item.own);
+            if (item.own) { if (item.ownAll) settings = *item.own; else settings.CopyEffects(*item.own); }
             m_pipeline.MarkNrDirty();
             PostBatchEvent(item.id, LibraryItem::Processing, "", "");
             if (item.isVideo) {
@@ -1709,6 +1720,12 @@ void App::DrainNotices() {
         if (cr.ok && cr.width && cr.height && cr.seconds > 0.0)
             m_pngSecPerMegapixel = std::clamp(cr.seconds / ((double)cr.width * (double)cr.height / 1e6), 0.01, 5.0);
         if (cr.ok && cr.quiet) continue;   // a frame of a video sequence, or a screenshot
+        if (cr.tag >= kMcpJobIdBase) {      // the picture of a client's job: its name goes to the job, not to the interface
+            if (cr.ok) Log::Info("Saved %s (%llu bytes)", WideToUtf8(cr.path).c_str(), (unsigned long long)cr.bytes);
+            else Log::Error("Capture failed for %s: %s", WideToUtf8(cr.path).c_str(), cr.error.c_str());
+            McpJobCaptured(cr.path, cr.tag, cr.ok, cr.error);
+            continue;
+        }
         if (!cr.quiet) ++m_captureResultsSeen;
         if (cr.ok) {
             m_lastCapture = WideToUtf8(name);
@@ -1739,8 +1756,10 @@ void App::DrainNotices() {
             m_libraryBatchRunning = false;
             for (LibraryItem& item : m_library)
                 if (item.state == LibraryItem::Queued || item.state == LibraryItem::Processing) item.state = LibraryItem::Idle;
+            McpJobBatchEnded();
             continue;
         }
+        if (e.id >= kMcpJobIdBase) { McpJobEvent(e); continue; }
         LibraryItem* item = FindItem(e.id);
         if (!item) continue;
         item->state = (LibraryItem::State)e.state;
@@ -1990,6 +2009,7 @@ void App::Frame() {
     ui::UiEvents ev;
     m_ui.Draw(m_settings, info, ev, m_fonts);
     DrainMcp(info, ev);
+    McpJobsTick();
     HandleEvents(ev);
     UpdateTitleBar();
     ImGui::Render();
@@ -2145,8 +2165,9 @@ void App::RunCommandLineActions() {
         if (m_pendingScreenshot.empty() && !m_device.ScreenshotPending() && m_capture.Pending() == 0) quit("--exit-after reached");
         return;
     }
-    // A headless session an assistant asked for (--mcp-port) stays until --exit-after: the assistant's calls are its task.
-    if (m_headless && !m_cli.process && m_mcpSessionPort > 0) return;
+    // A headless session an assistant asked for (--mcp-port), or one whose MCP server is switched on (a server for
+    // the bots), stays until --exit-after or the window's close: the clients' calls are its task.
+    if (m_headless && !m_cli.process && (m_mcpSessionPort > 0 || m_settings.mcpEnabled)) return;
     if ((m_headless || m_cli.process) && screenshotsFlushed && processDone && elapsed >= 1.0) {
         // A headless run without a task still waits for the runtime to load, so the log tells whether it works.
         if (!m_cli.process && m_cli.screenshots.empty() && elapsed < 3.0) return;
@@ -2234,6 +2255,17 @@ void App::HandleEvents(ui::UiEvents& ev) {
     if (ev.openDocs) OpenPath(DocsUrl());
     if (ev.mcpOpenDocs) OpenPath(std::wstring(kProjectUrl) + L"/blob/main/docs/MCP.md");
     if (ev.mcpOpenPage && m_mcp.Running()) OpenPath(Utf8ToWide("http://127.0.0.1:" + std::to_string(m_mcpRunningPort) + "/"));
+    if (ev.mcpOpenJobs) { const std::wstring root = McpRoot(); CreateDirectories(root); OpenPath(root); }
+    if (ev.mcpFirewall) McpAllowFirewall();
+    if (ev.mcpKeyAdd) {
+        const std::string secret = McpAddKey(ev.mcpKeyName, ev.mcpKeyRole);
+        if (secret.empty()) m_ui.Toast(TR(McpKeyNameTaken), true);
+        else { ImGui::SetClipboardText(secret.c_str()); m_ui.Toast(StrPrintf(TR(McpKeyCreatedFmt), ev.mcpKeyName.c_str())); }
+    }
+    if (ev.mcpKeyRemove && McpRemoveKey(ev.mcpKeyName)) m_ui.Toast(StrPrintf(TR(McpKeyRemovedFmt), ev.mcpKeyName.c_str()));
+    if (ev.mcpKeyCopy) {
+        for (const McpKey& k : m_mcpKeys) if (k.name == ev.mcpKeyName) { ImGui::SetClipboardText(k.secret.c_str()); m_ui.Toast(TR(McpKeyCopied)); break; }
+    }
     // Presets.
     if (ev.presetSave) {
         const std::string name = Trim(ev.presetName);
@@ -2281,6 +2313,9 @@ void App::HandleEvents(ui::UiEvents& ev) {
         def.videoPath = m_settings.videoPath;
         def.mcpEnabled = m_settings.mcpEnabled; def.mcpPort = m_settings.mcpPort;      // the assistant's own connection stays
         def.mcpReadOnly = m_settings.mcpReadOnly; def.mcpToken = m_settings.mcpToken;
+        def.mcpBind = m_settings.mcpBind; def.mcpLocalNoKey = m_settings.mcpLocalNoKey; def.mcpKeepHours = m_settings.mcpKeepHours;
+        def.mcpQueueMax = m_settings.mcpQueueMax; def.mcpQueuePerKey = m_settings.mcpQueuePerKey; def.mcpUploadMaxMb = m_settings.mcpUploadMaxMb;
+        def.mcpJobFolder = m_settings.mcpJobFolder;
         m_settings = def;
         m_spout.SetRequestedSender(m_settings.senderName);
         m_pipeline.MarkNrDirty();
@@ -2778,6 +2813,7 @@ void App::PollScanner() {
     for (int n = 0; n < 32 && m_scanner.Poll(r); ++n) {
         switch (r.kind) {
         case ScanRequest::Probe:
+            if (r.id >= kMcpJobIdBase) { McpJobProbed(r); break; }
             if (LibraryItem* item = FindItem(r.id)) {
                 item->probe = r.ok ? 1 : 2;
                 item->width = r.width; item->height = r.height;

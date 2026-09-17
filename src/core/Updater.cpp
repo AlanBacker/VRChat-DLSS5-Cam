@@ -54,10 +54,12 @@ std::string WinHttpErrorText(const char* where) {
     return StrPrintf("%s: %s", where, text.c_str());
 }
 
+} // namespace
+
 // GET over WinHTTP; the sink gets every chunk with the total announced by the server (0 when unknown). timeoutMs
 // (when set) bounds each step of the request; the default allows a slow download to go on.
 bool HttpGet(const std::wstring& url, bool json, const std::atomic<bool>& cancel,
-             const std::function<bool(const char*, DWORD, unsigned long long)>& sink, std::string& error, int timeoutMs = 0) {
+             const std::function<bool(const char*, DWORD, unsigned long long)>& sink, std::string& error, int timeoutMs) {
     wchar_t host[256] = {}, path[4096] = {}, extra[4096] = {};
     URL_COMPONENTSW uc{};
     uc.dwStructSize = sizeof(uc);
@@ -123,6 +125,8 @@ bool HttpGet(const std::wstring& url, bool json, const std::atomic<bool>& cancel
     WinHttpCloseHandle(session);
     return ok;
 }
+
+namespace {
 
 // A mirror site relays the full original address after its own: <site>/<https://github.com/...>.
 std::string MirrorUrl(const std::string& site, const std::string& url) { return site + "/" + url; }

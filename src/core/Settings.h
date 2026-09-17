@@ -162,7 +162,14 @@ struct Settings {
     bool        mcpEnabled = false;    // the server runs whenever the program does
     int         mcpPort = 51550;       // TCP port on 127.0.0.1
     bool        mcpReadOnly = false;   // the assistant may look but not change anything
-    std::string mcpToken;              // when set, every request must carry it as a bearer token
+    std::string mcpToken;              // legacy single key (an admin key); the keys of clients live in mcp-keys.json
+    int         mcpBind = 0;           // 0 = this computer only (127.0.0.1), 1 = the local network (every address of this computer)
+    bool        mcpLocalNoKey = true;  // a client on this computer needs no key (the bridge, Claude Desktop here)
+    int         mcpKeepHours = 24;     // a job's files (its input, its results) are deleted this long after it ended
+    int         mcpQueueMax = 20;      // jobs waiting at most, all clients together
+    int         mcpQueuePerKey = 5;    // jobs one key may have waiting
+    int         mcpUploadMaxMb = 2048; // the largest upload
+    std::string mcpJobFolder;          // UTF-8, empty = <settings folder>\mcp: where uploads and the jobs' files live
 
     bool Load(const std::wstring& path);
     bool Save(const std::wstring& path) const;
