@@ -244,6 +244,9 @@ Claude Code：程序运行且开关打开时，执行 `claude mcp add --transpor
 一台显卡强的电脑可以这样同时服务多个机器人；侧栏会显示正在运行的任务并可取消。所有工具、队列规则和一个最小机器人示例见
 [MCP.md](MCP.md)（英文）。
 
+基于 [AstrBot](https://astrbot.app) 的聊天机器人（QQ、Telegram、Discord 等）可直接使用仓库自带的插件 `integrations/astrbot`
+（每个 Release 也附带 `astrbot_plugin_vdc.zip`）：它把群里发来的图片先上传到服务器，模型只需报出上传编号，处理完成后插件自动把结果发回群里。
+
 ## 设置说明
 
 <details>

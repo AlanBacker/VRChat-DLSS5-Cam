@@ -50,113 +50,115 @@ const char* kInstructions =
     "VRChat DLSS5 Cam applies NVIDIA DLSS 5 neural rendering to a live VRChat camera stream (Spout), to pictures and to videos, "
     "and writes the results as PNG, MP4, GIF, APNG or WebP. This server is the running program's window: every tool call "
     "shows in the interface, enters the undo history and is saved like a change made by hand.\n"
-    "Typical flow: get_status -> open (a picture or video; add several with library add) or open_live -> set_settings "
-    "(describe_settings lists every key with its range and meaning; the look is mostly nrIntensity, nrStyle, nrGlobalTone, "
+    "Every tool of this server is named vdc_<name>, so it is never mistaken for another server's tool.\n"
+    "Typical flow: vdc_get_status -> vdc_open (a picture or video; add several with vdc_library add) or vdc_open_live -> vdc_set_settings "
+    "(vdc_describe_settings lists every key with its range and meaning; the look is mostly nrIntensity, nrStyle, nrGlobalTone, "
     "nrLocalTone, nrLocalStructure and the blend values nrToneTransfer, nrColorStrength, nrShadowGain, nrHighlightGain) -> "
-    "wait for=converged -> preview (look at the result; compareMode 1 shows the original, 2 a wipe of both) -> capture "
-    "(the open file, or a photo of the live stream) or process (the library) -> wait for=idle. Paths are Windows paths on "
+    "vdc_wait for=converged -> vdc_preview (look at the result; compareMode 1 shows the original, 2 a wipe of both) -> vdc_capture "
+    "(the open file, or a photo of the live stream) or vdc_process (the library) -> vdc_wait for=idle. Paths are Windows paths on "
     "the server's computer. Sizes are pixels, times are seconds, strengths are 0..2 with 1 as the runtime's own value.\n"
-    "From another computer, or as a bot serving many people: send files to the queue with submit (an upload_id from upload "
-    "or POST /upload, a url the server fetches, or small base64 data) and follow them with jobs. submit answers at once with "
-    "the job's place in the queue and an estimate: tell the person to wait, then poll with jobs wait (a long poll of up to "
+    "From another computer, or as a bot serving many people: send files to the queue with vdc_submit (an upload_id from vdc_upload "
+    "or POST /upload, a url the server fetches, or small base64 data) and follow them with vdc_jobs. vdc_submit answers at once with "
+    "the job's place in the queue and an estimate: tell the person to wait, then poll with vdc_jobs wait (a long poll of up to "
     "60 s) until the job is done, and fetch the results from the download links (the same key). Never wait for a job by "
-    "repeating submit. A queue_full or too_many_jobs refusal says when to try again. Keys have roles: viewer (looks), jobs "
+    "repeating vdc_submit. When the person's message came with a picture that a bridge already uploaded (the prompt names an "
+    "upload_id), pass that id to vdc_submit and do not ask for the file again. A queue_full or too_many_jobs refusal says when to try again. Keys have roles: viewer (looks), jobs "
     "(the queue) and admin (everything); in read-only mode only the looking tools answer.";
 
 const std::vector<McpTool> kTools = {
-    { "get_status",
+    { "vdc_get_status",
       "The state of the program: version and edition, the source (live stream, picture or video) and what is loaded, the neural "
       "pass and the guidance passes, the output size, a running batch or capture, the library, the undo history and the frame rates.",
       R"json({"type":"object","properties":{},"additionalProperties":false})json", false, false, false },
-    { "describe_settings",
-      "The settings reference: every key with its group, type, range or values and meaning. Call it before set_settings.",
+    { "vdc_describe_settings",
+      "The settings reference: every key with its group, type, range or values and meaning. Call it before vdc_set_settings.",
       R"json({"type":"object","properties":{"group":{"type":"string","description":"Only this group: source, video, resolution, hdr, neural, blend, guidance, dlaa, display, capture, hotkey, window, updates, mcp"},"key":{"type":"string","description":"Only this key"},"keys":{"type":"array","items":{"type":"string"},"description":"Only these keys"}},"additionalProperties":false})json", false, false, false },
-    { "get_settings",
+    { "vdc_get_settings",
       "The current values of the settings (all of them, or the keys asked for).",
       R"json({"type":"object","properties":{"keys":{"type":"array","items":{"type":"string"},"description":"Only these keys; all when omitted"}},"additionalProperties":false})json", false, false, false },
-    { "set_settings",
+    { "vdc_set_settings",
       "Changes settings, as the sidebar does: the values are clamped to their ranges, applied at once, recorded as an undo step "
       "and saved. Answers with the effective values and the keys it did not know.",
       R"json({"type":"object","properties":{"settings":{"type":"object","description":"Keys and their new values, for example {\"nrIntensity\": 1.5, \"nrStyle\": 2, \"compareMode\": 0}","additionalProperties":true}},"required":["settings"],"additionalProperties":false})json", true, false, false },
-    { "reset_settings",
+    { "vdc_reset_settings",
       "Every setting back to its default (the window placement, language and the opened file stay), like the Reset button.",
       R"json({"type":"object","properties":{},"additionalProperties":false})json", true, false, false },
-    { "open",
+    { "vdc_open",
       "Opens a picture or a video in the preview and adds it to the library; the source switches to that file. Animated GIF, APNG "
       "and WebP count as videos. By default it returns once the file is shown.",
       R"json({"type":"object","properties":{"path":{"type":"string","description":"Full Windows path of a picture (PNG, JPEG, WebP, BMP, TIFF, ...) or a video (MP4, MOV, MKV, AVI, GIF, APNG, WebP, ...)"},"wait":{"type":"boolean","default":true,"description":"Return once the file is decoded and shown"},"timeout":{"type":"number","default":30}},"required":["path"],"additionalProperties":false})json", true, false, false },
-    { "open_live",
+    { "vdc_open_live",
       "Switches to the live source: the VRChat camera picture arriving through Spout. Optionally selects a sender by name.",
       R"json({"type":"object","properties":{"sender":{"type":"string","description":"Spout sender name; empty = automatic (prefers VRCSender1)"}},"additionalProperties":false})json", true, false, false },
-    { "list_senders",
+    { "vdc_list_senders",
       "The Spout senders on this computer (VRChat's camera among them when it streams) and the one in use.",
       R"json({"type":"object","properties":{},"additionalProperties":false})json", false, false, false },
-    { "close_media",
+    { "vdc_close_media",
       "Closes the opened picture or video: processing stops and the preview empties (the file stays in the library).",
       R"json({"type":"object","properties":{},"additionalProperties":false})json", true, false, false },
-    { "library",
+    { "vdc_library",
       "The media library under the preview: list its items (with ids), add files or folders, remove or select items, show one in "
       "the preview, set a video's processing range, or give an item effect values of its own.",
       R"json({"type":"object","properties":{"action":{"type":"string","enum":["list","add","remove","clear","select","show","set_range","set_own","clear_own"]},"paths":{"type":"array","items":{"type":"string"},"description":"add: files or folders"},"ids":{"type":"array","items":{"type":"integer"},"description":"remove, select, clear_own: item ids from list"},"id":{"type":"integer","description":"show, set_range, set_own: one item id"},"exclusive":{"type":"boolean","default":true,"description":"select: the other items are deselected"},"in":{"type":"number","description":"set_range: start in seconds (0 = the beginning)"},"out":{"type":"number","description":"set_range: end in seconds (0 = the end)"},"settings":{"type":"object","description":"set_own: the item's own effect values (keys of the neural and blend groups)","additionalProperties":true}},"required":["action"],"additionalProperties":false})json", true, false, false },
-    { "process",
+    { "vdc_process",
       "Processes the library (every item, the selected ones, or the given ids) with the current settings into the capture folder, as "
       "the Process buttons do. Returns at once, or when the run has finished with wait.",
-      R"json({"type":"object","properties":{"scope":{"type":"string","enum":["all","selected","ids"],"default":"all"},"ids":{"type":"array","items":{"type":"integer"}},"wait":{"type":"boolean","default":false,"description":"Return when the run has finished (else at once; get_status and wait follow it)"},"timeout":{"type":"number","default":600}},"additionalProperties":false})json", true, false, false },
-    { "capture",
+      R"json({"type":"object","properties":{"scope":{"type":"string","enum":["all","selected","ids"],"default":"all"},"ids":{"type":"array","items":{"type":"integer"}},"wait":{"type":"boolean","default":false,"description":"Return when the run has finished (else at once; vdc_get_status and vdc_wait follow it)"},"timeout":{"type":"number","default":600}},"additionalProperties":false})json", true, false, false },
+    { "vdc_capture",
       "The capture button (Ctrl+Alt+P): a photo of the live stream, the processed picture written as PNG, or the opened video "
       "processed to a file. Returns the file written when wait is on.",
       R"json({"type":"object","properties":{"wait":{"type":"boolean","default":true},"timeout":{"type":"number","default":180}},"additionalProperties":false})json", true, false, false },
-    { "cancel",
+    { "vdc_cancel",
       "Stops the running batch or video run.",
       R"json({"type":"object","properties":{},"additionalProperties":false})json", true, false, false },
-    { "video",
+    { "vdc_video",
       "The video controls under the preview: play, pause, seek, step frames, set the processing range (in, out), or read the state.",
       R"json({"type":"object","properties":{"action":{"type":"string","enum":["info","play","pause","toggle","seek","step","set_in","set_out","clear_range"]},"seconds":{"type":"number","description":"seek: the time to show; set_in, set_out: the range point (the current position when omitted)"},"frames":{"type":"integer","default":1,"description":"step: frames forward (negative = back)"}},"required":["action"],"additionalProperties":false})json", true, false, false },
-    { "preview",
+    { "vdc_preview",
       "A picture of the preview as it is right now, scaled down, as an image. view=output gives the picture area with the compare "
       "mode applied (compareMode 0 output, 1 original, 2 wipe with the original on the left, 3 motion vectors, 4 depth); "
-      "view=window gives the whole program window with its interface. Wait for=converged first on a fresh still picture.",
+      "view=window gives the whole program window with its interface. Call vdc_wait for=converged first on a fresh still picture.",
       R"json({"type":"object","properties":{"view":{"type":"string","enum":["output","window"],"default":"output"},"max_edge":{"type":"integer","default":1024,"minimum":64,"maximum":4096,"description":"The picture is scaled down to this long edge"},"save_to":{"type":"string","description":"Also write the full-size picture to this PNG path"}},"additionalProperties":false})json", false, false, false },
-    { "wait",
+    { "vdc_wait",
       "Waits until the program reaches a state: idle (no processing, capture or batch runs), loaded (the opened file is decoded), "
       "converged (a still picture's passes have settled, so a preview shows the final look), display (a processed frame is on screen).",
       R"json({"type":"object","properties":{"for":{"type":"string","enum":["idle","loaded","converged","display"],"default":"idle"},"timeout":{"type":"number","default":60}},"additionalProperties":false})json", false, false, false },
-    { "undo", "Undoes the last change (Ctrl+Z), or several.",
+    { "vdc_undo", "Undoes the last change (Ctrl+Z), or several.",
       R"json({"type":"object","properties":{"steps":{"type":"integer","default":1,"minimum":1}},"additionalProperties":false})json", true, false, false },
-    { "redo", "Redoes an undone change (Ctrl+Y), or several.",
+    { "vdc_redo", "Redoes an undone change (Ctrl+Y), or several.",
       R"json({"type":"object","properties":{"steps":{"type":"integer","default":1,"minimum":1}},"additionalProperties":false})json", true, false, false },
-    { "history", "The undo history: every recorded state with a label, and which one is current; with index, the program goes to that state (the history panel's click).",
+    { "vdc_history", "The undo history: every recorded state with a label, and which one is current; with index, the program goes to that state (the history panel's click).",
       R"json({"type":"object","properties":{"index":{"type":"integer","minimum":0,"description":"Go to this state of the list, 0 = the oldest"}},"additionalProperties":false})json", true, false, false },
-    { "presets",
+    { "vdc_presets",
       "The user's presets of effect values (the preset row of the sidebar): list them with their values, apply one, save the "
       "current effect values under a name, delete or rename one.",
       R"json({"type":"object","properties":{"action":{"type":"string","enum":["list","apply","save","delete","rename"]},"name":{"type":"string"},"new_name":{"type":"string","description":"rename: the new name"}},"required":["action"],"additionalProperties":false})json", true, false, false },
-    { "get_log",
+    { "vdc_get_log",
       "The last lines of the program's log (what the runtime, the passes, the files and the errors reported).",
       R"json({"type":"object","properties":{"lines":{"type":"integer","default":50,"minimum":1,"maximum":500},"level":{"type":"string","enum":["info","warn","error"],"description":"Only entries of this level and above"},"contains":{"type":"string","description":"Only lines with this text"}},"additionalProperties":false})json", false, false, false },
-    { "window",
+    { "vdc_window",
       "The program window: bring it up, restore or minimize it, enter or leave the fullscreen view, resize it, show or hide the "
       "sidebar and the library.",
       R"json({"type":"object","properties":{"action":{"type":"string","enum":["show","restore","minimize","fullscreen","windowed","resize","sidebar","library"]},"width":{"type":"integer","description":"resize: client width"},"height":{"type":"integer","description":"resize: client height"},"visible":{"type":"boolean","description":"sidebar, library: shown or hidden"}},"required":["action"],"additionalProperties":false})json", true, false, false },
-    { "reload",
+    { "vdc_reload",
       "Loads the neural runtime again, restarts the depth estimator, refreshes the Spout sender list, or resets the temporal history "
       "of the passes.",
       R"json({"type":"object","properties":{"what":{"type":"string","enum":["runtime","depth","senders","history"]}},"required":["what"],"additionalProperties":false})json", true, false, false },
-    { "submit",
+    { "vdc_submit",
       "Sends a file to the processing queue and answers at once with the job id, its place in the queue and a time estimate. "
-      "The file: upload_id (from upload or POST /upload), url (a picture or video the server fetches), data (base64, up to 16 MB) "
-      "with name, or path (a file on the server's own disk: admin only). The look: preset (the name of a saved preset) and "
-      "settings (an object of overrides: the neural, blend, resolution, video output and guidance keys of describe_settings; "
+      "The file: upload_id (from vdc_upload or POST /upload), url (a picture or video the server fetches), data (base64, up to 16 MB) "
+      "with name, or path (a file on the server's own disk: admin only). The look: preset (the name of a saved preset, or default for the program's default look) and "
+      "settings (an object of overrides: the neural, blend, resolution, video output and guidance keys of vdc_describe_settings; "
       "what is not given comes from the server's current settings). Videos: in and out (seconds) limit the range. label and "
       "client_ref (a chat's reference) come back with the job. wait: true waits up to timeout seconds (60 at most) and answers "
       "with the state reached then. The answer's message is meant to be relayed to the person waiting.",
       R"json({"type":"object","properties":{"upload_id":{"type":"string"},"url":{"type":"string"},"data":{"type":"string","description":"The file's bytes as base64"},"name":{"type":"string","description":"The file name of data or url (its extension says the format)"},"path":{"type":"string","description":"A file on the server's computer (admin only)"},"preset":{"type":"string"},"settings":{"type":"object","additionalProperties":true},"in":{"type":"number"},"out":{"type":"number"},"label":{"type":"string"},"client_ref":{"type":"string"},"wait":{"type":"boolean","default":false},"timeout":{"type":"number","default":30,"maximum":60}},"additionalProperties":false})json", true, true, false },
-    { "upload",
-      "Stores a file for submit: base64 data, up to 16 MB in one call. Larger files go by HTTP: POST /upload?name=<file name> "
+    { "vdc_upload",
+      "Stores a file for vdc_submit: base64 data, up to 16 MB in one call. Larger files go by HTTP: POST /upload?name=<file name> "
       "with the raw bytes as the body and the same Authorization header, which answers the same JSON. An upload that no job "
       "uses is deleted after two hours.",
       R"json({"type":"object","properties":{"name":{"type":"string"},"data":{"type":"string","description":"The file's bytes as base64"}},"required":["name","data"],"additionalProperties":false})json", true, true, false },
-    { "jobs",
+    { "vdc_jobs",
       "The processing queue. list: your jobs and the queue's state (admin: everyone's). get: one job with its place in the "
       "queue, estimate, progress, results and download links. wait: a long poll that answers when the job ends or after "
       "timeout seconds (60 at most), with the state either way and never an error. result: like get, and inline: true adds a "
@@ -970,8 +972,8 @@ void McpServer::Handle(const Request& r, Response& out) {
         return;
     }
     if (r.method == "GET" && (r.path == "/status.json" || r.path == "/settings.json" || r.path == "/library.json" || r.path == "/log.txt" || r.path == "/jobs.json")) {
-        const char* tool = r.path == "/status.json" ? "get_status" : r.path == "/settings.json" ? "get_settings" : r.path == "/library.json" ? "library"
-                         : r.path == "/jobs.json" ? "jobs" : "get_log";
+        const char* tool = r.path == "/status.json" ? "vdc_get_status" : r.path == "/settings.json" ? "vdc_get_settings" : r.path == "/library.json" ? "vdc_library"
+                         : r.path == "/jobs.json" ? "vdc_jobs" : "vdc_get_log";
         Json args = Json::Obj();
         if (r.path == "/library.json" || r.path == "/jobs.json") args.Set("action", "list");
         if (r.path == "/log.txt") { args.Set("lines", 200); out.type = "text/plain; charset=utf-8"; }
@@ -1059,29 +1061,32 @@ Json McpServer::HandleRpc(const Json& msg, const McpCaller& caller, bool& noRepl
     return RpcError(id, -32601, "Method not found: " + method);
 }
 
-Json McpServer::CallTool(const std::string& name, const Json& args, const McpCaller& caller, Json* rpcError) {
+Json McpServer::CallTool(const std::string& nameIn, const Json& args, const McpCaller& caller, Json* rpcError) {
+    std::string name = nameIn;
     const McpTool* tool = nullptr;
     for (const McpTool& t : kTools) if (name == t.name) { tool = &t; break; }
+    // v1.8.0 named the tools without the prefix: those names still answer.
+    if (!tool && name.rfind("vdc_", 0) != 0) for (const McpTool& t : kTools) if (std::string(t.name) == "vdc_" + name) { tool = &t; name = t.name; break; }
     if (!tool) { if (rpcError) *rpcError = Json::Obj().Set("code", -32602).Set("message", "Unknown tool: " + name); return Json(); }
     const std::string action = args.Str("action");
     // Looking: what a viewer may do, and what read-only mode allows.
-    const bool looking = !tool->mutating || (name == "library" && action == "list") || (name == "video" && action == "info") ||
-                         (name == "presets" && action == "list") || (name == "history" && !args.Has("index")) ||
-                         (name == "jobs" && action != "cancel" && action != "delete");
+    const bool looking = !tool->mutating || (name == "vdc_library" && action == "list") || (name == "vdc_video" && action == "info") ||
+                         (name == "vdc_presets" && action == "list") || (name == "vdc_history" && !args.Has("index")) ||
+                         (name == "vdc_jobs" && action != "cancel" && action != "delete");
     auto call = std::make_shared<McpCall>();
     call->name = name;
     call->args = args;
     call->caller = caller;
     call->started = NowSeconds();
     bool allowed = caller.role == McpRoleAdmin;
-    if (caller.role == McpRoleJobs) allowed = tool->jobs || (looking && (name == "get_status" || name == "describe_settings" || name == "presets"));
+    if (caller.role == McpRoleJobs) allowed = tool->jobs || (looking && (name == "vdc_get_status" || name == "vdc_describe_settings" || name == "vdc_presets"));
     else if (caller.role == McpRoleViewer) allowed = looking;
     bool readOnly = false;
     { std::lock_guard<std::mutex> lock(m_mutex); readOnly = m_access.readOnly; }
     if (!allowed) {
         std::string why;
         if (readOnly) why = "The MCP server is in read-only mode: " + name + " would change something. The user can switch it off in the sidebar (MCP section).";
-        else if (caller.role == McpRoleJobs) why = "The key " + caller.keyName + " has the jobs role: it sends files with upload and submit and follows them with jobs; " + name + " needs an admin key.";
+        else if (caller.role == McpRoleJobs) why = "The key " + caller.keyName + " has the jobs role: it sends files with vdc_upload and vdc_submit and follows them with vdc_jobs; " + name + " needs an admin key.";
         else why = "The key " + caller.keyName + " has the viewer role: it only looks; " + name + " needs " + (tool->jobs ? "a jobs or an admin key." : "an admin key.");
         call->Fail(why, Json::Obj().Set("reason", "not_allowed").Set("role", RoleName(caller.role)));
     } else if (!m_dispatch) {
@@ -1111,14 +1116,14 @@ Json McpServer::ReadResource(const std::string& uri, const McpCaller& caller, Js
     std::string tool;
     Json args = Json::Obj();
     std::string mime = "application/json";
-    if (uri == "vdc://status") tool = "get_status";
-    else if (uri == "vdc://settings") tool = "get_settings";
-    else if (uri == "vdc://settings/schema") tool = "describe_settings";
-    else if (uri == "vdc://library") { tool = "library"; args.Set("action", "list"); }
-    else if (uri == "vdc://jobs") { tool = "jobs"; args.Set("action", "list"); }
-    else if (uri == "vdc://log") { tool = "get_log"; args.Set("lines", 200); mime = "text/plain"; }
-    else if (uri == "vdc://preview") { tool = "preview"; args.Set("view", "output"); mime = "image/png"; }
-    else if (uri == "vdc://preview/window") { tool = "preview"; args.Set("view", "window"); mime = "image/png"; }
+    if (uri == "vdc://status") tool = "vdc_get_status";
+    else if (uri == "vdc://settings") tool = "vdc_get_settings";
+    else if (uri == "vdc://settings/schema") tool = "vdc_describe_settings";
+    else if (uri == "vdc://library") { tool = "vdc_library"; args.Set("action", "list"); }
+    else if (uri == "vdc://jobs") { tool = "vdc_jobs"; args.Set("action", "list"); }
+    else if (uri == "vdc://log") { tool = "vdc_get_log"; args.Set("lines", 200); mime = "text/plain"; }
+    else if (uri == "vdc://preview") { tool = "vdc_preview"; args.Set("view", "output"); mime = "image/png"; }
+    else if (uri == "vdc://preview/window") { tool = "vdc_preview"; args.Set("view", "window"); mime = "image/png"; }
     else { if (rpcError) *rpcError = Json::Obj().Set("code", -32002).Set("message", "Resource not found: " + uri); return Json(); }
     Json err;
     Json result = CallTool(tool, args, caller, &err);
@@ -1198,7 +1203,7 @@ std::string McpServer::InfoPage(const Request& r, const McpCaller& caller) {
         } else if (result.Find("content")) {
             for (const Json& c : result.Find("content")->arr) if (c.Str("type") == "text") h += "<p>" + HtmlEscape(c.Str("text")) + "</p>";
         }
-        h += "<h3>A bot in three calls</h3><p>Send a picture or a video, tell the person it is queued, poll with <code>jobs wait</code> (it answers within the timeout, never blocks longer), then hand out the download link:</p>";
+        h += "<h3>A bot in three calls</h3><p>Send a picture or a video, tell the person it is queued, poll with <code>vdc_jobs wait</code> (it answers within the timeout, never blocks longer), then hand out the download link:</p>";
         h += "<pre>import requests, base64, time\n"
              "URL, KEY = \"" + HtmlEscape(here) + "\", \"&lt;your key&gt;\"\n"
              "def call(tool, **args):\n"
@@ -1208,16 +1213,16 @@ std::string McpServer::InfoPage(const Request& r, const McpCaller& caller) {
              "\n"
              "with open(\"photo.png\", \"rb\") as f:\n"
              "    up = requests.post(\"http://" + HtmlEscape(caller.host) + "/upload?name=photo.png\", headers={\"Authorization\": \"Bearer \" + KEY}, data=f).json()\n"
-             "job = call(\"submit\", upload_id=up[\"uploadId\"], preset=\"Natural\", label=\"group 12345\")\n"
+             "job = call(\"vdc_submit\", upload_id=up[\"uploadId\"], preset=\"Natural\", label=\"group 12345\")\n"
              "print(job[\"message\"])                      # 'Queued at position 3, about 2 minutes' - tell the person now\n"
              "while job[\"state\"] in (\"queued\", \"running\"):\n"
-             "    job = call(\"jobs\", action=\"wait\", id=job[\"jobId\"], timeout=30)\n"
+             "    job = call(\"vdc_jobs\", action=\"wait\", id=job[\"jobId\"], timeout=30)\n"
              "if job[\"state\"] == \"done\":\n"
              "    print(job[\"outputs\"][0][\"url\"])         # download with the same Authorization header\n"
              "else:\n"
              "    print(job[\"error\"])\n</pre>";
-        h += StrPrintf("<p>Uploads: <code>POST /upload?name=&lt;file name&gt;</code> with the bytes as the body (at most %llu MB), or the <code>upload</code> tool with base64 data (at most 16 MB). "
-                       "Small files may go straight into <code>submit</code> as <code>data</code>; a public <code>url</code> works too.</p>", (unsigned long long)(uploadMax >> 20));
+        h += StrPrintf("<p>Uploads: <code>POST /upload?name=&lt;file name&gt;</code> with the bytes as the body (at most %llu MB), or the <code>vdc_upload</code> tool with base64 data (at most 16 MB). "
+                       "Small files may go straight into <code>vdc_submit</code> as <code>data</code>; a public <code>url</code> works too.</p>", (unsigned long long)(uploadMax >> 20));
     }
     h += "<h2>Tools</h2><table><tr><th>Tool</th><th>What it does</th></tr>";
     for (const McpTool& t : kTools) {

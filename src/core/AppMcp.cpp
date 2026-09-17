@@ -395,7 +395,7 @@ void App::McpCheckWaiters() {
                           .Set("frames", m_source.videoLastFrames).Set("processingSeconds", m_source.videoLastSeconds).Set("seconds", elapsed));
                 else w.call->Fail("the video run failed: " + m_source.videoLastError);
                 done = true;
-            } else if (!w.started && elapsed > 5.0) { w.call->Fail("the video run did not start (get_log tells why)"); done = true; }
+            } else if (!w.started && elapsed > 5.0) { w.call->Fail("the video run did not start (vdc_get_log tells why)"); done = true; }
             break;
         case WaitBatch:
             if (m_source.batchRunning || m_libraryBatchRunning) w.started = true;
@@ -412,7 +412,7 @@ void App::McpCheckWaiters() {
                 Reply(w.call, Json::Obj().Set("finished", true).Set("done", doneN).Set("failed", failedN).Set("folder", WideToUtf8(EffectiveCaptureFolder()))
                       .Set("items", results).Set("seconds", elapsed));
                 done = true;
-            } else if (!w.started && elapsed > 5.0) { w.call->Fail("the run did not start (get_log tells why)"); done = true; }
+            } else if (!w.started && elapsed > 5.0) { w.call->Fail("the run did not start (vdc_get_log tells why)"); done = true; }
             break;
         }
         if (!done && now > w.deadline) {
@@ -440,9 +440,9 @@ void App::McpExecute(const std::shared_ptr<McpCall>& call, const ui::UiFrameInfo
     const bool busy = m_source.batchRunning || m_libraryBatchRunning || m_source.videoProcessing || m_source.videoFinishing;
 
     if (McpExecuteJobs(call, ev)) return;
-    if (name == "get_status") { Reply(call, call->caller.role == McpRoleJobs ? McpStatusReduced() : McpStatusJson()); return; }
+    if (name == "vdc_get_status") { Reply(call, call->caller.role == McpRoleJobs ? McpStatusReduced() : McpStatusJson()); return; }
 
-    if (name == "describe_settings") {
+    if (name == "vdc_describe_settings") {
         const std::string group = a.Str("group"), key = a.Str("key");
         std::vector<std::string> keys;
         if (const Json* arr = a.Find("keys")) if (arr->type == Json::Array) for (const Json& v : arr->arr) if (v.type == Json::String) keys.push_back(v.str);
@@ -463,7 +463,7 @@ void App::McpExecute(const std::shared_ptr<McpCall>& call, const ui::UiFrameInfo
         return;
     }
 
-    if (name == "get_settings") {
+    if (name == "vdc_get_settings") {
         const Json* keys = a.Find("keys");
         Json out = Json::Obj();
         Json unknown = Json::Arr();
@@ -484,9 +484,9 @@ void App::McpExecute(const std::shared_ptr<McpCall>& call, const ui::UiFrameInfo
         return;
     }
 
-    if (name == "set_settings") {
+    if (name == "vdc_set_settings") {
         const Json* obj = a.Find("settings");
-        if (!obj || obj->type != Json::Object || obj->obj.empty()) { call->Fail("settings must be an object of key: value pairs (describe_settings lists the keys)"); return; }
+        if (!obj || obj->type != Json::Object || obj->obj.empty()) { call->Fail("settings must be an object of key: value pairs (vdc_describe_settings lists the keys)"); return; }
         std::map<std::string, std::string> before;
         for (const auto& kv : Pairs(m_settings.Text())) before[kv.first] = kv.second;
         const std::string procBefore = m_settings.ProcessingText();
@@ -534,15 +534,15 @@ void App::McpExecute(const std::shared_ptr<McpCall>& call, const ui::UiFrameInfo
         return;
     }
 
-    if (name == "reset_settings") { ev.resetDefaults = true; ReplyText(call, "every setting is back to its default (window placement, language, the opened file and the MCP server settings kept)"); return; }
+    if (name == "vdc_reset_settings") { ev.resetDefaults = true; ReplyText(call, "every setting is back to its default (window placement, language, the opened file and the MCP server settings kept)"); return; }
 
-    if (name == "open") {
+    if (name == "vdc_open") {
         if (busy) { call->Fail("a run is going: wait for it or cancel it first"); return; }
         const std::wstring path = Utf8ToWide(a.Str("path"));
         if (path.empty()) { call->Fail("path is required"); return; }
         if (!FileExists(path)) { call->Fail("no such file: " + WideToUtf8(path)); return; }
         if (DirectoryExists(path)) { call->Fail("a folder: use library add for folders"); return; }
-        if (LowerExt(path) == L".dll") { call->Fail("a DLL is not a picture: the neural runtime is chosen with set_settings nrDllPath"); return; }
+        if (LowerExt(path) == L".dll") { call->Fail("a DLL is not a picture: the neural runtime is chosen with vdc_set_settings nrDllPath"); return; }
         if (a.Flag("add_to_library", true)) AddLibraryFiles({ path }, false);
         bool isVideo = false;
         bool known = false;
@@ -563,7 +563,7 @@ void App::McpExecute(const std::shared_ptr<McpCall>& call, const ui::UiFrameInfo
         return;
     }
 
-    if (name == "open_live") {
+    if (name == "vdc_open_live") {
         if (busy) { call->Fail("a run is going: wait for it or cancel it first"); return; }
         const std::string sender = a.Str("sender");
         if (a.Has("sender") && sender != m_settings.senderName) { m_settings.senderName = sender; ev.senderChanged = true; ev.settingsChanged = true; }
@@ -576,7 +576,7 @@ void App::McpExecute(const std::shared_ptr<McpCall>& call, const ui::UiFrameInfo
         return;
     }
 
-    if (name == "list_senders") {
+    if (name == "vdc_list_senders") {
         ev.refreshSenders = true;
         Json senders = Json::Arr();
         for (const std::string& s : m_senders) senders.Push(s);
@@ -585,7 +585,7 @@ void App::McpExecute(const std::shared_ptr<McpCall>& call, const ui::UiFrameInfo
         return;
     }
 
-    if (name == "close_media") {
+    if (name == "vdc_close_media") {
         if (busy) { call->Fail("a run is going: wait for it or cancel it first"); return; }
         if (m_settings.sourceMode == SourceSpout) { call->Fail("the live source is shown, nothing to close"); return; }
         ev.closeMedia = true;
@@ -593,7 +593,7 @@ void App::McpExecute(const std::shared_ptr<McpCall>& call, const ui::UiFrameInfo
         return;
     }
 
-    if (name == "library") {
+    if (name == "vdc_library") {
         const std::string action = a.Str("action");
         auto ids = [&]() {
             std::vector<unsigned> out;
@@ -679,7 +679,7 @@ void App::McpExecute(const std::shared_ptr<McpCall>& call, const ui::UiFrameInfo
         return;
     }
 
-    if (name == "process") {
+    if (name == "vdc_process") {
         if (busy) { call->Fail("a run is already going"); return; }
         if (m_library.empty()) { call->Fail("the library is empty: open a file or use library add"); return; }
         const std::string scope = a.Str("scope", "all");
@@ -700,7 +700,7 @@ void App::McpExecute(const std::shared_ptr<McpCall>& call, const ui::UiFrameInfo
         return;
     }
 
-    if (name == "capture") {
+    if (name == "vdc_capture") {
         if (m_source.batchRunning || m_libraryBatchRunning) { call->Fail("a batch run is going"); return; }
         int kind = WaitCapture;
         if (m_settings.sourceMode == SourceVideo) {
@@ -716,7 +716,7 @@ void App::McpExecute(const std::shared_ptr<McpCall>& call, const ui::UiFrameInfo
         return;
     }
 
-    if (name == "cancel") {
+    if (name == "vdc_cancel") {
         bool any = false;
         if (m_source.videoProcessing || m_source.videoFinishing) { ev.cancelVideo = true; any = true; }
         if (m_source.batchRunning || m_libraryBatchRunning) { ev.batchCancel = true; any = true; }
@@ -724,7 +724,7 @@ void App::McpExecute(const std::shared_ptr<McpCall>& call, const ui::UiFrameInfo
         return;
     }
 
-    if (name == "video") {
+    if (name == "vdc_video") {
         const std::string action = a.Str("action");
         if (action == "info") { Reply(call, McpSourceJson()); return; }
         if (m_settings.sourceMode != SourceVideo || !m_source.videoLoaded) { call->Fail("no video is loaded (open one first)"); return; }
@@ -752,7 +752,7 @@ void App::McpExecute(const std::shared_ptr<McpCall>& call, const ui::UiFrameInfo
         return;
     }
 
-    if (name == "preview") {
+    if (name == "vdc_preview") {
         const std::string view = a.Str("view", "output");
         McpPreview p;
         p.call = call;
@@ -761,12 +761,12 @@ void App::McpExecute(const std::shared_ptr<McpCall>& call, const ui::UiFrameInfo
         p.saveTo = Utf8ToWide(a.Str("save_to"));
         if (view != "output" && view != "window") { call->Fail("view must be output or window"); return; }
         if (m_minimized && !m_headless) { call->Fail("the window is minimized, nothing is drawn: window restore first"); return; }
-        if (p.view == 0 && !info.hasDisplay) { call->Fail("no picture on screen yet (open a file or wait for=display)"); return; }
+        if (p.view == 0 && !info.hasDisplay) { call->Fail("no picture on screen yet (vdc_open a file or vdc_wait for=display)"); return; }
         m_mcpPreviews.push_back(std::move(p));
         return;
     }
 
-    if (name == "wait") {
+    if (name == "vdc_wait") {
         const std::string what = a.Str("for", "idle");
         const double timeout = a.Num("timeout", 60.0);
         if (what == "idle") McpAddWaiter(call, WaitIdle, timeout, std::wstring(), false);
@@ -787,8 +787,8 @@ void App::McpExecute(const std::shared_ptr<McpCall>& call, const ui::UiFrameInfo
         return;
     }
 
-    if (name == "undo" || name == "redo") {
-        const bool redo = name == "redo";
+    if (name == "vdc_undo" || name == "vdc_redo") {
+        const bool redo = name == "vdc_redo";
         const int steps = std::clamp(a.Int("steps", 1), 1, 100);
         int current = 0;
         std::vector<std::string> labels = m_ui.HistoryLabels(current);
@@ -802,7 +802,7 @@ void App::McpExecute(const std::shared_ptr<McpCall>& call, const ui::UiFrameInfo
         return;
     }
 
-    if (name == "history") {
+    if (name == "vdc_history") {
         int current = 0;
         std::vector<std::string> labels = m_ui.HistoryLabels(current);
         if (a.Has("index")) {
@@ -817,7 +817,7 @@ void App::McpExecute(const std::shared_ptr<McpCall>& call, const ui::UiFrameInfo
         return;
     }
 
-    if (name == "presets") {
+    if (name == "vdc_presets") {
         const std::string action = a.Str("action"), pname = a.Str("name");
         auto find = [&]() -> int { for (size_t i = 0; i < m_presets.size(); ++i) if (m_presets[i].name == pname) return (int)i; return -1; };
         if (action == "list") {
@@ -858,7 +858,7 @@ void App::McpExecute(const std::shared_ptr<McpCall>& call, const ui::UiFrameInfo
         return;
     }
 
-    if (name == "get_log") {
+    if (name == "vdc_get_log") {
         const int lines = std::clamp(a.Int("lines", 50), 1, 500);
         const std::string level = a.Str("level"), contains = a.Str("contains");
         const int minLevel = level == "error" ? 2 : level == "warn" ? 1 : 0;
@@ -881,7 +881,7 @@ void App::McpExecute(const std::shared_ptr<McpCall>& call, const ui::UiFrameInfo
         return;
     }
 
-    if (name == "window") {
+    if (name == "vdc_window") {
         const std::string action = a.Str("action");
         if (m_headless && action != "sidebar" && action != "library") { call->Fail("the program runs headless: no window"); return; }
         if (action == "show") { if (m_hwnd) { ShowWindow(m_hwnd, IsIconic(m_hwnd) ? SW_RESTORE : SW_SHOW); SetForegroundWindow(m_hwnd); } }
@@ -911,7 +911,7 @@ void App::McpExecute(const std::shared_ptr<McpCall>& call, const ui::UiFrameInfo
         return;
     }
 
-    if (name == "reload") {
+    if (name == "vdc_reload") {
         const std::string what = a.Str("what");
         if (what == "runtime") ev.reloadRuntime = true;
         else if (what == "depth") ev.reloadDepth = true;
@@ -936,7 +936,7 @@ void App::McpBeginPreview(ID3D12GraphicsCommandList* cmd, const DisplayView& dis
     if (p.view == 1) {
         if (!m_device.BeginScreenshot(cmd)) { p.call->Fail("the window could not be read back"); return; }
     } else {
-        if (!display.valid || !display.resource) { p.call->Fail("no picture on screen yet (open a file or wait for=display)"); return; }
+        if (!display.valid || !display.resource) { p.call->Fail("no picture on screen yet (vdc_open a file or vdc_wait for=display)"); return; }
         if (!m_device.BeginReadback(cmd, display.resource, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE, 0, 0, display.width, display.height)) {
             p.call->Fail("the picture could not be read back");
             return;

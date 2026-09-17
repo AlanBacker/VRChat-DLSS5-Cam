@@ -20,3 +20,5 @@ DirectML*.dll
 *.nupkg
 # Local scratch
 *.log
+__pycache__/
+*.pyc

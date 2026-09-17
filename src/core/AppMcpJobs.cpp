@@ -332,7 +332,7 @@ void App::McpSaveJobs() {
         Json outs = Json::Arr();
         for (const std::string& o : j.outputs) outs.Push(o);
         list.Push(Json::Obj()
-            .Set("id", j.id).Set("owner", j.owner).Set("label", j.label).Set("clientRef", j.clientRef)
+            .Set("id", j.id).Set("owner", j.owner).Set("label", j.label).Set("clientRef", j.clientRef).Set("uploadId", j.uploadId)
             .Set("state", StateName(j.state)).Set("folder", WideToUtf8(j.folder)).Set("input", WideToUtf8(j.inputPath)).Set("name", j.inputName)
             .Set("video", j.isVideo).Set("in", j.inSec).Set("out", j.outSec).Set("preset", j.preset).Set("overrides", j.overrides)
             .Set("settings", j.settings ? j.settings->Text() : std::string())
@@ -359,7 +359,7 @@ void App::McpLoadJobs() {
         McpJob j;
         j.id = e.Str("id");
         if (j.id.empty()) continue;
-        j.owner = e.Str("owner"); j.label = e.Str("label"); j.clientRef = e.Str("clientRef");
+        j.owner = e.Str("owner"); j.label = e.Str("label"); j.clientRef = e.Str("clientRef"); j.uploadId = e.Str("uploadId");
         j.state = (McpJob::State)StateFromName(e.Str("state"));
         j.folder = Utf8ToWide(e.Str("folder")); j.inputPath = Utf8ToWide(e.Str("input")); j.inputName = e.Str("name");
         j.isVideo = e.Flag("video"); j.inSec = e.Num("in"); j.outSec = e.Num("out"); j.preset = e.Str("preset");
@@ -689,6 +689,7 @@ Json App::McpJobJson(const McpJob& j, const std::string& host) const {
         .Set("isVideo", j.isVideo).Set("submitted", j.submitted);
     if (!j.label.empty()) out.Set("label", j.label);
     if (!j.clientRef.empty()) out.Set("clientRef", j.clientRef);
+    if (!j.uploadId.empty()) out.Set("uploadId", j.uploadId);
     if (!j.preset.empty()) out.Set("preset", j.preset);
     if (j.overrides.type == Json::Object && !j.overrides.obj.empty()) out.Set("settings", j.overrides);
     if (j.width && j.height) out.Set("width", j.width).Set("height", j.height);
@@ -777,7 +778,7 @@ bool App::McpExecuteJobs(const std::shared_ptr<McpCall>& call, ui::UiEvents& ev)
     auto reply = [&](const Json& j) { call->Json_(j); call->Finish(); };
     auto uploadReply = [&](const McpUpload& u) {
         reply(Json::Obj().Set("uploadId", u.id).Set("name", u.name).Set("bytes", (unsigned long long)u.bytes).Set("expiresAt", u.created + kUploadKeepSeconds)
-              .Set("message", "Uploaded. Pass upload_id to submit within two hours; an unused upload is deleted after that."));
+              .Set("message", "Uploaded. Pass upload_id to vdc_submit within two hours; an unused upload is deleted after that."));
     };
     auto newId = [&]() {
         for (;;) {
@@ -792,7 +793,7 @@ bool App::McpExecuteJobs(const std::shared_ptr<McpCall>& call, ui::UiEvents& ev)
         (void)owner;
     };
 
-    if (name == "upload") {
+    if (name == "vdc_upload") {
         const std::string data = a.Str("data");
         if (data.empty()) { call->Fail("data (base64) is required; larger files go to POST /upload?name=<file name> with the bytes as the body"); return true; }
         if (data.size() > kInlineMax * 4 / 3 + 4) { call->Fail("data is larger than 16 MB: use POST /upload instead", Json::Obj().Set("reason", "too_large")); return true; }
@@ -832,7 +833,7 @@ bool App::McpExecuteJobs(const std::shared_ptr<McpCall>& call, ui::UiEvents& ev)
         return true;
     }
 
-    if (name == "submit") {
+    if (name == "vdc_submit") {
         // The caps first: a refused job costs the client nothing but a short wait.
         int queuedAll = 0, mine = 0;
         for (const McpJob& j : m_mcpJobs) {
@@ -856,7 +857,7 @@ bool App::McpExecuteJobs(const std::shared_ptr<McpCall>& call, ui::UiEvents& ev)
         const std::string uploadId = a.Str("upload_id"), url = a.Str("url"), data = a.Str("data"), pathGiven = a.Str("path");
         const int sources = (int)!uploadId.empty() + (int)!url.empty() + (int)!data.empty() + (int)!pathGiven.empty();
         if (sources != 1) { call->Fail("exactly one of upload_id, url, data or path names the input"); return true; }
-        if (!pathGiven.empty() && caller.role != McpRoleAdmin) { call->Fail("path is for admin keys (a file on the server itself): send the file with upload or url", Json::Obj().Set("reason", "not_allowed")); return true; }
+        if (!pathGiven.empty() && caller.role != McpRoleAdmin) { call->Fail("path is for admin keys (a file on the server itself): send the file with vdc_upload or url", Json::Obj().Set("reason", "not_allowed")); return true; }
         // The input's name decides whether it is a picture or a video.
         std::string inputName;
         const McpUpload* upload = nullptr;
@@ -880,10 +881,11 @@ bool App::McpExecuteJobs(const std::shared_ptr<McpCall>& call, ui::UiEvents& ev)
         // The settings the job runs with: the server's current ones, a preset, then the job's own values.
         auto settings = std::make_shared<Settings>(m_settings);
         const std::string preset = a.Str("preset");
-        if (!preset.empty()) {
+        if (preset == "default") settings->ApplyText(Settings().EffectText());   // the program's default look
+        else if (!preset.empty()) {
             bool found = false;
             for (const ui::UserPreset& pr : m_presets) if (pr.name == preset) { settings->ApplyText(pr.text); found = true; break; }
-            if (!found) { call->Fail("no such preset: " + preset + " (presets list names them)"); return true; }
+            if (!found) { call->Fail("no such preset: " + preset + " (vdc_presets list names them; default is the program's default look)"); return true; }
         }
         Json overrides = Json::Obj();
         if (const Json* o = a.Find("settings")) {
@@ -902,6 +904,7 @@ bool App::McpExecuteJobs(const std::shared_ptr<McpCall>& call, ui::UiEvents& ev)
         job.owner = caller.keyName;
         job.label = a.Str("label").substr(0, 200);
         job.clientRef = a.Str("client_ref").substr(0, 200);
+        job.uploadId = uploadId;
         job.isVideo = isVideo;
         job.inSec = std::max(0.0, a.Num("in", 0.0));
         job.outSec = std::max(0.0, a.Num("out", 0.0));
@@ -968,7 +971,7 @@ bool App::McpExecuteJobs(const std::shared_ptr<McpCall>& call, ui::UiEvents& ev)
         return true;
     }
 
-    if (name == "jobs") {
+    if (name == "vdc_jobs") {
         const std::string action = a.Str("action", "list");
         if (action == "list") { reply(McpJobsJson(caller)); return true; }
         const std::string id = a.Str("id");
@@ -991,7 +994,7 @@ bool App::McpExecuteJobs(const std::shared_ptr<McpCall>& call, ui::UiEvents& ev)
             job->cancelAsked = true;
             if (m_mcpJobRunning == job->id) ev.batchCancel = true;
             Json j = McpJobJson(*job, caller.host);
-            j.Set("message", "Cancelling; jobs wait tells when it has stopped.");
+            j.Set("message", "Cancelling; vdc_jobs wait tells when it has stopped.");
             reply(j);
             return true;
         }
@@ -1021,7 +1024,7 @@ bool App::McpExecuteJobs(const std::shared_ptr<McpCall>& call, ui::UiEvents& ev)
             for (const std::string& o : job->outputs) if (_stricmp(o.c_str(), file.c_str()) == 0) { chosen = o; break; }
             if (chosen.empty() && file == job->inputName) chosen = std::string();   // the input is not served
         }
-        if (chosen.empty()) { call->Fail("no such file in the job (jobs get lists its outputs)"); return true; }
+        if (chosen.empty()) { call->Fail("no such file in the job (vdc_jobs get lists its outputs)"); return true; }
         const std::wstring path = JoinPath(job->folder, Utf8ToWide(chosen));
         if (!FileExists(path)) { call->Fail("the file is gone"); return true; }
         call->Json_(Json::Obj().Set("path", WideToUtf8(path)).Set("name", chosen).Set("type", ""));

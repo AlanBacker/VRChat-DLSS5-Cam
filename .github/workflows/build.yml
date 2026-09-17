@@ -112,6 +112,7 @@ jobs:
             |---|---|
             | NVIDIA GeForce RTX 20 / 30 / 40 / 50 | `VRChatDLSS5Cam-win64.zip` |
             | AMD Radeon RX 7000 / 9000 | `VRChatDLSS5Cam-win64-amd.zip` (Radeon edition / Radeon 版) |
+            | Chat bots on AstrBot / AstrBot 聊天机器人 | `astrbot_plugin_vdc.zip` (the plugin / 插件，见 docs/MCP.md) |
 
             The Radeon edition fetches DLSS-NR-on-AMD's installer for you at the first start; what to expect on Radeon is listed in the README under *AMD Radeon cards*.
             Radeon 版会在首次启动时为你下载 DLSS-NR-on-AMD 的安装器；Radeon 上的预期表现见 README 的 *AMD Radeon 显卡* 一节。
@@ -125,4 +126,6 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "${{ github.ref_name }}" dist/VRChatDLSS5Cam-win64.zip dist-amd/VRChatDLSS5Cam-win64-amd.zip --clobber --repo "${{ github.repository }}"
+        run: |
+          Compress-Archive -Path integrations/astrbot/astrbot_plugin_vdc -DestinationPath dist/astrbot_plugin_vdc.zip -Force
+          gh release upload "${{ github.ref_name }}" dist/VRChatDLSS5Cam-win64.zip dist-amd/VRChatDLSS5Cam-win64-amd.zip dist/astrbot_plugin_vdc.zip --clobber --repo "${{ github.repository }}"

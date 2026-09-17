@@ -1,0 +1,8 @@
+name: astrbot_plugin_vdc
+display_name: VRChat DLSS5 Cam
+short_desc: DLSS 5 neural rendering for the pictures people post, through a VRChat DLSS5 Cam server
+desc: Uploads the pictures and videos people post in a chat to a VRChat DLSS5 Cam MCP server, so the model only has to call vdc_submit with an upload id, and posts the finished results back into the chat by itself. A /vdc command processes a picture without any model at all.
+version: 1.8.1
+author: AlanBacker
+repo: https://github.com/AlanBacker/VRChat-DLSS5-Cam
+astrbot_version: ">=4.16,<5"

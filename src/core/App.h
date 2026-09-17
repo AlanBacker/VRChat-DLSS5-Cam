@@ -354,6 +354,7 @@ private:
         std::string  id;                     // short and random: the client's handle
         std::string  owner;                  // the key's name
         std::string  label, clientRef;       // the client's own notes, echoed back
+        std::string  uploadId;               // the upload it was made from (a chat bridge finds its jobs by it)
         State        state = Queued;
         std::wstring folder;                 // <mcp>\jobs\<id>: the input under in\, the results beside it
         std::wstring inputPath;
