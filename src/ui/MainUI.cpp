@@ -430,6 +430,15 @@ void MainUI::ApplyUndo(Settings& s, const UiFrameInfo& info, UiEvents& ev, bool 
     ImGui::ClearActiveID();
 }
 
+std::vector<std::string> MainUI::HistoryLabels(int& current) const {
+    std::vector<std::string> out;
+    for (const UndoStep& st : m_undo) out.push_back(st.label);
+    current = (int)out.size();
+    out.push_back(m_undoBase.label);
+    for (size_t i = m_redo.size(); i-- > 0;) out.push_back(m_redo[i].label);
+    return out;
+}
+
 // To an entry of the history list: index 0 is the oldest kept state, m_undo.size() the current one, later ones
 // the states undone from.
 void MainUI::GoToHistory(Settings& s, const UiFrameInfo& info, UiEvents& ev, int index) {
@@ -1188,6 +1197,7 @@ void MainUI::DrawSidebar(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
         ImGui::PopStyleVar();
     }
     if (SectionHeader(TR(SecDisplay), "view", false)) { BlockView(s, info, ev); SectionEnd(); }
+    if (SectionHeader(TR(SecMcp), "mcp", false)) { BlockMcp(s, info, ev); SectionEnd(); }
     if (adv > 0.001f) {
         ImGui::PushStyleVar(ImGuiStyleVar_Alpha, style.Alpha * adv);
         if (SectionHeader(TR(SecInternals), "internals", false)) { BlockInternals(s, info, ev); SectionEnd(); }
@@ -1726,6 +1736,63 @@ void MainUI::BlockView(Settings& s, const UiFrameInfo& /*info*/, UiEvents& ev) {
         if (Toggle(TR(Vsync), &s.vsync)) ev.settingsChanged = true;
         if (SliderIntReset(TR(RateLimit), &s.processRateLimit, 0, 240, 0, s.processRateLimit > 0 ? "%d fps" : TR(RateLimitOff), TR(TipRateLimit)))
             ev.settingsChanged = true;
+    }
+    ImGui::Spacing();
+}
+
+// The AI assistant: an MCP server on 127.0.0.1 that lets an assistant work the program through the same actions
+// as this interface. The switch, the port, whether it may change anything, its state and the client configuration.
+void MainUI::BlockMcp(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
+    const Palette& p = Colors();
+    const ImGuiStyle& style = ImGui::GetStyle();
+    Hint(TR(McpHint));
+    if (Toggle(TR(McpEnable), &s.mcpEnabled)) ev.settingsChanged = true;
+    Help(TR(TipMcp));
+    if (SearchMatch(TR(McpPort), TR(TipMcpPort))) {
+        LabelSeen(TR(McpPort));
+        if (ImGui::InputInt(TR(McpPort), &s.mcpPort, 1, 100)) { s.Clamp(); ev.settingsChanged = true; }
+        Tip(TR(TipMcpPort));
+    }
+    if (Toggle(TR(McpReadOnly), &s.mcpReadOnly)) ev.settingsChanged = true;
+    Help(TR(TipMcpReadOnly));
+    if (SearchMatch(TR(McpCopyConfig), TR(TipMcpCopyConfig))) {   // shows with the section's title or its buttons
+        // The state: a badge and the address, then how much the assistant has done.
+        ImGui::Spacing();
+        if (info.mcpRunning) {
+            Pill(TR(McpOn), WithAlpha(p.good, 0.2f), p.good);
+            ImGui::SameLine(0.0f, 6.0f);
+            ImGui::TextWrapped("%s", info.mcpUrl.c_str());
+            if (info.mcpSession && !s.mcpEnabled) ImGui::TextDisabled("%s", TR(McpSessionNote));
+        } else if (!info.mcpError.empty()) {
+            Pill(TR(McpOff), WithAlpha(p.bad, 0.2f), p.bad);
+            ImGui::SameLine(0.0f, 6.0f);
+            ImGui::PushStyleColor(ImGuiCol_Text, p.bad);
+            ImGui::TextWrapped("%s", StrPrintf(TR(McpStartFailedFmt), info.mcpError.c_str()).c_str());
+            ImGui::PopStyleColor();
+        } else {
+            Pill(TR(McpOff), WithAlpha(p.textDim, 0.2f), p.textDim);
+            ImGui::SameLine(0.0f, 6.0f);
+            ImGui::TextDisabled("%s", info.mcpUrl.c_str());
+        }
+        if (info.mcpCalls > 0) {
+            std::string age;
+            if (info.mcpLastAge < 60.0) age = StrPrintf("%.0f s", info.mcpLastAge);
+            else if (info.mcpLastAge < 3600.0) age = StrPrintf("%.0f min", info.mcpLastAge / 60.0);
+            else age = StrPrintf("%.1f h", info.mcpLastAge / 3600.0);
+            ImGui::TextDisabled("%s", StrPrintf(TR(McpCallsFmt), info.mcpCalls, info.mcpLastTool.c_str(), age.c_str()).c_str());
+        } else if (info.mcpRunning) ImGui::TextDisabled("%s", TR(McpNoCalls));
+        ImGui::Spacing();
+        const float fullW = ImGui::GetContentRegionAvail().x;
+        const float halfW = std::floor((fullW - style.ItemSpacing.x) * 0.5f);
+        const ImVec2 half(halfW, 0.0f);
+        if (GhostButton(TR(McpCopyConfig), ImVec2(fullW, 0.0f))) { ImGui::SetClipboardText(info.mcpConfig.c_str()); Toast(TR(McpCopied)); }
+        Tooltip(TR(TipMcpCopyConfig));
+        if (GhostButton(TR(McpCopyUrl), half)) { ImGui::SetClipboardText(info.mcpUrl.c_str()); Toast(TR(McpUrlCopied)); }
+        ImGui::SameLine(0.0f, style.ItemSpacing.x);
+        ImGui::BeginDisabled(!info.mcpRunning);
+        if (GhostButton(TR(McpOpenPage), half)) ev.mcpOpenPage = true;
+        ImGui::EndDisabled();
+        if (GhostButton(TR(Documentation), ImVec2(fullW, 0.0f))) ev.mcpOpenDocs = true;
     }
     ImGui::Spacing();
 }

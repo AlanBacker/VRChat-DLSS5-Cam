@@ -486,9 +486,10 @@ void Pipeline::UnloadNrRuntime(GpuContext& gpu) {
 }
 
 void Pipeline::RequestCapture(const std::wstring& folder, bool keepAlpha, bool saveOriginal, const std::wstring& baseName,
-                              const std::wstring& nameTemplate) {
+                              const std::wstring& nameTemplate, unsigned tag) {
     std::lock_guard<std::mutex> lock(m_captureMutex);
     m_captureRequested = true;
+    m_captureTag = tag;
     m_captureFolder = folder;
     m_captureBase = baseName;
     m_captureName = nameTemplate;
@@ -582,6 +583,7 @@ DisplayView Pipeline::AcquireDisplay(GpuContext& ui) {
     }
     if (m_disp.uiUsing < 0 || !m_displaySrv[m_disp.uiUsing].Valid()) return v;
     v.srv = m_displaySrv[m_disp.uiUsing].gpu;
+    v.resource = m_displayBuf[m_disp.uiUsing].res.Get();
     v.width = m_disp.width;
     v.height = m_disp.height;
     v.wide = m_disp.wide;
@@ -1777,16 +1779,17 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
     if (captureNow) {
         std::wstring captureFolder, captureBase, captureName;
         bool captureKeepAlpha = true, captureOriginal = false;
+        unsigned captureTag = 0;
         {
             std::lock_guard<std::mutex> lock(m_captureMutex);
             captureFolder = m_captureFolder; captureBase = m_captureBase; captureName = m_captureName;
-            captureKeepAlpha = m_captureKeepAlpha; captureOriginal = m_captureOriginal;
+            captureKeepAlpha = m_captureKeepAlpha; captureOriginal = m_captureOriginal; captureTag = m_captureTag;
         }
         // The processed picture and its original share one time stamp; the original is named by the input size.
         SYSTEMTIME now;
         GetLocalTime(&now);
         const std::wstring outPath = Capture::MakeFileName(captureFolder, captureName, captureBase, m_inW, m_inH, m_outW, m_outH, L"", L"png", &now);
-        EnqueueReadback(gpu, cmd, m_final, outPath, captureKeepAlpha);
+        EnqueueReadback(gpu, cmd, m_final, outPath, captureKeepAlpha, false, captureTag);   // the tag rides in the index of a PNG readback
         if (captureOriginal) {
             const std::wstring origPath = Capture::MakeFileName(captureFolder, captureName, captureBase, m_inW, m_inH, m_inW, m_inH, L"_original", L"png", &now);
             EnqueueReadback(gpu, cmd, m_color8, origPath, captureKeepAlpha);
@@ -1877,6 +1880,7 @@ void Pipeline::Update(GpuContext& gpu, Capture& capture, FrameSink* sink) {
             } else {
                 CaptureJob job;
                 job.width = r.w; job.height = r.h; job.rowPitch = r.pitch; job.keepAlpha = r.keepAlpha; job.path = r.path;
+                job.tag = (unsigned)r.index;
                 job.pixels = std::move(pixels);
                 capture.Enqueue(std::move(job));
             }

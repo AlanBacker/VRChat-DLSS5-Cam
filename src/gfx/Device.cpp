@@ -652,12 +652,7 @@ UINT64 Device::EndFrame(bool vsync) {
 // ---------------------------------------------------------------------------
 // Screenshots
 
-bool Device::BeginScreenshot(ID3D12GraphicsCommandList* cmd) {
-    ID3D12Resource* src = CurrentBackBuffer();
-    if (!src || !cmd || m_shotPending) return false;
-    D3D12_RESOURCE_DESC desc = src->GetDesc();
-    UINT64 total = 0;
-    m_device->GetCopyableFootprints(&desc, 0, 1, 0, &m_shotFootprint, nullptr, nullptr, &total);
+bool Device::EnsureShotBuffer(UINT64 total) {
     if (!m_shotBuffer || m_shotBuffer->GetDesc().Width < total) {
         m_shotBuffer.Reset();
         D3D12_HEAP_PROPERTIES hp{};
@@ -673,6 +668,46 @@ bool Device::BeginScreenshot(ID3D12GraphicsCommandList* cmd) {
         if (FAILED(hr)) { Log::Hr(LogLevel::Error, "Screenshot readback buffer", hr); return false; }
         m_shotBuffer->SetName(L"Screenshot readback");
     }
+    return true;
+}
+
+bool Device::BeginReadback(ID3D12GraphicsCommandList* cmd, ID3D12Resource* res, D3D12_RESOURCE_STATES state, UINT x, UINT y, UINT w, UINT h) {
+    if (!res || !cmd || m_shotPending || !w || !h) return false;
+    const D3D12_RESOURCE_DESC desc = res->GetDesc();
+    if (desc.Format != DXGI_FORMAT_R8G8B8A8_UNORM || (UINT64)x + w > desc.Width || y + h > desc.Height) return false;
+    D3D12_PLACED_SUBRESOURCE_FOOTPRINT fp{};
+    fp.Footprint.Format = desc.Format;
+    fp.Footprint.Width = w;
+    fp.Footprint.Height = h;
+    fp.Footprint.Depth = 1;
+    fp.Footprint.RowPitch = (w * 4 + D3D12_TEXTURE_DATA_PITCH_ALIGNMENT - 1) / D3D12_TEXTURE_DATA_PITCH_ALIGNMENT * D3D12_TEXTURE_DATA_PITCH_ALIGNMENT;
+    if (!EnsureShotBuffer((UINT64)fp.Footprint.RowPitch * h)) return false;
+    m_shotFootprint = fp;
+    m_shotWidth = w;
+    m_shotHeight = h;
+    D3D12_TEXTURE_COPY_LOCATION dst{};
+    dst.pResource = m_shotBuffer.Get();
+    dst.Type = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+    dst.PlacedFootprint = fp;
+    D3D12_TEXTURE_COPY_LOCATION from{};
+    from.pResource = res;
+    from.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+    from.SubresourceIndex = 0;
+    const D3D12_BOX box{ x, y, 0, x + w, y + h, 1 };
+    Barrier(cmd, res, state, D3D12_RESOURCE_STATE_COPY_SOURCE);
+    cmd->CopyTextureRegion(&dst, 0, 0, 0, &from, &box);
+    Barrier(cmd, res, D3D12_RESOURCE_STATE_COPY_SOURCE, state);
+    m_shotPending = true;
+    return true;
+}
+
+bool Device::BeginScreenshot(ID3D12GraphicsCommandList* cmd) {
+    ID3D12Resource* src = CurrentBackBuffer();
+    if (!src || !cmd || m_shotPending) return false;
+    D3D12_RESOURCE_DESC desc = src->GetDesc();
+    UINT64 total = 0;
+    m_device->GetCopyableFootprints(&desc, 0, 1, 0, &m_shotFootprint, nullptr, nullptr, &total);
+    if (!EnsureShotBuffer(total)) return false;
     m_shotWidth = (UINT)desc.Width;
     m_shotHeight = desc.Height;
     D3D12_TEXTURE_COPY_LOCATION dst{};

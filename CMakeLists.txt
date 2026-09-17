@@ -85,7 +85,9 @@ set(APP_SOURCES
   src/ngx/DlssFeature.cpp
   src/ui/Theme.cpp
   src/ui/Fonts.cpp
-  src/ui/MainUI.cpp)
+  src/ui/MainUI.cpp
+  src/core/McpServer.cpp
+  src/core/AppMcp.cpp)
 
 # The .manifest source is merged by CMake into the linker-generated manifest (per-monitor DPI, UTF-8 code page).
 add_executable(VRChatDLSS5Cam WIN32 ${APP_SOURCES} resources/app.rc resources/app.manifest)
@@ -103,7 +105,7 @@ target_compile_options(VRChatDLSS5Cam PRIVATE /W4 /MP /utf-8 /permissive- /EHsc 
 target_link_libraries(VRChatDLSS5Cam PRIVATE
   imgui spout ${NGX_STATIC_LIB} ${LIBWEBP_LIBRARIES}
   d3d12 d3d11 dxgi d3dcompiler dxguid windowscodecs mfuuid
-  ole32 shell32 shlwapi user32 gdi32 dwmapi comctl32 advapi32 psapi version winmm winhttp)
+  ole32 shell32 shlwapi user32 gdi32 dwmapi comctl32 advapi32 psapi version winmm winhttp ws2_32)
 set_target_properties(VRChatDLSS5Cam PROPERTIES OUTPUT_NAME "VRChatDLSS5Cam")
 
 # Copy the DLSS super-resolution runtime next to the executable (used by the

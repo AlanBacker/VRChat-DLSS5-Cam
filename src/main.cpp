@@ -6,7 +6,9 @@
 // is appended to %LOCALAPPDATA%\VRChatDLSS5Cam\crash.txt and shown in a
 // message box before the process exits.
 #include "core/App.h"
+#include "core/McpServer.h"
 #include "core/Util.h"
+#include <shellapi.h>
 #if APP_EDITION_AMD
 #include "gfx/FsrHost.h"
 #endif
@@ -261,6 +263,23 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
     // --data-dir moves the log, settings and crash report (automated runs keep the user's own settings untouched).
     const vdc::CommandLine cl = vdc::CommandLine::Parse();
     if (!cl.dataDir.empty()) vdc::SetAppDataDirOverride(cl.dataDir);
+    if (cl.mcp) {
+        // The stdio bridge of an MCP client: no window, the other options travel to the program it may start.
+        wchar_t exe[MAX_PATH * 2] = {};
+        GetModuleFileNameW(nullptr, exe, (DWORD)(sizeof(exe) / sizeof(exe[0])));
+        int argc = 0;
+        LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
+        std::wstring pass;
+        for (int i = 1; argv && i < argc; ++i) {
+            const std::wstring a = argv[i];
+            if (a == L"--mcp") continue;
+            if (a == L"--mcp-port" || a == L"--data-dir") { ++i; continue; }
+            if (!pass.empty()) pass += L' ';
+            pass += a.find(L' ') == std::wstring::npos ? a : L"\"" + a + L"\"";
+        }
+        if (argv) LocalFree(argv);
+        return vdc::McpServer::BridgeMain(exe, cl.mcpPort, cl.dataDir, pass);
+    }
     InstallCrashHandlers();
     return RunGuarded(hInstance, nCmdShow);
 }

@@ -8,6 +8,9 @@
 #include <thread>
 #include <vector>
 
+struct IWICImagingFactory;
+struct IStream;
+
 namespace vdc {
 
 struct CaptureJob {
@@ -17,6 +20,7 @@ struct CaptureJob {
     UINT         rowPitch = 0;
     bool         keepAlpha = false;
     bool         quiet = false;     // a frame of a video sequence: no per-file log line or toast
+    unsigned     tag = 0;           // who asked for it (a library item id), carried into the result
     std::wstring path;
 };
 
@@ -24,6 +28,7 @@ struct CaptureResult {
     std::wstring path;
     bool         ok = false;
     bool         quiet = false;
+    unsigned     tag = 0;
     std::string  error;
     double       seconds = 0.0;
     uint64_t     bytes = 0;
@@ -55,10 +60,13 @@ public:
     // "<folder>\<expanded template>" as the folder of an image sequence, with _2, _3, ... while the name is taken.
     static std::wstring MakeFolderName(const std::wstring& folder, const std::wstring& tmpl, const std::wstring& name, UINT inW, UINT inH,
                                        UINT width, UINT height);
+    // The PNG bytes of a picture, in memory (the MCP preview): the same encoder as the files.
+    static bool EncodePngMemory(const CaptureJob& job, std::vector<uint8_t>& png, std::string& error);
 
 private:
     void WorkerMain();
     static bool EncodePng(const CaptureJob& job, std::string& error, uint64_t& bytes);
+    static bool EncodePngStream(IWICImagingFactory* factory, IStream* stream, const CaptureJob& job, std::string& error);
 
     std::thread                 m_thread;
     mutable std::mutex          m_mutex;

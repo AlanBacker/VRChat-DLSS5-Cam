@@ -284,6 +284,22 @@ the chosen mirror site, is the only network
 access the application ever makes; nothing else is sent anywhere. Headless and `--process` runs never check on their
 own.
 
+## AI assistant (MCP)
+
+An AI assistant that speaks MCP (Claude Desktop, Claude Code, Cursor, ...) can work the program the way you do: open
+files, change every setting, run the library, save captures and look at the preview. Turn on **Run the MCP server**
+in the sidebar's **AI assistant (MCP)** section, or let the client start the program itself with this block in its
+MCP configuration (the path is the installed executable's; the sidebar's **Copy client configuration** button writes
+it for you):
+
+```json
+{ "mcpServers": { "vrchat-dlss5-cam": { "command": "C:\\Path\\To\\VRChatDLSS5Cam.exe", "args": ["--mcp"] } } }
+```
+
+Claude Code: `claude mcp add --transport http vrchat-dlss5-cam http://127.0.0.1:51550/mcp` while the program runs
+with the switch on. The server listens on `127.0.0.1` only and never connects anywhere; **Read only** limits the
+assistant to looking. Every tool is described in [docs/MCP.md](docs/MCP.md).
+
 ## Settings reference
 
 <details>

@@ -158,9 +158,15 @@ struct Settings {
     bool showLog = false;
     bool debugLayer = false;
     bool reopenLast = false;           // open the picture or video of the previous session again at start
+    // AI assistant (McpServer): an assistant drives the program through the same actions as the interface.
+    bool        mcpEnabled = false;    // the server runs whenever the program does
+    int         mcpPort = 51550;       // TCP port on 127.0.0.1
+    bool        mcpReadOnly = false;   // the assistant may look but not change anything
+    std::string mcpToken;              // when set, every request must carry it as a bearer token
 
     bool Load(const std::wstring& path);
     bool Save(const std::wstring& path) const;
+    std::string Text() const;          // the whole settings file as text (what Save writes)
     // Applies one "key=value" pair as found in the settings file (command line --set). False for an unknown key.
     bool Apply(const std::string& key, const std::string& value);
     // wholeFile: the text is a complete settings file (Load), so the migration of old files may run on it.

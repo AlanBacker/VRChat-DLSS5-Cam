@@ -16,6 +16,7 @@
 #include "gfx/ThumbnailAtlas.h"
 #include "ui/Fonts.h"
 #include "ui/MainUI.h"
+#include "core/McpServer.h"
 #include <atomic>
 #include <deque>
 #include <map>
@@ -48,6 +49,8 @@ struct CommandLine {
     std::wstring dataDir;                 // --data-dir <folder>
     bool         afterDeviceLoss = false; // --after-device-loss: started by an instance that lost the graphics device
     double       loseDevice = -1.0;       // --lose-device <seconds> (development: report the device as lost after this long)
+    bool         mcp = false;             // --mcp: the stdio bridge for MCP clients (no window; relays to the running program)
+    int          mcpPort = 0;             // --mcp-port <port>: run the MCP server on this port for this session (the bridge starts the program so)
     std::string  error;                   // the first unknown option
 
     static CommandLine Parse();
@@ -110,6 +113,13 @@ private:
         double       costSecPerFrame = 0.0;      // processing time per frame at costPixels pixels (0 = unknown yet)
         double       costPixels = 0.0;
         bool         costMeasured = false;       // from a file run (frames over wall time) rather than the preview passes
+        unsigned     loadFailures = 0;           // picture/video loads that failed (the MCP open waiter watches it)
+        std::string  loadError;                  // the reason of the last failed load
+        unsigned     videoRuns = 0;              // video runs that ended (the MCP capture waiter watches it)
+        bool         videoLastOk = false;        // how the last video run ended
+        std::string  videoLastOut, videoLastError;
+        UINT64       videoLastFrames = 0;
+        double       videoLastSeconds = 0.0;
     };
     struct Notice { std::string text; bool error = false; };
     struct BatchItem {
@@ -292,6 +302,46 @@ private:
     LibraryItem* FindItem(unsigned id);
     void RequestScreenshot(const std::wstring& path);
 
+    // The MCP server (AppMcp.cpp): the assistant's calls run on the interface thread between the interface's draw
+    // and the handling of its events, so they take the widgets' paths.
+    struct McpWaiter {
+        std::shared_ptr<McpCall> call;
+        int          kind = 0;               // WaitKind
+        std::wstring path;                   // the file waited for
+        bool         video = false;
+        double       deadline = 0.0;
+        unsigned     captureBase = 0;        // m_captureResultsSeen when the wait began
+        unsigned     loadBase = 0;           // m_source.loadFailures when the wait began
+        unsigned     runBase = 0;            // m_source.videoRuns when the wait began
+        bool         started = false;        // the run was seen going
+        double       settleTime = -1.0;      // batch: when the run was first seen finished (the last picture may still be encoding)
+    };
+    struct McpPreview {
+        std::shared_ptr<McpCall> call;
+        int          view = 0;               // 0 = the output picture (display texture), 1 = the window
+        int          maxEdge = 1024;
+        std::wstring saveTo;
+        bool         wide = false;
+        int          compareMode = 0;
+        float        wipe = 0.5f;
+    };
+    void SyncMcp();                                                        // starts or stops the server after the settings
+    void StopMcp();                                                        // at shutdown: the server, and every waiting call fails
+    void FillMcpInfo(ui::UiFrameInfo& info) const;
+    std::string McpConfigText() const;
+    void DrainMcp(const ui::UiFrameInfo& info, ui::UiEvents& ev);
+    void DrainMcpMinimized();
+    void McpExecute(const std::shared_ptr<McpCall>& call, const ui::UiFrameInfo& info, ui::UiEvents& ev);
+    void McpAddWaiter(const std::shared_ptr<McpCall>& call, int kind, double timeout, const std::wstring& path, bool video);
+    void McpCheckWaiters();
+    void McpSetVideoRange(double in, double out);
+    bool McpIdle() const;
+    void McpBeginPreview(ID3D12GraphicsCommandList* cmd, const DisplayView& display);
+    void McpFinishPreview();
+    Json McpStatusJson() const;
+    Json McpSourceJson() const;
+    Json McpLibraryJson() const;
+
     // Processing thread.
     void StartWorker();
     void StopWorker();
@@ -401,6 +451,11 @@ private:
     std::atomic<double> m_uiGpuMsShared{0.0};
     std::atomic<unsigned> m_videoFailures{0};
     std::string       m_workerLastError;   // processing thread: reason of the last failed load
+    unsigned          m_workerLoadFailures = 0;   // processing thread: failed picture/video loads
+    unsigned          m_workerVideoRuns = 0;      // processing thread: video runs that ended
+    bool              m_workerVideoLastOk = false;
+    UINT64            m_workerVideoLastFrames = 0;
+    double            m_workerVideoLastSeconds = 0.0;
     std::string       m_workerLastOut;     // processing thread: name of the last video output
 
     // Interface-thread copies of the shared state.
@@ -436,6 +491,17 @@ private:
     double         m_hoverRequestTime = 0.0;
     bool           m_libraryBatchRunning = false;
     std::wstring   m_overridePath;                // file whose own effect values are merged into the pushed settings
+
+    McpServer      m_mcp;
+    std::mutex     m_mcpMutex;
+    std::deque<std::shared_ptr<McpCall>> m_mcpQueue;   // server threads -> interface thread
+    std::vector<McpWaiter>  m_mcpWaiters;
+    std::vector<McpPreview> m_mcpPreviews;        // asked, not yet recorded
+    McpPreview     m_mcpShot;                     // recorded with the last frame, read back at the next
+    int            m_mcpRunningPort = 0;
+    int            m_mcpSessionPort = 0;          // --mcp-port: serve for this session whatever the setting says
+    double         m_mcpRangeIn = 0.0, m_mcpRangeOut = 0.0, m_mcpRangeTime = -1.0;   // the range just posted (the snapshot follows later)
+    double         m_mcpRetryTime = -1.0;
 };
 
 } // namespace vdc

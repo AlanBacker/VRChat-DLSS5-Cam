@@ -611,6 +611,26 @@ enum class Lang { English = 0, Chinese = 1, Japanese = 2, Korean = 3, Count = 4 
     X(GuideSkip,           "Skip", "跳过", "スキップ", "건너뛰기") \
     X(GuideFinish,         "Finish", "完成", "完了", "완료") \
     X(GuideStepFmt,        "Step %d of %d", "第 %d 步，共 %d 步", "ステップ %d / %d", "%d / %d 단계") \
+    X(SecMcp,             "AI assistant (MCP)", "AI 助手（MCP）", "AI アシスタント（MCP）", "AI 어시스턴트(MCP)") \
+    X(McpHint,            "An AI assistant (Claude, Cursor and other MCP clients) can open files, change the settings, run and save pictures and look at the preview, through the same actions as this window. Nothing leaves this computer: the server listens on 127.0.0.1 only.", "AI 助手（Claude、Cursor 等 MCP 客户端）可以像在此窗口中一样打开文件、修改设置、处理并保存图片、查看预览。一切都在本机进行：服务器只监听 127.0.0.1。", "AI アシスタント（Claude、Cursor などの MCP クライアント）が、このウィンドウと同じ操作でファイルを開き、設定を変え、処理して保存し、プレビューを見られます。すべてこの PC の中で完結し、サーバーは 127.0.0.1 だけで待ち受けます。", "AI 어시스턴트(Claude, Cursor 등 MCP 클라이언트)가 이 창과 같은 동작으로 파일을 열고, 설정을 바꾸고, 처리·저장하고, 미리보기를 볼 수 있습니다. 모든 것은 이 PC 안에서만 이루어지며 서버는 127.0.0.1에서만 수신합니다.") \
+    X(McpEnable,          "Run the MCP server", "运行 MCP 服务器", "MCP サーバーを実行", "MCP 서버 실행") \
+    X(TipMcp,             "The server runs whenever the program does. An assistant started through the bridge (VRChatDLSS5Cam.exe --mcp) starts the program and its server by itself, whatever this switch says.", "程序运行时服务器就一直运行。通过桥接方式（VRChatDLSS5Cam.exe --mcp）接入的助手会自动启动程序和服务器，与此开关无关。", "プログラムの実行中はサーバーも動き続けます。ブリッジ（VRChatDLSS5Cam.exe --mcp）経由のアシスタントは、このスイッチに関わらずプログラムとサーバーを自分で起動します。", "프로그램이 실행되는 동안 서버도 계속 실행됩니다. 브리지(VRChatDLSS5Cam.exe --mcp)로 접속한 어시스턴트는 이 스위치와 관계없이 프로그램과 서버를 스스로 시작합니다.") \
+    X(McpPort,            "Port", "端口", "ポート", "포트") \
+    X(TipMcpPort,         "TCP port on 127.0.0.1 (1024 to 65535). The address is http://127.0.0.1:<port>/mcp.", "127.0.0.1 上的 TCP 端口（1024 到 65535）。地址为 http://127.0.0.1:<端口>/mcp。", "127.0.0.1 の TCP ポート（1024〜65535）。アドレスは http://127.0.0.1:<ポート>/mcp です。", "127.0.0.1의 TCP 포트(1024~65535). 주소는 http://127.0.0.1:<포트>/mcp 입니다.") \
+    X(McpReadOnly,        "Read only", "只读", "読み取り専用", "읽기 전용") \
+    X(TipMcpReadOnly,     "The assistant may look (status, settings, log, preview) but not change anything.", "助手只能查看（状态、设置、日志、预览），不能做任何修改。", "アシスタントは見るだけ（状態、設定、ログ、プレビュー）で、何も変更できません。", "어시스턴트는 보기만 할 수 있고(상태, 설정, 로그, 미리보기) 아무것도 바꿀 수 없습니다.") \
+    X(McpOn,              "Listening", "监听中", "待ち受け中", "수신 대기 중") \
+    X(McpOff,             "Off", "已关闭", "オフ", "꺼짐") \
+    X(McpSessionNote,     "Started for this session by an assistant", "由助手为本次会话启动", "アシスタントがこのセッションのために起動しました", "어시스턴트가 이 세션을 위해 시작함") \
+    X(McpStartFailedFmt,  "Could not start: %s", "无法启动：%s", "開始できません: %s", "시작할 수 없음: %s") \
+    X(McpCallsFmt,        "%u calls, the last %s (%s ago)", "已调用 %u 次，最近：%s（%s 前）", "呼び出し %u 回、最新: %s（%s 前）", "호출 %u회, 최근: %s(%s 전)") \
+    X(McpNoCalls,         "No calls yet", "尚无调用", "呼び出しはまだありません", "아직 호출 없음") \
+    X(McpCopyConfig,      "Copy client configuration", "复制客户端配置", "クライアント設定をコピー", "클라이언트 설정 복사") \
+    X(TipMcpCopyConfig,   "The JSON block for Claude Desktop, Cursor and other clients: paste it into their MCP configuration. Claude Code: claude mcp add --transport http vrchat-dlss5-cam <URL>", "适用于 Claude Desktop、Cursor 等客户端的 JSON 片段：粘贴到它们的 MCP 配置中。Claude Code：claude mcp add --transport http vrchat-dlss5-cam <地址>", "Claude Desktop、Cursor などのクライアント向け JSON ブロック。MCP 設定に貼り付けてください。Claude Code: claude mcp add --transport http vrchat-dlss5-cam <URL>", "Claude Desktop, Cursor 등 클라이언트용 JSON 블록: MCP 설정에 붙여 넣으세요. Claude Code: claude mcp add --transport http vrchat-dlss5-cam <URL>") \
+    X(McpCopied,          "Client configuration copied", "已复制客户端配置", "クライアント設定をコピーしました", "클라이언트 설정을 복사했습니다") \
+    X(McpCopyUrl,         "Copy URL", "复制地址", "URL をコピー", "URL 복사") \
+    X(McpUrlCopied,       "URL copied", "已复制地址", "URL をコピーしました", "URL을 복사했습니다") \
+    X(McpOpenPage,        "Open in the browser", "在浏览器中打开", "ブラウザで開く", "브라우저에서 열기") \
     X(EndOfVideo,         "End", "结束", "終了", "끝")
 
 enum class Str {

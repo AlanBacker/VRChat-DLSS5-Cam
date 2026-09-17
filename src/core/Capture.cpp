@@ -133,6 +133,7 @@ void Capture::WorkerMain() {
         CaptureResult result;
         result.path = job.path;
         result.quiet = job.quiet;
+        result.tag = job.tag;
         result.width = job.width; result.height = job.height;
         const double t0 = NowSeconds();
         result.ok = EncodePng(job, result.error, result.bytes);
@@ -169,10 +170,40 @@ bool Capture::EncodePng(const CaptureJob& job, std::string& error, uint64_t& byt
     hr = factory->CreateStream(&stream);
     if (SUCCEEDED(hr)) hr = stream->InitializeFromFilename(job.path.c_str(), GENERIC_WRITE);
     if (FAILED(hr)) { error = "open file: " + FormatHr(hr); return false; }
+    if (!EncodePngStream(factory.Get(), stream.Get(), job, error)) return false;
+    stream.Reset();
+    bytes = GetFileSizeBytes(job.path);
+    return true;
+}
 
+bool Capture::EncodePngMemory(const CaptureJob& job, std::vector<uint8_t>& png, std::string& error) {
+    png.clear();
+    if (!job.width || !job.height || job.pixels.size() < (size_t)job.rowPitch * job.height) {
+        error = "invalid capture buffer";
+        return false;
+    }
+    ComPtr<IWICImagingFactory> factory;
+    HRESULT hr = CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory));
+    if (FAILED(hr)) { error = "WIC factory: " + FormatHr(hr); return false; }
+    ComPtr<IStream> stream;
+    hr = CreateStreamOnHGlobal(nullptr, TRUE, &stream);
+    if (FAILED(hr)) { error = "memory stream: " + FormatHr(hr); return false; }
+    if (!EncodePngStream(factory.Get(), stream.Get(), job, error)) return false;
+    STATSTG st{};
+    if (FAILED(stream->Stat(&st, STATFLAG_NONAME))) { error = "memory stream size"; return false; }
+    HGLOBAL mem = nullptr;
+    if (FAILED(GetHGlobalFromStream(stream.Get(), &mem)) || !mem) { error = "memory stream handle"; return false; }
+    const uint8_t* p = static_cast<const uint8_t*>(GlobalLock(mem));
+    if (!p) { error = "memory stream lock"; return false; }
+    png.assign(p, p + (size_t)st.cbSize.QuadPart);
+    GlobalUnlock(mem);
+    return true;
+}
+
+bool Capture::EncodePngStream(IWICImagingFactory* factory, IStream* stream, const CaptureJob& job, std::string& error) {
     ComPtr<IWICBitmapEncoder> encoder;
-    hr = factory->CreateEncoder(GUID_ContainerFormatPng, nullptr, &encoder);
-    if (SUCCEEDED(hr)) hr = encoder->Initialize(stream.Get(), WICBitmapEncoderNoCache);
+    HRESULT hr = factory->CreateEncoder(GUID_ContainerFormatPng, nullptr, &encoder);
+    if (SUCCEEDED(hr)) hr = encoder->Initialize(stream, WICBitmapEncoderNoCache);
     if (FAILED(hr)) { error = "PNG encoder: " + FormatHr(hr); return false; }
 
     ComPtr<IWICBitmapFrameEncode> frame;
@@ -218,8 +249,6 @@ bool Capture::EncodePng(const CaptureJob& job, std::string& error, uint64_t& byt
     if (SUCCEEDED(hr)) hr = frame->Commit();
     if (SUCCEEDED(hr)) hr = encoder->Commit();
     if (FAILED(hr)) { error = "PNG write: " + FormatHr(hr); return false; }
-    stream.Reset();
-    bytes = GetFileSizeBytes(job.path);
     return true;
 }
 

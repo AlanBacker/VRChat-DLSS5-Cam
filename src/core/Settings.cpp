@@ -184,6 +184,10 @@ bool Settings::ApplyText(const std::string& data, bool wholeFile) {
     r.Get("showLog", showLog);
     r.Get("reopenLast", reopenLast);
     r.Get("debugLayer", debugLayer);
+    r.Get("mcpEnabled", mcpEnabled);
+    r.Get("mcpPort", mcpPort);
+    r.Get("mcpReadOnly", mcpReadOnly);
+    r.Get("mcpToken", mcpToken);
     Clamp();
     return r.used == keys;
 }
@@ -335,7 +339,7 @@ std::string Settings::EffectText() const {
     return w.out;
 }
 
-bool Settings::Save(const std::wstring& path) const {
+std::string Settings::Text() const {
     Writer w;
     w.out += "# VRChat DLSS5 Cam settings\n";
     w.Put("language", language);
@@ -438,10 +442,18 @@ bool Settings::Save(const std::wstring& path) const {
     w.Put("showLog", showLog);
     w.Put("reopenLast", reopenLast);
     w.Put("debugLayer", debugLayer);
+    w.Put("mcpEnabled", mcpEnabled);
+    w.Put("mcpPort", mcpPort);
+    w.Put("mcpReadOnly", mcpReadOnly);
+    w.Put("mcpToken", mcpToken);
+    return w.out;
+}
 
+bool Settings::Save(const std::wstring& path) const {
+    const std::string text = Text();
     FILE* f = nullptr;
     if (_wfopen_s(&f, path.c_str(), L"wb") != 0 || !f) return false;
-    fwrite(w.out.data(), 1, w.out.size(), f);
+    fwrite(text.data(), 1, text.size(), f);
     fclose(f);
     return true;
 }
@@ -451,6 +463,7 @@ void Settings::Clamp() {
     customWidth = std::clamp(customWidth, 256, 7680);
     customHeight = std::clamp(customHeight, 256, 4320);
     upscaleMode = std::clamp(upscaleMode, 0, 1);
+    mcpPort = std::clamp(mcpPort, 1024, 65535);
     if (nrRuntimeBuild != "blackwell" && nrRuntimeBuild != "universal" && nrRuntimeBuild != "other" && nrRuntimeBuild != "exe") nrRuntimeBuild.clear();
     nrPreset = std::clamp(nrPreset, 0, 3);
     if (sidebarWidth != 0.0f) sidebarWidth = std::clamp(sidebarWidth, 16.0f, 48.0f);

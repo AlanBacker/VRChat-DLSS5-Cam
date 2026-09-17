@@ -102,6 +102,15 @@ struct UiFrameInfo {
     bool                  windowShown = false;      // the main window is on screen (the start-up card has closed)
     std::string           appVersion;
     bool                  prerelease = false;       // the build is marked as a pre-release
+    // The MCP server (the AI assistant's way in): its state for the sidebar section.
+    bool                  mcpRunning = false;
+    bool                  mcpSession = false;         // started for this session by --mcp-port or a bridge (the switch does not stop it)
+    std::string           mcpError;                   // why it is not running
+    std::string           mcpUrl;
+    unsigned              mcpCalls = 0;
+    std::string           mcpLastTool;
+    double                mcpLastAge = -1.0;          // seconds since the last call, -1 = none
+    std::string           mcpConfig;                  // the JSON block for an MCP client's configuration file
     const std::vector<UserPreset>* presets = nullptr;   // the user's presets, in file order
     size_t                capturePending = 0;
     std::string           lastCapture;
@@ -207,6 +216,8 @@ struct UiEvents {
     bool cropEditing = false;        // the crop of the shown file is being drawn: show the whole turned picture
     SourceTransform cropPreview;     // its orientation while that lasts
     bool openDocs = false;           // the documentation in the browser (in the interface's language)
+    bool mcpOpenPage = false;        // the server's information page in the browser
+    bool mcpOpenDocs = false;        // docs/MCP.md in the browser
     // Presets: saved under a name (a new one, or an existing one to replace), renamed, removed.
     bool        presetSave = false;
     std::string presetName;          // presetSave / presetRename: the name to store under
@@ -218,6 +229,11 @@ class MainUI {
 public:
     void Draw(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts);
     void Toast(const std::string& text, bool error = false);
+    // The assistant (App's MCP tools) shares the undo history: an undo or redo like Ctrl+Z / Ctrl+Y, a jump to an
+    // entry of the history list, and the list itself (oldest first, the current entry's index).
+    void ExternalUndo(Settings& s, const UiFrameInfo& info, UiEvents& ev, bool redo) { ApplyUndo(s, info, ev, redo); }
+    void ExternalGoToHistory(Settings& s, const UiFrameInfo& info, UiEvents& ev, int index) { GoToHistory(s, info, ev, index); }
+    std::vector<std::string> HistoryLabels(int& current) const;
 
 private:
     struct ToastItem { std::string text; double time; bool error; };
@@ -246,6 +262,7 @@ private:
     void BlockFsrHost(Settings& s, const UiFrameInfo& info, UiEvents& ev);      // the FSR host rows (Radeon)
     void PortActions(const UiFrameInfo& info, UiEvents& ev, bool portLoaded, bool card);   // DLSS-NR-on-AMD: installer state, restart, buttons
     void BlockInternals(Settings& s, const UiFrameInfo& info, UiEvents& ev);
+    void BlockMcp(Settings& s, const UiFrameInfo& info, UiEvents& ev);         // the AI assistant (MCP server) section
     void BlockAbout(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts);
     void EffectControls(Settings& s, UiEvents& ev, bool advanced, bool enabled, const PipelineStatus* st);   // the DLSS 5 effect controls
     void DrawItemParams(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts);   // a library item's own values

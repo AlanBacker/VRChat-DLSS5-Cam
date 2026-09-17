@@ -230,6 +230,8 @@ CommandLine CommandLine::Parse() {
         else if (a == L"--data-dir") { if (const wchar_t* v = next(i)) cl.dataDir = v; }
         else if (a == L"--after-device-loss") cl.afterDeviceLoss = true;
         else if (a == L"--lose-device") cl.loseDevice = ParseSeconds(next(i));
+        else if (a == L"--mcp") cl.mcp = true;
+        else if (a == L"--mcp-port") { if (const wchar_t* v = next(i)) cl.mcpPort = std::clamp(_wtoi(v), 1024, 65535); }
         else if (!a.empty() && a[0] != L'-' && cl.open.empty() && FileExists(a)) cl.open = a;   // "Open with"
         else if (cl.error.empty()) cl.error = "unknown option " + WideToUtf8(a);
     }
@@ -262,6 +264,12 @@ int App::Run(HINSTANCE hInstance, int nCmdShow) {
             // keep settings persisted and keep capture results flowing into the log.
             MsgWaitForMultipleObjects(0, nullptr, FALSE, 100, QS_ALLINPUT);
             DrainNotices();
+            {
+                std::lock_guard<std::mutex> lock(m_shared.mutex);
+                m_source = m_shared.source;
+            }
+            SyncMcp();
+            DrainMcpMinimized();
             if (m_settingsDirtyTime >= 0.0 && NowSeconds() - m_settingsDirtyTime > 1.0) SaveSettings();
             continue;
         }
@@ -438,6 +446,8 @@ bool App::Init(HINSTANCE hInstance, int nCmdShow) {
     }
     StartWorker();
     if (m_cli.afterDeviceLoss && !m_headless) PostNotice(TR(DeviceRestarted), true);
+    m_mcpSessionPort = m_cli.mcpPort;
+    SyncMcp();
     Log::Info("Startup complete");
 
     m_lastFrameTime = NowSeconds();
@@ -572,6 +582,7 @@ void App::ApplyDpi(float scale) {
 }
 
 void App::Shutdown() {
+    StopMcp();
     if (m_deviceReady && EffectiveRoute() == RouteFsrHost) LogPortState(true);
     m_updater.Cancel();
     m_splash.Close();
@@ -681,6 +692,7 @@ void App::WorkerLoadImage(GpuContext& gpu, const std::wstring& path, bool announ
             PostNotice(StrPrintf("%s: %ux%u", TR(ImageDownscaled), m_image.Width(), m_image.Height()), false);
     } else {
         m_workerLastError = err;
+        ++m_workerLoadFailures;
         Log::Error("Image load failed for %s: %s", WideToUtf8(path).c_str(), err.c_str());
         PostNotice(StrPrintf("%s: %s (%s)", TR(ImageLoadFailed), name.c_str(), err.c_str()), true);
     }
@@ -704,6 +716,7 @@ void App::WorkerLoadVideo(GpuContext& gpu, const std::wstring& path, bool hardwa
                                  vi.fpsDen ? (double)vi.fpsNum / (double)vi.fpsDen : 0.0, vi.durationSeconds), false);
     } else {
         m_workerLastError = err;
+        ++m_workerLoadFailures;
         Log::Error("Video open failed for %s: %s", WideToUtf8(path).c_str(), err.c_str());
         PostNotice(StrPrintf("%s: %s (%s)", TR(VideoLoadFailed), name.c_str(), err.c_str()), true);
     }
@@ -899,6 +912,10 @@ bool App::WorkerEndVideo(GpuContext& gpu, VideoRun& run, FrameSink& sink, bool c
     const double seconds = std::max(NowSeconds() - run.startTime, 1e-3);
     const std::string outName = WideToUtf8(FileNameOf(run.outPath));
     m_workerLastOut = outName;
+    ++m_workerVideoRuns;
+    m_workerVideoLastOk = ok;
+    m_workerVideoLastFrames = run.delivered;
+    m_workerVideoLastSeconds = seconds;
     if (ok) {
         m_workerLastError.clear();
         Log::Info("Video: %llu frames processed in %.1f s (%.1f fps) -> %s", (unsigned long long)run.delivered, seconds,
@@ -1368,8 +1385,9 @@ void App::WorkerMain() {
                     if (estimatorStarting) Log::Warn("Capture: the depth estimator did not start in time, saving without an estimate");
                     depthWaitStart = 0.0;
                     imageCapturePending = false;
+                    const BatchItem* batchItem = batch.active && batch.itemStarted && !batch.itemIsVideo ? currentItem() : nullptr;
                     m_pipeline.RequestCapture(imageCapture.path, imageCapture.keepAlpha, imageCapture.saveOriginal, m_image.Stem(),
-                                              Capture::Template(settings.outputName, false));
+                                              Capture::Template(settings.outputName, false), batchItem ? batchItem->id : 0u);
                 }
             }
             // A batch item is done once its picture has been written.
@@ -1559,6 +1577,14 @@ void App::WorkerMain() {
             SourceInfo info;
             info.mode = mode;
             info.processingFps = processingFps;
+            info.loadFailures = m_workerLoadFailures;
+            info.videoRuns = m_workerVideoRuns;
+            info.videoLastOk = m_workerVideoLastOk;
+            info.videoLastOut = m_workerLastOut;
+            info.videoLastError = m_workerLastError;
+            info.videoLastFrames = m_workerVideoLastFrames;
+            info.videoLastSeconds = m_workerVideoLastSeconds;
+            info.loadError = m_workerLastError;
             {
                 const VideoInfo& vi = m_video.Info();
                 info.videoLoaded = m_video.Loaded();
@@ -1689,9 +1715,9 @@ void App::DrainNotices() {
             m_lastCaptureOk = true;
             m_ui.Toast(StrPrintf("%s: %s (%.1f MB, %.0f ms)", TR(Saved), m_lastCapture.c_str(), cr.bytes / 1048576.0, cr.seconds * 1000.0));
             Log::Info("Saved %s (%llu bytes)", WideToUtf8(cr.path).c_str(), (unsigned long long)cr.bytes);
-            // The picture of a library item being processed.
-            if (LibraryItem* item = FindItem(m_source.batchItemId))
-                if (item->state == LibraryItem::Processing && !item->isVideo) item->outName = m_lastCapture;
+            // The picture of a library item being processed (the item may be marked done already: its event and this result travel apart).
+            if (LibraryItem* item = cr.tag ? FindItem(cr.tag) : nullptr)
+                if (!item->isVideo && (item->state == LibraryItem::Processing || item->state == LibraryItem::Done)) item->outName = m_lastCapture;
         } else {
             m_lastCapture = cr.error;
             m_lastCaptureOk = false;
@@ -1738,6 +1764,8 @@ void App::Frame() {
         m_splash.Close();
     }
 
+    // The assistant's preview recorded with the previous frame.
+    if (m_mcpShot.call) McpFinishPreview();
     // The screenshot recorded with the previous frame.
     if (m_device.ScreenshotPending()) {
         std::vector<uint8_t> rgba;
@@ -1905,6 +1933,8 @@ void App::Frame() {
     if (const LibraryItem* shown = ShownItem()) info.shownItem = shown->id;
     info.appVersion = APP_VERSION_STRING;
     info.prerelease = APP_PRERELEASE != 0;
+    SyncMcp();
+    FillMcpInfo(info);
     info.windowShown = m_mainShown;
     info.presets = &m_presets;
     {
@@ -1959,6 +1989,7 @@ void App::Frame() {
 
     ui::UiEvents ev;
     m_ui.Draw(m_settings, info, ev, m_fonts);
+    DrainMcp(info, ev);
     HandleEvents(ev);
     UpdateTitleBar();
     ImGui::Render();
@@ -1977,6 +2008,7 @@ void App::Frame() {
         else Log::Warn("Screenshot could not be recorded: %s", WideToUtf8(m_pendingScreenshot).c_str());
         m_pendingScreenshot.clear();
     }
+    McpBeginPreview(cmd, display);
     Device::Barrier(cmd, backBuffer, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
     m_device.TimerEnd(cmd, GpuTimer::Ui);
 
@@ -2113,6 +2145,8 @@ void App::RunCommandLineActions() {
         if (m_pendingScreenshot.empty() && !m_device.ScreenshotPending() && m_capture.Pending() == 0) quit("--exit-after reached");
         return;
     }
+    // A headless session an assistant asked for (--mcp-port) stays until --exit-after: the assistant's calls are its task.
+    if (m_headless && !m_cli.process && m_mcpSessionPort > 0) return;
     if ((m_headless || m_cli.process) && screenshotsFlushed && processDone && elapsed >= 1.0) {
         // A headless run without a task still waits for the runtime to load, so the log tells whether it works.
         if (!m_cli.process && m_cli.screenshots.empty() && elapsed < 3.0) return;
@@ -2198,6 +2232,8 @@ void App::HandleEvents(ui::UiEvents& ev) {
 #endif
     }
     if (ev.openDocs) OpenPath(DocsUrl());
+    if (ev.mcpOpenDocs) OpenPath(std::wstring(kProjectUrl) + L"/blob/main/docs/MCP.md");
+    if (ev.mcpOpenPage && m_mcp.Running()) OpenPath(Utf8ToWide("http://127.0.0.1:" + std::to_string(m_mcpRunningPort) + "/"));
     // Presets.
     if (ev.presetSave) {
         const std::string name = Trim(ev.presetName);
@@ -2243,6 +2279,8 @@ void App::HandleEvents(ui::UiEvents& ev) {
         def.sourceMode = m_settings.sourceMode;
         def.imagePath = m_settings.imagePath;
         def.videoPath = m_settings.videoPath;
+        def.mcpEnabled = m_settings.mcpEnabled; def.mcpPort = m_settings.mcpPort;      // the assistant's own connection stays
+        def.mcpReadOnly = m_settings.mcpReadOnly; def.mcpToken = m_settings.mcpToken;
         m_settings = def;
         m_spout.SetRequestedSender(m_settings.senderName);
         m_pipeline.MarkNrDirty();
@@ -3339,6 +3377,14 @@ LRESULT App::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         return 0;
     case WM_HOTKEY:
         if ((int)wParam == kHotkeyId) CaptureNow();
+        return 0;
+    case McpServer::kWakeMessage:
+        // A bridge (VRChatDLSS5Cam.exe --mcp) asks this instance to serve on the port in wParam.
+        if (wParam >= 1024 && wParam <= 65535 && !m_mcp.Running()) {
+            Log::Info("MCP: a bridge asked for the server on port %u", (unsigned)wParam);
+            m_mcpSessionPort = (int)wParam;
+            SyncMcp();
+        }
         return 0;
     case WM_DROPFILES: {
         HDROP drop = reinterpret_cast<HDROP>(wParam);

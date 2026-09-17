@@ -226,6 +226,19 @@ GIF 每帧最多 256 色，帧率最高 50 fps。
 发往 `api.github.com` 的这一请求（以及选择更新后从 `github.com` 下载文件），或经所选镜像站进行的同样操作，是程序唯一的联网行为，
 除此之外不会发送任何内容。无窗口运行与 `--process` 运行不会自动检查更新。
 
+## AI 助手（MCP）
+
+支持 MCP 的 AI 助手（Claude Desktop、Claude Code、Cursor 等）可以像你一样操作程序：打开文件、修改所有设置、处理媒体库、保存图片、
+查看预览。在侧栏的 **AI 助手（MCP）** 区块打开 **运行 MCP 服务器**，或者把下面的片段写进客户端的 MCP 配置，让客户端自己启动程序
+（路径是安装后的可执行文件；侧栏的 **复制客户端配置** 按钮会替你生成）：
+
+```json
+{ "mcpServers": { "vrchat-dlss5-cam": { "command": "C:\\Path\\To\\VRChatDLSS5Cam.exe", "args": ["--mcp"] } } }
+```
+
+Claude Code：程序运行且开关打开时，执行 `claude mcp add --transport http vrchat-dlss5-cam http://127.0.0.1:51550/mcp`。
+服务器只监听 `127.0.0.1`，不会连接任何地方；**只读** 让助手只能查看。所有工具的说明见 [MCP.md](MCP.md)（英文）。
+
 ## 设置说明
 
 <details>

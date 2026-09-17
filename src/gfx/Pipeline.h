@@ -96,6 +96,7 @@ struct DisplayView {
     UINT width = 0, height = 0;
     bool wide = false;          // two pictures side by side (original, output): the interface draws the wipe itself
     bool valid = false;
+    ID3D12Resource* resource = nullptr;   // the texture behind srv (RGBA8, in the pixel-shader-resource state)
 };
 
 class Pipeline {
@@ -143,8 +144,9 @@ public:
     void RetryFsrHost() { m_fsrRetryReq = true; }   // FSR host route: load amd_fidelityfx_dx12.dll again after a failure
     // baseName: empty = timestamped VRChat_DLSS5_... name; else "<baseName>_DLSS5_<w>x<h>.png" (still images).
     // nameTemplate: the file-name template (Capture::Template) the names are built from.
+    // tag: carried into the CaptureResult of the processed picture (a library item id), 0 = none.
     void RequestCapture(const std::wstring& folder, bool keepAlpha, bool saveOriginal, const std::wstring& baseName,
-                        const std::wstring& nameTemplate);
+                        const std::wstring& nameTemplate, unsigned tag = 0);
     bool CapturePending() const;
     void StatusSnapshot(PipelineStatus& out) const;
 
@@ -400,6 +402,7 @@ private:
     std::wstring m_captureName;           // file-name template
     bool         m_captureKeepAlpha = true;
     bool         m_captureOriginal = false;
+    unsigned     m_captureTag = 0;
     std::vector<Readback> m_readbacks;
 
     PipelineStatus     m_status;          // processing thread's working copy
