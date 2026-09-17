@@ -5,7 +5,7 @@
 namespace vdc {
 
 // Enumerations shared by settings, pipeline and UI.
-enum MotionMode  { MotionZero = 0, MotionCompute = 1, MotionNvOpticalFlow = 2 };
+enum MotionMode  { MotionZero = 0, MotionCompute = 1, MotionNvOpticalFlow = 2, MotionFsrFlow = 3 };
 enum DepthMode   { DepthFlat = 0, DepthGradient = 1, DepthZero = 2, DepthEstimated = 3 };
 enum CompareMode { CompareOutput = 0, CompareOriginal = 1, CompareWipe = 2, CompareMotion = 3, CompareDepth = 4 };
 enum FitMode     { FitWindow = 0, FitOneToOne = 1 };
@@ -84,19 +84,24 @@ struct Settings {
     int         nrPassBudgetMp = 0;     // settings file only: starting pixel budget of the neural pass in megapixels (0 = built-in limit)
 
     // Frame guidance (motion vectors / depth)
-    int   motionMode = MotionNvOpticalFlow;   // falls back to block matching when the hardware engine is unavailable
+#if APP_EDITION_AMD
+    int   motionMode = MotionFsrFlow;         // Radeon cards have no hardware engine: this program's own optical flow
+#else
+    int   motionMode = MotionNvOpticalFlow;   // falls back to the FSR optical flow when the hardware engine is unavailable
+#endif
     int   depthMode = DepthEstimated;         // falls back to zero depth when the estimator is unavailable
     int   searchRadius = 7;            // block-matching radius at quarter resolution
     float motionConfidence = 0.35f;    // confidence below which vectors are damped
     int   nvofGrid = 4;                // 4, 2, 1 source pixels between hardware vectors (4 = fastest)
     int   nvofPerf = 10;               // 5 slow, 10 medium, 20 fast
     bool  nvofBidirectional = true;    // forward/backward consistency check
+    bool  flowBidirectional = true;    // the same check for the FSR optical flow (a second search at the finest level)
     int   depthInterval = 4;           // run the depth network every N processed frames (1..10)
     int   depthLongSide = 336;         // network resolution (long side): 252, 336, 420, 518
     std::string depthModelPath;        // UTF-8, empty = <exe folder>\models\depth_anything_v2_small_fp16.onnx
     bool  autoReset = false;           // reset the temporal history on detected scene cuts (DLSS 5 recovers by itself)
     float cutThreshold = 0.10f;
-    int   settingsVersion = 5;         // bumped when defaults change; older files are migrated in Load()
+    int   settingsVersion = 6;         // bumped when defaults change; older files are migrated in Load()
 
     // DLAA pre-pass (DLSS super resolution at native resolution)
     bool dlaaEnabled = false;
@@ -158,7 +163,9 @@ struct Settings {
     bool Save(const std::wstring& path) const;
     // Applies one "key=value" pair as found in the settings file (command line --set). False for an unknown key.
     bool Apply(const std::string& key, const std::string& value);
-    bool ApplyText(const std::string& data);
+    // wholeFile: the text is a complete settings file (Load), so the migration of old files may run on it.
+    // Partial texts (--set, presets, per-file parameters, undo snapshots) must not be migrated.
+    bool ApplyText(const std::string& data, bool wholeFile = false);
     void Clamp();
     // The adjustable values as "key=value" lines, without paths, window placement and interface state: the undo
     // history keeps these snapshots and ApplyText() restores one.

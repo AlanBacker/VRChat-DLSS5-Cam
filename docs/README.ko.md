@@ -27,7 +27,8 @@ VRChat DLSS5 Cam은 VRChat 카메라의 화면에 GeForce RTX에서 NVIDIA **DLS
   GIF, APNG, WebP 애니메이션은 동영상처럼 한 프레임씩 처리되어 각 프레임의 표시 시간을 유지한 채 같은 형식으로 저장됩니다.
 - **일괄 처리.** 불러온 파일은 미리보기 아래 라이브러리에 모이며, 선택한 항목을 한 번에 처리할 수 있습니다.
   공통 파라미터 외에 파일별 개별 파라미터도 지원하고, 처리 전 회전·반전·잘라내기도 적용할 수 있습니다.
-- **진짜 DLSS 5 가이던스.** NVIDIA Optical Flow의 모션 벡터와 Depth Anything V2의 깊이 맵이 네트워크에 전달되므로,
+- **진짜 DLSS 5 가이던스.** NVIDIA Optical Flow 또는 어떤 카드에서도 동작하는 이 앱의 FSR 옵티컬 플로우가 만든 모션 벡터와
+  Depth Anything V2의 깊이 맵이 네트워크에 전달되므로,
   동영상과 실시간 화면이 게임과 동일한 시간적 단서를 갖고 처리됩니다. 앞단에는 DLAA 패스를 선택적으로 넣어
   가장자리를 먼저 정리할 수도 있습니다.
 - **비교와 확인.** 와이프, 나란히 보기, 원본 보기에 더해 휠 확대, 드래그 이동, 전체 화면을 지원하여 처리 전후의
@@ -42,7 +43,7 @@ VRChat DLSS5 Cam은 VRChat 카메라의 화면에 GeForce RTX에서 NVIDIA **DLS
 | | |
 |---|---|
 | Windows | Windows 10 21H2 또는 Windows 11, 64비트 |
-| 그래픽 카드 | NVIDIA GeForce RTX. **RTX 50** 시리즈와 **RTX 40 / 30 / 20** 시리즈에는 각각 맞는 런타임 빌드가 압축 파일에 들어 있어(다음 행 참고) 어느 세대에서도 파일을 따로 준비할 필요가 없습니다. **AMD Radeon RX 7000 / 9000**은 Radeon 에디션(`VRChatDLSS5Cam-win64-amd.zip`)으로 지원합니다. 뉴럴 패스는 별도 프로젝트인 DLSS-NR-on-AMD가 수행하며 앱 안에서 설치할 수 있습니다(*AMD Radeon 카드* 참고). 다른 제조사의 카드도 거부하지 않습니다. 뷰어와 녹화 도구로 동작합니다. DLAA와 하드웨어 옵티컬 플로우는 NVIDIA 전용으로 남으며, 모션은 블록 매칭이 대신합니다. |
+| 그래픽 카드 | NVIDIA GeForce RTX. **RTX 50** 시리즈와 **RTX 40 / 30 / 20** 시리즈에는 각각 맞는 런타임 빌드가 압축 파일에 들어 있어(다음 행 참고) 어느 세대에서도 파일을 따로 준비할 필요가 없습니다. **AMD Radeon RX 7000 / 9000**은 Radeon 에디션(`VRChatDLSS5Cam-win64-amd.zip`)으로 지원합니다. 뉴럴 패스는 별도 프로젝트인 DLSS-NR-on-AMD가 수행하며 앱 안에서 설치할 수 있습니다(*AMD Radeon 카드* 참고). 다른 제조사의 카드도 거부하지 않습니다. 뷰어와 녹화 도구로 동작합니다. DLAA와 하드웨어 옵티컬 플로우는 NVIDIA 전용으로 남지만, 모션은 FSR 옵티컬 플로우가 대신합니다. |
 | DLSS 5 런타임 | 포함. 압축 파일에는 `nvngx_dlssnr.dll` 310.8.0.0이 두 가지 빌드로 들어 있습니다. `runtimes\blackwell\`은 게임에 실리는 그대로의 빌드(RTX 50), `runtimes\universal\`은 같은 런타임을 커뮤니티가 RTX 40 / 30 / 20용으로 적합화한 빌드입니다. 시작할 때 설치된 카드에 맞는 빌드가 선택되고, 실패하면 다른 빌드를 시도합니다. 두 파일 모두 NVIDIA의 소프트웨어이며 NVIDIA의 약관을 따릅니다. 이 프로젝트의 MIT 라이선스 소스에는 포함되지 않습니다(`THIRD_PARTY_NOTICES.md` 참고). 다른 곳에서 구할 파일은 없습니다. |
 | VRChat | Stream 카메라에 *Spout Stream* 옵션이 있는 모든 빌드(데스크톱 또는 VR). 실시간 카메라에만 필요합니다. |
 | 동영상 파일 | Windows Media Foundation(Windows에 포함). N / KN 에디션은 *Media Feature Pack*이 필요하며, HEVC 파일은 Microsoft Store의 *HEVC 비디오 확장*이 필요할 수 있습니다. GIF, APNG, WebP 애니메이션에는 추가 구성 요소가 필요 없습니다. 애플리케이션이 직접 디코딩하고 저장합니다. |
@@ -121,8 +122,10 @@ Radeon 에디션은 RX 9060 XT에서 실행을 확인했습니다(720p와 4K 정
 - **느린 점.** DLSS-NR-on-AMD는 네트워크를 inline으로 실행하고 프레임은 그 완료를 기다립니다. RX 9060 XT에서 720p는 약 25 ms, 4K는 약 180 ms라
   4K 실시간 화면은 초당 몇 프레임이 됩니다. *뉴럴 패스 해상도*의 *최대 해상도* 상한과 *처리 속도 상한*으로 실시간 화면을 부드럽게 유지할 수
   있습니다. 저장되는 사진과 동영상의 결과는 같고 시간만 더 걸립니다.
-- **하드웨어 옵티컬 플로우 없음.** 옵티컬 플로우 엔진은 GeForce 드라이버의 것입니다. Radeon에서는 모션 벡터가 GPU 블록 매칭에서 나오며 빠른
-  움직임에서는 더 거칩니다. *프레임 가이던스* 아래의 상태 점이 이를 표시합니다.
+- **하드웨어 엔진 대신 FSR 옵티컬 플로우.** 옵티컬 플로우 엔진은 GeForce 드라이버의 것이고 Radeon에는 대응하는 것이 없습니다. 1.8.0부터
+  모션 벡터는 FSR 옵티컬 플로우가 제공합니다. AMD FidelityFX SDK의 옵티컬 플로우(MIT)와 같은 모양을 한, 이 앱 자체의 컴퓨트 패스
+  피라미드입니다. 단순한 블록 매칭보다 빠른 움직임을 훨씬 잘 따라가고 벡터를 양방향으로 검사합니다. Radeon 에디션은 이것을 기본으로
+  사용하며, *프레임 가이던스*의 *검색 반경*과 양방향 검사로 GPU 시간과 품질을 조절할 수 있습니다.
 - **강도와 프리셋.** 이 포트는 *프리셋*, *스타일*, 1까지의 강도를 자체 오버레이(**End** 키)에서 보관합니다(위 참고).
   그래서 여기서 그 슬라이더를 움직이면 기존 결과를 바로 다시 합성할 뿐(1을 넘는 값은 합성에서 반영됩니다) 이미지를 패스에 다시 통과시키지 않습니다.
   Radeon에서는 그 작업이 4K 기준 약 4초가 걸리는데 그림은 달라지지 않기 때문입니다.
@@ -132,9 +135,6 @@ Radeon 에디션은 RX 9060 XT에서 실행을 확인했습니다(720p와 4K 정
   앞서 4K 일괄 처리에서 본 한 프레임 3초 멈춤(포트 로그의 watchdog spike)도 같은 겹침이었습니다.
 - **유휴 부하.** 이미지가 패스를 마치면 GPU는 유휴 상태가 됩니다(RX 9060 XT에서 약 2 %, GeForce와 같음). 다만 첫 신경망 패스부터 프로그램을 닫을 때까지
   CPU 코어 하나가 계속 바쁩니다. DLSS-NR-on-AMD의 스레드가 GPU를 전속력으로 폴링하기 때문입니다(inline 모드). 이 스레드는 포트의 것이며 FSR 컨텍스트를 해제해도 멈추지 않습니다.
-
-**예정:** 이 앱 자체의 옵티컬 플로우 패스. AMD FidelityFX SDK의 옵티컬 플로우(MIT)를 이식해 Radeon에서는 블록 매칭을 대체하고 GeForce에서는
-두 번째 소스로 씁니다.
 
 ## 이미지와 동영상 파일
 
@@ -290,7 +290,7 @@ GitHub가 느리거나 닿지 않는 지역(예: 중국 본토)에서는 같은 
 | DLSS 5 | 뉴럴 패스 해상도 | 뉴럴 패스의 실행 크기: 전체 화면, 긴 변 제한(8K 같은 큰 소스를 고정된 더 작은 크기로 처리) 또는 화면의 비율. 줄여서 실행하면 그 변화를 전체 해상도 화면에 업샘플해 더합니다. 낮을수록 GPU 부하가 줄지만 가장 미세한 디테일은 사라집니다. |
 | 촬영 | 저장 폴더 / 파일 이름 / 투명도(알파) 유지 / 원본 프레임도 저장 / 전역 단축키 / 자동 촬영 간격 | 사진과 동영상을 어디에 어떻게 저장할지. 파일 이름은 템플릿으로 만들어집니다: `{name}`(원본 파일 이름, 실시간 촬영에서는 *VRChat*), `{date}`, `{time}`, `{size}`, `{width}`, `{height}`, `{insize}`, `{inwidth}`, `{inheight}`. 나머지 글자는 그대로 쓰이고, 같은 이름이 있으면 `_2`, `_3`…이 붙습니다. 기본값은 실시간 촬영이 `VRChat_DLSS5_{date}_{time}_{size}`, 처리된 사진과 동영상이 `{name}_DLSS5_{size}`입니다. |
 | 촬영 | 예상 처리 시간 | 현재 설정으로 열린 이미지나 동영상을 처리하는 데 걸리는 대략적인 시간. 처리할 때마다 보정됩니다. |
-| 프레임 가이던스 | 모션 벡터 | NVIDIA Optical Flow(정방향/역방향 일관성 검사 포함), GPU 블록 매칭, 또는 없음. |
+| 프레임 가이던스 | 모션 벡터 | NVIDIA Optical Flow(정방향/역방향 일관성 검사 포함), FSR 옵티컬 플로우(이 앱 자체의 컴퓨트 패스 피라미드. 어떤 카드에서도 동작하며 자체 검색 반경과 일관성 검사를 가집니다), GPU 블록 매칭, 또는 없음. |
 | 프레임 가이던스 | 깊이 | AI 추정(DirectML의 Depth Anything V2 Small, 갱신 간격과 네트워크 해상도 조정 가능), 평면, 그라데이션, 또는 0. |
 | 프레임 가이던스 | 장면 전환 시 자동 초기화 | 장면 전환 시 시간 이력을 지웁니다. 기본값은 꺼짐. |
 | DLAA 프리패스 | 사용 / 프리셋 | 뉴럴 렌더링 전 네이티브 해상도에서의 선택적 DLSS 안티앨리어싱 패스. DLSS 초해상도가 적용 중이면 이 패스를 이미 포함합니다. 프리셋은 둘 다에 적용됩니다. |
@@ -320,7 +320,7 @@ GitHub가 느리거나 닿지 않는 지역(예: 중국 본토)에서는 같은 
 - **앱이 시작되지 않음 / 바로 종료됨** – `%LOCALAPPDATA%\VRChatDLSS5Cam\`에 `log.txt`(마지막 줄이 실패한 단계)와 `crash.txt`가 있습니다. 이슈에는 두 파일을 함께 첨부하면 됩니다.
 - **NGX 초기화 안 됨 / DLAA 지원 안 됨** – NGX 런타임에는 NVIDIA GPU와 최신 드라이버가 필요합니다. DLSS 5는 *직접(signed snippet)* 방식으로 계속 동작합니다.
 - **깊이 추정기 사용 불가** – `onnxruntime.dll`, `onnxruntime_providers_shared.dll`, `DirectML.dll`, `models\depth_anything_v2_small_fp16.onnx`가 실행 파일 옆에 있어야 합니다(모두 릴리스 패키지에 포함). 추정기가 준비될 때까지는 0 깊이가 사용되며, 상태는 *프레임 가이던스* 아래에 표시됩니다.
-- **옵티컬 플로우 사용 불가** – Radeon 카드에서는 예상된 동작입니다. 옵티컬 플로우 엔진은 GeForce 드라이버의 일부이고 Radeon에는 대응하는 엔진이 없어 블록 매칭이 사용되며, *프레임 가이던스* 아래의 상태 점이 이를 표시합니다. GeForce 카드에서 `log.txt`에 "NVOF unavailable, falling back to block matching"이 보이면 GeForce 드라이버 업데이트가 필요합니다. 그때까지는 블록 매칭이 사용됩니다.
+- **옵티컬 플로우 사용 불가** – Radeon 카드에서는 예상된 동작입니다. 옵티컬 플로우 엔진은 GeForce 드라이버의 일부이고 Radeon에는 대응하는 엔진이 없어 FSR 옵티컬 플로우가 사용되며, *프레임 가이던스* 아래의 상태 점이 이를 표시합니다. GeForce 카드에서 `log.txt`에 "NVOF unavailable, falling back to the FSR optical flow"가 보이면 GeForce 드라이버 업데이트가 필요합니다. 그때까지는 FSR 옵티컬 플로우가 사용됩니다.
 - **동영상 미리보기가 검게 보임** – 많은 영상이 검은 화면에서 페이드인으로 시작합니다. 미리보기는 그런 프레임을 건너뛰고, 표시 중인 프레임이 여전히 어두우면 화면 아래에 알려 줍니다. 탐색 바나 화살표 키로 앞으로 이동하면 해결됩니다.
 - **동영상 파일이 열리지 않음 / 인코더 없음** – 지원 형식은 Windows에 설치된 코덱에 따라 다릅니다. HEVC 파일에는 *HEVC 비디오 확장*(Microsoft Store)이, Windows N / KN에는 *Media Feature Pack*이 필요합니다. H.264 인코더가 없으면 출력으로 *PNG 시퀀스*를 고를 수 있습니다. GPU 디코더가 거부하는 파일은 *하드웨어 디코딩*을 끄면 도움이 됩니다.
 - **낮은 프레임률** – DLAA를 끄거나, 깊이 갱신 간격을 늘리거나 깊이 네트워크 해상도를 낮추거나, 뉴럴 패스 해상도를 낮추거나, 처리 속도 상한을 설정합니다. 옵티컬 플로우 그리드는 4 px로 두는 편이 좋습니다(2 px와 1 px는 4K에서 훨씬 무겁습니다). 로그에는 15초마다 각 단계의 비용이 담긴 `Perf:` 줄이 기록됩니다.
@@ -360,7 +360,7 @@ AMD의 GitHub 저장소에서 내려받습니다. `-DAPP_EDITION_AMD=ON`은 Rade
 
 ```
 VRChat Stream Camera ──Spout──▶ D3D11on12 receive ──▶ convert (sRGB / resize)
-      ▶ NVIDIA Optical Flow (forward + backward) / block matching ──▶ motion vectors + confidence
+      ▶ NVIDIA Optical Flow (forward + backward) / FSR optical flow (pyramid, both directions) / block matching ──▶ motion vectors + confidence
       ▶ Depth Anything V2 (ONNX Runtime DirectML, every N frames) ──▶ normalized depth, reprojected in between
       ▶ [DLSS SR / DLAA] ──▶ DLSSNR (nvngx_dlssnr.dll) ──▶ composite / compare ──▶ preview + PNG capture
 Video file ──Media Foundation──▶ decode (GPU) ──▶ same pipeline, one frame at a time ──▶ MP4 (H.264 / HEVC + AAC) or PNG sequence
@@ -377,6 +377,12 @@ Animated GIF / APNG / WebP ──WIC / libwebp──▶ decode ──▶ same pi
 모두 독립적인 MIT 구현입니다(`src/gfx/Pipeline.cpp`, `src/gfx/DepthEstimator.cpp`, `src/gfx/Shaders.cpp`).
 옵티컬 플로우 엔진은 전용 네이티브 D3D11 장치에서 실행되며, 프레임과 벡터는 공유 펜스로 순서가 보장되는 NT 핸들
 공유 텍스처를 통해 D3D12로 넘어갑니다(`src/gfx/NvOpticalFlow.cpp`).
+
+FSR 옵티컬 플로우는 이 앱 자체의 것이며 엔진이 필요 없습니다. 휘도 피라미드의 가장 거친 층이 큰 움직임을 찾고, 아래의 각 층은
+물려받은 벡터와 이웃의 벡터를 함께 시도한 뒤 가장 좋은 것 주변을 다듬으며, 층 사이에서는 벡터 전체에 대한 중앙값 필터가 돌고,
+가장 미세한 층은 반대 방향으로 한 번 더 탐색되어 되돌아오지 않는 벡터는 신뢰도를 잃습니다. 피라미드는 화면 크기에 따라 깊어지고,
+한 층마다 따라갈 수 있는 움직임이 두 배가 됩니다. 모양은 AMD FidelityFX SDK의 옵티컬 플로우(MIT)를 따르고, 패스는 모두 이 앱
+자체의 셰이더입니다(`src/gfx/Shaders.cpp`, `src/gfx/Pipeline.cpp`).
 
 Radeon 카드에서는 FSR 호스트 방식(`src/gfx/FsrHost.cpp`)이 DLSS 5 기능의 자리를 대신합니다. FidelityFX API의 FSR 3.1 업스케일링
 컨텍스트가 같은 색·깊이·모션 입력으로 원본 크기에서 실행되고, 별도 프로그램인 DLSS-NR-on-AMD가 바깥에서 그 컨텍스트에 붙어 출력에

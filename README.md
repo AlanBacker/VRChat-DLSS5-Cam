@@ -28,7 +28,8 @@ as a batch. It is an ordinary Windows application: the VRChat process is never t
 - **Batch processing.** Every file that is opened is collected in the library below the preview. Any selection can
   be processed in a single run, either with the shared parameters or with per-file parameters, and each file can be
   turned, mirrored or cropped beforehand.
-- **Real DLSS 5 guidance.** Motion vectors from NVIDIA Optical Flow and a depth map from Depth Anything V2 are
+- **Real DLSS 5 guidance.** Motion vectors from NVIDIA Optical Flow, or from the FSR optical flow of this program on any
+  card, and a depth map from Depth Anything V2 are
   supplied to the network, so video and the live camera are processed with the same temporal cues a game would
   provide. An optional DLAA pass can clean up edges first.
 - **Comparison and inspection.** Wipe, side-by-side and original views, wheel zoom, drag panning and a fullscreen
@@ -43,7 +44,7 @@ as a batch. It is an ordinary Windows application: the VRChat process is never t
 | | |
 |---|---|
 | Windows | Windows 10 21H2 or Windows 11, 64-bit |
-| Graphics card | NVIDIA GeForce RTX. The **RTX 50** series and the **RTX 40 / 30 / 20** series each have a build of the runtime in the archive (next row), so nothing has to be added for any of them. **AMD Radeon RX 7000 / 9000** with the Radeon edition (`VRChatDLSS5Cam-win64-amd.zip`), which runs the neural pass through DLSS-NR-on-AMD, a separate project installed from the application (see *AMD Radeon cards*). Cards from other vendors are not refused: the application works as a viewer and recorder on them. DLAA and the hardware optical flow stay NVIDIA-only, and block matching takes over as the motion source. |
+| Graphics card | NVIDIA GeForce RTX. The **RTX 50** series and the **RTX 40 / 30 / 20** series each have a build of the runtime in the archive (next row), so nothing has to be added for any of them. **AMD Radeon RX 7000 / 9000** with the Radeon edition (`VRChatDLSS5Cam-win64-amd.zip`), which runs the neural pass through DLSS-NR-on-AMD, a separate project installed from the application (see *AMD Radeon cards*). Cards from other vendors are not refused: the application works as a viewer and recorder on them. DLAA and the hardware optical flow stay NVIDIA-only; the FSR optical flow takes over as the motion source. |
 | DLSS 5 runtime | Included. The archive carries `nvngx_dlssnr.dll` 310.8.0.0 in two builds: `runtimes\blackwell\` holds the build as shipped with games (RTX 50) and `runtimes\universal\` a community-adapted build of the same runtime for RTX 40 / 30 / 20. The build for the installed card is chosen at start and the other is tried when it fails. Both files are NVIDIA's software under NVIDIA's terms and are not part of this project's MIT-licensed source (see `THIRD_PARTY_NOTICES.md`); nothing has to be obtained from anywhere else. |
 | VRChat | Any build with the Stream Camera *Spout Stream* option (desktop or VR). Required for the live camera only. |
 | Video files | Windows Media Foundation (part of Windows). The N / KN editions require the *Media Feature Pack*; HEVC files may require the *HEVC Video Extensions* from the Microsoft Store. Animated GIF, APNG and WebP files need nothing extra: the application decodes and writes them itself. |
@@ -128,8 +129,11 @@ log (`dlssnr_on_amd.log` in the program folder); reports with it are welcome in 
 - **Slower.** DLSS-NR-on-AMD runs its network inline and the frame waits for it: about 25 ms at 720p and 180 ms at 4K on the RX 9060 XT,
   so a 4K live picture reaches a few frames per second. A *Maximum resolution* cap under *Neural pass resolution* and the *Processing rate
   cap* keep the live picture fluid; saved pictures and videos come out the same, only later.
-- **No hardware optical flow.** The optical flow engine belongs to the GeForce driver; on Radeon the motion vectors come from GPU block
-  matching, which is coarser in fast motion. The status dot under *Frame guidance* says so.
+- **FSR optical flow in place of the hardware engine.** The optical flow engine belongs to the GeForce driver and has no
+  counterpart on Radeon. Since 1.8.0 the motion vectors come from the FSR optical flow instead, a pyramid of compute
+  passes of this program's own in the shape of the optical flow of the AMD FidelityFX SDK (MIT): it follows fast motion
+  far better than plain block matching and checks its vectors in both directions. It is what the Radeon edition starts
+  with, and *Search radius* and the bidirectional check under *Frame guidance* trade its GPU time against quality.
 - **Strengths and presets.** The port keeps its own *Preset*, *Style* and strengths up to 1, set in its overlay (**End** key), as described above.
   Moving those sliders here therefore composites the existing result at once (values above 1 take effect in the composite) instead of
   running the picture through its passes again, which on a Radeon costs about four seconds at 4K for no change in the picture.
@@ -141,9 +145,6 @@ log (`dlssnr_on_amd.log` in the program folder); reports with it are welcome in 
 - **Idle load.** Once a picture has run its passes the card idles (about 2 % on the RX 9060 XT, the same as on a GeForce). One CPU
   core, though, stays busy from the first neural pass until the program closes: a thread of DLSS-NR-on-AMD polls the card at full
   speed (its inline mode). That thread belongs to the port; releasing the FSR context does not end it.
-
-**Planned:** an optical flow pass of this program's own, ported from the optical flow of the AMD FidelityFX SDK (MIT), to replace block
-matching on Radeon and to serve as a second source on GeForce.
 
 ## Images and video files
 
@@ -311,7 +312,7 @@ own.
 | DLSS 5 | Neural pass resolution | Sizes the neural pass: the full picture, a cap on its long edge (a large source, for example 8K, is processed at a fixed, smaller size) or a percentage of the picture. A reduced pass has its change upsampled onto the full-resolution picture; lower values cut the GPU load at the cost of the finest detail. |
 | Capture | Folder / File name / Keep alpha / Also save the original / Hotkey / Time-lapse | Where and how photos and videos are saved. The file name comes from a template: `{name}` (the source file's name, *VRChat* for a live capture), `{date}`, `{time}`, `{size}`, `{width}`, `{height}`, `{insize}`, `{inwidth}`, `{inheight}`; anything else is kept as typed, and a name already taken gets `_2`, `_3`, … Live captures default to `VRChat_DLSS5_{date}_{time}_{size}`, processed pictures and videos to `{name}_DLSS5_{size}`. |
 | Capture | Estimated time | Rough processing time of the open image or video with the current settings, refined by every run. |
-| Frame guidance | Motion vectors | NVIDIA Optical Flow (with a forward/backward consistency check), GPU block matching, or none. |
+| Frame guidance | Motion vectors | NVIDIA Optical Flow (with a forward/backward consistency check), the FSR optical flow (this program's own pyramid of compute passes, on any card, with its own search radius and consistency check), GPU block matching, or none. |
 | Frame guidance | Depth | AI estimated (Depth Anything V2 Small on DirectML; update interval and network resolution adjustable), flat, gradient, or zero. |
 | Frame guidance | Auto reset | Clears the temporal history on scene cuts. Off by default. |
 | DLAA pre-pass | Enable / Preset | Optional DLSS anti-aliasing pass at native resolution before neural rendering. While DLSS super resolution is in effect it already includes this pass; the preset applies to both. |
@@ -341,7 +342,7 @@ Command-line options (open files, process unattended, screenshots, headless runs
 - **The application does not start / closes immediately** – `%LOCALAPPDATA%\VRChatDLSS5Cam\` holds `log.txt` (its last line is the step that failed) and `crash.txt`. Both files belong in the issue report.
 - **NGX not initialized / DLAA unsupported** – the NGX runtime needs an NVIDIA GPU and a current driver. DLSS 5 still works through the *Signed snippet* route.
 - **Depth estimator unavailable** – `onnxruntime.dll`, `onnxruntime_providers_shared.dll`, `DirectML.dll` and `models\depth_anything_v2_small_fp16.onnx` must sit next to the executable (all are in the release package). Until the estimator is ready the application uses zero depth; its state is shown under *Frame guidance*.
-- **Optical flow unavailable** – on a Radeon card this is expected: the optical flow engine is part of the GeForce driver and has no counterpart on Radeon, so block matching is used and the status dot under *Frame guidance* says so. On a GeForce card, when `log.txt` says "NVOF unavailable, falling back to block matching", the GeForce driver needs an update; block matching is used until then.
+- **Optical flow unavailable** – on a Radeon card this is expected: the optical flow engine is part of the GeForce driver and has no counterpart on Radeon, so the FSR optical flow is used and the status dot under *Frame guidance* says so. On a GeForce card, when `log.txt` says "NVOF unavailable, falling back to the FSR optical flow", the GeForce driver needs an update; the FSR optical flow is used until then.
 - **The video preview is black** – many films start with a fade from black; the preview skips those frames and says so under the picture while the frame on show is still dark. Seeking forward with the bar or the arrow keys moves past them.
 - **Video file does not open / no encoder available** – the formats depend on the codecs installed in Windows. HEVC files need the *HEVC Video Extensions* (Microsoft Store), and Windows N / KN needs the *Media Feature Pack*. When the H.264 encoder is missing, *PNG sequence* is the alternative output. Switching *Hardware decoding* off helps with files the GPU decoder rejects.
 - **Low frame rate** – switch DLAA off, raise the depth update interval or lower the depth network resolution, lower the neural pass resolution, or set a processing rate cap. The optical-flow grid is best left at 4 px (2 px and 1 px cost far more at 4K). The log prints a `Perf:` line every 15 s with the cost of each stage.
@@ -381,7 +382,7 @@ part of the build: the release workflow places its two builds into the archives 
 
 ```
 VRChat Stream Camera ──Spout──▶ D3D11on12 receive ──▶ convert (sRGB / resize)
-      ▶ NVIDIA Optical Flow (forward + backward) / block matching ──▶ motion vectors + confidence
+      ▶ NVIDIA Optical Flow (forward + backward) / FSR optical flow (pyramid, both directions) / block matching ──▶ motion vectors + confidence
       ▶ Depth Anything V2 (ONNX Runtime DirectML, every N frames) ──▶ normalized depth, reprojected in between
       ▶ [DLSS SR / DLAA] ──▶ DLSSNR (nvngx_dlssnr.dll) ──▶ composite / compare ──▶ preview + PNG capture
 Video file ──Media Foundation──▶ decode (GPU) ──▶ same pipeline, one frame at a time ──▶ MP4 (H.264 / HEVC + AAC) or PNG sequence
@@ -398,6 +399,13 @@ percentile) to inverted relative depth and carried along the motion vectors betw
 history resets. Everything is an independent MIT implementation (`src/gfx/Pipeline.cpp`, `src/gfx/DepthEstimator.cpp`,
 `src/gfx/Shaders.cpp`). The optical flow engine runs on a private native D3D11 device; frames and vectors cross to
 D3D12 through NT-handle shared textures ordered by a shared fence (`src/gfx/NvOpticalFlow.cpp`).
+
+The FSR optical flow is this program's own and needs no engine: the coarsest level of a luma pyramid searches for the
+large motion, every level below tries the vectors it inherits together with those of its neighbours and refines around
+the best, a median over whole vectors runs between the levels, and the finest level is searched once more in the
+opposite direction so that vectors which do not lead back lose their confidence. The pyramid grows with the picture,
+so each level doubles the motion the search can still follow. Its shape follows the optical flow of the AMD FidelityFX
+SDK (MIT); the passes are this program's own shaders (`src/gfx/Shaders.cpp`, `src/gfx/Pipeline.cpp`).
 
 On a Radeon card the FSR host route (`src/gfx/FsrHost.cpp`) takes the place of the DLSS 5 feature: an FSR 3.1 upscaling
 context of the FidelityFX API runs at native size with the same colour, depth and motion inputs, and DLSS-NR-on-AMD, a

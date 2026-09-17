@@ -8,7 +8,7 @@
 namespace vdc {
 
 namespace {
-constexpr float kLambda[3] = { 0.0010f, 0.0015f, 0.0020f };   // motion penalty per level
+constexpr float kLambda[] = { 0.0010f, 0.0015f, 0.0020f, 0.0025f, 0.0030f, 0.0035f };   // motion penalty per level
 constexpr float kMotionViewScale = 1.0f / 16.0f;
 constexpr size_t kMaxReadbacks = 6;
 
@@ -131,8 +131,9 @@ void Pipeline::ReleaseResources(GpuContext& gpu, bool shutdown) {
     ReleaseTex(gpu, m_color8);
     for (auto& set : m_luma) for (auto& t : set) ReleaseTex(gpu, t);
     ReleaseTex(gpu, m_nvofIn);
-    for (int i = 0; i < 3; ++i) { ReleaseTex(gpu, m_bm[i]); ReleaseTex(gpu, m_bc[i]); }
+    for (int i = 0; i < kMaxLevels; ++i) { ReleaseTex(gpu, m_bm[i]); ReleaseTex(gpu, m_bc[i]); ReleaseTex(gpu, m_bmFilt[i]); }
     for (auto& t : m_bmMed) ReleaseTex(gpu, t);
+    ReleaseTex(gpu, m_bmBack); ReleaseTex(gpu, m_bcBack);
     ReleaseTex(gpu, m_mv); ReleaseTex(gpu, m_conf); ReleaseTex(gpu, m_depth);
     ReleaseTex(gpu, m_dlssOut); ReleaseTex(gpu, m_nrOut); ReleaseTex(gpu, m_nrIn);
     ReleaseTex(gpu, m_nrMv); ReleaseTex(gpu, m_nrDepth);
@@ -303,7 +304,12 @@ bool Pipeline::Rebuild(GpuContext& gpu, const Config& cfg) {
     ID3D12Device* dev = gpu.Dev().D3D12();
     bool ok = true;
     ok &= CreateTex(gpu, m_color8, m_inW, m_inH, DXGI_FORMAT_R8G8B8A8_UNORM, true, L"color8");
-    for (int l = 0; l < 3; ++l) {
+    // Pyramid depth: three levels are what block matching uses; the FSR optical flow keeps adding levels while
+    // the picture at the next one is still wide enough for a search, and each of them doubles the motion the
+    // cascade can follow (the coarsest level's search radius counts in blocks of 8 << level source pixels).
+    m_levels = 3;
+    while (m_levels < kMaxLevels && (m_inW >> m_levels) >= 32u && (m_inH >> m_levels) >= 32u) ++m_levels;
+    for (int l = 0; l < m_levels; ++l) {
         m_lumaW[l] = std::max(1u, (m_inW + (1u << l) - 1) >> l);
         m_lumaH[l] = std::max(1u, (m_inH + (1u << l) - 1) >> l);
         m_gridW[l] = (m_lumaW[l] + 7) / 8;
@@ -311,8 +317,11 @@ bool Pipeline::Rebuild(GpuContext& gpu, const Config& cfg) {
         for (int p = 0; p < 2; ++p) ok &= CreateTex(gpu, m_luma[p][l], m_lumaW[l], m_lumaH[l], DXGI_FORMAT_R8_UNORM, true, L"luma");
         ok &= CreateTex(gpu, m_bm[l], m_gridW[l], m_gridH[l], DXGI_FORMAT_R32G32_FLOAT, true, L"blockMv");
         ok &= CreateTex(gpu, m_bc[l], m_gridW[l], m_gridH[l], DXGI_FORMAT_R32_FLOAT, true, L"blockCost");
+        if (l > 0) ok &= CreateTex(gpu, m_bmFilt[l], m_gridW[l], m_gridH[l], DXGI_FORMAT_R32G32_FLOAT, true, L"blockMvFiltered");
     }
     for (int p = 0; p < 2; ++p) ok &= CreateTex(gpu, m_bmMed[p], m_gridW[0], m_gridH[0], DXGI_FORMAT_R32G32_FLOAT, true, L"blockMvMedian");
+    ok &= CreateTex(gpu, m_bmBack, m_gridW[0], m_gridH[0], DXGI_FORMAT_R32G32_FLOAT, true, L"blockMvBackward");
+    ok &= CreateTex(gpu, m_bcBack, m_gridW[0], m_gridH[0], DXGI_FORMAT_R32_FLOAT, true, L"blockCostBackward");
     ok &= CreateTex(gpu, m_mv, m_inW, m_inH, DXGI_FORMAT_R16G16_FLOAT, true, L"motionVectors");
     ok &= CreateTex(gpu, m_conf, m_inW, m_inH, DXGI_FORMAT_R8_UNORM, true, L"confidence");
     ok &= CreateTex(gpu, m_depth, m_inW, m_inH, DXGI_FORMAT_R32_FLOAT, true, L"depth");
@@ -387,7 +396,7 @@ bool Pipeline::Rebuild(GpuContext& gpu, const Config& cfg) {
                 m_nvof.Shutdown();
             }
         }
-        if (!m_nvofReady) Log::Warn("NVOF unavailable, falling back to block matching: %s", m_nvofError.c_str());
+        if (!m_nvofReady) Log::Warn("NVOF unavailable, falling back to the FSR optical flow: %s", m_nvofError.c_str());
     } else {
         m_nvof.Shutdown();
     }
@@ -625,10 +634,28 @@ void Pipeline::RunConvert(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const
     gpu.TimerEnd(cmd, GpuTimer::Convert);
 }
 
+// One median filter pass over a level's motion grid. Whole vectors (vector = true) for the optical flow
+// cascade, component-wise for block matching.
+void Pipeline::RunMedian(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, Tex& src, Tex& dst, int level, bool vector) {
+    Transition(cmd, src, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    Transition(cmd, dst, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+    DispatchDesc d;
+    d.id = ShaderId::MedianMv;
+    d.constants.flags = vector ? 1u : 0u;
+    d.constants.dstWidth = m_gridW[level]; d.constants.dstHeight = m_gridH[level];
+    d.srv[0] = src.srv;
+    d.uav[0] = dst.uav;
+    d.groupsX = Shaders::Groups(m_gridW[level], 8); d.groupsY = Shaders::Groups(m_gridH[level], 8);
+    m_shaders.Dispatch(cmd, gpu, d);
+}
+
 void Pipeline::RunGuidance(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const Settings& s, int motionMode, bool haveHistory) {
+    static_assert(sizeof(kLambda) / sizeof(kLambda[0]) >= (size_t)kMaxLevels, "a motion penalty per level");
     const int cur = m_cur, prev = 1 - m_cur;
+    const bool flow = motionMode == MotionFsrFlow;
+    const int pyramid = flow ? m_levels : 3;   // the optical flow walks the whole cascade, block matching three levels
     // Luma pyramid.
-    for (int l = 1; l < 3; ++l) {
+    for (int l = 1; l < pyramid; ++l) {
         Transition(cmd, m_luma[cur][l - 1], D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
         Transition(cmd, m_luma[cur][l], D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
         DispatchDesc d;
@@ -640,9 +667,71 @@ void Pipeline::RunGuidance(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, cons
         d.groupsX = Shaders::Groups(m_lumaW[l], 8); d.groupsY = Shaders::Groups(m_lumaH[l], 8);
         m_shaders.Dispatch(cmd, gpu, d);
     }
-    Transition(cmd, m_luma[cur][2], D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
-    for (int l = 0; l < 3; ++l) Transition(cmd, m_luma[prev][l], D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    Transition(cmd, m_luma[cur][pyramid - 1], D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+    for (int l = 0; l < pyramid; ++l) Transition(cmd, m_luma[prev][l], D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
     Transition(cmd, m_bmMed[prev], D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+
+    if (flow) {
+        // FSR optical flow: the search starts at the coarsest level, where one block stands for 8 << level source
+        // pixels, and every level below inherits the vectors of the one above, tries them with their neighbours and
+        // refines around the best. The field a level hands down is median filtered first, so a single mismatched
+        // block cannot drag the levels below it along. This is the shape of the optical flow in AMD's FidelityFX
+        // SDK (MIT), written here in this program's own shaders and therefore not tied to one vendor's card.
+        for (int l = m_levels - 1; l >= 0; --l) {
+            Transition(cmd, m_bm[l], D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+            Transition(cmd, m_bc[l], D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+            if (l < m_levels - 1) Transition(cmd, m_bmFilt[l + 1], D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+            DispatchDesc d;
+            d.id = ShaderId::BlockMatch;
+            d.constants.srcWidth = m_lumaW[l]; d.constants.srcHeight = m_lumaH[l];
+            d.constants.level = (UINT)l;
+            UINT flags = 64;   // the length of a vector must not cost anything here: the flow follows large motion
+            if (l == m_levels - 1) { flags |= 1; d.constants.intA = (UINT)s.searchRadius; }
+            else { flags |= 2 | 16; d.constants.intB = (l == 0) ? 2u : 3u; if (l == 0) flags |= 8; }
+            if (haveHistory) flags |= 4;
+            d.constants.flags = flags;
+            d.constants.paramA = 2.0f;   // a vector of the level above covers twice the pixels here
+            d.constants.paramB = kLambda[l];
+            d.constants.extra0[0] = (float)m_gridW[0]; d.constants.extra0[1] = (float)m_gridH[0];
+            if (l < m_levels - 1) { d.constants.extra1[0] = (float)m_gridW[l + 1]; d.constants.extra1[1] = (float)m_gridH[l + 1]; }
+            d.srv[0] = m_luma[cur][l].srv;
+            d.srv[1] = m_luma[prev][l].srv;
+            d.srv[2] = (l < m_levels - 1) ? m_bmFilt[l + 1].srv : D3D12_CPU_DESCRIPTOR_HANDLE{};
+            d.srv[3] = m_bmMed[prev].srv;
+            d.uav[0] = m_bm[l].uav;
+            d.uav[1] = m_bc[l].uav;
+            d.groupsX = m_gridW[l]; d.groupsY = m_gridH[l];
+            m_shaders.Dispatch(cmd, gpu, d);
+            RunMedian(gpu, cmd, m_bm[l], (l == 0) ? m_bmMed[cur] : m_bmFilt[l], l, true);
+        }
+        if (s.flowBidirectional) {
+            // The same finest level once more with the two pictures the other way round, started from the vector
+            // just found. Where the way back does not lead where the way forward came from, the block is covered
+            // by something else or matched a pattern that repeats, and the dense pass damps it.
+            Transition(cmd, m_bmMed[cur], D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+            Transition(cmd, m_bmBack, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+            Transition(cmd, m_bcBack, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+            DispatchDesc d;
+            d.id = ShaderId::BlockMatch;
+            d.constants.srcWidth = m_lumaW[0]; d.constants.srcHeight = m_lumaH[0];
+            d.constants.level = 0;
+            d.constants.flags = 2 | 8 | 16 | 32 | 64;   // predictors: the forward field of this grid, turned around
+            d.constants.intB = 2;
+            d.constants.paramA = -1.0f;
+            d.constants.paramB = kLambda[0];
+            d.constants.extra0[0] = (float)m_gridW[0]; d.constants.extra0[1] = (float)m_gridH[0];
+            d.constants.extra1[0] = (float)m_gridW[0]; d.constants.extra1[1] = (float)m_gridH[0];
+            d.srv[0] = m_luma[prev][0].srv;
+            d.srv[1] = m_luma[cur][0].srv;
+            d.srv[2] = m_bmMed[cur].srv;
+            d.srv[3] = m_bmMed[prev].srv;
+            d.uav[0] = m_bmBack.uav;
+            d.uav[1] = m_bcBack.uav;
+            d.groupsX = m_gridW[0]; d.groupsY = m_gridH[0];
+            m_shaders.Dispatch(cmd, gpu, d);
+        }
+        return;
+    }
 
     // Block matching: level 2 full search is always run (scene-cut statistics), finer levels only in compute mode.
     const int levels = (motionMode == MotionCompute) ? 3 : 1;
@@ -660,6 +749,7 @@ void Pipeline::RunGuidance(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, cons
         else { flags |= 2; d.constants.intB = (l == 1) ? 2u : 1u; if (l == 0) flags |= 8; }
         if (haveHistory) flags |= 4;
         d.constants.flags = flags;
+        d.constants.paramA = 2.0f;
         d.constants.paramB = kLambda[l];
         d.constants.extra0[0] = (float)m_gridW[0]; d.constants.extra0[1] = (float)m_gridH[0];
         if (l < 2) { d.constants.extra1[0] = (float)m_gridW[l + 1]; d.constants.extra1[1] = (float)m_gridH[l + 1]; }
@@ -672,17 +762,7 @@ void Pipeline::RunGuidance(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, cons
         d.groupsX = m_gridW[l]; d.groupsY = m_gridH[l];
         m_shaders.Dispatch(cmd, gpu, d);
     }
-    if (motionMode == MotionCompute) {
-        Transition(cmd, m_bm[0], D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
-        Transition(cmd, m_bmMed[cur], D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
-        DispatchDesc d;
-        d.id = ShaderId::MedianMv;
-        d.constants.dstWidth = m_gridW[0]; d.constants.dstHeight = m_gridH[0];
-        d.srv[0] = m_bm[0].srv;
-        d.uav[0] = m_bmMed[cur].uav;
-        d.groupsX = Shaders::Groups(m_gridW[0], 8); d.groupsY = Shaders::Groups(m_gridH[0], 8);
-        m_shaders.Dispatch(cmd, gpu, d);
-    }
+    if (motionMode == MotionCompute) RunMedian(gpu, cmd, m_bm[0], m_bmMed[cur], 0, false);
 }
 
 bool Pipeline::RunOpticalFlow(GpuContext& gpu, ID3D12GraphicsCommandList*& cmd, bool resetHints) {
@@ -722,13 +802,18 @@ void Pipeline::RunDensify(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const
     d.constants.paramA = s.motionConfidence;
     d.constants.intB = (UINT)s.depthMode;
     d.constants.scaleX = 1.0f; d.constants.scaleY = 1.0f;
-    if (mode == MotionCompute) {
+    if (mode == MotionCompute || mode == MotionFsrFlow) {
         Transition(cmd, m_bmMed[m_cur], D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
         Transition(cmd, m_bc[0], D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
         d.constants.flags = 2;
         d.constants.srcWidth = m_gridW[0]; d.constants.srcHeight = m_gridH[0];
         d.srv[0] = m_bmMed[m_cur].srv;
         d.srv[1] = m_bc[0].srv;
+        if (mode == MotionFsrFlow && s.flowBidirectional && m_bmBack.Valid()) {
+            Transition(cmd, m_bmBack, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
+            d.constants.flags |= 8;   // the backward field is bound: the consistency check runs
+            d.srv[5] = m_bmBack.srv;
+        }
     } else if (mode == MotionNvOpticalFlow) {
         Transition(cmd, m_flow, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
         Transition(cmd, m_cost, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
@@ -1421,6 +1506,7 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
     m_status.nvofSinglePass = m_nvofReady && m_nvof.SinglePassBidirectional();
     m_status.nvofGrid = m_nvofReady ? m_nvof.Grid() : 0;
     m_status.nvofError = m_nvofError;
+    m_status.flowLevels = m_levels;
     m_status.depthState = (int)((m_depthRestart && m_depthInBuf) ? DepthEstimatorState::Initializing : m_depthEst.State());
     m_status.depthMessage = m_depthEst.Message();
     m_status.depthBackend = m_depthEst.Backend();
@@ -1545,7 +1631,15 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
                 m_depthFramesSinceCapture = 1000; m_depthStillCaptured = false;
                 m_guidanceIdle = false;
             }
-            bool reset = m_resetRequested || !m_haveHistory;
+            // The motion source is settled first: it decides how deep the luma pyramid of this frame goes (block
+            // matching fills three levels, the optical flow all of them), so the frame right after a switch has
+            // nothing to match against and starts over.
+            int motionMode = src.stillImage ? MotionZero : s.motionMode;
+            if (motionMode == MotionNvOpticalFlow && !m_nvofReady) motionMode = MotionFsrFlow;   // no engine: this program's own flow
+            const bool motionSwitched = motionMode != m_lastMotionMode;
+            m_lastMotionMode = motionMode;
+
+            bool reset = m_resetRequested || !m_haveHistory || motionSwitched;
             bool sceneCut = false;
             if (m_haveHistory && m_lastWasBlockMode) {
                 // A cut is a sudden jump of the matching cost, not merely a high value: fast camera motion also raises the
@@ -1560,8 +1654,6 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
             if (reset) ++m_status.resets;
             m_status.sceneCut = sceneCut;
 
-            int motionMode = src.stillImage ? MotionZero : s.motionMode;
-            if (motionMode == MotionNvOpticalFlow && !m_nvofReady) motionMode = MotionCompute;
             const bool nvofBgra = (motionMode == MotionNvOpticalFlow) && m_nvofFmt == DXGI_FORMAT_B8G8R8A8_UNORM;
 
             RunConvert(gpu, cmd, src, s, nvofBgra);
@@ -1607,7 +1699,7 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
             gpu.TimerEnd(cmd, GpuTimer::Guidance);
             if (m_haveHistory && !reset) {
                 if (motionMode == MotionNvOpticalFlow) densifyMode = RunOpticalFlow(gpu, cmd, false) ? MotionNvOpticalFlow : MotionZero;
-                else if (motionMode == MotionCompute) densifyMode = MotionCompute;
+                else densifyMode = motionMode;   // block matching or the FSR optical flow: the vectors are already there
             } else if (motionMode == MotionNvOpticalFlow) {
                 // Prime the optical flow reference frame without using its result.
                 RunOpticalFlow(gpu, cmd, true);

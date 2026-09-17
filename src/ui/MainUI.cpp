@@ -519,7 +519,8 @@ std::string MainUI::StepLabel(const UndoStep& from, const UndoStep& to) {
     VDC_KEY("nrScaleMode", NrScaleMode, false) VDC_KEY("nrInputScale", NrScaleModePercent, false) VDC_KEY("nrMaxLongEdge", NrScaleModeFixed, false) VDC_KEY("hdrPaperWhite", PaperWhite, false) VDC_KEY("hdrHighlightCompression", HighlightCompression, false)
     VDC_KEY("motionMode", MotionSource, false) VDC_KEY("depthMode", DepthSource, false) VDC_KEY("searchRadius", SearchRadius, false)
     VDC_KEY("motionConfidence", MotionConfidence, false) VDC_KEY("nvofGrid", NvofGrid, false) VDC_KEY("nvofPerf", NvofPerf, false)
-    VDC_KEY("nvofBidirectional", NvofBidirectional, true) VDC_KEY("depthInterval", DepthInterval, false) VDC_KEY("depthLongSide", DepthResolution, false)
+    VDC_KEY("nvofBidirectional", NvofBidirectional, true) VDC_KEY("flowBidirectional", FlowBidirectional, true)
+    VDC_KEY("depthInterval", DepthInterval, false) VDC_KEY("depthLongSide", DepthResolution, false)
     VDC_KEY("autoReset", AutoReset, true) VDC_KEY("cutThreshold", CutThreshold, false) VDC_KEY("dlaaEnabled", DlaaEnable, true)
     VDC_KEY("dlaaPreset", DlaaPreset, false) VDC_KEY("compareMode", Compare, false) VDC_KEY("wipePosition", CompareWipe, false)
     VDC_KEY("checkerboard", Checkerboard, true) VDC_KEY("fitMode", FitWindowLabel, false) VDC_KEY("vsync", Vsync, true)
@@ -1735,8 +1736,9 @@ void MainUI::BlockGuidance(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
     // A picture or a paused video has no motion to measure: say so rather than reporting the flow as unavailable.
     const bool still = (s.sourceMode == SourceImage) || (s.sourceMode == SourceVideo && !info.videoPlaying && !info.videoProcessing);
     {
-        const char* items[] = { TR(MotionZero), TR(MotionCompute), TR(MotionNvof) };
-        if (ComboIds(TR(MotionSource), &s.motionMode, items, 3, TR(TipMotion))) ev.settingsChanged = true;
+        const char* items[] = { TR(MotionZero), TR(MotionCompute), TR(MotionNvof), TR(MotionFsr) };
+        // The FSR flow is this program's own and deserves a word of explanation when it is selected.
+        if (ComboIds(TR(MotionSource), &s.motionMode, items, 4, s.motionMode == MotionFsrFlow ? TR(TipFsrFlow) : TR(TipMotion))) ev.settingsChanged = true;
     }
     if (s.motionMode == MotionCompute) {
         LabelSeen(TR(SearchRadius));
@@ -1759,6 +1761,19 @@ void MainUI::BlockGuidance(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
             else if (st->srcWidth == 0 && st->nvofError.empty()) StatusDot(p.muted, StrPrintf("%s: %s", TR(Nvof), TR(DepthWaitingSource)).c_str());
             else if (!st->nvofAvailable) StatusDot(p.warn, StrPrintf("%s: %s", TR(Nvof), TR(NotAvailable)).c_str());
             else StatusDot(p.warn, StrPrintf("%s: %s", TR(Nvof), st->nvofError.empty() ? TR(NotAvailable) : st->nvofError.c_str()).c_str());
+        }
+    }
+    if (s.motionMode == MotionFsrFlow) {
+        LabelSeen(TR(SearchRadius));
+        if (ImGui::SliderInt(TR(SearchRadius), &s.searchRadius, 2, 12, "%d px", ImGuiSliderFlags_AlwaysClamp)) ev.settingsChanged = true;
+        Tip(TR(TipFlowRadius));
+        if (Toggle(TR(FlowBidirectional), &s.flowBidirectional)) ev.settingsChanged = true;
+        Help(TR(TipFlowBidirectional));
+        if (st) {
+            if (still) StatusDot(p.muted, StrPrintf("%s: %s", TR(Nvof), TR(StaticPreview)).c_str());
+            else if (st->srcWidth == 0) StatusDot(p.muted, StrPrintf("%s: %s", TR(Nvof), TR(DepthWaitingSource)).c_str());
+            else StatusDot(p.good, StrPrintf("%s: %s (%d %s%s)", TR(Nvof), TR(Available), st->flowLevels, TR(FlowLevels),
+                                             s.flowBidirectional ? " \xE2\x87\x84" : "").c_str());
         }
     }
     if (s.motionMode != MotionZero) {
@@ -2482,7 +2497,9 @@ void MainUI::DrawPicture(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
         lines[0] = StrPrintf("%s %ux%u  \xE2\x86\x92  %s %ux%u", TR(Source), st.srcWidth, st.srcHeight, TR(Output), st.outWidth, st.outHeight);
         lines[1] = StrPrintf("DLSS 5: %s", st.nrActive ? StrPrintf("%s  (%s %d, %.2f)", TR(Active), TR(Style), s.nrStyle, s.nrIntensity).c_str()
                                                         : (st.nrFailed ? TR(Failed) : TR(Bypass)));
-        const char* motion = st.motionModeActive == MotionNvOpticalFlow ? "NVOF" : st.motionModeActive == MotionCompute ? TR(MotionCompute) : TR(MotionZero);
+        const char* motion = st.motionModeActive == MotionNvOpticalFlow ? "NVOF"
+                           : st.motionModeActive == MotionFsrFlow ? "FSR"
+                           : st.motionModeActive == MotionCompute ? TR(MotionCompute) : TR(MotionZero);
         const char* depth = st.depthModeActive == DepthEstimated ? "Depth Anything V2" : st.depthModeActive == DepthGradient ? TR(DepthGradient)
                           : st.depthModeActive == DepthZero ? TR(DepthZero) : TR(DepthFlat);
         lines[2] = StrPrintf("%s: %s   %s: %s%s%s", TR(MotionSource), motion, TR(DepthSource), depth, st.upscaleMode == 1 ? "  +DLSS SR" : st.dlaaActive ? "  +DLAA" : "",

@@ -44,7 +44,7 @@ bool Settings::Load(const std::wstring& path) {
     size_t n;
     while ((n = fread(buf, 1, sizeof(buf), f)) > 0) data.append(buf, n);
     fclose(f);
-    ApplyText(data);
+    ApplyText(data, true);
     return true;
 }
 
@@ -53,7 +53,7 @@ bool Settings::Apply(const std::string& key, const std::string& value) {
 }
 
 // Reads "key=value" lines; keys that are not present keep their value. True when every key was known.
-bool Settings::ApplyText(const std::string& data) {
+bool Settings::ApplyText(const std::string& data, bool wholeFile) {
     Reader r;
     size_t pos = 0;
     while (pos < data.size()) {
@@ -118,6 +118,7 @@ bool Settings::ApplyText(const std::string& data) {
     r.Get("nvofGrid", nvofGrid);
     r.Get("nvofPerf", nvofPerf);
     r.Get("nvofBidirectional", nvofBidirectional);
+    r.Get("flowBidirectional", flowBidirectional);
     r.Get("depthInterval", depthInterval);
     r.Get("depthLongSide", depthLongSide);
     r.Get("depthModelPath", depthModelPath);
@@ -125,13 +126,20 @@ bool Settings::ApplyText(const std::string& data) {
     r.Get("cutThreshold", cutThreshold);
     int fileVersion = 1;
     r.Get("settingsVersion", fileVersion);
-    if (fileVersion < 2) {
+    if (wholeFile && fileVersion < 2) {
         // 0.1.x files: block matching, flat depth and auto reset were the defaults. 0.2.0 moved to hardware optical
         // flow, estimated depth and no automatic resets; adopt the new defaults once.
         motionMode = Settings().motionMode;
         depthMode = Settings().depthMode;
         autoReset = Settings().autoReset;
     }
+#if APP_EDITION_AMD
+    if (wholeFile && fileVersion < 6 && motionMode == MotionNvOpticalFlow) {
+        // Files of the Radeon edition before 1.8.0 kept the hardware engine selected, which Radeon does not have; the
+        // FSR optical flow of 1.8.0 is the motion source of the edition.
+        motionMode = MotionFsrFlow;
+    }
+#endif
     settingsVersion = Settings().settingsVersion;
     r.Get("dlaaEnabled", dlaaEnabled);
     r.Get("dlaaPreset", dlaaPreset);
@@ -225,6 +233,7 @@ void PutParameters(Writer& w, const Settings& s) {
     w.Put("nvofGrid", s.nvofGrid);
     w.Put("nvofPerf", s.nvofPerf);
     w.Put("nvofBidirectional", s.nvofBidirectional);
+    w.Put("flowBidirectional", s.flowBidirectional);
     w.Put("depthInterval", s.depthInterval);
     w.Put("depthLongSide", s.depthLongSide);
     w.Put("autoReset", s.autoReset);
@@ -288,6 +297,7 @@ std::string Settings::ProcessingText(bool strengthsInPass) const {
     w.Put("nvofGrid", nvofGrid);
     w.Put("nvofPerf", nvofPerf);
     w.Put("nvofBidirectional", nvofBidirectional);
+    w.Put("flowBidirectional", flowBidirectional);
     w.Put("depthInterval", depthInterval);
     w.Put("depthLongSide", depthLongSide);
     w.Put("depthModelPath", depthModelPath);
@@ -379,6 +389,7 @@ bool Settings::Save(const std::wstring& path) const {
     w.Put("nvofGrid", nvofGrid);
     w.Put("nvofPerf", nvofPerf);
     w.Put("nvofBidirectional", nvofBidirectional);
+    w.Put("flowBidirectional", flowBidirectional);
     w.Put("depthInterval", depthInterval);
     w.Put("depthLongSide", depthLongSide);
     w.Put("depthModelPath", depthModelPath);
@@ -473,7 +484,7 @@ void Settings::Clamp() {
     nrSkinStructure = nrSkinStructure < 0.0f ? -1.0f : std::clamp(nrSkinStructure, 0.0f, 2.0f);
     hdrPaperWhite = std::clamp(hdrPaperWhite, 0.1f, 8.0f);
     hdrHighlightCompression = std::clamp(hdrHighlightCompression, 0.0f, 1.0f);
-    motionMode = std::clamp(motionMode, 0, 2);
+    motionMode = std::clamp(motionMode, 0, 3);
     depthMode = std::clamp(depthMode, 0, 3);
     depthInterval = std::clamp(depthInterval, 1, 10);
     if (depthLongSide != 252 && depthLongSide != 336 && depthLongSide != 420 && depthLongSide != 518) depthLongSide = 336;

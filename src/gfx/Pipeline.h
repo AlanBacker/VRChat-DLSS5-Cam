@@ -68,6 +68,7 @@ struct PipelineStatus {
     bool        nvofSinglePass = false;          // forward + backward flow from one engine pass (driver API 5.0)
     UINT        nvofGrid = 0;                    // spacing of the hardware vectors in source pixels
     std::string nvofError;
+    int         flowLevels = 0;                  // pyramid levels the FSR optical flow has for this picture size
     int         depthState = 0;                  // DepthEstimatorState
     std::string depthMessage;                    // failure reason or backend name
     std::string depthBackend;
@@ -209,6 +210,7 @@ private:
 
     void RunConvert(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const SourceFrame& src, const Settings& s, bool writeNvof);
     void RunGuidance(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const Settings& s, int motionMode, bool haveHistory);
+    void RunMedian(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, Tex& src, Tex& dst, int level, bool vector);
     bool RunOpticalFlow(GpuContext& gpu, ID3D12GraphicsCommandList*& cmd, bool resetHints);
     void RunDensify(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const Settings& s, int mode);
     void RunStats(GpuContext& gpu, ID3D12GraphicsCommandList* cmd);
@@ -251,14 +253,21 @@ private:
     UINT64 m_nrPassBudget = kNrMaxPixels;   // pixels the neural pass may have; a refused size lowers it (RunNeural)
     int    m_nrBudgetSetting = 0;           // Settings::nrPassBudgetMp last applied
     bool   m_nrPassCapped = false;          // the pass runs below what the settings ask
-    UINT   m_gridW[3] = {}, m_gridH[3] = {};
-    UINT   m_lumaW[3] = {}, m_lumaH[3] = {};
+    // The luma pyramid. Block matching uses three levels; the FSR optical flow walks the whole cascade, whose
+    // depth follows the picture: every level doubles the motion the search can still follow.
+    static constexpr int kMaxLevels = 6;
+    int    m_levels = 3;
+    int    m_lastMotionMode = MotionZero;   // what ran on the previous frame: a switch invalidates the pyramid
+    UINT   m_gridW[kMaxLevels] = {}, m_gridH[kMaxLevels] = {};
+    UINT   m_lumaW[kMaxLevels] = {}, m_lumaH[kMaxLevels] = {};
 
     Tex m_color8;               // RGBA8 input colour (sRGB encoded)
-    Tex m_luma[2][3];           // R8 luma pyramid, ping-pong by frame parity
+    Tex m_luma[2][kMaxLevels];  // R8 luma pyramid, ping-pong by frame parity
     Tex m_nvofIn;               // BGRA8 optical-flow input written by the convert pass (R8 luma is the fallback)
-    Tex m_bm[3], m_bc[3];       // block motion / cost per level
+    Tex m_bm[kMaxLevels], m_bc[kMaxLevels];   // block motion / cost per level
+    Tex m_bmFilt[kMaxLevels];   // filtered motion of a coarse level, the predictor field for the level below
     Tex m_bmMed[2];             // median-filtered level-0 motion, ping-pong
+    Tex m_bmBack, m_bcBack;     // level-0 motion and cost of the reverse direction (previous -> current) for the consistency check
     Tex m_flow, m_cost;         // NVOF results (D3D12 views of the shared textures)
     Tex m_flowBack, m_costBack; // NVOF backward pass (previous -> current)
     Tex m_mv, m_conf, m_depth;  // dense guidance

@@ -163,8 +163,10 @@ void main(uint3 id : SV_DispatchThreadID) {
 // ---------------------------------------------------------------------------
 // BlockMatch: hierarchical 8x8 block matching, one thread group per block.
 // Flags: 1 = full search (radius IntA), 2 = coarse predictors available, 4 = temporal predictor available,
-//        8 = sub-pixel refinement. IntB = refinement radius (<= 2). ParamB = motion penalty per pixel.
-// Extra0.xy = temporal grid size, Extra1.xy = coarse grid size. SrcWidth/Height = luma size at this level.
+//        8 = sub-pixel refinement, 16 = the coarse predictors are the full 3x3 neighbourhood (5 without it),
+//        32 = the predictor field has this level's own grid (the backward pass; ParamA = -1 turns it around).
+// IntB = refinement radius (<= 3). ParamA = factor for a predictor from the field, ParamB = motion penalty per
+// pixel. Extra0.xy = temporal grid size, Extra1.xy = predictor grid size. SrcWidth/Height = luma size at this level.
 // Output vectors point from the current frame to the previous frame, in pixels of this level.
 
 const char* kBlockMatch = R"HLSL(
@@ -179,7 +181,7 @@ groupshared float  sCur[64];
 groupshared float  sCost[64];
 groupshared float  sRaw[64];
 groupshared float2 sMv[64];
-groupshared float  sGrid[25];
+groupshared float  sGrid[49];   // SAD of the refinement window, up to radius 3
 
 float Sad(int2 origin, int2 mv) {
     float sum = 0;
@@ -221,6 +223,10 @@ void main(uint3 gid : SV_GroupID, uint tid : SV_GroupIndex) {
     GroupMemoryBarrierWithGroupSync();
 
     float lambda = ParamB;
+    // The block matching bias: a long vector costs extra, so a still picture stays still. The FSR flow must not be
+    // pulled towards zero (it follows motion of many pixels), so there the length only breaks ties (Flags & 64) and
+    // the real penalty is the distance from the predictor, applied in the refinement below.
+    float pen = (Flags & 64) ? 0.05 : 1.0;
     float bestCost = 1e9, bestRaw = 1e9;
     float2 bestMv = 0;
 
@@ -231,42 +237,44 @@ void main(uint3 gid : SV_GroupID, uint tid : SV_GroupIndex) {
         [loop] for (int c = int(tid); c < N; c += 64) {
             int2 mv = int2(int(uint(c) % uint(W)) - R, int(uint(c) / uint(W)) - R);
             float raw = Sad(origin, mv);
-            float cost = raw + lambda * (abs(mv.x) + abs(mv.y));
+            float cost = raw + lambda * pen * (abs(mv.x) + abs(mv.y));
             if (cost < bestCost) { bestCost = cost; bestRaw = raw; bestMv = mv; }
         }
         if ((Flags & 4) && tid == 0) {
             int2 mv = int2(round(Temporal.Load(int3(TemporalCell(gid.xy), 0)) / float(1u << Level)));
             float raw = Sad(origin, mv);
-            float cost = raw + lambda * (abs(mv.x) + abs(mv.y));
+            float cost = raw + lambda * pen * (abs(mv.x) + abs(mv.y));
             if (cost < bestCost) { bestCost = cost; bestRaw = raw; bestMv = mv; }
         }
         sCost[tid] = bestCost; sRaw[tid] = bestRaw; sMv[tid] = bestMv;
         Reduce(tid);
         bestCost = sCost[0]; bestRaw = sRaw[0]; bestMv = sMv[0];
     } else {
-        // Phase 1: predictors (zero, parent, four parent neighbours, temporal).
-        int2 cg = int2(gid.xy) >> 1;
+        // Phase 1: predictors (zero, the parent block, its neighbours, the block's own vector of the last frame).
+        int2 cg = (Flags & 32) ? int2(gid.xy) : (int2(gid.xy) >> 1);
         int2 cdim = int2(Extra1.xy);
+        uint nc = (Flags & 16) ? 9u : 5u;
         float2 cand = 0;
         bool valid = true;
         if (tid == 0) {
             cand = 0;
-        } else if (tid <= 5 && (Flags & 2)) {
+        } else if (tid <= nc && (Flags & 2)) {
             int2 off = int2(0, 0);
-            if (tid == 2) off = int2(-1, 0);
+            if (Flags & 16) { uint i = tid - 1u; off = int2(int(i % 3u) - 1, int(i / 3u) - 1); }
+            else if (tid == 2) off = int2(-1, 0);
             else if (tid == 3) off = int2(1, 0);
             else if (tid == 4) off = int2(0, -1);
             else if (tid == 5) off = int2(0, 1);
             int2 q = clamp(cg + off, int2(0, 0), cdim - 1);
-            cand = Coarse.Load(int3(q, 0)) * 2.0;
-        } else if (tid == 6 && (Flags & 4)) {
+            cand = Coarse.Load(int3(q, 0)) * ParamA;
+        } else if (tid == nc + 1u && (Flags & 4)) {
             cand = Temporal.Load(int3(TemporalCell(gid.xy), 0)) / float(1u << Level);
         } else {
             valid = false;
         }
         int2 mvi = int2(round(cand));
         float raw = valid ? Sad(origin, mvi) : 1e9;
-        sCost[tid] = valid ? raw + lambda * (abs(mvi.x) + abs(mvi.y)) : 1e9;
+        sCost[tid] = valid ? raw + lambda * pen * (abs(mvi.x) + abs(mvi.y)) : 1e9;
         sRaw[tid] = raw;
         sMv[tid] = mvi;
         Reduce(tid);
@@ -282,7 +290,7 @@ void main(uint3 gid : SV_GroupID, uint tid : SV_GroupIndex) {
             int2 d = int2(int(tid % uint(W)) - r, int(tid / uint(W)) - r);
             int2 mv = center + d;
             bestRaw = Sad(origin, mv);
-            bestCost = bestRaw + lambda * (abs(mv.x) + abs(mv.y));
+            bestCost = bestRaw + lambda * ((Flags & 64) ? (abs(d.x) + abs(d.y)) : (abs(mv.x) + abs(mv.y)));
             bestMv = mv;
             sGrid[tid] = bestRaw;
         }
@@ -312,7 +320,7 @@ void main(uint3 gid : SV_GroupID, uint tid : SV_GroupIndex) {
 )HLSL";
 
 // ---------------------------------------------------------------------------
-// MedianMv: component-wise 3x3 median over the block motion grid.
+// MedianMv: 3x3 median over the block motion grid, component-wise or (Flags & 1) as whole vectors.
 
 const char* kMedianMv = R"HLSL(
 Texture2D<float2>   In  : register(t0);
@@ -334,6 +342,20 @@ void main(uint3 id : SV_DispatchThreadID) {
     [unroll] for (int y = -1; y <= 1; ++y)
         [unroll] for (int x = -1; x <= 1; ++x)
             v[(y + 1) * 3 + (x + 1)] = In.Load(int3(clamp(int2(id.xy) + int2(x, y), int2(0, 0), mx), 0));
+    if (Flags & 1) {
+        // Vector median: of the nine the one that sits closest to all the others. Unlike the component-wise
+        // median it never invents a vector that no block actually matched, which keeps the cascade's coarse
+        // levels from handing a made-up prediction to the level below.
+        float best = 1e30;
+        float2 pick = v[4];
+        [unroll] for (int i = 0; i < 9; ++i) {
+            float sum = 0;
+            [unroll] for (int j = 0; j < 9; ++j) { float2 d = v[i] - v[j]; sum += dot(d, d); }
+            if (sum < best) { best = sum; pick = v[i]; }
+        }
+        Out[id.xy] = pick;
+        return;
+    }
     MNMX6(v[0], v[1], v[2], v[3], v[4], v[5]);
     MNMX5(v[1], v[2], v[3], v[4], v[6]);
     MNMX4(v[2], v[3], v[4], v[7]);
@@ -345,6 +367,7 @@ void main(uint3 id : SV_DispatchThreadID) {
 // ---------------------------------------------------------------------------
 // Densify: block/NVOF motion grid -> per-pixel motion (RG16F), confidence (R8) and synthetic depth (R32F).
 // Flags & 7: 1 = zero motion, 2 = block matching grid (8 px), 4 = NVIDIA Optical Flow grid (IntA px, S10.5).
+// Flags & 8: a backward field is bound (t5 for the block grid, t4 for the hardware flow) for the consistency check.
 // IntB = depth mode (0 flat, 1 gradient, 2 zero). ParamA = confidence threshold. SrcWidth/Height = grid size.
 
 const char* kDensify = R"HLSL(
@@ -353,12 +376,26 @@ Texture2D<float>    BlockCost : register(t1);
 Texture2D<int2>     Flow      : register(t2);
 Texture2D<uint>     FlowCost  : register(t3);
 Texture2D<int2>     FlowBack  : register(t4);
+Texture2D<float2>   BlockBack : register(t5);
 RWTexture2D<float2> OutMv     : register(u0);
 RWTexture2D<float>  OutConf   : register(u1);
 RWTexture2D<float>  OutDepth  : register(u2);
 
 float Attenuate(float conf) {
     return saturate((conf - ParamA) / max(0.05, 1.0 - ParamA));
+}
+
+// Bilinear read of the backward block grid at grid-space position p.
+float2 SampleBlockBack(float2 p, int2 gdim) {
+    int2 i0 = int2(floor(p));
+    float2 f = p - float2(i0);
+    int2 a = clamp(i0, int2(0, 0), gdim - 1);
+    int2 b = clamp(i0 + int2(1, 0), int2(0, 0), gdim - 1);
+    int2 c = clamp(i0 + int2(0, 1), int2(0, 0), gdim - 1);
+    int2 d = clamp(i0 + int2(1, 1), int2(0, 0), gdim - 1);
+    float4 w = float4((1 - f.x) * (1 - f.y), f.x * (1 - f.y), (1 - f.x) * f.y, f.x * f.y);
+    return BlockBack.Load(int3(a, 0)) * w.x + BlockBack.Load(int3(b, 0)) * w.y +
+           BlockBack.Load(int3(c, 0)) * w.z + BlockBack.Load(int3(d, 0)) * w.w;
 }
 
 // Bilinear read of a S10.5 flow grid at grid-space position p (pixels).
@@ -397,6 +434,15 @@ void main(uint3 id : SV_DispatchThreadID) {
             float cost = BlockCost.Load(int3(a, 0)) * w.x + BlockCost.Load(int3(b, 0)) * w.y +
                          BlockCost.Load(int3(c, 0)) * w.z + BlockCost.Load(int3(d, 0)) * w.w;
             conf = saturate(1.0 - cost * 4.0);
+            if (Flags & 8) {
+                // Forward/backward consistency, as below for the hardware flow: where the vector found in the
+                // other direction does not lead back, the block is occluded or matched a repeating pattern.
+                float2 q = (float2(id.xy) + 0.5 + mv) / cell - 0.5;
+                float2 back = SampleBlockBack(q, gdim);
+                float err = length(mv + back);
+                float tol = 2.0 + 0.1 * length(mv);
+                conf *= saturate(1.0 - max(err - 0.5, 0.0) / tol);
+            }
         } else {
             mv = (float2(Flow.Load(int3(a, 0))) * w.x + float2(Flow.Load(int3(b, 0))) * w.y +
                   float2(Flow.Load(int3(c, 0))) * w.z + float2(Flow.Load(int3(d, 0))) * w.w) * (1.0 / 32.0);

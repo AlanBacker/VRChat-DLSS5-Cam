@@ -25,7 +25,7 @@ VRChat DLSS5 Cam 将 VRChat 相机的画面接入 GeForce RTX 显卡上的 NVIDI
   会像视频一样逐帧处理，并以原格式输出，每一帧的显示时长都保留。
 - **批量处理。** 载入的文件会集中在预览下方的素材库中，选中的部分可一次处理完成。既可以使用共用参数，
   也可以为单个文件设置独立参数，处理前还能旋转、镜像与裁切。
-- **真正的 DLSS 5 引导。** 由 NVIDIA Optical Flow 生成运动矢量，Depth Anything V2 提供深度图，一并送入网络，
+- **真正的 DLSS 5 引导。** 运动矢量由 NVIDIA Optical Flow 生成，或在任意显卡上由本程序自带的 FSR 光流生成，Depth Anything V2 提供深度图，一并送入网络，
   使视频与实时画面获得与游戏内相同的时序信息。前级可选启用 DLAA，先行整理边缘。
 - **对比与校验。** 提供擦除、左右分屏与原图三种模式，支持滚轮缩放、拖动平移与全屏显示，可按 1:1 比例
   核对处理前后的差异。
@@ -38,7 +38,7 @@ VRChat DLSS5 Cam 将 VRChat 相机的画面接入 GeForce RTX 显卡上的 NVIDI
 | | |
 |---|---|
 | Windows | Windows 10 21H2 或 Windows 11，64 位 |
-| 显卡 | NVIDIA GeForce RTX。**RTX 50** 系列与 **RTX 40 / 30 / 20** 系列各有一份对应的运行库随压缩包附带（见下一行），任何一代都无需额外准备文件。**AMD Radeon RX 7000 / 9000** 使用 Radeon 版（`VRChatDLSS5Cam-win64-amd.zip`），神经渲染经由 DLSS-NR-on-AMD 完成——它是一个独立项目，可从程序内一键安装（见*AMD Radeon 显卡*）。其他厂商的显卡不会被拒绝：程序可作为查看器和录制工具使用。DLAA 与硬件光流仍仅限 NVIDIA，运动向量会改由块匹配提供。 |
+| 显卡 | NVIDIA GeForce RTX。**RTX 50** 系列与 **RTX 40 / 30 / 20** 系列各有一份对应的运行库随压缩包附带（见下一行），任何一代都无需额外准备文件。**AMD Radeon RX 7000 / 9000** 使用 Radeon 版（`VRChatDLSS5Cam-win64-amd.zip`），神经渲染经由 DLSS-NR-on-AMD 完成——它是一个独立项目，可从程序内一键安装（见*AMD Radeon 显卡*）。其他厂商的显卡不会被拒绝：程序可作为查看器和录制工具使用。DLAA 与硬件光流仍仅限 NVIDIA，运动向量会改由 FSR 光流提供。 |
 | DLSS 5 运行库 | 已附带。压缩包内含两份 `nvngx_dlssnr.dll` 310.8.0.0：`runtimes\blackwell\` 是随游戏发布的原版（RTX 50），`runtimes\universal\` 是社区为 RTX 40 / 30 / 20 适配的同一运行库。程序启动时选择与所装显卡对应的一份，失败时改试另一份。这两个文件是 NVIDIA 的软件，受 NVIDIA 的条款约束，不属于本项目 MIT 许可的源代码（见 `THIRD_PARTY_NOTICES.md`）；无需再从其他地方获取任何文件。 |
 | VRChat | 任何带有 Stream 相机 *Spout Stream* 选项的版本（桌面或 VR）。仅实时相机功能需要。 |
 | 视频文件 | Windows Media Foundation（Windows 自带）。N / KN 版本需要安装 *Media Feature Pack*；HEVC 文件可能需要 Microsoft Store 里的 *HEVC 视频扩展*。GIF、APNG、WebP 动图无需额外组件：由程序自行解码和写入。 |
@@ -109,14 +109,14 @@ DLSS-NR-on-AMD 文件，并在结尾附上该项目自己的日志（程序目�
   *神经渲染分辨率*）、更新与版本切换。
 - **较慢。** DLSS-NR-on-AMD 以 inline 方式运行网络，每一帧都要等它完成：RX 9060 XT 上 720p 约 25 ms，4K 约 180 ms，因此 4K 实时画面只有每秒几帧。
   *神经渲染分辨率* 里的 *最大分辨率* 上限与 *处理帧率上限* 可让实时画面保持流畅；保存的图片与视频结果不变，只是更慢。
-- **没有硬件光流。** 光流引擎属于 GeForce 驱动；Radeon 上运动矢量来自 GPU 块匹配，快速运动时更粗糙。*帧引导* 下方的状态点会说明这一点。
+- **以 FSR 光流代替硬件引擎。** 光流引擎属于 GeForce 驱动，Radeon 上没有对应的东西。自 1.8.0 起，运动矢量改由 FSR 光流生成：
+  这是本程序自己的一组计算通道，沿用 AMD FidelityFX SDK（MIT）中光流的结构，比单纯的块匹配更能跟住快速运动，并对矢量做正反两个方向的核对。
+  Radeon 版默认就用它，*帧引导* 下的 *搜索半径* 与双向检查可在画质与 GPU 耗时之间取舍。
 - **强度与预设。** 该端口自行保管 *预设*、*风格* 与不超过 1 的强度，在它自己的叠加层（**End** 键）里设置，见上文。
   因此在这里拖动这些滑块只会立即用现有结果重新合成（大于 1 的值在合成中生效），不再把图片重新过一遍各个通道——在 Radeon 上那要花大约四秒（4K），而画面并不会变。
 - **深度网络与端口轮流使用显卡。** 端口的网络和深度网络（DirectML）不能同时占用显卡：一次神经通道若与深度网络的预热同时运行，会从 0.17 秒被拉长到 2.7 秒，超过驱动的两秒限制，显卡设备随即丢失（驱动重启，程序需要重新打开）。
   从 v1.5.0 起，程序在每次神经通道之前都等待深度网络空闲，两者不再重叠；一张图片的前几个通道会在深度网络就绪后才开始。此前在 4K 批处理中见过的那次三秒停顿（端口日志里的 watchdog spike）就是这种重叠。
 - **空闲负载。** 图片跑完各个通道后显卡就会空闲下来（RX 9060 XT 上约 2 %，与 GeForce 相同）。不过从第一次神经通道开始直到程序关闭，会有一个 CPU 核心一直处于忙碌状态：DLSS-NR-on-AMD 的一个线程在全速轮询显卡（它的 inline 模式）。这个线程属于端口，释放 FSR 上下文也不会让它停下。
-
-**计划中：** 本程序自己的光流通道，移植自 AMD FidelityFX SDK 的光流（MIT），用于替代 Radeon 上的块匹配，也可作为 GeForce 上的第二来源。
 
 ## 图片与视频文件
 
@@ -254,7 +254,7 @@ GIF 每帧最多 256 色，帧率最高 50 fps。
 | DLSS 5 | 神经渲染分辨率 | 设定神经渲染的运行尺寸：完整画面、限制长边（很大的来源如 8K 以固定的较小尺寸处理）或画面的百分比。缩小运行时其变化会上采样叠加到全分辨率画面；越低 GPU 负担越轻，但会损失最细小的细节。 |
 | 拍照 | 保存文件夹 / 文件名 / 保留透明度 / 同时保存原始画面 / 全局热键 / 自动拍照间隔 | 照片和视频保存的位置与方式。文件名由模板生成：`{name}`（源文件名，实时拍照时为 *VRChat*）、`{date}`、`{time}`、`{size}`、`{width}`、`{height}`、`{insize}`、`{inwidth}`、`{inheight}`；其余文字原样保留，重名时自动加 `_2`、`_3`……实时拍照默认 `VRChat_DLSS5_{date}_{time}_{size}`，处理后的图片和视频默认 `{name}_DLSS5_{size}`。 |
 | 拍照 | 预计处理时间 | 当前设置下已打开的图片或视频的大致处理时间，每次运行后会修正。 |
-| 帧引导 | 运动矢量 | NVIDIA Optical Flow（带前向 / 后向一致性检查）、GPU 块匹配或无。 |
+| 帧引导 | 运动矢量 | NVIDIA Optical Flow（带前向 / 后向一致性检查）、FSR 光流（本程序自带的金字塔计算通道，任意显卡可用，有自己的搜索半径与一致性检查）、GPU 块匹配或无。 |
 | 帧引导 | 深度 | AI 估计（DirectML 上的 Depth Anything V2 Small；更新间隔与网络分辨率可调）、平面、渐变或零。 |
 | 帧引导 | 自动重置 | 在场景切换时清空时序历史。默认关闭。 |
 | DLAA 预处理 | 启用 / 预设 | 可选的 DLSS 抗锯齿，在神经渲染之前以原生分辨率运行。DLSS 超分辨率生效时已包含这一步；预设对两者都有效。 |
@@ -283,7 +283,7 @@ GIF 每帧最多 256 色，帧率最高 50 fps。
 - **程序无法启动 / 立即关闭** – `%LOCALAPPDATA%\VRChatDLSS5Cam\` 中保存有 `log.txt`（最后一行即失败的步骤）和 `crash.txt`，提交 issue 时请附上这两个文件。
 - **NGX 未初始化 / DLAA 不支持** – NGX 运行时需要 NVIDIA GPU 和较新的驱动。DLSS 5 仍可通过 *直接加载（signed snippet）* 方式工作。
 - **深度估计器不可用** – `onnxruntime.dll`、`onnxruntime_providers_shared.dll`、`DirectML.dll` 和 `models\depth_anything_v2_small_fp16.onnx` 必须与可执行文件放在一起（发布包中均已包含）。估计器就绪之前程序使用零深度，其状态显示在 *帧引导* 下方。
-- **光流不可用** – Radeon 显卡上这是预期情况：光流引擎属于 GeForce 驱动，Radeon 上没有对应的引擎，因此使用块匹配，*帧引导* 下方的状态点会说明这一点。GeForce 显卡上若 `log.txt` 中出现 "NVOF unavailable, falling back to block matching"，说明需要更新 GeForce 驱动；在此之前使用块匹配。
+- **光流不可用** – Radeon 显卡上这是预期情况：光流引擎属于 GeForce 驱动，Radeon 上没有对应的引擎，因此改用 FSR 光流，*帧引导* 下方的状态点会说明这一点。GeForce 显卡上若 `log.txt` 中出现 "NVOF unavailable, falling back to the FSR optical flow"，说明需要更新 GeForce 驱动；在此之前使用 FSR 光流。
 - **视频预览全黑** – 许多影片以从黑场淡入开始，预览会跳过这些帧，并在所显示的帧仍然很暗时于画面下方给出说明。用进度条或方向键向后查找即可。
 - **视频无法打开 / 没有可用的编码器** – 支持的格式取决于 Windows 中安装的编解码器。HEVC 文件需要安装 *HEVC 视频扩展*（Microsoft Store），Windows N / KN 需要 *Media Feature Pack*。缺少 H.264 编码器时，可选择 *PNG 序列* 作为输出。关闭 *硬件解码* 有助于处理 GPU 解码器拒绝的文件。
 - **帧率偏低** – 关闭 DLAA，调大深度更新间隔或调低深度网络分辨率，调低神经渲染分辨率，或设置处理帧率上限。光流网格建议保持 4 px（2 px 与 1 px 在 4K 下开销大得多）。日志每 15 秒打印一行 `Perf:`，列出各阶段的开销。
@@ -321,7 +321,7 @@ FidelityFX SDK v1.1.4 的头文件及其签名的 `amd_fidelityfx_dx12.dll`（MI
 
 ```
 VRChat Stream 相机 ──Spout──▶ D3D11on12 接收 ──▶ 转换（sRGB / 缩放）
-      ▶ NVIDIA Optical Flow（前向 + 后向）/ 块匹配 ──▶ 运动矢量 + 置信度
+      ▶ NVIDIA Optical Flow（前向 + 后向）/ FSR 光流（金字塔，双向）/ 块匹配 ──▶ 运动矢量 + 置信度
       ▶ Depth Anything V2（ONNX Runtime DirectML，每 N 帧一次）──▶ 归一化深度，其间沿运动矢量重投影
       ▶ [DLSS SR / DLAA] ──▶ DLSSNR（nvngx_dlssnr.dll）──▶ 合成 / 对比 ──▶ 预览 + PNG 拍照
 视频文件 ──Media Foundation──▶ 解码（GPU）──▶ 同一条管线，逐帧 ──▶ MP4（H.264 / HEVC + AAC）或 PNG 序列
@@ -335,6 +335,10 @@ GIF / APNG / WebP 动图 ──WIC / libwebp──▶ 解码 ──▶ 同一条
 按 2% / 98% 分位归一化为反转的相对深度，并在两次推理之间沿运动矢量传递；不做逐帧历史重置。所有这些都是独立的 MIT 实现
 （`src/gfx/Pipeline.cpp`、`src/gfx/DepthEstimator.cpp`、`src/gfx/Shaders.cpp`）。光流引擎运行在一个私有的原生 D3D11 设备上；
 帧和矢量通过 NT 句柄共享纹理传到 D3D12，并由共享栅栏保证顺序（`src/gfx/NvOpticalFlow.cpp`）。
+
+FSR 光流是本程序自己的实现，不需要任何引擎：在亮度金字塔最粗的一层搜索大范围运动，往下每一层都把继承来的矢量连同邻居的矢量一起试过再在最好的那个周围细化，
+层与层之间对整条矢量取中值，最细的一层再以相反方向搜索一次——走不回原处的矢量会失去置信度。金字塔的层数随画面大小增加，每多一层，能跟住的运动就翻一倍。
+它的结构沿用 AMD FidelityFX SDK（MIT）中的光流，通道本身是本程序自己的着色器（`src/gfx/Shaders.cpp`、`src/gfx/Pipeline.cpp`）。
 
 在 Radeon 显卡上，FSR 宿主方式（`src/gfx/FsrHost.cpp`）取代 DLSS 5 功能：一个 FidelityFX API 的 FSR 3.1 上采样上下文以原生尺寸运行，
 输入同样的颜色、深度和运动矢量；DLSS-NR-on-AMD 作为独立程序从外部挂接到该上下文，把神经渲染应用到它的输出上。
