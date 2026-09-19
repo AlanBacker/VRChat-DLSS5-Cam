@@ -854,17 +854,26 @@ bool App::McpExecuteJobs(const std::shared_ptr<McpCall>& call, ui::UiEvents& ev)
                        Json::Obj().Set("reason", "too_many_jobs").Set("yours", mine).Set("perKey", m_settings.mcpQueuePerKey).Set("retryAfterSeconds", 30));
             return true;
         }
-        const std::string uploadId = a.Str("upload_id"), url = a.Str("url"), data = a.Str("data"), pathGiven = a.Str("path");
-        const int sources = (int)!uploadId.empty() + (int)!url.empty() + (int)!data.empty() + (int)!pathGiven.empty();
-        if (sources != 1) { call->Fail("exactly one of upload_id, url, data or path names the input"); return true; }
+        const std::string uploadId = a.Str("upload_id"), url = a.Str("url"), data = a.Str("data"), pathGiven = a.Str("path"), fromJobId = a.Str("job_id");
+        const int sources = (int)!uploadId.empty() + (int)!url.empty() + (int)!data.empty() + (int)!pathGiven.empty() + (int)!fromJobId.empty();
+        if (sources != 1) { call->Fail("exactly one of upload_id, job_id, url, data or path names the input"); return true; }
         if (!pathGiven.empty() && caller.role != McpRoleAdmin) { call->Fail("path is for admin keys (a file on the server itself): send the file with vdc_upload or url", Json::Obj().Set("reason", "not_allowed")); return true; }
         // The input's name decides whether it is a picture or a video.
         std::string inputName;
+        std::wstring fromPath;   // job_id: the earlier job's input, copied
         const McpUpload* upload = nullptr;
         if (!uploadId.empty()) {
             for (const McpUpload& u : m_mcpUploads) if (u.id == uploadId && (u.owner == caller.keyName || caller.role == McpRoleAdmin)) { upload = &u; break; }
             if (!upload) { call->Fail("no such upload (an unused upload is deleted after two hours; the program's restart drops them too)"); return true; }
             inputName = a.Str("name").empty() ? upload->name : SafeName(a.Str("name"), upload->name.c_str());
+        } else if (!fromJobId.empty()) {
+            // The same file again with another look: the input of an earlier job of this key (kept for mcpKeepHours after it ended).
+            const McpJob* src = McpFindJob(fromJobId);
+            if (!src || (src->owner != caller.keyName && caller.role != McpRoleAdmin)) { call->Fail("no such job: " + fromJobId + " (vdc_jobs list names yours)"); return true; }
+            if (src->fetching || src->state == McpJob::Queued) { call->Fail("the job " + fromJobId + " has not run yet: wait for it, or submit the file itself"); return true; }
+            if (!FileExists(src->inputPath)) { call->Fail("the input of job " + fromJobId + " is gone (a job's files are deleted after " + std::to_string(m_settings.mcpKeepHours) + " hours): send the file again"); return true; }
+            fromPath = src->inputPath;
+            inputName = a.Str("name").empty() ? src->inputName : SafeName(a.Str("name"), src->inputName.c_str());
         } else if (!url.empty()) {
             if (url.rfind("http://", 0) != 0 && url.rfind("https://", 0) != 0) { call->Fail("url must start with http:// or https://"); return true; }
             inputName = a.Str("name").empty() ? NameFromUrl(url) : SafeName(a.Str("name"), "download");
@@ -923,6 +932,8 @@ bool App::McpExecuteJobs(const std::shared_ptr<McpCall>& call, ui::UiEvents& ev)
             const std::wstring udir = upload->path.substr(0, upload->path.find_last_of(L"\\/"));
             m_mcpUploads.erase(std::remove_if(m_mcpUploads.begin(), m_mcpUploads.end(), [&](const McpUpload& u) { return u.id == uploadId; }), m_mcpUploads.end());
             DeleteTree(udir);
+        } else if (!fromPath.empty()) {
+            if (!CopyFileW(fromPath.c_str(), job.inputPath.c_str(), FALSE)) { call->Fail("the earlier job's input could not be copied: " + LastErrorText()); DeleteTree(job.folder); return true; }
         } else if (!data.empty()) {
             if (data.size() > kInlineMax * 4 / 3 + 4) { call->Fail("data is larger than 16 MB: upload it first (POST /upload)", Json::Obj().Set("reason", "too_large")); DeleteTree(job.folder); return true; }
             std::vector<uint8_t> bytes;

@@ -162,40 +162,6 @@ if job["state"] == "done":
     png = requests.get(job["outputs"][0]["url"], headers=H).content
 ```
 
-## Chat bots: the AstrBot plugin
-
-A chat model sees the picture a person posts, but it cannot hand the picture's bytes to a tool: `vdc_submit` needs an
-`upload_id`, a `url` or base64 `data`, and none of those exist for a picture that only sits in the chat. The
-repository ships a plugin for [AstrBot](https://astrbot.app) that closes the gap: `integrations/astrbot/astrbot_plugin_vdc`
-(also `astrbot_plugin_vdc.zip` with each release).
-
-What it does:
-
-- Before the model answers, every picture or video in the message (and in the message it replies to) is uploaded to
-  the server, and the model is told "`cat.jpg`: upload_id ..." together with what to do: call `vdc_submit` with that
-  id. The model never has to pass bytes or a path it does not have.
-- The plugin watches the jobs made from its uploads (a job's `uploadId` names the upload it came from) and posts the
-  finished picture or video into the chat the picture came from, by itself; the model only relays the queue message.
-  Without that, a result would reach the model as an image and depend on the model to forward it.
-- `/vdc` (sent with a picture, or as a reply to one) processes it without any model; `/vdc status` and `/vdc jobs`
-  show the server and the queue. **Queue every uploaded picture at once** (`auto_submit`) makes the plugin submit by
-  itself, so no MCP setup is needed at all. Two model tools of its own, `vdc_queue` and `vdc_post_result`, cover a
-  model that has no MCP tools.
-
-Setting it up:
-
-1. In the program: **Run the MCP server**; **Reach: Local network** when AstrBot runs on another computer; **Add
-   key** with the jobs role (it is copied); **Allow through Windows Firewall**.
-2. In AstrBot's web interface: **Plugins**, install the zip (or copy the folder into `data/plugins`), then the
-   plugin's settings: the server address as the sidebar shows it, without `/mcp` (`http://192.168.1.20:51550`), and
-   the key.
-3. For the model to drive the server too (change the look, apply a preset, read the queue), add the server under
-   **MCP servers** with the same key:
-   `{"url": "http://192.168.1.20:51550/mcp", "transport": "streamable_http", "headers": {"Authorization": "Bearer vdc_..."}}`.
-   Use the same key in both places, or an admin key for the plugin, so the plugin sees the jobs the model submits.
-
-The plugin needs nothing beyond AstrBot itself. Its settings are explained in its own `README.md`.
-
 ## What a client can do
 
 Every tool is named `vdc_...`, so a client with several servers never mixes them up (the names without the
@@ -226,7 +192,7 @@ prefix, from v1.8.0, still answer).
 | `vdc_window` | `show`, `restore`, `minimize`, `fullscreen`, `windowed`, `resize` (`width`, `height`), `sidebar`, `library` (`visible`). |
 | `vdc_reload` | `runtime` (the DLSS 5 runtime), `depth` (the depth estimator), `senders`, `history` (the temporal history of the neural pass). |
 | `vdc_upload` | A file for a job as base64 `data` with its `name` (up to 16 MB; larger files go to `POST /upload`). Answers an `uploadId` good for two hours. |
-| `vdc_submit` | A job: the input as `upload_id`, `data` (base64, with `name`), `url` or `path` (admin); `preset` (a preset's name, or `default` for the program's default look), `settings` (the job's own values: the look, the output and the guidance keys), `in` / `out` (a video's range in seconds), `label`, `client_ref` (the bot's own note, say the chat and the user), `vdc_wait` / `timeout`. Answers the job with its position and time estimate at once. |
+| `vdc_submit` | A job: the input as `upload_id`, `data` (base64, with `name`), `url`, `path` (admin) or `job_id` (the input of an earlier job of yours, processed again with another look); `preset` (a preset's name, or `default` for the program's default look), `settings` (the job's own values: the look, the output and the guidance keys), `in` / `out` (a video's range in seconds), `label`, `client_ref` (the bot's own note, say the chat and the user), `vdc_wait` / `timeout`. Answers the job with its position and time estimate at once. |
 | `vdc_jobs` | `list` (this key's jobs; all with an admin key), `get`, `wait` (`timeout` up to 60 s), `result` (with the inline picture, `inline`, `max_edge`), `vdc_cancel`, `delete`; `id` names the job. |
 
 The same things are also resources (`vdc://status`, `vdc://settings`, `vdc://settings/schema`, `vdc://library`,

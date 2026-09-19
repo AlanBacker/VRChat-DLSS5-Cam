@@ -281,10 +281,6 @@ Claude Code: 프로그램이 스위치를 켠 채 실행 중일 때 `claude mcp 
 안내받은 뒤 나중에 결과를 내려받습니다. 강한 그래픽 카드 한 대로 여러 봇을 이렇게 받을 수 있으며, 사이드바에 실행 중인 작업이
 표시되고 취소할 수도 있습니다. 모든 도구, 대기열 규칙, 최소 봇 예제는 [MCP.md](MCP.md)(영어)에 있습니다.
 
-[AstrBot](https://astrbot.app) 기반 채팅 봇(QQ, Telegram, Discord 등)은 저장소에 포함된 플러그인 `integrations/astrbot`
-(각 릴리스에도 `astrbot_plugin_vdc.zip` 첨부)을 그대로 쓸 수 있습니다. 올라온 사진을 먼저 서버에 업로드해 모델은 업로드 ID만 넘기면 되고,
-완성된 사진은 플러그인이 알아서 채팅에 올립니다.
-
 ## 설정 레퍼런스
 
 <details>

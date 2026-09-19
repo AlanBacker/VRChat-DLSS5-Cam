@@ -73,6 +73,7 @@ private:
     std::condition_variable     m_cv;
     std::deque<CaptureJob>      m_jobs;
     std::deque<CaptureResult>   m_results;
+    size_t                      m_active = 0;   // the job being encoded (its file is not written yet)
     bool                        m_quit = false;
     bool                        m_running = false;
 };

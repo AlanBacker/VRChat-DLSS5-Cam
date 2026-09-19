@@ -306,10 +306,6 @@ once its place in the **queue** and when its turn comes, and downloads the resul
 can serve several bots this way; the sidebar shows the running job and can cancel it. Every tool, the queue's rules
 and a minimal bot are described in [docs/MCP.md](docs/MCP.md).
 
-Chat bots built on [AstrBot](https://astrbot.app) (QQ, Telegram, Discord and others) get a ready plugin in
-`integrations/astrbot` (also `astrbot_plugin_vdc.zip` with each release): it uploads the pictures people post, so the
-model only has to name the upload, and posts the finished picture back into the chat by itself.
-
 ## Settings reference
 
 <details>

@@ -44,9 +44,10 @@ bool Capture::PollResult(CaptureResult& out) {
     return true;
 }
 
+// Jobs waiting plus the one being encoded: the count reaches zero only once the last file is written.
 size_t Capture::Pending() const {
     std::lock_guard<std::mutex> lock(m_mutex);
-    return m_jobs.size();
+    return m_jobs.size() + m_active;
 }
 
 const wchar_t* const Capture::kDefaultCaptureName = L"VRChat_DLSS5_{date}_{time}_{size}";
@@ -129,6 +130,7 @@ void Capture::WorkerMain() {
             }
             job = std::move(m_jobs.front());
             m_jobs.pop_front();
+            ++m_active;
         }
         CaptureResult result;
         result.path = job.path;
@@ -144,6 +146,7 @@ void Capture::WorkerMain() {
         {
             std::lock_guard<std::mutex> lock(m_mutex);
             m_results.push_back(std::move(result));
+            --m_active;
         }
     }
     if (SUCCEEDED(coInit)) CoUninitialize();
