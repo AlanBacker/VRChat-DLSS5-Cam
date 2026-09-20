@@ -54,6 +54,7 @@ VRChat DLSS5 Cam은 VRChat 카메라의 화면에 GeForce RTX에서 NVIDIA **DLS
 |---|---|---|
 | NVIDIA GeForce RTX 20 / 30 / 40 / 50 | `VRChatDLSS5Cam-win64.zip` | DLSS 5 런타임이 압축 파일에 들어 있습니다. |
 | AMD Radeon RX 7000 / 9000 | `VRChatDLSS5Cam-win64-amd.zip` | Radeon 에디션. 처음 시작할 때 DLSS-NR-on-AMD 설치 프로그램을 대신 내려받습니다. 현재 버전에서 기대할 수 있는 것은 [AMD Radeon 카드](#amd-radeon-카드)를 참고하세요. |
+| Linux + NVIDIA 카드 | `VRChatDLSS5Cam-linux-x86_64.tar.gz` | GeForce 에디션을 Proton으로 실행합니다. 동봉된 실행 스크립트가 Proton을 스스로 준비합니다. 사진, 동영상, MCP를 사용할 수 있고 실시간(Spout) 모드는 없으며 동영상은 WebP, GIF, APNG, PNG로 저장됩니다. [Linux](LINUX.md)(영어) 참고. |
 
 1. [최신 릴리스](https://github.com/AlanBacker/VRChat-DLSS5-Cam/releases/latest)에서 `VRChatDLSS5Cam-win64.zip`을 내려받아 원하는 위치에 압축을 풉니다. (Radeon 카드라면 대신 `VRChatDLSS5Cam-win64-amd.zip`을. 아래 *AMD Radeon 카드* 참고.)
 2. 더 복사할 파일은 없습니다. DLSS 5 런타임은 압축 파일의 `runtimes\` 아래에 RTX 50용과 RTX 40 / 30 / 20용 두 가지 빌드로 들어 있습니다. 앱은 시작할 때 설치된 카드에 맞는 빌드를 고르고, 실패하면 다른 빌드로 전환합니다. 사용 중인 빌드는 DLSS 5 섹션의 *런타임* 옆에 표시되고 경로는 `log.txt`에 기록됩니다.

@@ -1,0 +1,153 @@
+#!/usr/bin/env bash
+# VRChat DLSS5 Cam - Linux launcher.
+#
+# The program is the Windows build; on Linux it runs under Proton through umu-launcher, which this script
+# fetches on the first start (umu-launcher itself, GE-Proton and the Steam Linux Runtime, about 2.5 GB in
+# all). Everything after the launcher's own options is passed to the program: see docs/COMMAND_LINE.md.
+# Unix paths given as arguments are turned into the Z:\ form the program expects.
+#
+# Launcher options (must come first):
+#   --linux-info        print the paths and versions in use and exit
+#   --linux-reset       remove the Proton prefix (the program's own settings in data/ are kept) and exit
+#   --linux-help        this text
+# Environment:
+#   VDC_HOME            where the launcher keeps umu, the prefix and the data (default: ~/.local/share/VRChatDLSS5Cam)
+#   VDC_PROTONPATH      Proton to use (default GE-Proton = the latest GE-Proton, fetched by umu when missing)
+#   VDC_GITHUB_MIRROR   a site that relays github.com (https://host) for the umu-launcher download
+#   VDC_PROTON_LOG=1    write Proton/Wine logs to $VDC_HOME/logs
+set -euo pipefail
+
+APP_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+EXE="$APP_DIR/VRChatDLSS5Cam.exe"
+VDC_HOME="${VDC_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/VRChatDLSS5Cam}"
+UMU_VERSION="1.4.4"
+UMU_TAR="umu-launcher-${UMU_VERSION}-zipapp.tar"
+UMU_URL="https://github.com/Open-Wine-Components/umu-launcher/releases/download/${UMU_VERSION}/${UMU_TAR}"
+UMU_RUN="$VDC_HOME/umu-${UMU_VERSION}/umu/umu-run"
+PREFIX="$VDC_HOME/prefix"
+DATA_DIR="$VDC_HOME/data"
+PROTON="${VDC_PROTONPATH:-GE-Proton}"
+
+say()  { printf '%s\n' "$*" >&2; }
+die()  { say "vrchat-dlss5-cam: $*"; exit 1; }
+
+# A Unix path as the program sees it through Wine's Z: drive.
+to_win() {
+    local p="$1"
+    case "$p" in
+        "~"|"~/"*) p="$HOME${p#"~"}" ;;
+    esac
+    case "$p" in
+        /*) ;;
+        *)  p="$PWD/$p" ;;
+    esac
+    printf 'Z:%s' "${p//\//\\}"
+}
+
+usage() { sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; }
+
+fetch() {  # fetch URL FILE
+    local url="$1" out="$2" base
+    base="${VDC_GITHUB_MIRROR:-}"
+    base="${base%/}"
+    if [ -n "$base" ]; then
+        case "$base" in *://*) ;; *) base="https://$base" ;; esac
+        url="$base/$url"
+    fi
+    say "Downloading $url"
+    if command -v curl >/dev/null 2>&1; then
+        curl -fL --retry 3 --progress-bar -o "$out.part" "$url"
+    elif command -v wget >/dev/null 2>&1; then
+        wget -q --show-progress -O "$out.part" "$url"
+    else
+        die "neither curl nor wget is installed"
+    fi
+    mv -f "$out.part" "$out"
+}
+
+check_requirements() {
+    [ -f "$EXE" ] || die "VRChatDLSS5Cam.exe is not next to this script ($APP_DIR)"
+    command -v python3 >/dev/null 2>&1 || die "python3 is required (umu-launcher runs on it): install it with your package manager"
+    local pyok
+    pyok="$(python3 -c 'import sys; print(int(sys.version_info >= (3, 10)))' 2>/dev/null || echo 0)"
+    [ "$pyok" = 1 ] || die "python3 3.10 or newer is required"
+    if [ ! -f "$APP_DIR/d3dcompiler_47.dll" ]; then
+        say "Note: d3dcompiler_47.dll is not next to VRChatDLSS5Cam.exe. Proton's own shader compiler gets the picture"
+        say "      wrong (a grey checkerboard instead of the image); use the Linux package, which ships the compiler."
+    fi
+    if ! ls /usr/lib/x86_64-linux-gnu/nvidia/wine/nvngx.dll /usr/lib64/nvidia/wine/nvngx.dll /usr/lib/nvidia/wine/nvngx.dll >/dev/null 2>&1 \
+       && ! find /usr/lib /usr/lib64 -maxdepth 4 -name nvngx.dll -print -quit 2>/dev/null | grep -q .; then
+        say "Note: the NVIDIA driver's Wine bridge (nvngx.dll) was not found. The neural pass (DLSS 5) needs the"
+        say "      NVIDIA driver 5xx or newer; the program still runs, without DLSS features."
+    fi
+}
+
+ensure_umu() {
+    [ -x "$UMU_RUN" ] && return
+    mkdir -p "$VDC_HOME/umu-${UMU_VERSION}"
+    local tar="$VDC_HOME/umu-${UMU_VERSION}/$UMU_TAR"
+    [ -f "$tar" ] || fetch "$UMU_URL" "$tar"
+    tar -xf "$tar" -C "$VDC_HOME/umu-${UMU_VERSION}"
+    [ -f "$UMU_RUN" ] || die "umu-launcher did not unpack as expected ($UMU_RUN missing)"
+    chmod +x "$UMU_RUN" 2>/dev/null || true
+    rm -f "$tar"
+}
+
+# ---- launcher options -------------------------------------------------------------------------------------
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --linux-help|-h|--help)
+            usage; exit 0 ;;
+        --linux-info)
+            echo "app:     $APP_DIR"
+            echo "home:    $VDC_HOME"
+            echo "umu:     $UMU_RUN $([ -x "$UMU_RUN" ] && echo '(present)' || echo '(fetched at the first start)')"
+            echo "proton:  $PROTON"
+            echo "prefix:  $PREFIX $([ -d "$PREFIX" ] && echo '(present)' || echo '(created at the first start)')"
+            echo "data:    $DATA_DIR"
+            echo "nvngx:   $(find /usr/lib /usr/lib64 -maxdepth 4 -name nvngx.dll -print -quit 2>/dev/null || echo 'not found')"
+            exit 0 ;;
+        --linux-reset)
+            [ -d "$PREFIX" ] && rm -rf "$PREFIX" && say "removed $PREFIX"
+            exit 0 ;;
+        *) break ;;
+    esac
+    shift
+done
+
+check_requirements
+ensure_umu
+mkdir -p "$PREFIX" "$DATA_DIR"
+
+# ---- program arguments: Unix paths become Z:\ paths, the data folder is set unless given ----------------
+args=()
+have_data_dir=0
+for a in "$@"; do
+    case "$a" in
+        --data-dir) have_data_dir=1; args+=("$a") ;;
+        /*|./*|../*|"~/"*) args+=("$(to_win "$a")") ;;
+        *) args+=("$a") ;;
+    esac
+done
+if [ "$have_data_dir" = 0 ]; then
+    args+=(--data-dir "$(to_win "$DATA_DIR")")
+fi
+
+export WINEPREFIX="$PREFIX"
+export PROTONPATH="$PROTON"
+export GAMEID="${GAMEID:-umu-default}"
+export STORE="${STORE:-none}"
+export PROTON_ENABLE_NVAPI="${PROTON_ENABLE_NVAPI:-1}"
+# The shader compiler shipped next to the executable wins over Proton's built-in one.
+export WINEDLLOVERRIDES="${WINEDLLOVERRIDES:+$WINEDLLOVERRIDES;}d3dcompiler_47=n,b"
+if [ "${VDC_PROTON_LOG:-0}" = 1 ]; then
+    mkdir -p "$VDC_HOME/logs"
+    export PROTON_LOG=1 PROTON_LOG_DIR="$VDC_HOME/logs"
+fi
+if [ ! -f "$PREFIX/system.reg" ]; then
+    say "First start: umu-launcher fetches GE-Proton and the Steam Linux Runtime (about 2.5 GB) and prepares the prefix."
+    say "             This takes a few minutes and happens once."
+fi
+
+cd "$APP_DIR"
+exec python3 "$UMU_RUN" "$EXE" "${args[@]}"

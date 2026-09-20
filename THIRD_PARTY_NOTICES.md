@@ -87,6 +87,14 @@ the terms of its license, which permits redistribution of the DirectML binaries 
 applications. The license and third-party notices are shipped in
 `licenses/DirectML-LICENSE.txt` and `licenses/DirectML-ThirdPartyNotices.txt`.
 
+## Direct3D shader compiler (`d3dcompiler_47.dll`, Linux package only)
+
+Microsoft Direct3D HLSL compiler, Copyright (c) Microsoft Corporation, a redistributable
+component of the Windows SDK (`Redist\D3D\x64\d3dcompiler_47.dll`), shipped in the Linux package
+under the Microsoft Software License Terms for the Windows SDK, which permit its distribution with
+applications. The program compiles its compute shaders at start with this DLL; Windows has it
+built in, and Proton's own version compiles them incorrectly.
+
 ## libwebp
 
 libwebp (the WebP codec library), Copyright (c) 2010, Google Inc. All rights reserved.

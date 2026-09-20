@@ -72,6 +72,31 @@ jobs:
             Copy-Item "runtime/nvngx_dlssnr-310.8-$rt.dll" "$out/runtimes/$rt/nvngx_dlssnr.dll"
           }
           Compress-Archive -Path "$out/*" -DestinationPath "dist/VRChatDLSS5Cam-win64.zip"
+          # Linux package: the same GeForce edition plus the launcher scripts (docs/LINUX.md); Python writes the
+          # tarball so that the scripts carry their executable bit.
+          Copy-Item linux/vrchat-dlss5-cam, linux/install-linux.sh, "$out"
+          Copy-Item resources/app-256.png "$out/icon.png"
+          # The Direct3D shader compiler from the Windows SDK's redistributables: Proton's own d3dcompiler_47 miscompiles
+          # the program's shaders (the picture's alpha comes out as zero), so the Linux package carries Microsoft's.
+          $d3dc = Get-ChildItem "${env:ProgramFiles(x86)}/Windows Kits/10/Redist" -Recurse -Filter d3dcompiler_47.dll -ErrorAction SilentlyContinue |
+                  Where-Object { $_.FullName -match '[\\/]x64[\\/]' } | Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $d3dc) { throw "d3dcompiler_47.dll (x64) was not found under the Windows SDK's Redist folder" }
+          Copy-Item $d3dc.FullName "$out/d3dcompiler_47.dll"
+          Write-Host "Linux package: shader compiler from $($d3dc.FullName)"
+          python -c "import tarfile, os
+          root = 'dist/VRChatDLSS5Cam'
+          with tarfile.open('dist/VRChatDLSS5Cam-linux-x86_64.tar.gz', 'w:gz') as tar:
+              for dirpath, dirnames, filenames in os.walk(root):
+                  dirnames.sort()
+                  for name in sorted(filenames):
+                      full = os.path.join(dirpath, name)
+                      arc = 'VRChatDLSS5Cam/' + os.path.relpath(full, root).replace(os.sep, '/')
+                      info = tar.gettarinfo(full, arc)
+                      info.uid = info.gid = 0; info.uname = info.gname = ''
+                      info.mode = 0o755 if name in ('vrchat-dlss5-cam', 'install-linux.sh') else 0o644
+                      with open(full, 'rb') as f: tar.addfile(info, f)
+          "
+          Remove-Item "$out/vrchat-dlss5-cam", "$out/install-linux.sh", "$out/icon.png", "$out/d3dcompiler_47.dll"
           # Radeon edition: the FidelityFX API runtime for the FSR host route, and the RTX 50 build of the DLSS 5
           # runtime next to the executable, where the DLSS-NR-on-AMD installer looks for it.
           $amd = "dist-amd/VRChatDLSS5Cam"
@@ -112,6 +137,7 @@ jobs:
             |---|---|
             | NVIDIA GeForce RTX 20 / 30 / 40 / 50 | `VRChatDLSS5Cam-win64.zip` |
             | AMD Radeon RX 7000 / 9000 | `VRChatDLSS5Cam-win64-amd.zip` (Radeon edition / Radeon 版) |
+            | Linux with an NVIDIA card (runs under Proton) / Linux + NVIDIA 显卡（通过 Proton 运行） | `VRChatDLSS5Cam-linux-x86_64.tar.gz` (see `docs/LINUX.md` / 见 `docs/LINUX.md`) |
 
             The Radeon edition fetches DLSS-NR-on-AMD's installer for you at the first start; what to expect on Radeon is listed in the README under *AMD Radeon cards*.
             Radeon 版会在首次启动时为你下载 DLSS-NR-on-AMD 的安装器；Radeon 上的预期表现见 README 的 *AMD Radeon 显卡* 一节。
@@ -126,4 +152,4 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release upload "${{ github.ref_name }}" dist/VRChatDLSS5Cam-win64.zip dist-amd/VRChatDLSS5Cam-win64-amd.zip --clobber --repo "${{ github.repository }}"
+          gh release upload "${{ github.ref_name }}" dist/VRChatDLSS5Cam-win64.zip dist-amd/VRChatDLSS5Cam-win64-amd.zip dist/VRChatDLSS5Cam-linux-x86_64.tar.gz --clobber --repo "${{ github.repository }}"

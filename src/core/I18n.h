@@ -352,6 +352,8 @@ enum class Lang { English = 0, Chinese = 1, Japanese = 2, Korean = 3, Count = 4 
     X(VideoOutputGif,     "GIF", "GIF", "GIF", "GIF") \
     X(VideoOutputApng,    "APNG", "APNG", "APNG", "APNG") \
     X(VideoOutputWebP,    "WebP", "WebP", "WebP", "WebP") \
+    X(ProtonNoMp4,        "MP4 output is not available under Proton (no H.264/HEVC encoder): videos are saved as WebP here. GIF, APNG and PNG sequences are available too.", "Proton 下无法输出 MP4（没有 H.264/HEVC 编码器）：这里的视频会保存为 WebP。也可以选择 GIF、APNG 或 PNG 序列。", "Proton では MP4 出力は使えません（H.264/HEVC エンコーダーがありません）。ここでは動画は WebP で保存されます。GIF、APNG、PNG 連番も選べます。", "Proton에서는 MP4 출력을 사용할 수 없습니다(H.264/HEVC 인코더 없음). 여기서는 동영상이 WebP로 저장됩니다. GIF, APNG, PNG 시퀀스도 선택할 수 있습니다.") \
+    X(ProtonNoSpout,      "Live mode needs a Spout sender, which exists only on Windows. Under Proton use the Picture and Video modes.", "实时模式需要 Spout 发送端，而它只存在于 Windows。在 Proton 下请使用图片和视频模式。", "ライブモードには Spout 送信元が必要で、Windows にしかありません。Proton では画像モードと動画モードをお使いください。", "실시간 모드에는 Spout 송신자가 필요한데, 이는 Windows에만 있습니다. Proton에서는 사진 및 동영상 모드를 사용하세요.") \
     X(WebpQuality,        "WebP quality", "WebP 质量", "WebP 品質", "WebP 품질") \
     X(TipWebpQuality,     "Compression of an animated WebP: higher is better and larger. 100 writes lossless frames.", "WebP 动图的压缩质量：越高画质越好、文件越大。100 为无损。", "WebP アニメーションの圧縮品質。高いほど高画質で大きくなります。100 はロスレスです。", "WebP 애니메이션의 압축 품질. 높을수록 화질이 좋고 파일이 커집니다. 100은 무손실입니다.") \
     X(AnimFrames,         "%llu frames", "%llu 帧", "%llu フレーム", "%llu 프레임") \

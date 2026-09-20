@@ -55,6 +55,7 @@ as a batch. It is an ordinary Windows application: the VRChat process is never t
 |---|---|---|
 | NVIDIA GeForce RTX 20 / 30 / 40 / 50 | `VRChatDLSS5Cam-win64.zip` | The DLSS 5 runtime is in the archive. |
 | AMD Radeon RX 7000 / 9000 | `VRChatDLSS5Cam-win64-amd.zip` | The Radeon edition; it fetches DLSS-NR-on-AMD's installer for you at the first start. See [AMD Radeon cards](#amd-radeon-cards) for what to expect. |
+| Linux with an NVIDIA card | `VRChatDLSS5Cam-linux-x86_64.tar.gz` | The GeForce edition running under Proton, with a launcher that sets Proton up by itself. Pictures, videos and MCP work; there is no live (Spout) mode and videos are saved as WebP, GIF, APNG or PNG. See [Linux](docs/LINUX.md). |
 
 1. Download `VRChatDLSS5Cam-win64.zip` from the [latest release](https://github.com/AlanBacker/VRChat-DLSS5-Cam/releases/latest) and extract it to any location. (Radeon card: `VRChatDLSS5Cam-win64-amd.zip` instead, see *AMD Radeon cards* below.)
 2. Nothing else has to be copied. The DLSS 5 runtime is in the archive under `runtimes\`, in one build for RTX 50

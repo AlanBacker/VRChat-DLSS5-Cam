@@ -1,6 +1,9 @@
 #include "gfx/Shaders.h"
 #include "core/Log.h"
+#include "core/Util.h"
 #include <d3dcompiler.h>
+#include <cstdio>
+#include <cstring>
 
 namespace vdc {
 
@@ -895,29 +898,103 @@ const ShaderSource kSources[] = {
     { ShaderId::NeuralPrep,  "NeuralPrep",  kNeuralPrep },
 };
 
+// ---------------------------------------------------------------------------
+// Bytecode cache: the compiled shaders are kept in the data folder, keyed by their source, the compile options and
+// the compiler DLL in use (Windows' d3dcompiler_47 and Proton's built-in one produce different code), so a start
+// after the first skips the compiler. Under Proton with the Microsoft compiler that is several seconds.
+
+const char* kCacheVersion = "vdc-shader-cache-1";
+
+uint64_t Fnv1a(const void* data, size_t size, uint64_t h) {
+    const auto* p = static_cast<const uint8_t*>(data);
+    for (size_t i = 0; i < size; ++i) { h ^= p[i]; h *= 1099511628211ull; }
+    return h;
+}
+
+// Size and write time of the compiler DLL that D3DCompile resolves to.
+uint64_t CompilerStamp() {
+    static const uint64_t stamp = [] {
+        wchar_t path[MAX_PATH] = {};
+        const HMODULE mod = GetModuleHandleW(L"d3dcompiler_47.dll");
+        if (!mod || !GetModuleFileNameW(mod, path, MAX_PATH)) return (uint64_t)0;
+        WIN32_FILE_ATTRIBUTE_DATA fa{};
+        if (!GetFileAttributesExW(path, GetFileExInfoStandard, &fa)) return (uint64_t)0;
+        return ((uint64_t)fa.nFileSizeLow << 32) ^ ((uint64_t)fa.ftLastWriteTime.dwHighDateTime << 32) ^ fa.ftLastWriteTime.dwLowDateTime;
+    }();
+    return stamp;
+}
+
+std::wstring CachePath(const char* name, const std::string& source, UINT flags, const char* profile) {
+    uint64_t h = Fnv1a(kCacheVersion, std::strlen(kCacheVersion), 1469598103934665603ull);
+    h = Fnv1a(profile, std::strlen(profile), h);
+    h = Fnv1a(&flags, sizeof(flags), h);
+    const uint64_t stamp = CompilerStamp();
+    h = Fnv1a(&stamp, sizeof(stamp), h);
+    h = Fnv1a(source.data(), source.size(), h);
+    wchar_t hex[24];
+    swprintf(hex, 24, L"%016llx", (unsigned long long)h);
+    return GetAppDataDir() + L"\\shaders\\" + Utf8ToWide(name) + L"-" + hex + L".cso";
+}
+
+bool ReadCached(const std::wstring& path, std::vector<uint8_t>& bytes) {
+    FILE* f = _wfopen(path.c_str(), L"rb");
+    if (!f) return false;
+    std::fseek(f, 0, SEEK_END);
+    const long size = std::ftell(f);
+    std::fseek(f, 0, SEEK_SET);
+    bool ok = size > 4;
+    if (ok) {
+        bytes.resize((size_t)size);
+        ok = std::fread(bytes.data(), 1, bytes.size(), f) == bytes.size() && std::memcmp(bytes.data(), "DXBC", 4) == 0;
+    }
+    std::fclose(f);
+    if (!ok) bytes.clear();
+    return ok;
+}
+
+void WriteCached(const std::wstring& path, const void* data, size_t size) {
+    const size_t slash = path.find_last_of(L'\\');
+    if (slash != std::wstring::npos) CreateDirectories(path.substr(0, slash));
+    const std::wstring tmp = path + L".tmp";
+    FILE* f = _wfopen(tmp.c_str(), L"wb");
+    if (!f) return;
+    const bool ok = std::fwrite(data, 1, size, f) == size;
+    std::fclose(f);
+    if (!ok || !MoveFileExW(tmp.c_str(), path.c_str(), MOVEFILE_REPLACE_EXISTING)) DeleteFileW(tmp.c_str());
+}
+
 } // namespace
 
 bool Shaders::Compile(Device& device, ShaderId id, const char* name, const char* body, std::wstring& error) {
     std::string source = kCommon;
     source += body;
-    ComPtr<ID3DBlob> code, errors;
-    UINT flags = D3DCOMPILE_OPTIMIZATION_LEVEL3 | D3DCOMPILE_ENABLE_STRICTNESS;
-    HRESULT hr = D3DCompile(source.data(), source.size(), name, nullptr, nullptr, "main", "cs_5_1", flags, 0,
-                            &code, &errors);
-    if (FAILED(hr)) {
-        std::string msg = errors ? std::string((const char*)errors->GetBufferPointer(), errors->GetBufferSize()) : FormatHr(hr);
-        Log::Error("Shader %s failed to compile: %s", name, msg.c_str());
-        error = L"Shader compilation failed: " + Utf8ToWide(name);
-        return false;
+    const UINT flags = D3DCOMPILE_OPTIMIZATION_LEVEL3 | D3DCOMPILE_ENABLE_STRICTNESS;
+    const char* profile = "cs_5_1";
+    const std::wstring cachePath = CachePath(name, source, flags, profile);
+    std::vector<uint8_t> bytecode;
+    if (ReadCached(cachePath, bytecode)) {
+        ++m_fromCache;
+    } else {
+        ComPtr<ID3DBlob> code, errors;
+        HRESULT hr = D3DCompile(source.data(), source.size(), name, nullptr, nullptr, "main", profile, flags, 0,
+                                &code, &errors);
+        if (FAILED(hr)) {
+            std::string msg = errors ? std::string((const char*)errors->GetBufferPointer(), errors->GetBufferSize()) : FormatHr(hr);
+            Log::Error("Shader %s failed to compile: %s", name, msg.c_str());
+            error = L"Shader compilation failed: " + Utf8ToWide(name);
+            return false;
+        }
+        if (errors && errors->GetBufferSize() > 1)
+            Log::Warn("Shader %s: %s", name, (const char*)errors->GetBufferPointer());
+        bytecode.assign((const uint8_t*)code->GetBufferPointer(), (const uint8_t*)code->GetBufferPointer() + code->GetBufferSize());
+        WriteCached(cachePath, bytecode.data(), bytecode.size());
     }
-    if (errors && errors->GetBufferSize() > 1)
-        Log::Warn("Shader %s: %s", name, (const char*)errors->GetBufferPointer());
 
     D3D12_COMPUTE_PIPELINE_STATE_DESC pd{};
     pd.pRootSignature = m_rootSignature.Get();
-    pd.CS.pShaderBytecode = code->GetBufferPointer();
-    pd.CS.BytecodeLength = code->GetBufferSize();
-    hr = device.D3D12()->CreateComputePipelineState(&pd, IID_PPV_ARGS(&m_pso[(UINT)id]));
+    pd.CS.pShaderBytecode = bytecode.data();
+    pd.CS.BytecodeLength = bytecode.size();
+    const HRESULT hr = device.D3D12()->CreateComputePipelineState(&pd, IID_PPV_ARGS(&m_pso[(UINT)id]));
     if (FAILED(hr)) {
         Log::Hr(LogLevel::Error, StrPrintf("CreateComputePipelineState(%s)", name).c_str(), hr);
         error = L"Pipeline creation failed: " + Utf8ToWide(name);
@@ -980,9 +1057,12 @@ bool Shaders::Init(Device& device, std::wstring& error) {
                                              IID_PPV_ARGS(&m_rootSignature));
     if (FAILED(hr)) { error = L"CreateRootSignature failed: " + Utf8ToWide(FormatHr(hr)); return false; }
 
+    m_fromCache = 0;
+    const double t0 = NowSeconds();
     for (const ShaderSource& s : kSources)
         if (!Compile(device, s.id, s.name, s.body, error)) return false;
-    Log::Info("Compiled %u compute shaders", (unsigned)(sizeof(kSources) / sizeof(kSources[0])));
+    Log::Info("Compiled %u compute shaders (%u from the cache) in %.0f ms", (unsigned)(sizeof(kSources) / sizeof(kSources[0])),
+              m_fromCache, (NowSeconds() - t0) * 1000.0);
     return true;
 }
 

@@ -3,6 +3,7 @@
 #include <knownfolders.h>
 #include <cstdarg>
 #include <cstdio>
+#include <cstring>
 #include <chrono>
 #include <ctime>
 #pragma comment(lib, "version.lib")
@@ -170,6 +171,40 @@ double NowSeconds() {
     LARGE_INTEGER c;
     QueryPerformanceCounter(&c);
     return (double)c.QuadPart / (double)freq.QuadPart;
+}
+
+// Wine exports wine_get_version from ntdll; nothing on Windows does. Proton (the Linux launcher) is Wine.
+bool RunningUnderWine() {
+    static const bool wine = [] {
+        const HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
+        return ntdll && GetProcAddress(ntdll, "wine_get_version") != nullptr;
+    }();
+    return wine;
+}
+
+std::string WineHostText() {
+    const HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
+    if (!ntdll) return {};
+    using GetVersionFn = const char* (CDECL*)();
+    using GetHostFn = void (CDECL*)(const char**, const char**);
+    const auto getVersion = reinterpret_cast<GetVersionFn>(GetProcAddress(ntdll, "wine_get_version"));
+    if (!getVersion) return {};
+    std::string text = std::string("Wine ") + getVersion();
+    if (const auto getHost = reinterpret_cast<GetHostFn>(GetProcAddress(ntdll, "wine_get_host_version"))) {
+        const char* sysname = nullptr; const char* release = nullptr;
+        getHost(&sysname, &release);
+        if (sysname) text += std::string(" on ") + sysname + (release ? std::string(" ") + release : "");
+    }
+    return text;
+}
+
+// Wine's own DLLs carry "Wine builtin DLL" right after the DOS header (its loader checks the same bytes). Tells
+// Proton's d3dcompiler_47 from the Microsoft one shipped next to the executable.
+bool IsWineBuiltinDll(const wchar_t* module) {
+    const HMODULE mod = GetModuleHandleW(module);
+    if (!mod) return false;
+    static const char kSignature[] = "Wine builtin DLL";
+    return std::memcmp(reinterpret_cast<const char*>(mod) + sizeof(IMAGE_DOS_HEADER), kSignature, sizeof(kSignature)) == 0;
 }
 
 std::wstring TimestampForFileName() {

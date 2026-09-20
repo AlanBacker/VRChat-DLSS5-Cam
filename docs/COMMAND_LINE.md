@@ -56,3 +56,9 @@ VRChatDLSS5Cam.exe --window 1600x900 --lang ja --set theme=2 --open "D:\clip.mp4
 ```
 
 The log (`log.txt`) records every command-line action, so a failed unattended run can be read back afterwards.
+
+## Linux
+
+On Linux the program runs under Proton through the `vrchat-dlss5-cam` launcher, which takes the same options and turns
+Unix paths (`/home/...`, `./clip.mp4`, `~/Pictures`) into the `Z:\` form the program expects. The launcher's own options
+and what differs under Proton are in [LINUX.md](LINUX.md).

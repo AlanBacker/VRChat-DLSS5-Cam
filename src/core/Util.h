@@ -37,6 +37,9 @@ uint64_t     GetFileSizeBytes(const std::wstring& path);
 
 double       NowSeconds();                // monotonic seconds
 std::wstring TimestampForFileName();      // 2026-09-04_12-34-56.789
+bool         RunningUnderWine();          // the process runs under Wine/Proton (Linux): no Spout, no MP4 writer
+std::string  WineHostText();              // "Wine 11.0 on Linux 7.0" (empty outside Wine)
+bool         IsWineBuiltinDll(const wchar_t* module);   // the loaded module is one of Wine's own DLLs, not a native one
 std::string  TimestampForLog();           // 12:34:56.789
 
 // Structured exception filter used by the NGX/NVOF wrappers. Stores the code

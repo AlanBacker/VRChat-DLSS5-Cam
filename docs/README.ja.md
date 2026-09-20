@@ -54,6 +54,7 @@ Mod も必要としません。
 |---|---|---|
 | NVIDIA GeForce RTX 20 / 30 / 40 / 50 | `VRChatDLSS5Cam-win64.zip` | DLSS 5 ランタイムはアーカイブに同梱されています。 |
 | AMD Radeon RX 7000 / 9000 | `VRChatDLSS5Cam-win64-amd.zip` | Radeon 版。初回起動時に DLSS-NR-on-AMD のインストーラーを取得します。現バージョンで期待できることは [AMD Radeon カード](#amd-radeon-カード) を参照してください。 |
+| Linux + NVIDIA カード | `VRChatDLSS5Cam-linux-x86_64.tar.gz` | GeForce 版を Proton で動かします。同梱のランチャーが Proton を自動で用意します。画像・動画・MCP が使えます。ライブ（Spout）モードはなく、動画は WebP・GIF・APNG・PNG で保存されます。詳しくは [Linux](LINUX.md)（英語）。 |
 
 1. [最新リリース](https://github.com/AlanBacker/VRChat-DLSS5-Cam/releases/latest) から `VRChatDLSS5Cam-win64.zip` をダウンロードし、任意の場所に展開します。（Radeon カードの場合は代わりに `VRChatDLSS5Cam-win64-amd.zip` を。下記 *AMD Radeon カード* を参照。）
 2. ほかにコピーするものはありません。DLSS 5 ランタイムはアーカイブの `runtimes\` 以下に、RTX 50 向けと RTX 40 / 30 / 20 向けの 2 つのビルドで入っています。アプリケーションは起動時に搭載カードに合うビルドを選び、失敗した場合はもう一方に切り替えます。使用中のビルドは DLSS 5 セクションの*ランタイム*の隣に表示され、パスは `log.txt` に記録されます。

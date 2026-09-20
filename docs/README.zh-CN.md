@@ -49,6 +49,7 @@ VRChat DLSS5 Cam 将 VRChat 相机的画面接入 GeForce RTX 显卡上的 NVIDI
 |---|---|---|
 | NVIDIA GeForce RTX 20 / 30 / 40 / 50 | `VRChatDLSS5Cam-win64.zip` | DLSS 5 运行库已在压缩包内。 |
 | AMD Radeon RX 7000 / 9000 | `VRChatDLSS5Cam-win64-amd.zip` | Radeon 版；首次启动时会为你下载 DLSS-NR-on-AMD 的安装器。当前版本的预期表现见[AMD Radeon 显卡](#amd-radeon-显卡)。 |
+| Linux + NVIDIA 显卡 | `VRChatDLSS5Cam-linux-x86_64.tar.gz` | GeForce 版通过 Proton 运行，附带的启动脚本会自行配置 Proton。图片、视频和 MCP 可用；没有实时（Spout）模式，视频保存为 WebP、GIF、APNG 或 PNG。见 [Linux 说明](LINUX.md)（英文）。 |
 
 1. 从[最新版本](https://github.com/AlanBacker/VRChat-DLSS5-Cam/releases/latest)下载 `VRChatDLSS5Cam-win64.zip`，解压到任意位置。（Radeon 显卡请改下载 `VRChatDLSS5Cam-win64-amd.zip`，见下方*AMD Radeon 显卡*。）
 2. 无需再复制任何文件。DLSS 5 运行库位于压缩包的 `runtimes\` 下，分为 RTX 50 一份与 RTX 40 / 30 / 20 一份；程序启动时选择与所装显卡对应的一份，失败时切换到另一份。正在使用的版本显示在 DLSS 5 分节的*运行库*旁，路径记录在 `log.txt` 中。

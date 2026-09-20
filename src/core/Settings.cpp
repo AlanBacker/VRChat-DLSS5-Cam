@@ -497,6 +497,7 @@ void Settings::Clamp() {
     sourceMode = std::clamp(sourceMode, 0, 2);
     spoutRotate = std::clamp(spoutRotate, 0, 3);
     videoOutput = std::clamp(videoOutput, 0, 5);
+    if (RunningUnderWine() && videoOutput < 2) videoOutput = 5;   // no MP4 writer under Proton: WebP stands in
     videoBitrateMbps = std::clamp(videoBitrateMbps, 5, 200);
     webpQuality = std::clamp(webpQuality, 50, 100);
     nrIntensity = std::clamp(nrIntensity, 0.0f, 2.0f);

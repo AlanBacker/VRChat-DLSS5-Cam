@@ -1317,6 +1317,10 @@ void MainUI::BlockSource(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
                 if (webp && !info.videoLossless) {
                     if (SliderIntReset(TR(WebpQuality), &s.webpQuality, 50, 100, 90, "%d", TR(TipWebpQuality))) ev.settingsChanged = true;
                 }
+            } else if (s.videoMatchSource && RunningUnderWine()) {
+                // Proton: a video comes back as WebP whatever its codec (no MP4 writer); the quality is the WebP one.
+                Hint(TR(ProtonNoMp4));
+                if (SliderIntReset(TR(WebpQuality), &s.webpQuality, 50, 100, 90, "%d", TR(TipWebpQuality))) ev.settingsChanged = true;
             } else if (s.videoMatchSource) {
                 if (info.videoLoaded) {
                     const std::string rate = info.videoBitrateKbps > 0 ? StrPrintf("%.1f Mbit/s", info.videoBitrateKbps / 1000.0) : std::string(TR(BitrateUnknown));
@@ -1328,7 +1332,11 @@ void MainUI::BlockSource(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
                 Help(TR(TipKeepAudio));
             } else {
                 const char* outputs[] = { TR(VideoOutputH264), TR(VideoOutputHevc), TR(VideoOutputPng), TR(VideoOutputGif), TR(VideoOutputApng), TR(VideoOutputWebP) };
-                if (ComboIds(TR(VideoOutput), &s.videoOutput, outputs, 6, TR(TipVideoOutput))) ev.settingsChanged = true;
+                if (RunningUnderWine()) {
+                    // Proton: the two MP4 entries are left out (no MP4 writer); the setting keeps its Windows numbering.
+                    int choice = std::clamp(s.videoOutput - 2, 0, 3);
+                    if (ComboIds(TR(VideoOutput), &choice, outputs + 2, 4, TR(ProtonNoMp4))) { s.videoOutput = choice + 2; ev.settingsChanged = true; }
+                } else if (ComboIds(TR(VideoOutput), &s.videoOutput, outputs, 6, TR(TipVideoOutput))) ev.settingsChanged = true;
                 if (s.videoOutput == 0 || s.videoOutput == 1) {
                     if (SliderIntReset(TR(Bitrate), &s.videoBitrateMbps, 5, 200, 40, "%d Mbit/s", TR(TipBitrate))) ev.settingsChanged = true;
                     if (Toggle(TR(KeepAudio), &s.videoKeepAudio)) ev.settingsChanged = true;
@@ -1379,6 +1387,10 @@ void MainUI::BlockSource(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         if (info.status && info.sourceConnected) {
             StatusDot(p.good, StrPrintf("%s  %ux%u  %s  %3.0f %s", info.senderName.c_str(), info.status->srcWidth, info.status->srcHeight,
                                         info.sourceFormat.c_str(), m_shown.senderFps, TR(Fps)).c_str());
+        } else if (RunningUnderWine()) {
+            // Proton: no Spout sender can exist (docs/LINUX.md)
+            StatusDot(p.muted, TR(StatusNoSpout));
+            Hint(TR(ProtonNoSpout));
         } else {
             StatusDot(p.muted, TR(StatusWaiting));
             Hint(TR(HowToEnable));

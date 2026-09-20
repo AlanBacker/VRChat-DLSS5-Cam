@@ -40,6 +40,7 @@ public:
 private:
     bool Compile(Device& device, ShaderId id, const char* name, const char* source, std::wstring& error);
     ComPtr<ID3D12RootSignature> m_rootSignature;
+    unsigned                    m_fromCache = 0;   // shaders served by the bytecode cache at the last Init
     ComPtr<ID3D12PipelineState> m_pso[(UINT)ShaderId::Count];
 };
 

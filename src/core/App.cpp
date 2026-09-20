@@ -453,6 +453,10 @@ bool App::Init(HINSTANCE hInstance, int nCmdShow) {
     McpJobsInit();
     SyncMcp();
     Log::Info("Startup complete");
+    if (RunningUnderWine())
+        Log::Info("Host: %s (Proton): Spout senders, NVIDIA optical flow and the MP4 writer are not available here; videos are written as WebP, GIF, APNG or PNG", WineHostText().c_str());
+    if (RunningUnderWine() && IsWineBuiltinDll(L"d3dcompiler_47.dll"))
+        Log::Warn("Shader compiler: Proton's built-in HLSL compiler is in use (no d3dcompiler_47.dll next to the executable); it gets the picture's alpha wrong, so the preview shows a checkerboard. The Linux package ships the Direct3D compiler (docs/LINUX.md)");
 
     m_lastFrameTime = NowSeconds();
     return true;
@@ -769,6 +773,15 @@ bool App::WorkerStartVideo(const Settings& settings, VideoRun& run, const std::w
         run.pngSequence = settings.videoOutput == 2;
         run.codec = settings.videoOutput == 1 ? 1 : 0;
         run.bitrateKbps = (UINT32)std::clamp(settings.videoBitrateMbps, 5, 200) * 1000u;
+    }
+    // Proton has no Media Foundation H.264/HEVC encoder (the sink writer fails with 0xD00000BB): an MP4 output is written
+    // as WebP instead, at the chosen WebP quality; the interface says so (docs/LINUX.md).
+    if (RunningUnderWine() && !run.pngSequence && run.animFormat == AnimFormat::None) {
+        run.animFormat = AnimFormat::WebP;
+        run.animLoops = animatedSource ? vi.loopCount : 0;
+        run.animQuality = std::clamp(settings.webpQuality, 50, 100);
+        run.animLossless = run.animQuality >= 100;
+        Log::Info("Video: MP4 output is not available under Proton, writing WebP (quality %d) instead", run.animQuality);
     }
     run.withAudio = settings.videoKeepAudio && !run.pngSequence && run.animFormat == AnimFormat::None && vi.hasAudio;
     // The processed frames carry the source's transparency when "Keep transparency" is on; only an animation can keep it.
