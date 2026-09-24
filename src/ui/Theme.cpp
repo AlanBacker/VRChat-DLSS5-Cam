@@ -15,7 +15,7 @@ namespace vdc::ui {
 namespace {
 ImVec4 C(int r, int g, int b, float a = 1.0f) { return ImVec4(r / 255.0f, g / 255.0f, b / 255.0f, a); }
 
-// The two palettes; g_palette holds the blend in use. The accent is the indigo of the lens ring in the program's icon.
+// The two palettes; g_palette holds the blend in use. The accent is the indigo of the sphere in the program's icon.
 const Palette kDark = {
     .accent = IM_COL32(92, 108, 245, 255), .accentHover = IM_COL32(114, 129, 255, 255),
     .accentActive = IM_COL32(76, 91, 222, 255), .accentText = IM_COL32(255, 255, 255, 255),
@@ -646,17 +646,6 @@ void DrawGlyph(ImDrawList* dl, ImWchar ch, const ImVec2& c, float size, ImU32 co
     const float px = ImMax(6.0f, IM_ROUND(size));
     g_icons->RenderChar(dl, px, ImVec2(ImFloor(c.x - px * 0.5f + 0.5f), ImFloor(c.y - px * 0.5f + 0.5f)), col, ch);
 }
-
-// The four-pointed star of the logo, as a path (curved sides; "pinch" sets how fat its waist is).
-void SparklePath(ImDrawList* dl, const ImVec2& c, float R, float pinch) {
-    const float k = R * pinch;
-    dl->PathLineTo(ImVec2(c.x, c.y - R));
-    dl->PathBezierCubicCurveTo(ImVec2(c.x + k * 0.6f, c.y - k * 1.6f), ImVec2(c.x + k * 1.6f, c.y - k * 0.6f), ImVec2(c.x + R, c.y));
-    dl->PathBezierCubicCurveTo(ImVec2(c.x + k * 1.6f, c.y + k * 0.6f), ImVec2(c.x + k * 0.6f, c.y + k * 1.6f), ImVec2(c.x, c.y + R));
-    dl->PathBezierCubicCurveTo(ImVec2(c.x - k * 0.6f, c.y + k * 1.6f), ImVec2(c.x - k * 1.6f, c.y + k * 0.6f), ImVec2(c.x - R, c.y));
-    dl->PathBezierCubicCurveTo(ImVec2(c.x - k * 1.6f, c.y - k * 0.6f), ImVec2(c.x - k * 0.6f, c.y - k * 1.6f), ImVec2(c.x, c.y - R));
-    if (dl->_Path.Size > 1) dl->_Path.pop_back();   // the last point is the first one again
-}
 }
 
 float IconSize(float scale) { return ImMax(8.0f, IM_ROUND(ImGui::GetFontSize() * 1.1f * scale)); }
@@ -727,31 +716,266 @@ void DrawIcon(ImDrawList* dl, Icon icon, const ImVec2& c, float size, ImU32 col)
     }
 }
 
+namespace {
+// The program's mark: a sphere on a dark tile, split down the middle - on the left the low-poly facets of a game
+// picture, on the right the smooth light DLSS 5 gives it, in flat bands, lit from the upper right; the gap is the split
+// line of the before/after wipe. From 40 px on, the four corners of a camera's viewfinder frame a smaller sphere.
+// tools/make_app_icon.py draws the same shapes with the same numbers into the icon.
+constexpr ImU32 kLogoTile = 0x121526;                                                  // RGB
+constexpr ImU32 kLogoTones[5] = { 0xFFFFFF, 0xCBD1FF, 0x97A3FF, 0x6272F2, 0x3A46B4 };   // the light, from lit to shaded
+constexpr ImU32 kLogoCorners = 0x7F8BFF;                                               // the viewfinder corners
+constexpr float kLogoLight[3] = { 0.55f, 0.62f, 0.56f };                               // from the upper right, towards the viewer
+constexpr float kLogoSpin = 0.3f;                                                      // the sphere's turn about its upright axis
+constexpr int kLogoRound = 96;                                                         // points on a band's outline and on the disc
+
+// The tones (indices into kLogoTones), where each band ends as the Lambert term n.L, and how often the icosahedron is
+// split: fewer below 40 px and 24 px, as in the icon file.
+struct LogoTier { int tones[5]; float ends[4]; int count; int split; };
+constexpr LogoTier kLogoTiers[3] = {
+    { { 0, 1, 2, 3, 4 }, { 0.8f, 0.58f, 0.33f, 0.08f }, 5, 1 },
+    { { 0, 2, 4 }, { 0.7f, 0.18f }, 3, 0 },
+    { { 0, 4 }, { 0.3f }, 2, 0 },
+};
+
+struct V3 { float x, y, z; };
+V3 Norm3(const V3& v) { const float l = std::sqrt(v.x * v.x + v.y * v.y + v.z * v.z); return { v.x / l, v.y / l, v.z / l }; }
+V3 Cross3(const V3& a, const V3& b) { return { a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x }; }
+float Dot3(const V3& a, const V3& b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
+
+struct LogoFacet { ImVec2 p[3]; float lambert; bool soft[3]; };   // unit space, y up; soft[i]: the edge p[i]-p[i+1] gets a soft edge
+struct LogoShapes {
+    ImVector<LogoFacet> facets[2];   // the facets that face the viewer, of the icosahedron as it is and split once
+    ImVector<int> outline[2];        // the edges round the facets, in order: facet * 3 + edge
+    ImVector<ImVec2> bands[3][4];    // each tier's band outlines, unit space, y up
+};
+
+// Turns a unit-space loop so that it runs clockwise on the screen (where y points down), as anti-aliased fills need.
+void Clockwise(ImVec2* p, int n) {
+    float area = 0.0f;
+    for (int i = 0, j = n - 1; i < n; j = i++) area += p[j].x * p[i].y - p[i].x * p[j].y;
+    if (area > 0.0f) std::reverse(p, p + n);
+}
+
+const LogoShapes& Shapes() {
+    static const LogoShapes shapes = [] {
+        LogoShapes out;
+        const float phi = (1.0f + std::sqrt(5.0f)) * 0.5f;
+        const V3 v[12] = { { -1, phi, 0 }, { 1, phi, 0 }, { -1, -phi, 0 }, { 1, -phi, 0 }, { 0, -1, phi }, { 0, 1, phi },
+                           { 0, -1, -phi }, { 0, 1, -phi }, { phi, 0, -1 }, { phi, 0, 1 }, { -phi, 0, -1 }, { -phi, 0, 1 } };
+        const int f[20][3] = { { 0, 11, 5 }, { 0, 5, 1 }, { 0, 1, 7 }, { 0, 7, 10 }, { 0, 10, 11 }, { 1, 5, 9 }, { 5, 11, 4 },
+                               { 11, 10, 2 }, { 10, 7, 6 }, { 7, 1, 8 }, { 3, 9, 4 }, { 3, 4, 2 }, { 3, 2, 6 }, { 3, 6, 8 },
+                               { 3, 8, 9 }, { 4, 9, 5 }, { 2, 4, 11 }, { 6, 2, 10 }, { 8, 6, 7 }, { 9, 8, 1 } };
+        struct Tri { V3 a, b, c; };
+        ImVector<Tri> tris;
+        for (const auto& t : f) tris.push_back({ Norm3(v[t[0]]), Norm3(v[t[1]]), Norm3(v[t[2]]) });
+        const V3 L = Norm3({ kLogoLight[0], kLogoLight[1], kLogoLight[2] });
+        // A vertex of the icosahedron to the top, so both poles lie on the split line, then the spin.
+        const float pole = -std::atan(1.0f / phi), cp = std::cos(pole), sp = std::sin(pole);
+        const float cs = std::cos(kLogoSpin), ss = std::sin(kLogoSpin);
+        auto turn = [&](const V3& p) {
+            const float x = p.x * cp - p.y * sp, y = p.x * sp + p.y * cp;
+            return V3{ x * cs + p.z * ss, y, -x * ss + p.z * cs };
+        };
+        auto mid = [](const V3& a, const V3& b) { return Norm3({ a.x + b.x, a.y + b.y, a.z + b.z }); };
+        for (int split = 0; split < 2; ++split) {
+            if (split) {
+                ImVector<Tri> finer;
+                for (const Tri& t : tris) {
+                    const V3 ab = mid(t.a, t.b), bc = mid(t.b, t.c), ca = mid(t.c, t.a);
+                    finer.push_back({ t.a, ab, ca }); finer.push_back({ t.b, bc, ab });
+                    finer.push_back({ t.c, ca, bc }); finer.push_back({ ab, bc, ca });
+                }
+                tris.swap(finer);
+            }
+            for (const Tri& t : tris) {
+                const V3 a = turn(t.a), b = turn(t.b), c = turn(t.c);
+                V3 n = Norm3(Cross3({ b.x - a.x, b.y - a.y, b.z - a.z }, { c.x - a.x, c.y - a.y, c.z - a.z }));
+                if (Dot3(n, { a.x + b.x + c.x, a.y + b.y + c.y, a.z + b.z + c.z }) < 0.0f) n = { -n.x, -n.y, -n.z };   // outwards
+                if (n.z <= 0.02f) continue;   // faces away, or a sliver seen edge-on (under a pixel wide at the sizes drawn)
+                LogoFacet facet = { { ImVec2(a.x, a.y), ImVec2(b.x, b.y), ImVec2(c.x, c.y) }, Dot3(n, L), {} };
+                Clockwise(facet.p, 3);
+                out.facets[split].push_back(facet);
+            }
+            // The soft edges: round the outline (an edge no other facet shares) and on one side of each seam.
+            ImVector<LogoFacet>& fs = out.facets[split];
+            auto same = [](const ImVec2& p, const ImVec2& q) { return ImFabs(p.x - q.x) < 1e-4f && ImFabs(p.y - q.y) < 1e-4f; };
+            ImVector<int> rim;
+            for (int i = 0; i < fs.Size; ++i)
+                for (int e = 0; e < 3; ++e) {
+                    const ImVec2 p = fs[i].p[e], q = fs[i].p[(e + 1) % 3];
+                    int other = -1;
+                    for (int j = 0; j < fs.Size && other < 0; ++j)
+                        for (int g = 0; g < 3; ++g)
+                            if (j != i && same(fs[j].p[g], q) && same(fs[j].p[(g + 1) % 3], p)) { other = j; break; }
+                    fs[i].soft[e] = other < i;   // the outline, or the side of a seam this facet draws
+                    if (other < 0) rim.push_back(i * 3 + e);
+                }
+            ImVector<int>& loop = out.outline[split];
+            if (!rim.empty()) loop.push_back(rim[0]);
+            while (!loop.empty() && loop.Size < rim.Size) {
+                const ImVec2 at = fs[loop.back() / 3].p[(loop.back() % 3 + 1) % 3];
+                int next = -1;
+                for (int k : rim)
+                    if (same(fs[k / 3].p[k % 3], at)) { next = k; break; }
+                if (next < 0 || next == loop[0]) break;
+                loop.push_back(next);
+            }
+        }
+        // Where the light reaches the sphere at n.L >= e is a cap around the light; its outline is a circle on the
+        // sphere, and where that runs round the back, the sphere's own outline takes over.
+        const V3 ax = Norm3({ L.y, -L.x, 0.0f }), ay = Cross3(L, ax);
+        for (int t = 0; t < 3; ++t)
+            for (int k = 0; k + 1 < kLogoTiers[t].count; ++k) {
+                const float e = kLogoTiers[t].ends[k], r = std::sqrt(ImMax(0.0f, 1.0f - e * e));
+                ImVector<ImVec2>& loop = out.bands[t][k];
+                for (int i = 0; i < kLogoRound; ++i) {
+                    const float an = 2.0f * IM_PI * (float)i / (float)kLogoRound, ca = std::cos(an), sa = std::sin(an);
+                    V3 p = { L.x * e + (ax.x * ca + ay.x * sa) * r, L.y * e + (ax.y * ca + ay.y * sa) * r, L.z * e + (ax.z * ca + ay.z * sa) * r };
+                    if (p.z < 0.0f) {
+                        const float l = std::sqrt(p.x * p.x + p.y * p.y);
+                        p = { p.x / l, p.y / l, 0.0f };
+                    }
+                    loop.push_back(ImVec2(p.x, p.y));
+                }
+                Clockwise(loop.Data, loop.Size);
+            }
+        return out;
+    }();
+    return shapes;
+}
+
+ImU32 LogoRgb(ImU32 rgb, int a) { return IM_COL32((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF, a); }
+
+// A facet's colour for its Lambert term d: the band colours, blended between the middles of the bands.
+ImU32 LogoRamp(const LogoTier& t, float d, int a) {
+    float mid[5];
+    for (int k = 0; k < t.count; ++k) {
+        const float hi = k == 0 ? 1.0f : t.ends[k - 1], lo = k + 1 == t.count ? -1.0f : t.ends[k];
+        mid[k] = (hi + ImMax(lo, -0.2f)) * 0.5f;
+    }
+    if (d >= mid[0]) return LogoRgb(kLogoTones[t.tones[0]], a);
+    for (int k = 0; k + 1 < t.count; ++k)
+        if (d >= mid[k + 1]) {
+            const float w = (mid[k] - d) / (mid[k] - mid[k + 1]);
+            const ImU32 x = kLogoTones[t.tones[k]], y = kLogoTones[t.tones[k + 1]];
+            auto ch = [&](int shift) {
+                const float p = (float)((x >> shift) & 0xFF), q = (float)((y >> shift) & 0xFF);
+                return (int)(p + (q - p) * w + 0.5f);
+            };
+            return IM_COL32(ch(16), ch(8), ch(0), a);
+        }
+    return LogoRgb(kLogoTones[t.tones[t.count - 1]], a);
+}
+}
+
 void DrawLogo(ImDrawList* dl, const ImVec2& min, float s, float alpha) {
-    // The program icon (tools/make_app_icon.py draws the same shapes): a navy tile, a lens with an indigo ring and a
-    // gold sparkle, flat colours. Small sizes leave the details out, as the icon file does.
     const int a = (int)(ImSaturate(alpha) * ImGui::GetStyle().Alpha * 255.0f + 0.5f);
-    if (a <= 0) return;
-    const ImU32 tile = IM_COL32(0x1E, 0x24, 0x49, a), glass = IM_COL32(0x11, 0x15, 0x2E, a), inner = IM_COL32(0x1A, 0x20, 0x46, a);
-    const ImU32 ring = IM_COL32(0x6F, 0x84, 0xFF, a), shine = IM_COL32(0xB7, 0xC4, 0xFF, a), gold = IM_COL32(0xFF, 0xD1, 0x66, a);
-    const bool small = s <= 24.0f;
-    dl->AddRectFilled(min, ImVec2(min.x + s, min.y + s), tile, s * 0.235f);
-    const ImVec2 c = small ? ImVec2(min.x + s * 0.45f, min.y + s * 0.57f) : ImVec2(min.x + s * 0.455f, min.y + s * 0.56f);
-    const float R = s * (small ? 0.3f : 0.255f);
-    dl->AddCircleFilled(c, R, glass, 0);
-    if (s >= 48.0f) dl->AddCircleFilled(c, R * 0.56f, inner, 0);
-    dl->AddCircle(c, R, ring, 0, ImMax(small ? 2.0f : 1.8f, s * 0.08f));
-    if (s >= 32.0f) dl->AddCircleFilled(ImVec2(c.x - R * 0.36f, c.y - R * 0.36f), R * 0.15f, shine, 0);
-    const ImVec2 sc = small ? ImVec2(min.x + s * 0.75f, min.y + s * 0.26f) : ImVec2(min.x + s * 0.735f, min.y + s * 0.265f);
-    const float sr = small ? s * (s <= 20.0f ? 0.23f : 0.21f) : s * 0.15f;
-    const float pinch = small ? 0.2f : 0.13f;
-    SparklePath(dl, sc, sr, pinch);   // a knockout in the tile colour keeps the sparkle apart from the ring
-    dl->PathStroke(tile, ImMax(1.0f, s * 0.045f), ImDrawFlags_Closed);
-    SparklePath(dl, sc, sr, pinch);
-    dl->PathFillConcave(gold);
-    if (s >= 40.0f) {
-        SparklePath(dl, ImVec2(min.x + s * 0.84f, min.y + s * 0.47f), s * 0.055f, 0.13f);
-        dl->PathFillConcave(gold);
+    if (a <= 0 || s < 8.0f) return;
+    const LogoShapes& shapes = Shapes();
+    const int tierIndex = s >= 40.0f ? 0 : s >= 24.0f ? 1 : 2;
+    const LogoTier& tier = kLogoTiers[tierIndex];
+    const ImVec2 o(ImFloor(min.x + 0.5f), ImFloor(min.y + 0.5f)), end(o.x + s, o.y + s);   // on whole pixels
+    dl->AddRectFilled(o, end, LogoRgb(kLogoTile, a), s * 0.235f);
+    const bool framed = s >= 40.0f;   // inside the viewfinder corners
+    const float R = s * (s <= 24.0f ? 0.4f : s >= 32.0f ? 0.35f : 0.4f - 0.05f * (s - 24.0f) / 8.0f) * (framed ? 0.84f : 1.0f);
+    const float gap = s < 20.0f ? 0.0f : IM_ROUND(ImMax(1.0f, s * 0.026f));
+    const float split = o.x + ImFloor((s - gap) * 0.5f + 0.5f);   // the gap's left edge, on a whole pixel so it stays sharp
+    const ImVec2 c(split + gap * 0.5f, o.y + s * 0.5f);
+    auto at = [&](const ImVec2& p) { return ImVec2(c.x + p.x * R, c.y - p.y * R); };
+
+    // The left half: flat facets without anti-aliasing, so each pixel takes one facet's colour and the tile never shows
+    // through at a seam, then one-pixel ramps outwards from the outline and from one side of each seam soften the
+    // edges. The ramp round the outline widens the facets by half a pixel, so they are drawn that much smaller.
+    const float Rf = R - 0.5f;
+    auto atf = [&](const ImVec2& p) { return ImVec2(c.x + p.x * Rf, c.y - p.y * Rf); };
+    auto outwards = [](const ImVec2& p, const ImVec2& q) {   // the facets run clockwise
+        const float dx = q.x - p.x, dy = q.y - p.y, l = ImMax(1e-6f, std::sqrt(dx * dx + dy * dy));
+        return ImVec2(dy / l, -dx / l);
+    };
+    const ImVector<LogoFacet>& facets = shapes.facets[tier.split];
+    ImU32 cols[64];
+    IM_ASSERT(facets.Size <= IM_ARRAYSIZE(cols));
+    dl->PushClipRect(o, ImVec2(split, end.y), true);
+    const ImDrawListFlags flags = dl->Flags;
+    dl->Flags &= ~ImDrawListFlags_AntiAliasedFill;
+    for (int i = 0; i < facets.Size && i < IM_ARRAYSIZE(cols); ++i) {
+        cols[i] = LogoRamp(tier, facets[i].lambert, a);
+        const ImVec2 p[3] = { atf(facets[i].p[0]), atf(facets[i].p[1]), atf(facets[i].p[2]) };
+        dl->AddConvexPolyFilled(p, 3, cols[i]);
+    }
+    dl->Flags = flags;
+    const ImVec2 uv = dl->_Data->TexUvWhitePixel;
+    for (int i = 0; i < facets.Size && i < IM_ARRAYSIZE(cols); ++i)
+        for (int e = 0; e < 3; ++e) {
+            if (!facets[i].soft[e]) continue;
+            const ImVec2 p = atf(facets[i].p[e]), q = atf(facets[i].p[(e + 1) % 3]), n = outwards(p, q);
+            dl->PrimReserve(6, 4);
+            const ImDrawIdx v = (ImDrawIdx)dl->_VtxCurrentIdx;
+            dl->PrimWriteIdx(v); dl->PrimWriteIdx((ImDrawIdx)(v + 1)); dl->PrimWriteIdx((ImDrawIdx)(v + 2));
+            dl->PrimWriteIdx(v); dl->PrimWriteIdx((ImDrawIdx)(v + 2)); dl->PrimWriteIdx((ImDrawIdx)(v + 3));
+            dl->PrimWriteVtx(p, uv, cols[i]);
+            dl->PrimWriteVtx(q, uv, cols[i]);
+            dl->PrimWriteVtx(ImVec2(q.x + n.x, q.y + n.y), uv, cols[i] & ~IM_COL32_A_MASK);
+            dl->PrimWriteVtx(ImVec2(p.x + n.x, p.y + n.y), uv, cols[i] & ~IM_COL32_A_MASK);
+        }
+    const ImVector<int>& outline = shapes.outline[tier.split];
+    for (int k = 0; k < outline.Size; ++k) {   // the corners of the outline, between the ramps of two edges
+        const int e0 = outline[k], e1 = outline[(k + 1) % outline.Size];
+        if (e0 / 3 >= IM_ARRAYSIZE(cols) || e1 / 3 >= IM_ARRAYSIZE(cols)) continue;
+        const LogoFacet &f0 = facets[e0 / 3], &f1 = facets[e1 / 3];
+        const ImVec2 p = atf(f0.p[e0 % 3]), q = atf(f0.p[(e0 % 3 + 1) % 3]), r = atf(f1.p[(e1 % 3 + 1) % 3]);
+        const ImVec2 n0 = outwards(p, q), n1 = outwards(q, r);
+        const ImU32 col = cols[e1 / 3];
+        dl->PrimReserve(3, 3);
+        const ImDrawIdx v = (ImDrawIdx)dl->_VtxCurrentIdx;
+        dl->PrimWriteIdx(v); dl->PrimWriteIdx((ImDrawIdx)(v + 1)); dl->PrimWriteIdx((ImDrawIdx)(v + 2));
+        dl->PrimWriteVtx(q, uv, col);
+        dl->PrimWriteVtx(ImVec2(q.x + n0.x, q.y + n0.y), uv, col & ~IM_COL32_A_MASK);
+        dl->PrimWriteVtx(ImVec2(q.x + n1.x, q.y + n1.y), uv, col & ~IM_COL32_A_MASK);
+    }
+    dl->PopClipRect();
+
+    // The right half: the shaded disc, then the bands on it from the widest to the brightest.
+    dl->PushClipRect(ImVec2(split + gap, o.y), end, true);
+    dl->AddCircleFilled(c, R, LogoRgb(kLogoTones[tier.tones[tier.count - 1]], a), kLogoRound);
+    ImVec2 pts[kLogoRound];
+    for (int k = tier.count - 2; k >= 0; --k) {
+        const ImVector<ImVec2>& loop = shapes.bands[tierIndex][k];
+        for (int i = 0; i < loop.Size; ++i) pts[i] = at(loop[i]);
+        dl->AddConvexPolyFilled(pts, loop.Size, LogoRgb(kLogoTones[tier.tones[k]], a));
+    }
+    dl->PopClipRect();
+
+    // The viewfinder corners: strokes with round ends and a round bend, each corner filled as one outline, so no seam
+    // shows where its pieces meet.
+    if (!framed) return;
+    constexpr int kCap = 8, kBend = 4;
+    const float h = s * 0.02f, arm = s * 0.12f;   // half the stroke's width, the length of a stroke
+    ImVec2 local[(kCap + 1) * 2 + kBend + 2];
+    int n = 0;
+    auto arc = [&](const ImVec2& centre, float from, float to, int steps) {
+        for (int i = 0; i <= steps; ++i) {
+            const float an = from + (to - from) * (float)i / (float)steps;
+            local[n++] = ImVec2(centre.x + std::cos(an) * h, centre.y + std::sin(an) * h);
+        }
+    };
+    // The corner at the top left, clockwise with y down: the end of the upright stroke, the outer side of the bend, the
+    // end of the level stroke, then the inner corner.
+    arc(ImVec2(0.0f, arm), 0.0f, IM_PI, kCap);
+    arc(ImVec2(0.0f, 0.0f), IM_PI, IM_PI * 1.5f, kBend);
+    arc(ImVec2(arm, 0.0f), -IM_PI * 0.5f, IM_PI * 0.5f, kCap);
+    local[n++] = ImVec2(h, h);
+    const float lo = s * 0.16f, hi = s * 0.84f;
+    const struct { float x, y, sx, sy; } corners[4] = { { lo, lo, 1, 1 }, { hi, lo, -1, 1 }, { hi, hi, -1, -1 }, { lo, hi, 1, -1 } };
+    const ImU32 col = LogoRgb(kLogoCorners, a);
+    ImVec2 corner[IM_ARRAYSIZE(local)];
+    for (const auto& k : corners) {
+        const bool mirrored = k.sx * k.sy < 0.0f;   // a mirror turns the outline round
+        for (int i = 0; i < n; ++i) {
+            const ImVec2& p = local[mirrored ? n - 1 - i : i];
+            corner[i] = ImVec2(o.x + k.x + k.sx * p.x, o.y + k.y + k.sy * p.y);
+        }
+        dl->AddConcavePolyFilled(corner, n, col);
     }
 }
 
