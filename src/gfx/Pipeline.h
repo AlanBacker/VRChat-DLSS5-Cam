@@ -70,6 +70,7 @@ struct PipelineStatus {
     std::string nvofError;
     int         flowLevels = 0;                  // pyramid levels the FSR optical flow has for this picture size
     int         depthState = 0;                  // DepthEstimatorState
+    bool        depthParked = false;             // stopped while nothing uses its estimate (DLSS 5, DLAA and the depth view off)
     std::string depthMessage;                    // failure reason or backend name
     std::string depthBackend;
     UINT        depthInferW = 0, depthInferH = 0;
@@ -154,6 +155,7 @@ public:
     // AcquireDisplay picks the newest completed composite (call after Device::BeginFrame); ReleaseDisplay records the
     // fence value of the UI frame that sampled it (call after Device::EndFrame).
     DisplayView AcquireDisplay(GpuContext& ui);
+    bool        DisplayWaiting(GpuContext& ui);   // a newer finished picture than the one the interface holds
     void        ReleaseDisplay(UINT64 uiFenceValue);
 
 private:
@@ -338,6 +340,7 @@ private:
     bool   m_depthHistValid = false;
     bool   m_depthStillCaptured = false;                      // still image: the single estimate has been requested
     bool   m_depthRestart = false;
+    bool   m_depthParked = false;   // the depth network is stopped while nothing uses its estimate
     bool   m_depthModelExists = false;
     int    m_depthFramesSinceCapture = 1000;
     float  m_depthP02 = 0.0f, m_depthInvRange = 1.0f;         // smoothed normalisation range

@@ -5541,6 +5541,40 @@ void ImTextInitClassifiers()
     ImTextClassifierSetCharClass(g_CharClassifierIsSeparator_3000_300f, 0x3000, 0x300F, ImWcharClass_Punct, 0x3002);
 }
 
+// VRChat DLSS5 Cam change: Chinese and Japanese are written without spaces, so a line may break between any two of
+// their characters (ideographs, kana, full-width forms), except before closing punctuation or a small kana and after
+// opening punctuation. Without this a run of them was one long "word" that went to the next line whole.
+static bool ImTextCharIsCjk(unsigned int c)
+{
+    return (c >= 0x3000 && c <= 0x30FF) || (c >= 0x31F0 && c <= 0x31FF) || (c >= 0x3400 && c <= 0x4DBF) || (c >= 0x4E00 && c <= 0x9FFF)
+        || (c >= 0xF900 && c <= 0xFAFF) || (c >= 0xFF00 && c <= 0xFFEF);
+}
+static bool ImTextCharIsCjkNoLineStart(unsigned int c)
+{
+    switch (c)
+    {
+    case 0x3001: case 0x3002: case 0x3009: case 0x300B: case 0x300D: case 0x300F: case 0x3011: case 0x3015: case 0x3017:
+    case 0x3041: case 0x3043: case 0x3045: case 0x3047: case 0x3049: case 0x3063: case 0x3083: case 0x3085: case 0x3087: case 0x308E:
+    case 0x30A1: case 0x30A3: case 0x30A5: case 0x30A7: case 0x30A9: case 0x30C3: case 0x30E3: case 0x30E5: case 0x30E7: case 0x30EE:
+    case 0x30F5: case 0x30F6: case 0x30FB: case 0x30FC: case 0x2019: case 0x201D: case 0x2026: case 0x2025:
+    case 0xFF01: case 0xFF09: case 0xFF0C: case 0xFF0E: case 0xFF1A: case 0xFF1B: case 0xFF1F: case 0xFF3D: case 0xFF5D: case 0xFF60:
+        return true;
+    default:
+        return c < 0x80 && (c == ')' || c == ']' || c == '}' || c == ',' || c == '.' || c == ':' || c == ';' || c == '!' || c == '?' || c == '%');
+    }
+}
+static bool ImTextCharIsCjkNoLineEnd(unsigned int c)
+{
+    switch (c)
+    {
+    case 0x3008: case 0x300A: case 0x300C: case 0x300E: case 0x3010: case 0x3014: case 0x3016: case 0x2018: case 0x201C:
+    case 0xFF08: case 0xFF3B: case 0xFF5B: case 0xFF5F: case '(': case '[': case '{':
+        return true;
+    default:
+        return false;
+    }
+}
+
 // Simple word-wrapping for English, not full-featured. Please submit failing cases!
 // This will return the next location to wrap from. If no wrapping if necessary, this will fast-forward to e.g. text_end.
 // Refer to imgui_test_suite's "drawlist_text_wordwrap_1" for tests.
@@ -5567,6 +5601,7 @@ const char* ImFontCalcWordWrapPositionEx(ImFont* font, float size, const char* t
     IM_ASSERT(text_end != NULL);
 
     int prev_type = ImWcharClass_Other;
+    unsigned int prev_c = 0;
     const bool keep_blanks = (flags & ImDrawTextFlags_WrapKeepBlanks) != 0;
 
     // Find next wrapping point
@@ -5622,7 +5657,9 @@ const char* ImFontCalcWordWrapPositionEx(ImFont* font, float size, const char* t
         else
         {
             // End span: '.X' unless X is a digit
-            if (prev_type == ImWcharClass_Punct && curr_type != ImWcharClass_Punct && !(c >= '0' && c <= '9')) // FIXME: Digit checks might be removed if allow custom separators (#8503)
+            // VRChat DLSS5 Cam change: nor a letter after a full stop, so a file name such as "config.json" stays whole.
+            if (prev_type == ImWcharClass_Punct && curr_type != ImWcharClass_Punct && !(c >= '0' && c <= '9')
+                && !(prev_c == '.' && ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')))) // FIXME: Digit checks might be removed if allow custom separators (#8503)
             {
                 span_end = s;
                 line_width += span_width + blank_width;
@@ -5630,6 +5667,14 @@ const char* ImFontCalcWordWrapPositionEx(ImFont* font, float size, const char* t
             }
             // End span: 'A ' or '. '
             else if (prev_type == ImWcharClass_Blank && keep_blanks)
+            {
+                span_end = s;
+                line_width += span_width + blank_width;
+                span_width = blank_width = 0.0f;
+            }
+            // End span: before or after a Chinese or Japanese character (VRChat DLSS5 Cam change, see above)
+            else if (prev_c != 0 && prev_type != ImWcharClass_Blank && (ImTextCharIsCjk(c) || ImTextCharIsCjk(prev_c))
+                     && !ImTextCharIsCjkNoLineStart(c) && !ImTextCharIsCjkNoLineEnd(prev_c))
             {
                 span_end = s;
                 line_width += span_width + blank_width;
@@ -5649,6 +5694,7 @@ const char* ImFontCalcWordWrapPositionEx(ImFont* font, float size, const char* t
         }
 
         prev_type = curr_type;
+        prev_c = c;
         s = next_s;
     }
 

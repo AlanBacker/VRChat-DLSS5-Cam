@@ -49,12 +49,15 @@ std::string FormatClock(double seconds) {      // mm:ss.hh for the transport: a 
 }
 std::string FormatMsFixed(double ms) { return StrPrintf("%6.2f ms", ms); }   // constant width in the monospace font
 
+// A length given at 96 dpi, in whole pixels at the current display scale.
+float Px(float v) { return std::round(v * Dpi()); }
+
 // The "Open..." button with, once a file is open, a close button beside it.
-void OpenCloseRow(const char* openLabel, bool loaded, bool& open, bool& close) {
+void OpenCloseRow(const char* openLabel, Icon icon, bool loaded, bool& open, bool& close) {
     const float closeW = ImGui::GetFrameHeight();
     const float spacing = ImGui::GetStyle().ItemInnerSpacing.x;
-    const float openW = loaded ? std::max(40.0f, ImGui::GetContentRegionAvail().x - closeW - spacing) : -FLT_MIN;
-    if (FlatButton(openLabel, ImVec2(openW, 0))) open = true;
+    const float openW = loaded ? std::max(Px(40.0f), ImGui::GetContentRegionAvail().x - closeW - spacing) : -FLT_MIN;
+    if (IconTextButton(openLabel, icon, ImVec2(openW, 0))) open = true;
     if (!loaded) return;
     ImGui::SameLine(0.0f, spacing);
     if (IconButton("##closeMedia", Icon::Close, ImVec2(closeW, 0), TR(TipCloseMedia))) close = true;
@@ -64,8 +67,8 @@ constexpr float kZoomMin = 0.1f, kZoomMax = 8.0f;   // preview magnification lim
 // A dimmed label at the left and its value flush with the right edge of the row, in the monospace font: a
 // justified two-column list, so the figures line up at the right whatever the language's label widths, and a
 // figure that changes never pushes anything else around. A label with a tip carries its "?" mark right after it,
-// as the controls do. A value too wide for the room left (the search box narrows nothing, but a long label in a
-// narrow sidebar can) follows the label instead of running under it.
+// as the controls do. A value with no room left after its label (a long label in a narrow sidebar) goes on the next
+// line, still flush right.
 void Readout(const Fonts* fonts, const char* label, const std::string& value, const char* tip = nullptr) {
     if (!SearchMatch(label, value.c_str())) return;
     const float x0 = ImGui::GetCursorPosX();
@@ -75,8 +78,8 @@ void Readout(const Fonts* fonts, const char* label, const std::string& value, co
     const float labelEnd = ImGui::GetItemRectMax().x - ImGui::GetWindowPos().x + ImGui::GetScrollX();
     if (fonts) ImGui::PushFont(fonts->Mono(), 0.0f);
     const float w = ImGui::CalcTextSize(value.c_str()).x;
-    ImGui::SameLine();
-    ImGui::SetCursorPosX(std::max(x0 + rowW - w, labelEnd + ImGui::GetStyle().ItemSpacing.x));
+    if (x0 + rowW - w >= labelEnd + ImGui::GetStyle().ItemSpacing.x) ImGui::SameLine();
+    ImGui::SetCursorPosX(std::max(x0, x0 + rowW - w));
     ImGui::TextDisabled("%s", value.c_str());
     if (fonts) ImGui::PopFont();
 }
@@ -106,8 +109,82 @@ bool ComboIds(const char* label, int* value, const char* const* items, int count
 
 void Tip(const char* text) { if (!SearchSkipped()) Tooltip(text); }
 
-// The hit width of the line that resizes the sidebar or the library, at the edge of their bars.
-constexpr float kBarGrip = 6.0f;
+// A button with an icon before its label while both fit the width it is given, the label alone when they do not
+// (a narrow sidebar, a long translation): the words matter more than the picture.
+bool ActionButton(const char* label, Icon icon, const ImVec2& size, ButtonKind kind = ButtonKind::Ghost) {
+    const float w = size.x < 0.0f ? ImGui::GetContentRegionAvail().x + size.x : size.x;
+    if (kind == ButtonKind::Plain || w <= 0.0f || IconTextButtonWidth(label) <= w) return IconTextButton(label, icon, size, kind);
+    if (kind == ButtonKind::Accent) return AccentButton(label, size);
+    if (kind == ButtonKind::Flat) return FlatButton(label, size);
+    return GhostButton(label, size);
+}
+
+// Whether a switch of "count" equal segments across "width" leaves every segment room for its icon and its name.
+bool SegmentsFit(const char* const* labels, int count, const Icon* icons, float width) {
+    for (int i = 0; i < count; ++i)
+        if (SegmentedWidth(labels + i, 1, icons ? icons + i : nullptr) * (float)count > width) return false;
+    return true;
+}
+
+// The size of two buttons that share a row: half the row each while both names fit that, the full row each (one
+// above the other) when one does not.
+ImVec2 PairSize(const char* a, const char* b, float fullW) {
+    const ImGuiStyle& style = ImGui::GetStyle();
+    const float halfW = std::floor((fullW - style.ItemSpacing.x) * 0.5f);
+    const float pad = style.FramePadding.x * 2.0f;
+    const bool fit = ImGui::CalcTextSize(a, nullptr, true).x + pad <= halfW && ImGui::CalcTextSize(b, nullptr, true).x + pad <= halfW;
+    return ImVec2(fit ? halfW : fullW, 0.0f);
+}
+
+// The hit width of the line that resizes the sidebar or the library, at the edge of their gutters.
+constexpr float kBarGrip = 6.0f;   // at 96 dpi
+
+// The gutter between two panels that folds one of them away: the window's background with a chevron in the
+// middle, lit under the mouse (a rounded fill over the gutter and a brighter chevron). "angle" turns the chevron
+// (0 points down).
+void DrawGutter(ImDrawList* dl, const ImVec2& pos, const ImVec2& size, float hover, float angle) {
+    const Palette& p = Colors();
+    if (hover > 0.01f)
+        dl->AddRectFilled(pos, ImVec2(pos.x + size.x, pos.y + size.y), Col(WithAlpha(p.controlHover, (p.light > 0.5f ? 0.9f : 0.7f) * hover)), Px(5.0f));
+    DrawChevron(dl, ImVec2(pos.x + size.x * 0.5f, pos.y + size.y * 0.5f), IconSize(0.55f), angle, Col(Mix(p.textDim, p.text, hover)));
+}
+
+// The padding inside the library's card.
+ImVec2 LibraryPad() { return ImVec2(Px(14.0f), Px(10.0f)); }
+
+// The height of the video controls under the picture: the seek bar and the row of buttons inside the card's padding.
+float TransportHeight() {
+    const float frameH = ImGui::GetFrameHeight();
+    return std::round(frameH * 0.9f) + ImGui::GetStyle().ItemSpacing.y + frameH + Px(10.0f) * 2.0f;
+}
+
+// Text over the picture: a dark copy a pixel down and to the right keeps it readable on any frame.
+void ShadowText(ImDrawList* dl, const ImVec2& pos, ImU32 col, const char* text) {
+    const float o = std::max(1.0f, Px(1.0f));
+    const int a = (int)(140.0f * (float)((col >> IM_COL32_A_SHIFT) & 0xFF) / 255.0f);
+    dl->AddText(ImVec2(pos.x + o, pos.y + o), IM_COL32(0, 0, 0, a), text);
+    dl->AddText(pos, col, text);
+}
+
+// A coloured dot with a soft halo and one line of text, cut with an ellipsis at "maxX" (the status bar never wraps).
+// "detail" follows the text in the dim colour while there is room for some of it.
+void DotLine(ImDrawList* dl, const ImVec2& pos, float lineH, float maxX, ImU32 dot, ImU32 textCol, const char* text, const char* detail = nullptr) {
+    const float r = std::round(lineH * 0.22f);
+    const float halo = std::max(1.0f, Px(2.0f));
+    const ImVec2 c(pos.x + halo + r, pos.y + lineH * 0.5f);
+    dl->AddCircleFilled(c, r + halo, Col(WithAlpha(dot, 0.22f)), 0);
+    dl->AddCircleFilled(c, r, Col(dot), 0);
+    const float x = c.x + r + halo + Px(6.0f);
+    if (maxX <= x) return;
+    ImGui::PushStyleColor(ImGuiCol_Text, textCol);
+    ImGui::RenderTextEllipsis(dl, ImVec2(x, pos.y), ImVec2(maxX, pos.y + lineH), maxX, text, nullptr, nullptr);
+    ImGui::PopStyleColor();
+    const float dx = x + ImGui::CalcTextSize(text).x + Px(10.0f);
+    if (!detail || !*detail || maxX - dx < ImGui::GetFontSize() * 3.0f) return;
+    ImGui::PushStyleColor(ImGuiCol_Text, Colors().textDim);
+    ImGui::RenderTextEllipsis(dl, ImVec2(dx, pos.y), ImVec2(maxX, pos.y + lineH), maxX, detail, nullptr, nullptr);
+    ImGui::PopStyleColor();
+}
 
 // "2 min 05 s" style text of a duration estimate.
 std::string FormatEstimate(double seconds) {
@@ -140,8 +217,8 @@ const char* StateText(const LibraryItem& it) {
 
 } // namespace
 
-void MainUI::Toast(const std::string& text, bool error) {
-    m_toasts.push_back({ text, ImGui::GetTime(), error });
+void MainUI::Toast(const std::string& text, bool error, bool success) {
+    m_toasts.push_back({ text, ImGui::GetTime(), error, success });
     if (m_toasts.size() > 5) m_toasts.erase(m_toasts.begin());
 }
 
@@ -166,6 +243,8 @@ void MainUI::UpdateShown(const UiFrameInfo& info) {
 
 void MainUI::Draw(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts) {
     m_fonts = &fonts;
+    SetFonts(fonts.Bold(), fonts.Mono(), fonts.Icons());
+    ResetAnimating();
     m_presetList = info.presets;
     UpdateShown(info);
     ImGuiIO& io = ImGui::GetIO();
@@ -178,6 +257,7 @@ void MainUI::Draw(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Font
             m_themeLight = std::fabs(d) < 0.004f ? target : m_themeLight + d * (1.0f - std::exp(-9.0f * std::min(io.DeltaTime, 0.05f)));
         }
         if (m_themeLight != Colors().light) SetThemeLight(ImGui::GetStyle(), m_themeLight);
+        if (m_themeLight != target) MarkAnimating();
     }
     if (!m_undoInit) { m_undoBase = { s.ParameterText(), LibrarySnapshot(info), std::string() }; m_undoInit = true; }
     // The update popup waits while the setup guide is up; the guide shows the same access controls as the popup
@@ -199,7 +279,7 @@ void MainUI::Draw(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Font
     ImGui::SetNextWindowSize(vp->WorkSize);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, info.fullscreen ? ImVec2(0, 0) : ImVec2(10, 8));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, info.fullscreen ? ImVec2(0, 0) : ImVec2(Px(12.0f), Px(10.0f)));
     if (info.fullscreen) ImGui::PushStyleColor(ImGuiCol_WindowBg, IM_COL32(0, 0, 0, 255));
     const ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBringToFrontOnFocus |
                                    ImGuiWindowFlags_NoNavFocus | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoScrollWithMouse;
@@ -229,33 +309,32 @@ void MainUI::Draw(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Font
     const float em = ImGui::GetFontSize();
     const float sidebarMin = em * 16.0f, sidebarMax = std::max(sidebarMin, avail.x * 0.6f);
     const float sidebarW = std::max(50.0f, std::min(std::clamp((s.sidebarWidth > 0.0f ? s.sidebarWidth : 24.0f) * em, sidebarMin, sidebarMax), avail.x * 0.6f));
-    // The sidebar slides in and out behind a slim handle on the edge of the preview; the preview takes the room it
+    // The sidebar slides in and out behind the gutter at the edge of the preview; the preview takes the room it
     // frees while it moves.
-    const float handleW = 18.0f;
+    const float handleW = Px(16.0f);
     const float sideT = Ease(AnimateLinear(ImGui::GetID("##sidebarSlide"), s.sidebarVisible ? 1.0f : 0.0f, 0.22f));
     const float shownW = sidebarW * sideT;
-    const float previewW = std::max(50.0f, avail.x - shownW - handleW - style.ItemSpacing.x * sideT);
+    const float previewW = std::max(50.0f, avail.x - shownW - handleW);
     const ImVec2 bodyOrigin = ImGui::GetCursorScreenPos();
     m_previewMin = bodyOrigin;   // the fade's rectangle, narrowed to the picture in DrawPreview
     m_previewMax = ImVec2(bodyOrigin.x + previewW, bodyOrigin.y + bodyH);
 
+    // The preview column (picture, video controls, library) paints its own cards on the window's background.
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-    ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 0.0f);
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, Colors().surface);
     ImGui::BeginChild("##preview", ImVec2(previewW, bodyH), ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-    ImGui::PopStyleColor();
-    ImGui::PopStyleVar(2);
+    ImGui::PopStyleVar();
     DrawPreview(s, info, ev, fonts);
     ImGui::EndChild();
 
     ImGui::SameLine(0.0f, 0.0f);
     {
-        // Two zones, so a click and a drag never share the same spot: the bar itself folds the sidebar (hand cursor,
-        // chevron), the thin line along its sidebar-side edge resizes it (resize cursor, blue under the mouse).
+        // The gutter has two zones, so a click and a drag never share the same spot: the gutter itself folds the
+        // sidebar (hand cursor, the chevron lights up), the thin line along its sidebar-side edge
+        // resizes it (resize cursor, blue under the mouse).
         const Palette& p = Colors();
         const ImVec2 hpos = ImGui::GetCursorScreenPos();
         const bool canResize = s.sidebarVisible && sideT > 0.99f;
-        const float gripW = canResize ? kBarGrip : 0.0f;
+        const float gripW = canResize ? Px(kBarGrip) : 0.0f;
         ImGui::InvisibleButton("##sidebarFold", ImVec2(handleW - gripW, bodyH));
         const bool foldLit = ImGui::IsItemHovered() || ImGui::IsItemActive();
         if (foldLit) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
@@ -278,19 +357,23 @@ void MainUI::Draw(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Font
         const float hov = Animate(ImGui::GetID("##sidebarHandleHover"), foldLit ? 1.0f : 0.0f, 16.0f);
         const float grip = Animate(ImGui::GetID("##sidebarGripHover"), gripLit ? 1.0f : 0.0f, 16.0f);
         ImDrawList* dl = ImGui::GetWindowDrawList();
-        // Square corners: the bar meets the library's bar and the panels around it without a seam.
-        dl->AddRectFilled(hpos, ImVec2(hpos.x + handleW, hpos.y + bodyH), Mix(p.panel, p.controlHover, std::max(hov, grip * 0.35f)), 0.0f);
+        const float foldW = handleW - gripW;
+        DrawGutter(dl, hpos, ImVec2(foldW, bodyH), hov, IM_PI * 0.5f - IM_PI * sideT);
         if (canResize) {   // the line a drag moves: always drawn so it can be found, blue under the mouse
-            const float w = 1.0f + 2.0f * grip;
-            dl->AddRectFilled(ImVec2(hpos.x + handleW - w, hpos.y), ImVec2(hpos.x + handleW, hpos.y + bodyH), Mix(p.panelBorder, p.accent, grip), 0.0f);
+            const float w = std::max(1.0f, Px(1.0f)) + Px(2.0f) * grip;
+            const float x = hpos.x + handleW - Px(3.0f);
+            dl->AddRectFilled(ImVec2(x - w * 0.5f, hpos.y + CardRounding()), ImVec2(x + w * 0.5f, hpos.y + bodyH - CardRounding()),
+                              Mix(p.cardBorder, p.accent, grip), w * 0.5f);
         }
-        DrawChevron(dl, ImVec2(hpos.x + (handleW - gripW) * 0.5f, hpos.y + bodyH * 0.5f), 8.0f, IM_PI * 0.5f - IM_PI * sideT, Mix(p.textDim, p.text, hov));
     }
 
     if (shownW > 0.5f) {
-        ImGui::SameLine(0.0f, style.ItemSpacing.x * sideT);
+        ImGui::SameLine(0.0f, 0.0f);
         ImGui::PushClipRect(bodyOrigin, ImVec2(bodyOrigin.x + avail.x, bodyOrigin.y + bodyH), true);
+        // The cards reach the edges of the column; the side padding leaves room for their shadows only.
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(Px(6.0f), 0.0f));
         ImGui::BeginChild("##sidebar", ImVec2(sidebarW, bodyH), ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_NoScrollWithMouse);
+        ImGui::PopStyleVar();
         ImGui::SetScrollX(0.0f);   // the sidebar only ever scrolls vertically
         SmoothScroll(false, ImGui::GetFontSize() * 3.6f);
         if (m_openAbout) {   // after the setup guide: the About section opens and the sidebar glides to it
@@ -330,21 +413,25 @@ void MainUI::DrawFullscreen(Settings& s, const UiFrameInfo& info, UiEvents& ev, 
     const ImVec2 region = ImGui::GetContentRegionAvail();
     if (region.x < 8.0f || region.y < 8.0f) return;
     const ImGuiStyle& style = ImGui::GetStyle();
-    const float frameH = ImGui::GetFrameHeight();
     ImGuiIO& io = ImGui::GetIO();
     const double now = ImGui::GetTime();
     if (io.MouseDelta.x != 0.0f || io.MouseDelta.y != 0.0f || ImGui::IsAnyMouseDown()) m_fullscreenMouseTime = now;
     const bool transport = s.sourceMode == SourceVideo && info.videoLoaded;
-    const float transportH = transport ? frameH * 2.0f + style.ItemSpacing.y * 3.0f + 8.0f : 0.0f;
-    const bool overBar = transport && ImGui::IsMousePosValid() && io.MousePos.y >= origin.y + region.y - transportH - 24.0f;
+    // The video controls float over the bottom of the picture as a card, no wider than a comfortable reach.
+    const float inset = Px(16.0f);
+    const float transportH = TransportHeight();
+    const float barW = std::min(region.x - inset * 2.0f, ImGui::GetFontSize() * 60.0f);
+    const ImVec2 barPos(origin.x + std::floor((region.x - barW) * 0.5f), origin.y + region.y - transportH - inset);
+    const bool overBar = transport && ImGui::IsMousePosValid() && io.MousePos.y >= barPos.y - Px(24.0f);
     const bool wantControls = now - m_fullscreenMouseTime < 2.5 || overBar || m_seekDragging || ImGui::IsAnyItemActive();
     m_fullscreenControls = Ease(AnimateLinear(ImGui::GetID("##fullscreenControls"), wantControls ? 1.0f : 0.0f, 0.3f));
+    m_toastBottom = origin.y + region.y - inset - (transport ? transportH + inset : 0.0f);
 
     DrawPicture(s, info, ev, fonts, origin, region);
     if (transport) {
         if (m_fullscreenControls > 0.02f) {
             ImGui::PushStyleVar(ImGuiStyleVar_Alpha, style.Alpha * m_fullscreenControls);
-            DrawTransport(s, info, ev, fonts, ImVec2(origin.x, origin.y + region.y - transportH), ImVec2(region.x, transportH));
+            DrawTransport(s, info, ev, fonts, barPos, ImVec2(barW, transportH));
             ImGui::PopStyleVar();
         } else {
             VideoKeys(info, ev);
@@ -359,9 +446,9 @@ void MainUI::FullscreenButton(const UiFrameInfo& info, UiEvents& ev, const ImVec
     if (alpha < 0.02f) return;
     const float bsz = ImGui::GetFrameHeight();
     if (region.x < bsz * 3.0f || region.y < bsz * 3.0f) return;
-    const ImVec2 pos(origin.x + region.x - bsz - 12.0f, origin.y + 12.0f);
+    const ImVec2 pos(origin.x + region.x - bsz - Px(12.0f), origin.y + Px(12.0f));
     ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * alpha);
-    ImGui::GetWindowDrawList()->AddRectFilled(pos, ImVec2(pos.x + bsz, pos.y + bsz), ImGui::GetColorU32(Colors().overlayBg), 4.0f);
+    ImGui::GetWindowDrawList()->AddRectFilled(pos, ImVec2(pos.x + bsz, pos.y + bsz), ImGui::GetColorU32(Colors().overlayBg), ImGui::GetStyle().FrameRounding);
     ImGui::SetCursorScreenPos(pos);
     if (IconButton("##fullscreen", info.fullscreen ? Icon::ExitFullscreen : Icon::Fullscreen, ImVec2(bsz, bsz),
                    info.fullscreen ? TR(TipExitFullscreen) : TR(TipFullscreen), ButtonKind::Plain)) RequestFullscreen();
@@ -395,9 +482,14 @@ bool MainUI::SameLibrary(const std::vector<LibrarySnapshotItem>& a, const std::v
     return true;
 }
 
-void MainUI::TrackUndo(const Settings& s, const UiFrameInfo& info) {
+void MainUI::TrackUndo(const Settings& s, const UiFrameInfo& info, bool force) {
     if (m_undoHold) { m_undoHold = false; return; }   // the library of an undo is restored after this frame
     if (ImGui::IsAnyItemActive()) return;   // a slider is held or a field is being typed in: one step per edit
+    // Comparing the parameter text and the library costs too much to do on every frame; a few times per second
+    // catches every change (an undo checks at once).
+    const double now = ImGui::GetTime();
+    if (!force && m_undoCheckTime >= 0.0 && now - m_undoCheckTime < 0.25) return;
+    m_undoCheckTime = now;
     std::string cur = s.ParameterText();
     std::vector<LibrarySnapshotItem> lib = LibrarySnapshot(info);
     if (cur == m_undoBase.params && SameLibrary(lib, m_undoBase.library)) return;
@@ -410,7 +502,7 @@ void MainUI::TrackUndo(const Settings& s, const UiFrameInfo& info) {
 }
 
 void MainUI::ApplyUndo(Settings& s, const UiFrameInfo& info, UiEvents& ev, bool redo) {
-    TrackUndo(s, info);   // a change not yet recorded becomes a step first
+    TrackUndo(s, info, true);   // a change not yet recorded becomes a step first
     std::vector<UndoStep>& from = redo ? m_redo : m_undo;
     std::vector<UndoStep>& to = redo ? m_undo : m_redo;
     if (from.empty()) return;
@@ -560,7 +652,7 @@ std::string MainUI::StepLabel(const UndoStep& from, const UndoStep& to) {
 // The history list: every kept state in order, the current one marked, the undone ones dimmed after it. A click
 // takes the settings and the library to that state; the later ones stay until a new change is made.
 void MainUI::DrawHistory(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts, const ImVec2& anchor) {
-    if (ImGui::IsPopupOpen("##history")) ImGui::SetNextWindowPos(ImVec2(anchor.x, anchor.y + 6.0f), ImGuiCond_Appearing, ImVec2(1.0f, 0.0f));
+    if (ImGui::IsPopupOpen("##history")) ImGui::SetNextWindowPos(ImVec2(anchor.x, anchor.y + Px(6.0f)), ImGuiCond_Appearing, ImVec2(1.0f, 0.0f));
     if (!BeginPopupFade("##history")) return;
     const Palette& p = Colors();
     ImGui::PushFont(fonts.Bold(), 0.0f);
@@ -607,7 +699,7 @@ void MainUI::DrawUpdatePopup(Settings& /*s*/, const UiFrameInfo& info, UiEvents&
     ImGui::TextUnformatted(info.updateEdition ? TR(UpdateEditionTitle) : info.updateDowngrade ? TR(UpdateDowngradeTitle) : TR(UpdateTitle));
     ImGui::PopFont();
     // Every release found is labelled, so a full release reaching the pre-release channel reads as one.
-    ImGui::SameLine(0.0f, 10.0f);
+    ImGui::SameLine(0.0f, Px(10.0f));
     if (info.updatePrerelease) Pill(TR(ChannelPreview), WithAlpha(p.warn, 0.2f), p.warn);
     else Pill(TR(ReleaseFull), WithAlpha(p.good, 0.2f), p.good);
     if (info.updateEdition) {
@@ -627,13 +719,13 @@ void MainUI::DrawUpdatePopup(Settings& /*s*/, const UiFrameInfo& info, UiEvents&
     if (!info.updateDate.empty()) ImGui::TextDisabled("%s", StrPrintf(TR(UpdatePublished), info.updateDate.c_str()).c_str());
     if (!info.updateNotes.empty()) {
         ImGui::Spacing();
-        const float textH = ImGui::CalcTextSize(info.updateNotes.c_str(), nullptr, false, w - 20.0f).y;
+        const float textH = ImGui::CalcTextSize(info.updateNotes.c_str(), nullptr, false, w - Px(20.0f)).y;
         ImGui::PushStyleColor(ImGuiCol_ChildBg, p.surface);
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(10, 8));
-        ImGui::BeginChild("##notes", ImVec2(w, std::min(em * 14.0f, textH + 20.0f)), ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_None);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(Px(10.0f), Px(8.0f)));
+        ImGui::BeginChild("##notes", ImVec2(w, std::min(em * 14.0f, textH + Px(20.0f))), ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_None);
         ImGui::PopStyleVar();
         ImGui::PopStyleColor();
-        ImGui::PushTextWrapPos(w - 20.0f);
+        ImGui::PushTextWrapPos(w - Px(20.0f));
         ImGui::TextUnformatted(info.updateNotes.c_str());
         ImGui::PopTextWrapPos();
         ImGui::EndChild();
@@ -660,10 +752,10 @@ void MainUI::DrawUpdatePopup(Settings& /*s*/, const UiFrameInfo& info, UiEvents&
     }
     ImGui::Separator();
     ImGui::BeginDisabled(busy || !info.updateHasAsset || !info.updateWritable);
-    if (AccentButton(info.updateDowngrade ? TR(UpdateDowngradeNow) : TR(UpdateNow), ImVec2(em * 9.0f, 0.0f))) ev.updateStart = true;
+    if (ActionButton(info.updateDowngrade ? TR(UpdateDowngradeNow) : TR(UpdateNow), Icon::Download, ImVec2(em * 9.0f, 0.0f), ButtonKind::Accent)) ev.updateStart = true;
     ImGui::EndDisabled();
     ImGui::SameLine();
-    if (GhostButton(TR(UpdatePage), ImVec2(em * 9.0f, 0.0f))) ev.updateOpenPage = true;
+    if (ActionButton(TR(UpdatePage), Icon::OpenExternal, ImVec2(em * 9.0f, 0.0f))) ev.updateOpenPage = true;
     ImGui::SameLine();
     if (st == UpDownloading || st == UpExtracting) {
         if (FlatButton(TR(Cancel), ImVec2(em * 7.0f, 0.0f))) ev.updateCancel = true;
@@ -699,7 +791,7 @@ void GuideItem(const Fonts& fonts, const char* title, const char* text) {
     ImGui::TextWrapped("%s", text);
     ImGui::PopStyleColor();
     const ImVec2 e = ImGui::GetCursorScreenPos();
-    ImGui::GetWindowDrawList()->AddRectFilled(ImVec2(c.x - em * 0.6f, c.y + 2.0f), ImVec2(c.x - em * 0.6f + 3.0f, e.y - 3.0f), WithAlpha(p.accent, 0.75f), 1.5f);
+    ImGui::GetWindowDrawList()->AddRectFilled(ImVec2(c.x - em * 0.6f, c.y + Px(2.0f)), ImVec2(c.x - em * 0.6f + Px(3.0f), e.y - Px(3.0f)), WithAlpha(p.accent, 0.75f), Px(1.5f));
     ImGui::Unindent(em * 0.9f);
     ImGui::Spacing();
 }
@@ -719,10 +811,16 @@ void MainUI::MirrorControls(Settings& s, const UiFrameInfo& info, UiEvents& ev, 
         ImGui::Spacing();
     }
     const char* modes[] = { TR(MirrorDirect), TR(MirrorAuto), TR(MirrorCustom) };
-    for (int i = 0; i < 3; ++i) {
-        ImGui::PushID(i);
-        if (ImGui::RadioButton(modes[i], s.githubMirror == i) && s.githubMirror != i) { s.githubMirror = i; ev.settingsChanged = true; }
-        ImGui::PopID();
+    if (SegmentsFit(modes, 3, nullptr, width)) {
+        // One switch across the width when the three names fit it, one choice per line when they do not.
+        int mode = std::clamp(s.githubMirror, 0, 2);
+        if (Segmented("##mirrorMode", modes, 3, &mode, width) && mode != s.githubMirror) { s.githubMirror = mode; ev.settingsChanged = true; }
+    } else {
+        for (int i = 0; i < 3; ++i) {
+            ImGui::PushID(i);
+            if (Radio(modes[i], s.githubMirror == i) && s.githubMirror != i) { s.githubMirror = i; ev.settingsChanged = true; }
+            ImGui::PopID();
+        }
     }
     // What follows the mode choice changes with it (the site box, the test button, the measured list, the site in
     // use), so it fades in, drifting up a little, like a page of the guide: at its first appearance, on a change of
@@ -737,13 +835,14 @@ void MainUI::MirrorControls(Settings& s, const UiFrameInfo& info, UiEvents& ev, 
         snprintf(buf, sizeof(buf), "%s", s.githubMirrorCustom.c_str());
         ImGui::SetNextItemWidth(width);
         if (ImGui::InputTextWithHint("##mirrorCustom", "https://", buf, sizeof(buf))) { s.githubMirrorCustom = buf; ev.settingsChanged = true; }
+        FocusRing();
         ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + width);
         Hint(TR(MirrorCustomHint));
         ImGui::PopTextWrapPos();
     }
     if (s.githubMirror == 1) {
         ImGui::BeginDisabled(info.mirrorProbing || info.updaterBusy);
-        if (GhostButton(TR(MirrorTest), ImVec2(width, 0.0f))) ev.mirrorProbe = true;
+        if (ActionButton(TR(MirrorTest), Icon::Gauge, ImVec2(width, 0.0f))) ev.mirrorProbe = true;
         ImGui::EndDisabled();
         if (info.mirrorProbing) {
             ImGui::TextDisabled("%s", TR(MirrorTesting));
@@ -757,7 +856,7 @@ void MainUI::MirrorControls(Settings& s, const UiFrameInfo& info, UiEvents& ev, 
                 const std::string host = HostOf(m.url);
                 if (m.ok) StatusDot(i == 0 ? p.good : p.textDim, StrPrintf("%s  %.2f %s", host.c_str(), m.seconds, TR(Seconds)).c_str());
                 else StatusDot(p.bad, StrPrintf("%s  %s", host.c_str(), m.error.rfind("HTTP ", 0) == 0 ? m.error.c_str() : TR(MirrorNoAnswer)).c_str());   // "HTTP 404" says more than "no answer"
-                if (i == 0 && m.ok) { ImGui::SameLine(0.0f, style.ItemInnerSpacing.x); Pill(TR(MirrorFastest), WithAlpha(p.good, 0.18f), p.good); }
+                if (i == 0 && m.ok) PillAfter(TR(MirrorFastest), WithAlpha(p.good, 0.18f), p.good, style.ItemInnerSpacing.x);
             }
         }
     }
@@ -805,10 +904,10 @@ void MainUI::Spotlight(bool foreground) {
     // One flash: the ring comes up quickly, then fades while it widens a little.
     const float p = (float)((now - m_spotAt) / (m_spotUntil - m_spotAt));
     const float a = p < 0.15f ? p / 0.15f : 1.0f - Ease((p - 0.15f) / 0.85f);
-    const float grow = 3.0f + 3.0f * p;
+    const float grow = Px(3.0f) * (1.0f + p);
     const ImVec2 a0 = ImGui::GetItemRectMin(), a1 = ImGui::GetItemRectMax();
     ImDrawList* dl = foreground ? ImGui::GetForegroundDrawList() : ImGui::GetWindowDrawList();
-    dl->AddRect(ImVec2(a0.x - grow, a0.y - grow), ImVec2(a1.x + grow, a1.y + grow), WithAlpha(Colors().accent, a), 6.0f, 2.0f);
+    dl->AddRect(ImVec2(a0.x - grow, a0.y - grow), ImVec2(a1.x + grow, a1.y + grow), WithAlpha(Colors().accent, a), ImGui::GetStyle().FrameRounding + grow, std::max(1.0f, Px(2.0f)));
 }
 
 void MainUI::CloseGuide(Settings& s, UiEvents& ev, bool point) {
@@ -849,7 +948,7 @@ void MainUI::DrawSetupGuide(Settings& s, const UiFrameInfo& info, UiEvents& ev, 
     const ImGuiStyle& style = ImGui::GetStyle();
     const float em = ImGui::GetFontSize();
     const float w = std::max(em * 20.0f, std::min(em * 36.0f, vp->WorkSize.x - em * 4.0f));
-    const float pageH = std::max(em * 12.0f, std::min(em * 23.5f, vp->WorkSize.y - em * 11.0f));
+    const float pageH = std::max(em * 12.0f, std::min(em * 28.0f, vp->WorkSize.y - em * 11.0f));   // the longest page (the settings) whole in all four languages
     constexpr int kPages = 5;
 
     ImGui::PushFont(fonts.Bold(), style.FontSizeBase * 1.15f);
@@ -888,7 +987,14 @@ void MainUI::DrawSetupGuide(Settings& s, const UiFrameInfo& info, UiEvents& ev, 
         Hint(TR(GuideLanguageHint));
         ImGui::Spacing();
         const char* themes[] = { TR(ThemeSystem), TR(ThemeDark), TR(ThemeLight) };
-        if (Segmented("##guideTheme", themes, 3, &s.theme, inner * 0.55f)) ev.settingsChanged = true;
+        const Icon themeIcons[] = { Icon::Monitor, Icon::Moon, Icon::Sun };
+        if (SegmentsFit(themes, 3, nullptr, inner * 0.55f)) {
+            const bool withIcons = SegmentsFit(themes, 3, themeIcons, inner * 0.55f);
+            if (Segmented("##guideTheme", themes, 3, &s.theme, inner * 0.55f, withIcons ? themeIcons : nullptr)) ev.settingsChanged = true;
+        } else {
+            ImGui::SetNextItemWidth(inner * 0.55f);
+            if (ComboIds("##guideTheme", &s.theme, themes, 3)) ev.settingsChanged = true;
+        }
         ImGui::SameLine(0.0f, style.ItemInnerSpacing.x);
         ImGui::AlignTextToFramePadding();
         ImGui::TextUnformatted(TR(Theme));
@@ -933,18 +1039,19 @@ void MainUI::DrawSetupGuide(Settings& s, const UiFrameInfo& info, UiEvents& ev, 
         const float ft = m_guidePageTime >= 0.0 ? (float)std::min(1.0, (now - m_guidePageTime) / 0.28) : 1.0f;
         if (ft < 1.0f) FadeDrawn(ImGui::GetWindowDrawList(), vtx0, Ease(ft), (1.0f - Ease(ft)) * em * 0.4f);
     }
+    ScrollEdgeFade(ImGui::GetColorU32(ImGuiCol_PopupBg), em * 2.5f);   // a small window: the page scrolls
     ImGui::EndChild();
 
     // Step dots, then Skip at the left and Back / Next (Finish) at the right.
     {
         ImDrawList* dl = ImGui::GetWindowDrawList();
         const ImVec2 c0 = ImGui::GetCursorScreenPos();
-        const float gap = 14.0f;
+        const float gap = Px(14.0f);
         float x = c0.x + (w - gap * kPages) * 0.5f + gap * 0.5f;
         const float y = c0.y + em * 0.55f;
         for (int i = 0; i < kPages; ++i) {
             const float t = Animate(ImGui::GetID(StrPrintf("##guideDot%d", i).c_str()), i == m_guidePage ? 1.0f : 0.0f, 14.0f);
-            dl->AddCircleFilled(ImVec2(x, y), 3.0f + 1.2f * t, Mix(WithAlpha(p.textDim, 0.4f), p.accent, t));
+            dl->AddCircleFilled(ImVec2(x, y), Dpi() * (3.0f + 1.2f * t), Mix(WithAlpha(p.textDim, 0.4f), p.accent, t));
             x += gap;
         }
         ImGui::Dummy(ImVec2(w, em * 1.1f));
@@ -979,16 +1086,19 @@ void MainUI::DrawTopBar(Settings& s, const UiFrameInfo& info, UiEvents& ev, cons
     const Palette& p = Colors();
     const float frameH = ImGui::GetFrameHeight();
     const float rowH = frameH * 1.35f;
-    // One padded row with every element centred on its middle line. The bar never scrolls: its parts are measured
-    // first and the optional ones (rates, the wide language box, the status badge, the title) are dropped when the
-    // window is too narrow for all of them.
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, p.panel);
-    ImGui::BeginChild("##top", ImVec2(0, rowH + style.WindowPadding.y * 2.0f), ImGuiChildFlags_AlwaysUseWindowPadding,
-                      ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-    ImGui::PopStyleColor();
+    const ImVec2 pad(Px(12.0f), Px(7.0f));
+    const float barH = rowH + pad.y * 2.0f;
+    // One card with every element centred on its middle line. The bar never scrolls: its parts are measured first
+    // and the optional ones (the wide language box, undo and redo, the status badges, the name, the mark) are
+    // dropped when the window is too narrow for all of them.
+    const ImVec2 card0 = ImGui::GetCursorScreenPos();
+    DrawCard(ImGui::GetWindowDrawList(), card0, ImVec2(card0.x + ImGui::GetContentRegionAvail().x, card0.y + barH));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, pad);
+    ImGui::BeginChild("##top", ImVec2(0, barH), ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+    ImGui::PopStyleVar();
     ImGui::SetScrollX(0.0f);
     ImGui::SetScrollY(0.0f);
-    const float top = style.WindowPadding.y;
+    const float top = pad.y;
     auto centred = [&](float itemH) { return top + (rowH - itemH) * 0.5f; };
     // Text items add the line's baseline offset themselves (a badge before them leaves one): taken off here.
     auto centredText = [&](float itemH) { return centred(itemH) - ImGui::GetCurrentWindow()->DC.CurrLineTextBaseOffset; };
@@ -996,98 +1106,105 @@ void MainUI::DrawTopBar(Settings& s, const UiFrameInfo& info, UiEvents& ev, cons
     const bool videoMode = s.sourceMode == SourceVideo;
     const bool busy = info.videoProcessing || info.batchRunning;   // the main button cancels the run
 
-    // Left part: title and the source switch.
-    ImGui::PushFont(fonts.Bold(), style.FontSizeBase * 1.2f);
+    // Left part: the program's mark and name, the source switch.
+    const float logoS = std::round(frameH * 0.95f);
+    const float titleSizeBase = style.FontSizeBase * 1.12f;
+    ImGui::PushFont(fonts.Bold(), titleSizeBase);
     const ImVec2 titleSize = ImGui::CalcTextSize(TR(AppTitle));
     ImGui::PopFont();
     const char* modes[] = { TR(TopSpout), TR(TopImage), TR(TopVideo) };
-    float switchW = 0.0f;
-    for (const char* m : modes) switchW += ImGui::CalcTextSize(m).x + style.FramePadding.x * 2.2f;
+    const Icon modeIcons[] = { Icon::Broadcast, Icon::Image, Icon::Film };
+    const float switchW = SegmentedWidth(modes, 3, modeIcons);
 
     // Status badge.
     const bool haveSenders = info.senders && !info.senders->empty();
     const std::string batchBadge = !info.mcpJob.empty() ? std::string(TR(McpJobBadge))
                                  : info.batchRunning ? StrPrintf(TR(BatchRunning), std::min(info.batchIndex + 1, info.batchCount), info.batchCount) : std::string();
+    // A loaded picture or video has no badge: the switch shows the mode and the status bar names the file.
     const char* badge = info.batchRunning ? batchBadge.c_str()
-                      : videoMode ? (info.videoProcessing ? TR(VideoProcessing) : info.videoLoaded ? TR(VideoLabel) : TR(NoVideo))
-                      : imageMode ? (info.imageLoaded ? TR(ImageLabel) : TR(NoImage))
+                      : videoMode ? (info.videoProcessing ? TR(VideoProcessing) : info.videoLoaded ? nullptr : TR(NoVideo))
+                      : imageMode ? (info.imageLoaded ? nullptr : TR(NoImage))
                       : info.sourceConnected ? TR(StatusConnected) : haveSenders ? TR(StatusWaiting) : TR(StatusNoSpout);
     const ImU32 badgeFg = info.batchRunning ? p.accentHover
                         : videoMode ? (info.videoProcessing ? p.warn : info.videoLoaded ? p.good : p.muted)
                         : imageMode ? (info.imageLoaded ? p.good : p.muted)
                         : info.sourceConnected ? p.good : haveSenders ? p.warn : p.muted;
-    const ImU32 badgeBg = WithAlpha(badgeFg, badgeFg == p.muted ? 0.2f : 0.18f);
+    const ImU32 badgeBg = WithAlpha(badgeFg, badgeFg == p.muted ? 0.2f : 0.16f);
     const bool nrBadge = info.status && info.status->nrActive;
     const float textH = ImGui::GetTextLineHeight();
-    const float pillPad = 18.0f;   // Pill() adds 9 px on each side
-    const float pillH = textH + 6.0f;
-    const float badgesW = ImGui::CalcTextSize(badge).x + pillPad + (nrBadge ? ImGui::CalcTextSize("DLSS 5").x + pillPad + 6.0f : 0.0f);
+    const float pillPad = Px(9.0f) * 2.0f;   // Pill()'s padding on both sides
+    const float pillH = textH + Px(3.0f) * 2.0f;
+    const float badgesW = (badge ? ImGui::CalcTextSize(badge).x + pillPad : 0.0f)
+                        + (nrBadge ? ImGui::CalcTextSize("DLSS 5").x + pillPad + (badge ? Px(6.0f) : 0.0f) : 0.0f);
 
-    // Right part: rates, language, the main action. Rates are padded to three digits in the monospace font and
-    // their reserved width comes from a template, so a changing number never moves the controls to its right.
-    const bool uiRateOnly = (imageMode || videoMode) && !info.videoProcessing && !info.videoPlaying;
+    // Right part: undo, redo and the history, the documentation, the language, the main action.
     const char* actionText = busy ? TR(Cancel) : videoMode ? TR(ProcessVideo) : imageMode ? TR(ProcessAndSave) : TR(Capture);
-    const float actionW = ImGui::CalcTextSize(actionText).x + style.FramePadding.x * 2.0f + 24.0f;
-    const std::string fpsText = uiRateOnly
-        ? StrPrintf("%s %3.0f %s", TR(UiFps), m_shown.fps, TR(Fps))
-        : StrPrintf("%s %3.0f %s  \xC2\xB7  %s %3.0f %s", TR(ProcessingFps), m_shown.processingFps, TR(Fps), TR(UiFps), m_shown.fps, TR(Fps));
-    const std::string fpsTemplate = uiRateOnly
-        ? StrPrintf("%s 000 %s", TR(UiFps), TR(Fps))
-        : StrPrintf("%s 000 %s  \xC2\xB7  %s 000 %s", TR(ProcessingFps), TR(Fps), TR(UiFps), TR(Fps));
-    ImGui::PushFont(fonts.Mono(), 0.0f);
-    const float fpsW = ImGui::CalcTextSize(fpsTemplate.c_str()).x;
-    ImGui::PopFont();
+    const Icon actionIcon = busy ? Icon::Stop : videoMode ? Icon::Film : imageMode ? Icon::Sparkle : Icon::Camera;
+    const float actionW = IconTextButtonWidth(actionText) + Px(10.0f);
 
-    const float availW = ImGui::GetWindowWidth() - style.WindowPadding.x * 2.0f;
-    const float gap = 20.0f;
-    float langW = ImGui::GetFontSize() * 8.0f;
+    const float availW = ImGui::GetWindowWidth() - pad.x * 2.0f;
+    const float gap = Px(16.0f);
+    // The language box fits the chosen name after its icon; the icon alone when the bar is narrow.
+    const char* langItems[] = { TR(LangAuto), "English", "简体中文", "日本語", "한국어" };
+    const int langSel = (s.language >= 0 && s.language < 5) ? s.language : 0;
+    const float langIconW = IconSize() + style.FramePadding.x * 2.0f + frameH;
+    float langW = std::max(ImGui::GetFontSize() * 6.0f, langIconW + style.ItemInnerSpacing.x + ImGui::CalcTextSize(langItems[langSel]).x);
+    bool langCompact = false;
     const float undoW = frameH * 3.0f + style.ItemInnerSpacing.x * 2.0f;   // undo, redo, history
-    bool showFps = true, showBadges = true, showTitle = true, showUndo = true;
-    auto rightW = [&]() { return actionW + langW + style.ItemSpacing.x + frameH + style.ItemSpacing.x + (showUndo ? undoW + style.ItemSpacing.x : 0.0f) + (showFps ? fpsW + style.ItemSpacing.x : 0.0f); };
-    auto leftW = [&]() { return (showTitle ? titleSize.x + 16.0f : 0.0f) + switchW + (showBadges ? 14.0f + badgesW : 0.0f); };
-    if (leftW() + gap + rightW() > availW) showFps = false;
-    if (leftW() + gap + rightW() > availW) langW = ImGui::GetFontSize() * 4.5f;
+    bool showBadges = true, showTitle = true, showUndo = true, showLogo = true;
+    auto rightW = [&]() { return actionW + langW + style.ItemSpacing.x + frameH + style.ItemSpacing.x + (showUndo ? undoW + style.ItemSpacing.x : 0.0f); };
+    auto leftW = [&]() {
+        return (showLogo ? logoS + (showTitle ? Px(10.0f) + titleSize.x + Px(20.0f) : Px(14.0f)) : 0.0f) + switchW
+             + (showBadges && badgesW > 0.0f ? Px(12.0f) + badgesW : 0.0f);
+    };
+    if (leftW() + gap + rightW() > availW) { langW = langIconW; langCompact = true; }
     if (leftW() + gap + rightW() > availW) showUndo = false;
     if (leftW() + gap + rightW() > availW) showBadges = false;
     if (leftW() + gap + rightW() > availW) showTitle = false;
+    if (leftW() + gap + rightW() > availW) showLogo = false;
 
-    if (showTitle) {
-        ImGui::SetCursorPosY(centredText(titleSize.y));
-        ImGui::PushFont(fonts.Bold(), style.FontSizeBase * 1.2f);
-        ImGui::TextUnformatted(TR(AppTitle));
-        ImGui::PopFont();
-        ImGui::SameLine(0.0f, 16.0f);
+    if (showLogo) {
+        ImGui::SetCursorPosY(centred(logoS));
+        DrawLogo(ImGui::GetWindowDrawList(), ImGui::GetCursorScreenPos(), logoS);
+        ImGui::Dummy(ImVec2(logoS, logoS));
+        if (showTitle) {
+            ImGui::SameLine(0.0f, Px(10.0f));
+            ImGui::SetCursorPosY(centredText(titleSize.y));
+            ImGui::PushFont(fonts.Bold(), titleSizeBase);
+            ImGui::TextUnformatted(TR(AppTitle));
+            ImGui::PopFont();
+            ImGui::SameLine(0.0f, Px(20.0f));
+        } else {
+            ImGui::SameLine(0.0f, Px(14.0f));
+        }
     }
     ImGui::SetCursorPosY(centred(frameH));
     ImGui::BeginDisabled(busy);
     {
         // The switch shows the mode that is coming; it is applied at the bottom of the fade (DrawFades).
         int mode = m_modePending >= 0 ? m_modePending : s.sourceMode;
-        if (Segmented("##source", modes, 3, &mode) && mode != s.sourceMode && m_modePending < 0) { m_modePending = mode; m_modeFadeStart = ImGui::GetTime(); }
+        if (Segmented("##source", modes, 3, &mode, 0.0f, modeIcons) && mode != s.sourceMode && m_modePending < 0) {
+            m_modePending = mode;
+            m_modeFadeStart = ImGui::GetTime();
+        }
     }
     ImGui::EndDisabled();
     Tip(TR(SourceModeHint));
-    if (showBadges) {
-        ImGui::SameLine(0.0f, 14.0f);
-        ImGui::SetCursorPosY(centred(pillH));
-        Pill(badge, badgeBg, badgeFg);
-        if (nrBadge) {
-            ImGui::SameLine(0.0f, 6.0f);
+    if (showBadges && badgesW > 0.0f) {
+        ImGui::SameLine(0.0f, Px(12.0f));
+        if (badge) {
             ImGui::SetCursorPosY(centred(pillH));
-            Pill("DLSS 5", WithAlpha(p.accent, 0.2f), p.accentHover);
+            Pill(badge, badgeBg, badgeFg);
+        }
+        if (nrBadge) {
+            if (badge) ImGui::SameLine(0.0f, Px(6.0f));
+            ImGui::SetCursorPosY(centred(pillH));
+            Pill("DLSS 5", WithAlpha(p.accent, 0.18f), Mix(p.accentHover, p.accent, p.light));
         }
     }
     const float leftEnd = ImGui::GetItemRectMax().x - ImGui::GetWindowPos().x;
 
-    ImGui::SameLine(std::max(leftEnd + gap, ImGui::GetWindowWidth() - style.WindowPadding.x - rightW()));
-    if (showFps) {
-        ImGui::SetCursorPosY(centredText(textH));
-        ImGui::PushFont(fonts.Mono(), 0.0f);
-        ImGui::TextDisabled("%s", fpsText.c_str());
-        ImGui::PopFont();
-        Tip(TR(TipUiFps));
-        ImGui::SameLine();
-    }
+    ImGui::SameLine(std::max(leftEnd + gap, ImGui::GetWindowWidth() - pad.x - rightW()));
     if (showUndo) {
         ImGui::SetCursorPosY(centred(frameH));
         ImGui::BeginDisabled(m_undo.empty());
@@ -1110,14 +1227,18 @@ void MainUI::DrawTopBar(Settings& s, const UiFrameInfo& info, UiEvents& ev, cons
     ImGui::SameLine();
     ImGui::SetCursorPosY(centred(frameH));
     ImGui::SetNextItemWidth(langW);
-    {
-        const char* items[] = { TR(LangAuto), "English", "简体中文", "日本語", "한국어" };
-        if (ComboIds("##lang", &s.language, items, 5)) { ev.languageChanged = true; ev.settingsChanged = true; }
+    if (BeginDropdown("##lang", langCompact ? nullptr : langItems[langSel], Icon::Languages)) {
+        for (int i = 0; i < 5; ++i) {
+            const bool selected = langSel == i;
+            if (ImGui::Selectable(langItems[i], selected) && s.language != i) { s.language = i; ev.languageChanged = true; ev.settingsChanged = true; }
+            if (selected) ImGui::SetItemDefaultFocus();
+        }
+        EndDropdown();
     }
+    Tooltip(TR(Language));
     ImGui::SameLine();
     ImGui::SetCursorPosY(centred(frameH));
-    const std::string actionLabel = std::string(busy ? "\xE2\x96\xA0 " : "\xE2\x97\x8F ") + actionText;
-    if (AccentButton(actionLabel.c_str(), ImVec2(actionW, 0))) {
+    if (IconTextButton(actionText, actionIcon, ImVec2(actionW, 0), ButtonKind::Accent)) {
         if (info.batchRunning) ev.batchCancel = true;
         else if (info.videoProcessing) ev.cancelVideo = true;
         else ev.captureNow = true;
@@ -1138,80 +1259,116 @@ void MainUI::DrawSidebar(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
     const float lockT = Animate(ImGui::GetID("##lock"), locked ? 1.0f : 0.0f, 12.0f);
     if (lockT > 0.001f) {
         const float frameH = ImGui::GetFrameHeight();
-        const float bannerH = frameH + 10.0f;
+        const float inner = Px(5.0f);
+        const float bannerH = frameH + inner * 2.0f;
         const ImVec2 b0 = ImGui::GetCursorScreenPos();
         const float w = ImGui::GetContentRegionAvail().x;
         ImDrawList* dl = ImGui::GetWindowDrawList();
-        dl->AddRectFilled(b0, ImVec2(b0.x + w, b0.y + bannerH), WithAlpha(p.warn, 0.14f * lockT), style.FrameRounding);
-        DrawIcon(dl, Icon::Lock, ImVec2(b0.x + 8.0f + frameH * 0.4f, b0.y + bannerH * 0.5f), frameH * 0.62f, WithAlpha(p.warn, lockT));
+        const ImVec2 b1(b0.x + w, b0.y + bannerH);
+        dl->AddRectFilled(b0, b1, WithAlpha(p.warn, 0.13f * lockT), CardRounding());
+        dl->AddRect(b0, b1, WithAlpha(p.warn, 0.35f * lockT), CardRounding(), 1.0f);
+        const float iconS = IconSize();
+        DrawIcon(dl, Icon::Lock, ImVec2(b0.x + Px(12.0f) + iconS * 0.5f, b0.y + bannerH * 0.5f), iconS, WithAlpha(p.warn, lockT));
         const bool cancellable = info.batchRunning || info.videoProcessing;
-        const float cancelW = cancellable ? ImGui::CalcTextSize(TR(Cancel)).x + style.FramePadding.x * 2.0f + 8.0f : 0.0f;
+        const float cancelW = cancellable ? IconTextButtonWidth(TR(Cancel)) : 0.0f;
+        const float textX = b0.x + Px(12.0f) + iconS + Px(8.0f);
         ImGui::PushStyleColor(ImGuiCol_Text, WithAlpha(p.warn, lockT));
-        ImGui::PushClipRect(b0, ImVec2(b0.x + w - cancelW - 4.0f, b0.y + bannerH), true);
-        ImGui::SetCursorScreenPos(ImVec2(b0.x + 12.0f + frameH * 0.8f, b0.y + (bannerH - ImGui::GetTextLineHeight()) * 0.5f));
+        ImGui::PushClipRect(b0, ImVec2(b1.x - (cancellable ? cancelW + inner * 2.0f : inner), b1.y), true);
+        ImGui::SetCursorScreenPos(ImVec2(textX, b0.y + (bannerH - ImGui::GetTextLineHeight()) * 0.5f));
         ImGui::TextUnformatted(info.mcpJob.empty() ? TR(LockedWhileBusy) : StrPrintf(TR(McpJobRunningFmt), info.mcpJob.c_str()).c_str());
         ImGui::PopClipRect();
         ImGui::PopStyleColor();
         if (cancellable) {
             ImGui::SameLine();
-            ImGui::SetCursorScreenPos(ImVec2(b0.x + w - cancelW + 4.0f, b0.y + 5.0f));
+            ImGui::SetCursorScreenPos(ImVec2(b1.x - cancelW - inner, b0.y + inner));
             ImGui::PushStyleVar(ImGuiStyleVar_Alpha, style.Alpha * lockT);
-            if (AccentButton(TR(Cancel), ImVec2(cancelW - 8.0f, frameH))) { if (info.batchRunning) ev.batchCancel = true; else ev.cancelVideo = true; }
+            if (IconTextButton(TR(Cancel), Icon::Stop, ImVec2(cancelW, frameH), ButtonKind::Accent)) { if (info.batchRunning) ev.batchCancel = true; else ev.cancelVideo = true; }
             ImGui::PopStyleVar();
         }
-        ImGui::SetCursorScreenPos(ImVec2(b0.x, b0.y + bannerH * lockT));
-        ImGui::Spacing();
+        ImGui::SetCursorScreenPos(ImVec2(b0.x, b0.y + (bannerH + style.ItemSpacing.y) * lockT));
     }
-    // The search field: while it holds text only the matching controls show, in their sections (Theme's Search*).
+    // The search field, and the Advanced switch at the end of its row (on a row of its own when the sidebar is too
+    // narrow for both): while the field holds text only the matching controls show, in their sections (Theme's
+    // Search*); the switch decides how much of every section is shown.
     {
         const float frameH = ImGui::GetFrameHeight();
-        const float iconW = frameH * 0.8f;
+        const float iconS = IconSize();
+        const float iconW = iconS + style.ItemInnerSpacing.x;
         const bool hasQuery = m_searchBuf[0] != 0;
-        const float clearW = hasQuery ? frameH + style.ItemInnerSpacing.x : 0.0f;
+        const float clearW = hasQuery ? frameH : 0.0f;
+        const float toggleW = std::round(std::round(frameH * 0.72f) * 1.8f) + style.ItemInnerSpacing.x + ImGui::CalcTextSize(TR(Advanced)).x;
+        const float rowW = ImGui::GetContentRegionAvail().x;
+        const float fieldMin = ImGui::GetFontSize() * 9.0f;
+        const bool sameRow = rowW - toggleW - style.ItemSpacing.x * 1.5f >= fieldMin;
+        const float fieldW = sameRow ? rowW - toggleW - style.ItemSpacing.x * 1.5f : rowW;
         const ImVec2 f0 = ImGui::GetCursorScreenPos();
-        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - clearW);
+        ImGui::SetNextItemWidth(fieldW);
+        if (hasQuery) ImGui::SetNextItemAllowOverlap();   // the clear mark inside it takes the mouse
         ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(style.FramePadding.x + iconW, style.FramePadding.y));
         ImGui::InputTextWithHint("##search", TR(SearchHint), m_searchBuf, sizeof(m_searchBuf));
         ImGui::PopStyleVar();
+        FocusRing();
         if (ImGui::IsItemDeactivated() && ImGui::IsKeyDown(ImGuiKey_Escape)) m_searchBuf[0] = 0;
-        DrawIcon(ImGui::GetWindowDrawList(), Icon::Search, ImVec2(f0.x + style.FramePadding.x + iconW * 0.5f, f0.y + frameH * 0.5f), frameH * 0.5f, p.textDim);
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        DrawIcon(dl, Icon::Search, ImVec2(f0.x + style.FramePadding.x + iconS * 0.5f, f0.y + frameH * 0.5f), iconS, p.textDim);
         if (hasQuery) {
-            ImGui::SameLine(0.0f, style.ItemInnerSpacing.x);
-            if (IconButton("##searchClear", Icon::Close, ImVec2(frameH, frameH), TR(SearchClear), ButtonKind::Plain)) m_searchBuf[0] = 0;
+            // The clear mark sits inside the field, at its right end.
+            const ImVec2 keep = ImGui::GetCursorScreenPos();
+            ImGui::SetCursorScreenPos(ImVec2(f0.x + fieldW - clearW, f0.y));
+            if (IconButton("##searchClear", Icon::Close, ImVec2(clearW, frameH), TR(SearchClear), ButtonKind::Plain)) m_searchBuf[0] = 0;
+            ImGui::SetCursorScreenPos(keep);
         }
-        ImGui::Spacing();
+        if (sameRow) {
+            ImGui::SetCursorScreenPos(ImVec2(f0.x + rowW - toggleW, f0.y));
+        }
+        if (Toggle(TR(Advanced), &s.showAdvanced)) ev.settingsChanged = true;
+        Tip(TR(TipAdvanced));
+        ImGui::Dummy(ImVec2(0.0f, Px(2.0f)));
     }
     SearchBegin(m_searchBuf);
     ImGui::BeginDisabled(locked);
     ImGui::PushItemWidth(-LabelColumn(ImGui::GetContentRegionAvail().x));
-    if (SectionHeader(TR(SecSource), "source")) { BlockSource(s, info, ev); SectionEnd(); }
-    if (SectionHeader(TR(SecNeural), "neural")) { BlockNeural(s, info, ev); SectionEnd(); }
-    if (SectionHeader(TR(SecCapture), "save")) { BlockSave(s, info, ev); SectionEnd(); }
+    if (SectionHeader(TR(SecSource), "source", true, Icon::Import)) { BlockSource(s, info, ev); SectionEnd(); }
+    if (SectionHeader(TR(SecNeural), "neural", true, Icon::Sparkle)) { BlockNeural(s, info, ev); SectionEnd(); }
+    if (SectionHeader(TR(SecCapture), "save", true, Icon::Save)) { BlockSave(s, info, ev); SectionEnd(); }
     // The expert sections fade in and out with the Advanced switch; Display sits under DLAA, before the internals.
-    // A search looks through the expert sections too.
+    // A search looks through the expert sections too, and through the expert controls of the everyday ones.
     const float adv = Searching() ? 1.0f : Animate(ImGui::GetID("##advanced"), s.showAdvanced ? 1.0f : 0.0f, 12.0f);
     if (adv > 0.001f) {
         ImGui::PushStyleVar(ImGuiStyleVar_Alpha, style.Alpha * adv);
-        if (SectionHeader(TR(SecGuidance), "guidance", false)) { BlockGuidance(s, info, ev); SectionEnd(); }
+        if (SectionHeader(TR(SecGuidance), "guidance", false, Icon::Layers)) { BlockGuidance(s, info, ev); SectionEnd(); }
 #if !APP_EDITION_AMD   // DLAA is NVIDIA-only
-        if (SectionHeader(TR(SecDlaa), "dlaa", false)) { BlockDlaa(s, info, ev); SectionEnd(); }
+        if (SectionHeader(TR(SecDlaa), "dlaa", false, Icon::Grid)) { BlockDlaa(s, info, ev); SectionEnd(); }
 #endif
         ImGui::PopStyleVar();
     }
-    if (SectionHeader(TR(SecDisplay), "view", false)) { BlockView(s, info, ev); SectionEnd(); }
-    if (SectionHeader(TR(SecMcp), "mcp", false)) { BlockMcp(s, info, ev); SectionEnd(); }
+    if (SectionHeader(TR(SecDisplay), "view", false, Icon::Monitor)) { BlockView(s, info, ev); SectionEnd(); }
+    if (SectionHeader(TR(SecMcp), "mcp", false, Icon::Plug)) { BlockMcp(s, info, ev); SectionEnd(); }
     if (adv > 0.001f) {
         ImGui::PushStyleVar(ImGuiStyleVar_Alpha, style.Alpha * adv);
-        if (SectionHeader(TR(SecInternals), "internals", false)) { BlockInternals(s, info, ev); SectionEnd(); }
+        if (SectionHeader(TR(SecInternals), "internals", false, Icon::Cpu)) { BlockInternals(s, info, ev); SectionEnd(); }
         ImGui::PopStyleVar();
     }
-    m_aboutY = ImGui::GetCursorPosY() - style.WindowPadding.y;   // where the sidebar glides to after the setup guide
-    if (SectionHeader(TR(SecAbout), "about", false)) { BlockAbout(s, info, ev, fonts); SectionEnd(); }
+    m_aboutY = ImGui::GetCursorPosY() - ImGui::GetCurrentWindow()->WindowPadding.y;   // where the sidebar glides to after the setup guide
+    if (SectionHeader(TR(SecAbout), "about", false, Icon::Info)) { BlockAbout(s, info, ev, fonts); SectionEnd(); }
     const bool nothingFound = Searching() && SearchHits() == 0;
     SearchEnd();
-    if (nothingFound) { ImGui::Spacing(); ImGui::TextDisabled("%s", TR(SearchNoResults)); }
+    if (nothingFound) {
+        // Nothing matched: a quiet card-less note in the middle of the column.
+        ImGui::Dummy(ImVec2(0.0f, Px(12.0f)));
+        const float w = ImGui::GetContentRegionAvail().x;
+        const ImVec2 c(ImGui::GetCursorScreenPos().x + w * 0.5f, ImGui::GetCursorScreenPos().y + IconSize(1.4f) * 0.5f);
+        DrawIcon(ImGui::GetWindowDrawList(), Icon::Search, c, IconSize(1.4f), WithAlpha(p.textDim, 0.7f));
+        ImGui::Dummy(ImVec2(0.0f, IconSize(1.4f) + Px(4.0f)));
+        const ImVec2 ts = ImGui::CalcTextSize(TR(SearchNoResults), nullptr, false, w);
+        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + std::max(0.0f, (w - ts.x) * 0.5f));
+        ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + std::min(w, ts.x + 1.0f));
+        ImGui::TextDisabled("%s", TR(SearchNoResults));
+        ImGui::PopTextWrapPos();
+    }
     ImGui::PopItemWidth();
     ImGui::EndDisabled();
+    ImGui::Dummy(ImVec2(0.0f, Px(10.0f)));   // the last card's shadow, when scrolled to the end
 }
 
 // How long the current file would take with the settings as they are, from the measured cost of a frame.
@@ -1265,7 +1422,7 @@ void MainUI::BlockSource(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
     const bool busy = info.videoProcessing || info.batchRunning;
     if (s.sourceMode == SourceVideo) {
         ImGui::BeginDisabled(busy);
-        OpenCloseRow(TR(OpenVideo), info.videoLoaded, ev.openVideo, ev.closeMedia);
+        OpenCloseRow(TR(OpenVideo), Icon::FileVideo, info.videoLoaded, ev.openVideo, ev.closeMedia);
         ImGui::EndDisabled();
         if (info.videoLoaded) {
             StatusDot(p.good, StrPrintf("%s  %ux%u  %.3g %s  %s", info.videoName.c_str(), info.videoWidth, info.videoHeight, info.videoFps, TR(Fps),
@@ -1293,7 +1450,7 @@ void MainUI::BlockSource(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
                 if (info.videoFinishing) ImGui::TextDisabled("%s", TR(VideoFinishing));
                 else ImGui::TextDisabled("%5.1f %s  \xC2\xB7  %s %s", rate, TR(Fps), FormatDuration(remaining).c_str(), TR(Remaining));
             } else {
-                ImGui::TextDisabled("%s", info.videoPlaying ? TR(Play) : info.imageConverging ? TR(Processing) : TR(Converged));
+                ImGui::TextDisabled("%s", info.videoPlaying ? TR(Playing) : info.imageConverging ? TR(Processing) : TR(Converged));
             }
         } else {
             StatusDot(p.muted, TR(NoVideo));
@@ -1345,14 +1502,14 @@ void MainUI::BlockSource(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
                     if (SliderIntReset(TR(WebpQuality), &s.webpQuality, 50, 100, 90, "%d", TR(TipWebpQuality))) ev.settingsChanged = true;
                 }
             }
-            if (s.showAdvanced && info.videoAnimation == 0) {
+            if ((s.showAdvanced || Searching()) && info.videoAnimation == 0) {
                 if (Toggle(TR(HardwareDecode), &s.videoHardwareDecode)) ev.settingsChanged = true;
                 Help(TR(TipHardwareDecode));
             }
             ImGui::EndDisabled();
         }
     } else if (s.sourceMode == SourceImage) {
-        OpenCloseRow(TR(OpenImage), info.imageLoaded, ev.openImage, ev.closeMedia);
+        OpenCloseRow(TR(OpenImage), Icon::FileImage, info.imageLoaded, ev.openImage, ev.closeMedia);
         if (info.imageLoaded) {
             StatusDot(p.good, StrPrintf("%s  %ux%u", info.imageName.c_str(), info.imageOrigWidth, info.imageOrigHeight).c_str());
             if (info.imageWidth != info.imageOrigWidth || info.imageHeight != info.imageOrigHeight)
@@ -1392,7 +1549,9 @@ void MainUI::BlockSource(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
             StatusDot(p.muted, TR(StatusNoSpout));
             Hint(TR(ProtonNoSpout));
         } else {
-            StatusDot(p.muted, TR(StatusWaiting));
+            // The same words as the badge in the top bar: waiting while a sender is there, else none found.
+            const bool senders = info.senders && !info.senders->empty();
+            StatusDot(senders ? p.warn : p.muted, senders ? TR(StatusWaiting) : TR(StatusNoSpout));
             Hint(TR(HowToEnable));
         }
     }
@@ -1402,22 +1561,34 @@ void MainUI::BlockSource(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
     if (Toggle(TR(CustomResolution), &s.customResolution)) ev.settingsChanged = true;
     Help(TR(CustomResolutionHint));
     if (s.customResolution) {
-        ImGui::Indent(6.0f);
+        SearchHold(true);   // the block shows as a whole under its switch
+        ImGui::Indent(Px(6.0f));
         LabelSeen(TR(Width));
-        if (ImGui::InputInt(TR(Width), &s.customWidth, 2, 64)) { s.Clamp(); ev.settingsChanged = true; }
+        if (InputIntLabel(TR(Width), &s.customWidth, 2, 64)) { s.Clamp(); ev.settingsChanged = true; }
+        FocusRing();
         ImGui::BeginDisabled(s.keepAspect);
         LabelSeen(TR(Height));
-        if (ImGui::InputInt(TR(Height), &s.customHeight, 2, 64)) { s.Clamp(); ev.settingsChanged = true; }
+        if (InputIntLabel(TR(Height), &s.customHeight, 2, 64)) { s.Clamp(); ev.settingsChanged = true; }
+        FocusRing();
         ImGui::EndDisabled();
-        if (ImGui::Checkbox(TR(KeepAspect), &s.keepAspect)) ev.settingsChanged = true;
-        ImGui::TextDisabled("%s:", TR(Presets));
-        ImGui::SameLine();
-        struct { const char* n; int w, h; } presets[] = { {"720p",1280,720}, {"1080p",1920,1080}, {"1440p",2560,1440}, {"4K",3840,2160}, {"8K",7680,4320} };
-        for (auto& pr : presets) {
-            if (ImGui::SmallButton(pr.n)) { s.customWidth = pr.w; s.customHeight = pr.h; ev.settingsChanged = true; }
-            ImGui::SameLine();
+        if (Checkbox(TR(KeepAspect), &s.keepAspect)) ev.settingsChanged = true;
+        {
+            // The common sizes as small buttons after a caption, wrapping to the next line when the row is full;
+            // the one in use is marked.
+            const ImGuiStyle& sty = ImGui::GetStyle();
+            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(sty.FramePadding.x * 0.8f, std::max(1.0f, Px(3.0f))));
+            const float rowEnd = ImGui::GetCursorScreenPos().x + ImGui::GetContentRegionAvail().x;
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextDisabled("%s", TR(Presets));
+            struct { const char* n; int w, h; } presets[] = { {"720p",1280,720}, {"1080p",1920,1080}, {"1440p",2560,1440}, {"4K",3840,2160}, {"8K",7680,4320} };
+            for (auto& pr : presets) {
+                const float w = ImGui::CalcTextSize(pr.n).x + ImGui::GetStyle().FramePadding.x * 2.0f;
+                if (ImGui::GetItemRectMax().x + sty.ItemInnerSpacing.x + w <= rowEnd) ImGui::SameLine(0.0f, sty.ItemInnerSpacing.x);
+                const bool on = s.customWidth == pr.w && (s.keepAspect || s.customHeight == pr.h);
+                if (on ? GhostButton(pr.n) : FlatButton(pr.n)) { s.customWidth = pr.w; s.customHeight = pr.h; ev.settingsChanged = true; }
+            }
+            ImGui::PopStyleVar();
         }
-        ImGui::NewLine();
         // Upscaling: the output is larger than the source. The method, a plain warning about the cost (the neural
         // pass and everything after it work on the large picture) and what is in effect right now.
         const PipelineStatus* st = info.status;
@@ -1450,7 +1621,8 @@ void MainUI::BlockSource(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         } else {
             m_upscaleWarned = false;   // the next upscale gets the notice again
         }
-        ImGui::Unindent(6.0f);
+        ImGui::Unindent(Px(6.0f));
+        SearchHold(false);
     } else {
         m_upscaleWarned = false;
     }
@@ -1458,14 +1630,14 @@ void MainUI::BlockSource(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
     // HDR source controls: only meaningful for floating-point (scene-linear) Spout textures.
     if (info.sourceIsHdr && s.sourceMode == SourceSpout) {
         ImGui::Spacing();
-        ImGui::TextUnformatted(TR(HdrSource));
-        ImGui::Indent(6.0f);
+        SectionLabel(TR(HdrSource));
+        ImGui::Indent(Px(6.0f));
         bool ch = false;
         ch |= SliderReset(TR(PaperWhite), &s.hdrPaperWhite, 0.1f, 8.0f, 1.0f, "%.2f", TR(TipPaperWhite));
         ch |= SliderReset(TR(HighlightCompression), &s.hdrHighlightCompression, 0.0f, 1.0f, 1.0f, "%.2f", TR(TipHighlightCompression));
         if (ch) ev.settingsChanged = true;
         Hint(TR(HdrSourceHint));
-        ImGui::Unindent(6.0f);
+        ImGui::Unindent(Px(6.0f));
     }
     ImGui::Spacing();
 }
@@ -1473,34 +1645,15 @@ void MainUI::BlockSource(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
 void MainUI::BlockNeural(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
     const Palette& p = Colors();
     const PipelineStatus* st = info.status;
-    const ImGuiStyle& style = ImGui::GetStyle();
     if (Toggle(TR(NrEnable), &s.nrEnabled)) { ev.nrChanged = true; ev.settingsChanged = true; }
-    ImGui::SameLine(0.0f, 12.0f);
     if (st) {
-        if (st->nrActive) Pill(TR(Active), WithAlpha(p.good, 0.18f), p.good);
-        else if (st->nrFailed) Pill(TR(Failed), WithAlpha(p.bad, 0.18f), p.bad);
-        else if (st->nrStandby) Pill(TR(Standby), WithAlpha(p.warn, 0.18f), p.warn);
-        else Pill(TR(Inactive), WithAlpha(p.muted, 0.2f), p.muted);
-    }
-    // The Advanced switch sits at the right end of this row: it decides how much of this section (and of the
-    // others) is shown.
-    {
-        const float toggleW = ImGui::GetFrameHeight() * 0.86f * 1.8f + style.ItemInnerSpacing.x + ImGui::CalcTextSize(TR(Advanced)).x;
-        ImGui::SameLine();
-        const float rightEdge = ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x;
-        if (rightEdge - toggleW >= ImGui::GetCursorPosX()) {
-            ImGui::SameLine(rightEdge - toggleW);
-        } else {
-            // No room after the state pill (a long label, a narrow sidebar): the switch takes the next line, still
-            // at the right end, rather than running past the edge.
-            ImGui::NewLine();
-            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + ImGui::GetContentRegionAvail().x - toggleW);
-        }
-        if (Toggle(TR(Advanced), &s.showAdvanced)) ev.settingsChanged = true;
-        Tip(TR(TipAdvanced));
+        if (st->nrActive) PillAfter(TR(Active), WithAlpha(p.good, 0.18f), p.good, Px(10.0f));
+        else if (st->nrFailed) PillAfter(TR(Failed), WithAlpha(p.bad, 0.18f), p.bad, Px(10.0f));
+        else if (st->nrStandby) PillAfter(TR(Standby), WithAlpha(p.warn, 0.18f), p.warn, Px(10.0f));
+        else PillAfter(TR(Inactive), WithAlpha(p.muted, 0.2f), p.muted, Px(10.0f));
     }
     Hint(TR(NrHint));
-    if (s.sourceMode == SourceSpout && s.showAdvanced) {
+    if (s.sourceMode == SourceSpout && (s.showAdvanced || Searching())) {
         if (Toggle(TR(NrCaptureOnly), &s.nrCaptureOnly)) ev.settingsChanged = true;
         Help(TR(TipNrCaptureOnly));
     }
@@ -1512,8 +1665,8 @@ void MainUI::BlockNeural(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
     if (EditionRoute() == RouteFsrHost) BlockFsrHost(s, info, ev);
     else BlockNgxRuntime(s, info, ev);
     ImGui::Spacing();
-    EffectControls(s, ev, s.showAdvanced, s.nrEnabled, st);
-    if (st && s.showAdvanced) {
+    EffectControls(s, ev, s.showAdvanced || Searching(), s.nrEnabled, st);
+    if (st && (s.showAdvanced || Searching())) {
         Readout(m_fonts, TR(GpuTime), FormatMsFixed(m_shown.gpuMs[(UINT)GpuTimer::Neural]));
         Readout(m_fonts, TR(Frames), StrPrintf("%llu", m_shown.processedFrames));
         Readout(m_fonts, TR(NrPassSize), st->nrActive && st->nrPassWidth ? StrPrintf("%ux%u", st->nrPassWidth, st->nrPassHeight) : std::string("-"));
@@ -1540,15 +1693,22 @@ void MainUI::EffectControls(Settings& s, UiEvents& ev, bool advanced, bool enabl
         ch |= SliderReset(TR(GlobalTone), &s.nrGlobalTone, 0.0f, 2.0f, 1.0f, "%.2f", TR(TipGlobalTone));
         ch |= SliderReset(TR(LocalTone), &s.nrLocalTone, 0.0f, 2.0f, 1.0f, "%.2f", TR(TipLocalTone));
         ch |= SliderReset(TR(LocalStructure), &s.nrLocalStructure, 0.0f, 2.0f, 1.0f, "%.2f", TR(TipLocalStructure));
-        {
+        if (SearchMatch(TR(SkinStructure), TR(TipSkinStructure))) {
+            // The box and its slider are one entry, found by the slider's name: the box's own label is only
+            // "Runtime default", and its caption would otherwise stand alone in a search.
+            SearchHold(true);
             bool useDefault = s.nrSkinStructure < 0.0f;
             ImGui::PushID("skin");
-            if (ImGui::Checkbox(TR(UseDefault), &useDefault)) { s.nrSkinStructure = useDefault ? -1.0f : 1.0f; ch = true; }
-            ImGui::SameLine();
-            ImGui::TextDisabled("(%s)", TR(SkinStructure));
+            if (Checkbox(TR(UseDefault), &useDefault)) { s.nrSkinStructure = useDefault ? -1.0f : 1.0f; ch = true; }
+            const std::string what = StrPrintf("(%s)", TR(SkinStructure));   // beside the box while it fits, else below it
+            SameLineIfRoom(ImGui::CalcTextSize(what.c_str()).x, ImGui::GetStyle().ItemSpacing.x);
+            ImGui::PushTextWrapPos(0.0f);
+            ImGui::TextDisabled("%s", what.c_str());
+            ImGui::PopTextWrapPos();
             if (!useDefault) ch |= SliderReset(TR(SkinStructure), &s.nrSkinStructure, 0.0f, 2.0f, 1.0f, "%.2f", TR(TipSkinStructure));
             else Tip(TR(TipSkinStructure));
             ImGui::PopID();
+            SearchHold(false);
         }
         if (Toggle(TR(AutoMask), &s.nrAutoMask)) ch = true;
         Help(TR(TipAutoMask));
@@ -1581,7 +1741,7 @@ void MainUI::EffectControls(Settings& s, UiEvents& ev, bool advanced, bool enabl
                 Hint(StrPrintf(TR(NrPassCapped), st->nrPassWidth, st->nrPassHeight).c_str());
         }
         ImGui::Spacing();
-        ImGui::TextUnformatted(TR(OutputBlend));
+        SectionLabel(TR(OutputBlend));
         // The exposure changes what the network sees (neural pass re-run); the strengths only change the composite.
         ch |= SliderReset(TR(InputExposure), &s.nrInputExposure, 0.25f, 4.0f, 1.0f, "%.2fx", TR(TipInputExposure));
         blend |= SliderReset(TR(ToneTransfer), &s.nrToneTransfer, 0.0f, 2.0f, 1.0f, "%.2f", TR(TipToneTransfer));
@@ -1608,7 +1768,8 @@ void MainUI::BlockSave(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
     const Palette& p = Colors();
     const bool busy = info.videoProcessing || info.batchRunning;
     ImGui::BeginDisabled(busy);
-    if (AccentButton(s.sourceMode == SourceVideo ? TR(ProcessVideo) : s.sourceMode == SourceImage ? TR(ProcessAndSave) : TR(Capture), ImVec2(-FLT_MIN, 0)))
+    if (IconTextButton(s.sourceMode == SourceVideo ? TR(ProcessVideo) : s.sourceMode == SourceImage ? TR(ProcessAndSave) : TR(Capture),
+                       s.sourceMode == SourceVideo ? Icon::Film : s.sourceMode == SourceImage ? Icon::Sparkle : Icon::Camera, ImVec2(-FLT_MIN, 0), ButtonKind::Accent))
         ev.captureNow = true;
     ImGui::EndDisabled();
     Tip(s.sourceMode == SourceVideo ? TR(VideoHint) : s.sourceMode == SourceImage ? TR(ImageHint) : TR(CaptureHint));
@@ -1617,17 +1778,17 @@ void MainUI::BlockSave(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         // What the run would take on this card, so a slow card can be judged before the wait.
         Readout(m_fonts, TR(Estimate), EstimateText(s, info), TR(TipEstimate));
     }
-    {
+    if (SearchMatch(TR(CaptureFolder), TR(OpenFolder))) {
         SyncBuffer(m_folderBuf, sizeof(m_folderBuf), s.captureFolder, m_folderEditing);
-        const float btnW = ImGui::GetFrameHeight() * 1.6f;
+        const float btnW = ImGui::GetFrameHeight();
         ImGui::SetNextItemWidth(ImGui::CalcItemWidth() - btnW * 2.0f - ImGui::GetStyle().ItemInnerSpacing.x * 2.0f);
         const std::string hint = WideToUtf8(info.captureFolder);
         ImGui::InputTextWithHint("##folder", hint.c_str(), m_folderBuf, sizeof(m_folderBuf));
+        FocusRing();
         m_folderEditing = ImGui::IsItemActive();
         if (ImGui::IsItemDeactivatedAfterEdit()) { s.captureFolder = m_folderBuf; ev.settingsChanged = true; }
         ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
-        if (FlatButton("...##folder", ImVec2(btnW, 0))) ev.browseFolder = true;
-        Tip(TR(Browse));
+        if (IconButton("##browsefolder", Icon::Folder, ImVec2(btnW, 0), TR(Browse))) ev.browseFolder = true;
         ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
         if (IconButton("##openfolder", Icon::OpenExternal, ImVec2(btnW, 0), TR(OpenFolder))) ev.openCaptureFolder = true;
         ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
@@ -1641,6 +1802,7 @@ void MainUI::BlockSave(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         SyncBuffer(m_nameBuf, sizeof(m_nameBuf), tmpl, m_nameEditing);
         const std::string hint = WideToUtf8(live ? Capture::kDefaultCaptureName : Capture::kDefaultOutputName);
         ImGui::InputTextWithHint("##filename", hint.c_str(), m_nameBuf, sizeof(m_nameBuf));
+        FocusRing();
         m_nameEditing = ImGui::IsItemActive();
         if (ImGui::IsItemDeactivatedAfterEdit()) { tmpl = m_nameBuf; ev.settingsChanged = true; }
         ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
@@ -1648,7 +1810,7 @@ void MainUI::BlockSave(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         Help(TR(TipFileName));
     }
     if (Toggle(TR(SaveOriginal), &s.saveOriginal)) ev.settingsChanged = true;
-    if (s.showAdvanced) {
+    if (s.showAdvanced || Searching()) {
         if (Toggle(TR(KeepAlpha), &s.keepAlpha)) ev.settingsChanged = true;
         Help(TR(TipKeepAlpha));
     }
@@ -1658,13 +1820,14 @@ void MainUI::BlockSave(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         if (Toggle(TR(Hotkey), &s.hotkeyEnabled)) { ev.hotkeyChanged = true; ev.settingsChanged = true; }
         Help(TR(TipHotkey));
         if (s.hotkeyEnabled && !SearchSkipped()) {
-            ImGui::Indent(6.0f);
+            SearchHold(true);
+            ImGui::Indent(Px(6.0f));
             bool ctrl = (s.hotkeyModifiers & 0x0002) != 0, alt = (s.hotkeyModifiers & 0x0001) != 0, shift = (s.hotkeyModifiers & 0x0004) != 0, win = (s.hotkeyModifiers & 0x0008) != 0;
             bool hc = false;
-            hc |= ImGui::Checkbox("Ctrl", &ctrl); ImGui::SameLine();
-            hc |= ImGui::Checkbox("Alt", &alt); ImGui::SameLine();
-            hc |= ImGui::Checkbox("Shift", &shift); ImGui::SameLine();
-            hc |= ImGui::Checkbox("Win", &win);
+            hc |= Checkbox("Ctrl", &ctrl); SameLineIfFits("Shift  ");
+            hc |= Checkbox("Alt", &alt); SameLineIfFits("Shift  ");
+            hc |= Checkbox("Shift", &shift); SameLineIfFits("Shift  ");
+            hc |= Checkbox("Win", &win);
             if (hc) s.hotkeyModifiers = (ctrl ? 0x0002u : 0u) | (alt ? 0x0001u : 0u) | (shift ? 0x0004u : 0u) | (win ? 0x0008u : 0u);
             ImGui::SetNextItemWidth(ImGui::GetFontSize() * 8.0f);
             if (BeginDropdown(TR(Key), HotkeyKeyName(s.hotkeyKey))) {
@@ -1674,7 +1837,8 @@ void MainUI::BlockSave(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
                 EndDropdown();
             }
             if (hc) { ev.hotkeyChanged = true; ev.settingsChanged = true; }
-            ImGui::Unindent(6.0f);
+            ImGui::Unindent(Px(6.0f));
+            SearchHold(false);
         }
         // Timelapse.
         {
@@ -1703,17 +1867,25 @@ void MainUI::BlockSave(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
 void MainUI::BlockView(Settings& s, const UiFrameInfo& /*info*/, UiEvents& ev) {
     if (SearchMatch(TR(Theme), TR(TipTheme))) {
         const char* themes[] = { TR(ThemeSystem), TR(ThemeDark), TR(ThemeLight) };
-        if (Segmented("##theme", themes, 3, &s.theme, ImGui::CalcItemWidth())) ev.settingsChanged = true;
-        Tip(TR(TipTheme));
-        ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
-        TrailingLabel(TR(Theme));
+        const Icon themeIcons[] = { Icon::Monitor, Icon::Moon, Icon::Sun };
+        // Icons only while every segment has room for its icon and its word; a list when even the words do not fit.
+        const float w = ImGui::CalcItemWidth();
+        if (SegmentsFit(themes, 3, nullptr, w)) {
+            const bool withIcons = SegmentsFit(themes, 3, themeIcons, w);
+            if (Segmented("##theme", themes, 3, &s.theme, w, withIcons ? themeIcons : nullptr)) ev.settingsChanged = true;
+            Tip(TR(TipTheme));
+            ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
+            TrailingLabel(TR(Theme));
+        } else if (ComboIds(TR(Theme), &s.theme, themes, 3, TR(TipTheme))) {
+            ev.settingsChanged = true;
+        }
     }
     {
         const char* items[] = { TR(CompareOutput), TR(CompareOriginal), TR(CompareWipe), TR(CompareMotion), TR(CompareDepth) };
         if (ComboIds(TR(Compare), &s.compareMode, items, 5)) ev.settingsChanged = true;
     }
     if (s.compareMode == CompareWipe && !SearchSkipped()) {
-        if (ImGui::SliderFloat("##wipe", &s.wipePosition, 0.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) ev.settingsChanged = true;
+        if (SliderFloatFill("##wipe", &s.wipePosition, 0.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) ev.settingsChanged = true;
     }
     {
         const char* items[] = { TR(FitWindowLabel), TR(OneToOne) };
@@ -1726,7 +1898,7 @@ void MainUI::BlockView(Settings& s, const UiFrameInfo& /*info*/, UiEvents& ev) {
             const float resetW = ImGui::GetFrameHeight();
             ImGui::SetNextItemWidth(ImGui::CalcItemWidth() - resetW - style.ItemInnerSpacing.x);
             float pct = m_zoomTarget * m_baseScale * 100.0f;
-            if (ImGui::SliderFloat("##z", &pct, m_zoomFloor * 100.0f, kZoomMax * 100.0f, "%.0f%%", ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_AlwaysClamp)) {
+            if (SliderFloatFill("##z", &pct, m_zoomFloor * 100.0f, kZoomMax * 100.0f, "%.0f%%", ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_AlwaysClamp)) {
                 m_zoom = m_zoomTarget = pct / (100.0f * std::max(m_baseScale, 1e-6f));
                 m_panHome = false;
             }
@@ -1746,7 +1918,7 @@ void MainUI::BlockView(Settings& s, const UiFrameInfo& /*info*/, UiEvents& ev) {
     if (Toggle(TR(ShowLog), &s.showLog)) ev.settingsChanged = true;
     if (Toggle(TR(ReopenLast), &s.reopenLast)) ev.settingsChanged = true;
     Help(TR(TipReopenLast));
-    if (s.showAdvanced) {
+    if (s.showAdvanced || Searching()) {
         if (Toggle(TR(Vsync), &s.vsync)) ev.settingsChanged = true;
         if (SliderIntReset(TR(RateLimit), &s.processRateLimit, 0, 240, 0, s.processRateLimit > 0 ? "%d fps" : TR(RateLimitOff), TR(TipRateLimit)))
             ev.settingsChanged = true;
@@ -1760,9 +1932,7 @@ void MainUI::BlockMcp(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
     const Palette& p = Colors();
     const ImGuiStyle& style = ImGui::GetStyle();
     const float fullW = ImGui::GetContentRegionAvail().x;
-    const float halfW = std::floor((fullW - style.ItemSpacing.x) * 0.5f);
-    const ImVec2 half(halfW, 0.0f);
-    const float btnW = ImGui::GetFrameHeight() * 1.6f;
+    const float btnW = ImGui::GetFrameHeight();
     auto ageText = [](double age) {
         if (age < 60.0) return StrPrintf("%.0f s", age);
         if (age < 3600.0) return StrPrintf("%.0f min", age / 60.0);
@@ -1782,12 +1952,12 @@ void MainUI::BlockMcp(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
             ImGui::TextWrapped("%s", TR(McpNetworkNoKeys));
             ImGui::PopStyleColor();
         }
-        if (GhostButton(TR(McpFirewall), ImVec2(fullW, 0.0f))) ev.mcpFirewall = true;
+        if (ActionButton(TR(McpFirewall), Icon::Shield, ImVec2(fullW, 0.0f))) ev.mcpFirewall = true;
         Tooltip(TR(TipMcpFirewall));
     }
     if (SearchMatch(TR(McpPort), TR(TipMcpPort))) {
         LabelSeen(TR(McpPort));
-        if (ImGui::InputInt(TR(McpPort), &s.mcpPort, 1, 100)) { s.Clamp(); ev.settingsChanged = true; }
+        if (InputIntLabel(TR(McpPort), &s.mcpPort, 1, 100)) { s.Clamp(); ev.settingsChanged = true; }
         Tip(TR(TipMcpPort));
     }
     if (Toggle(TR(McpReadOnly), &s.mcpReadOnly)) ev.settingsChanged = true;
@@ -1797,104 +1967,111 @@ void MainUI::BlockMcp(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         ImGui::Spacing();
         if (info.mcpRunning) {
             Pill(TR(McpOn), WithAlpha(p.good, 0.2f), p.good);
-            ImGui::SameLine(0.0f, 6.0f);
+            ImGui::SameLine(0.0f, Px(6.0f));
             ImGui::TextWrapped("%s", info.mcpUrl.c_str());
             for (const std::string& a : info.mcpAddresses) ImGui::TextDisabled("%s", a.c_str());
-            if (info.mcpSession && !s.mcpEnabled) ImGui::TextDisabled("%s", TR(McpSessionNote));
+            if (info.mcpSession && !s.mcpEnabled) { ImGui::PushTextWrapPos(0.0f); ImGui::TextDisabled("%s", TR(McpSessionNote)); ImGui::PopTextWrapPos(); }
         } else if (!info.mcpError.empty()) {
             Pill(TR(McpOff), WithAlpha(p.bad, 0.2f), p.bad);
-            ImGui::SameLine(0.0f, 6.0f);
+            ImGui::SameLine(0.0f, Px(6.0f));
             ImGui::PushStyleColor(ImGuiCol_Text, p.bad);
             ImGui::TextWrapped("%s", StrPrintf(TR(McpStartFailedFmt), info.mcpError.c_str()).c_str());
             ImGui::PopStyleColor();
         } else {
             Pill(TR(McpOff), WithAlpha(p.textDim, 0.2f), p.textDim);
-            ImGui::SameLine(0.0f, 6.0f);
+            ImGui::SameLine(0.0f, Px(6.0f));
             ImGui::TextDisabled("%s", info.mcpUrl.c_str());
         }
         if (info.mcpCalls > 0) ImGui::TextDisabled("%s", StrPrintf(TR(McpCallsFmt), info.mcpCalls, info.mcpLastTool.c_str(), ageText(info.mcpLastAge).c_str()).c_str());
         else if (info.mcpRunning) ImGui::TextDisabled("%s", TR(McpNoCalls));
         ImGui::Spacing();
-        if (GhostButton(TR(McpCopyConfig), ImVec2(fullW, 0.0f))) { ImGui::SetClipboardText(info.mcpConfig.c_str()); Toast(TR(McpCopied)); }
+        if (ActionButton(TR(McpCopyConfig), Icon::Copy, ImVec2(fullW, 0.0f))) { ImGui::SetClipboardText(info.mcpConfig.c_str()); Toast(TR(McpCopied)); }
         Tooltip(TR(TipMcpCopyConfig));
-        if (GhostButton(TR(McpCopyUrl), half)) { ImGui::SetClipboardText(info.mcpUrl.c_str()); Toast(TR(McpUrlCopied)); }
-        ImGui::SameLine(0.0f, style.ItemSpacing.x);
+        const ImVec2 pair = PairSize(TR(McpCopyUrl), TR(McpOpenPage), fullW);
+        if (ActionButton(TR(McpCopyUrl), Icon::Copy, pair)) { ImGui::SetClipboardText(info.mcpUrl.c_str()); Toast(TR(McpUrlCopied)); }
+        if (pair.x < fullW) ImGui::SameLine(0.0f, style.ItemSpacing.x);
         ImGui::BeginDisabled(!info.mcpRunning);
-        if (GhostButton(TR(McpOpenPage), half)) ev.mcpOpenPage = true;
+        if (ActionButton(TR(McpOpenPage), Icon::OpenExternal, pair)) ev.mcpOpenPage = true;
         ImGui::EndDisabled();
-        if (GhostButton(TR(Documentation), ImVec2(fullW, 0.0f))) ev.mcpOpenDocs = true;
+        if (ActionButton(TR(Documentation), Icon::Help, ImVec2(fullW, 0.0f))) ev.mcpOpenDocs = true;
     }
     // The keys: one row each, then the field for a new one. A key's secret is copied when it is made and on demand.
     if (SearchMatch(TR(McpKeys), TR(TipMcpRole))) {
+        SearchHold(true);   // the list and the row for a new key show as a whole
         ImGui::Spacing();
         ImGui::TextDisabled("%s", TR(McpKeys));
         Help(TR(TipMcpRole));
-        if (info.mcpKeys.empty()) ImGui::TextDisabled("%s", TR(McpNoKeys));
+        if (info.mcpKeys.empty()) { ImGui::PushTextWrapPos(0.0f); ImGui::TextDisabled("%s", TR(McpNoKeys)); ImGui::PopTextWrapPos(); }
         for (const McpKeyView& k : info.mcpKeys) {
             ImGui::PushID(k.name.c_str());
             const char* role = k.role == McpRoleAdmin ? TR(McpRoleAdmin) : k.role == McpRoleJobs ? TR(McpRoleJobs) : TR(McpRoleViewer);
             const ImU32 rc = k.role == McpRoleAdmin ? p.accent : k.role == McpRoleJobs ? p.good : p.textDim;
             const float rowY = ImGui::GetCursorPosY();
-            if (IconButton("##copy", Icon::Save, ImVec2(btnW, 0), TR(McpKeyCopy), ButtonKind::Plain)) { ev.mcpKeyCopy = true; ev.mcpKeyName = k.name; }
+            if (IconButton("##copy", Icon::Copy, ImVec2(btnW, 0), TR(McpKeyCopy), ButtonKind::Plain)) { ev.mcpKeyCopy = true; ev.mcpKeyName = k.name; }
             ImGui::SameLine(0.0f, style.ItemInnerSpacing.x);
-            if (IconButton("##remove", Icon::Close, ImVec2(btnW, 0), TR(McpKeyRemove), ButtonKind::Plain)) { ev.mcpKeyRemove = true; ev.mcpKeyName = k.name; }
+            if (IconButton("##remove", Icon::Trash, ImVec2(btnW, 0), TR(McpKeyRemove), ButtonKind::Plain)) { ev.mcpKeyRemove = true; ev.mcpKeyName = k.name; }
             ImGui::SameLine(0.0f, style.ItemSpacing.x);
             ImGui::SetCursorPosY(rowY + (ImGui::GetFrameHeight() - ImGui::GetTextLineHeight()) * 0.5f);
             ImGui::TextUnformatted(k.name.c_str());
-            ImGui::SameLine(0.0f, 6.0f);
+            ImGui::SameLine(0.0f, Px(6.0f));
             Pill(role, WithAlpha(rc, 0.2f), rc);
             if (ImGui::IsItemHovered()) Tooltip(TR(TipMcpRole));
-            ImGui::SameLine(0.0f, 6.0f);
+            ImGui::SameLine(0.0f, Px(6.0f));
             if (k.lastAge < 0.0) ImGui::TextDisabled("%s", TR(McpKeyNever));
             else ImGui::TextDisabled("%s", StrPrintf(TR(McpKeyUsedFmt), ageText(k.lastAge).c_str(), k.calls).c_str());
             ImGui::PopID();
         }
         {
+            // One row while the name keeps room for a few words, else the name has a row of its own above the role and the button.
             const char* roles[] = { TR(McpRoleViewer), TR(McpRoleJobs), TR(McpRoleAdmin) };
             const float roleW = std::floor(fullW * 0.3f);
-            const float addW = ImGui::CalcTextSize(TR(McpAddKey)).x + style.FramePadding.x * 2.0f + 6.0f;
-            ImGui::SetNextItemWidth(fullW - roleW - addW - style.ItemInnerSpacing.x * 2.0f);
+            const float addW = IconTextButtonWidth(TR(McpAddKey));
+            const float nameW = fullW - roleW - addW - style.ItemInnerSpacing.x * 2.0f;
+            const bool oneRow = nameW >= ImGui::GetFontSize() * 7.0f;
+            ImGui::SetNextItemWidth(oneRow ? nameW : fullW);
             ImGui::InputTextWithHint("##keyname", TR(McpKeyNameHint), m_mcpKeyBuf, sizeof(m_mcpKeyBuf));
+            FocusRing();
             const bool enter = ImGui::IsItemDeactivatedAfterEdit() && ImGui::IsKeyPressed(ImGuiKey_Enter, false);
-            ImGui::SameLine(0.0f, style.ItemInnerSpacing.x);
-            ImGui::SetNextItemWidth(roleW);
-            ImGui::Combo("##keyrole", &m_mcpKeyRole, roles, 3);
+            if (oneRow) ImGui::SameLine(0.0f, style.ItemInnerSpacing.x);
+            ImGui::SetNextItemWidth(oneRow ? roleW : fullW - addW - style.ItemInnerSpacing.x);
+            ComboIds("##keyrole", &m_mcpKeyRole, roles, 3);
             ImGui::SameLine(0.0f, style.ItemInnerSpacing.x);
             ImGui::BeginDisabled(m_mcpKeyBuf[0] == 0);
-            if (FlatButton(TR(McpAddKey), ImVec2(addW, 0)) || (enter && m_mcpKeyBuf[0])) {
+            if (IconTextButton(TR(McpAddKey), Icon::Plus, ImVec2(addW, 0)) || (enter && m_mcpKeyBuf[0])) {
                 ev.mcpKeyAdd = true; ev.mcpKeyName = m_mcpKeyBuf; ev.mcpKeyRole = m_mcpKeyRole;
                 m_mcpKeyBuf[0] = 0;
             }
             ImGui::EndDisabled();
             Tooltip(TR(TipMcpAddKey));
         }
+        SearchHold(false);
     }
     // The jobs the clients sent: counts, the folder, and how long the results stay.
     if (SearchMatch(TR(McpJobs), TR(TipMcpKeepHours))) {
         ImGui::Spacing();
         ImGui::TextDisabled("%s", TR(McpJobs));
-        ImGui::SameLine(0.0f, 6.0f);
+        ImGui::SameLine(0.0f, Px(6.0f));
         ImGui::TextDisabled("%s", StrPrintf(TR(McpJobsFmt), info.mcpJobsQueued, info.mcpJobsRunning, info.mcpJobsDone).c_str());
-        if (!info.mcpJob.empty()) { ImGui::SameLine(0.0f, 6.0f); Pill(info.mcpJob.c_str(), WithAlpha(p.warn, 0.2f), p.warn); }
+        if (!info.mcpJob.empty()) PillAfter(info.mcpJob.c_str(), WithAlpha(p.warn, 0.2f), p.warn, Px(6.0f));
         LabelSeen(TR(McpKeepHours));
-        if (ImGui::InputInt(TR(McpKeepHours), &s.mcpKeepHours, 1, 24)) { s.Clamp(); ev.settingsChanged = true; }
+        if (InputIntLabel(TR(McpKeepHours), &s.mcpKeepHours, 1, 24)) { s.Clamp(); ev.settingsChanged = true; }
         Tip(TR(TipMcpKeepHours));
-        if (GhostButton(TR(McpOpenJobs), ImVec2(fullW, 0.0f))) ev.mcpOpenJobs = true;
+        if (ActionButton(TR(McpOpenJobs), Icon::Folder, ImVec2(fullW, 0.0f))) ev.mcpOpenJobs = true;
     }
     if (s.showAdvanced || Searching()) {
         if (SearchMatch(TR(McpQueueMax), TR(TipMcpQueueMax))) {
             LabelSeen(TR(McpQueueMax));
-            if (ImGui::InputInt(TR(McpQueueMax), &s.mcpQueueMax, 1, 10)) { s.Clamp(); ev.settingsChanged = true; }
+            if (InputIntLabel(TR(McpQueueMax), &s.mcpQueueMax, 1, 10)) { s.Clamp(); ev.settingsChanged = true; }
             Tip(TR(TipMcpQueueMax));
         }
         if (SearchMatch(TR(McpQueuePerKey), TR(TipMcpQueuePerKey))) {
             LabelSeen(TR(McpQueuePerKey));
-            if (ImGui::InputInt(TR(McpQueuePerKey), &s.mcpQueuePerKey, 1, 5)) { s.Clamp(); ev.settingsChanged = true; }
+            if (InputIntLabel(TR(McpQueuePerKey), &s.mcpQueuePerKey, 1, 5)) { s.Clamp(); ev.settingsChanged = true; }
             Tip(TR(TipMcpQueuePerKey));
         }
         if (SearchMatch(TR(McpUploadMax), TR(TipMcpUploadMax))) {
             LabelSeen(TR(McpUploadMax));
-            if (ImGui::InputInt(TR(McpUploadMax), &s.mcpUploadMaxMb, 64, 1024)) { s.Clamp(); ev.settingsChanged = true; }
+            if (InputIntLabel(TR(McpUploadMax), &s.mcpUploadMaxMb, 64, 1024)) { s.Clamp(); ev.settingsChanged = true; }
             Tip(TR(TipMcpUploadMax));
         }
         if (Toggle(TR(McpLocalNoKey), &s.mcpLocalNoKey)) ev.settingsChanged = true;
@@ -1903,6 +2080,7 @@ void MainUI::BlockMcp(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
             SyncBuffer(m_mcpJobFolderBuf, sizeof(m_mcpJobFolderBuf), s.mcpJobFolder, m_mcpJobFolderEditing);
             ImGui::SetNextItemWidth(ImGui::CalcItemWidth());
             ImGui::InputTextWithHint("##mcpjobfolder", TR(TipMcpJobFolder), m_mcpJobFolderBuf, sizeof(m_mcpJobFolderBuf));
+            FocusRing();
             m_mcpJobFolderEditing = ImGui::IsItemActive();
             if (ImGui::IsItemDeactivatedAfterEdit()) { s.mcpJobFolder = m_mcpJobFolderBuf; ev.settingsChanged = true; }
             ImGui::SameLine(0.0f, style.ItemInnerSpacing.x);
@@ -1924,9 +2102,11 @@ void MainUI::BlockGuidance(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         if (ComboIds(TR(MotionSource), &s.motionMode, items, 4, s.motionMode == MotionFsrFlow ? TR(TipFsrFlow) : TR(TipMotion))) ev.settingsChanged = true;
     }
     if (s.motionMode == MotionCompute) {
-        LabelSeen(TR(SearchRadius));
-        if (ImGui::SliderInt(TR(SearchRadius), &s.searchRadius, 2, 12, "%d px", ImGuiSliderFlags_AlwaysClamp)) ev.settingsChanged = true;
-        Tip(TR(TipSearchRadius));
+        if (SearchMatch(TR(SearchRadius), TR(TipSearchRadius))) {
+            LabelSeen(TR(SearchRadius));
+            if (SliderIntFill(TR(SearchRadius), &s.searchRadius, 2, 12, "%d px", ImGuiSliderFlags_AlwaysClamp)) ev.settingsChanged = true;
+            Tip(TR(TipSearchRadius));
+        }
     } else if (s.motionMode == MotionNvOpticalFlow) {
         int grid = (s.nvofGrid == 4) ? 0 : (s.nvofGrid == 1) ? 2 : 1;
         const char* grids[] = { "4 px", "2 px", "1 px" };
@@ -1947,9 +2127,11 @@ void MainUI::BlockGuidance(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         }
     }
     if (s.motionMode == MotionFsrFlow) {
-        LabelSeen(TR(SearchRadius));
-        if (ImGui::SliderInt(TR(SearchRadius), &s.searchRadius, 2, 12, "%d px", ImGuiSliderFlags_AlwaysClamp)) ev.settingsChanged = true;
-        Tip(TR(TipFlowRadius));
+        if (SearchMatch(TR(SearchRadius), TR(TipFlowRadius))) {
+            LabelSeen(TR(SearchRadius));
+            if (SliderIntFill(TR(SearchRadius), &s.searchRadius, 2, 12, "%d px", ImGuiSliderFlags_AlwaysClamp)) ev.settingsChanged = true;
+            Tip(TR(TipFlowRadius));
+        }
         if (Toggle(TR(FlowBidirectional), &s.flowBidirectional)) ev.settingsChanged = true;
         Help(TR(TipFlowBidirectional));
         if (st) {
@@ -1959,9 +2141,9 @@ void MainUI::BlockGuidance(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
                                              s.flowBidirectional ? " \xE2\x87\x84" : "").c_str());
         }
     }
-    if (s.motionMode != MotionZero) {
+    if (s.motionMode != MotionZero && SearchMatch(TR(MotionConfidence), TR(TipConfidence))) {
         LabelSeen(TR(MotionConfidence));
-        if (ImGui::SliderFloat(TR(MotionConfidence), &s.motionConfidence, 0.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) ev.settingsChanged = true;
+        if (SliderFloatFill(TR(MotionConfidence), &s.motionConfidence, 0.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) ev.settingsChanged = true;
         Tip(TR(TipConfidence));
     }
     {
@@ -1971,7 +2153,9 @@ void MainUI::BlockGuidance(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         if (ComboIds(TR(DepthSource), &sel, items, 4, TR(TipDepth))) { s.depthMode = (sel == 0) ? DepthEstimated : sel - 1; ev.settingsChanged = true; }
     }
     if (s.depthMode == DepthEstimated) {
-        if (st) {
+        if (st && st->depthParked) {
+            StatusDot(p.muted, StrPrintf("%s: %s", TR(DepthStatus), TR(DepthParked)).c_str());
+        } else if (st) {
             switch (st->depthState) {
             case (int)DepthEstimatorState::Ready:
                 StatusDot(p.good, StrPrintf("%s: %s  %s %ux%u  %s %5.1f ms", TR(DepthStatus), TR(DepthReady), st->depthBackend.c_str(),
@@ -1997,9 +2181,11 @@ void MainUI::BlockGuidance(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
                 break;
             }
         }
-        LabelSeen(TR(DepthInterval));
-        if (ImGui::SliderInt(TR(DepthInterval), &s.depthInterval, 1, 10, "%d", ImGuiSliderFlags_AlwaysClamp)) ev.settingsChanged = true;
-        Tip(TR(TipDepthInterval));
+        if (SearchMatch(TR(DepthInterval), TR(TipDepthInterval))) {
+            LabelSeen(TR(DepthInterval));
+            if (SliderIntFill(TR(DepthInterval), &s.depthInterval, 1, 10, "%d", ImGuiSliderFlags_AlwaysClamp)) ev.settingsChanged = true;
+            Tip(TR(TipDepthInterval));
+        }
         {
             static const int kSides[] = { 252, 336, 420, 518 };
             const char* sides[] = { "252 px", "336 px", "420 px", "518 px" };
@@ -2007,27 +2193,30 @@ void MainUI::BlockGuidance(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
             for (int i = 0; i < 4; ++i) if (s.depthLongSide == kSides[i]) res = i;
             if (ComboIds(TR(DepthResolution), &res, sides, 4, TR(TipDepthResolution))) { s.depthLongSide = kSides[res]; ev.settingsChanged = true; }
         }
-        {
+        if (SearchMatch(TR(DepthModel), TR(Reload))) {
+            // The model file: the field, then browse and reload as icon buttons on the same row.
             SyncBuffer(m_depthModelBuf, sizeof(m_depthModelBuf), s.depthModelPath, m_depthModelEditing);
-            const float btnW = ImGui::GetFrameHeight() * 1.6f;
-            ImGui::SetNextItemWidth(ImGui::CalcItemWidth() - btnW - ImGui::GetStyle().ItemInnerSpacing.x);
+            const float btnW = ImGui::GetFrameHeight();
+            const float gap = ImGui::GetStyle().ItemInnerSpacing.x;
+            ImGui::SetNextItemWidth(ImGui::CalcItemWidth() - (btnW + gap) * 2.0f);
             const std::string hint = st ? WideToUtf8(st->depthModelPath) : std::string();
             ImGui::InputTextWithHint("##depthmodel", hint.c_str(), m_depthModelBuf, sizeof(m_depthModelBuf));
+            FocusRing();
             m_depthModelEditing = ImGui::IsItemActive();
             if (ImGui::IsItemDeactivatedAfterEdit()) { s.depthModelPath = m_depthModelBuf; ev.settingsChanged = true; }
-            ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
-            if (FlatButton("...##depthmodel", ImVec2(btnW, 0))) ev.browseDepthModel = true;
-            Tip(TR(Browse));
-            ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
+            ImGui::SameLine(0.0f, gap);
+            if (IconButton("##browsedepth", Icon::Folder, ImVec2(btnW, 0), TR(Browse))) ev.browseDepthModel = true;
+            ImGui::SameLine(0.0f, gap);
+            if (IconButton("##reloaddepth", Icon::Refresh, ImVec2(btnW, 0), TR(Reload))) ev.reloadDepth = true;
+            ImGui::SameLine(0.0f, gap);
             TrailingLabel(TR(DepthModel));
-            if (ImGui::SmallButton(StrPrintf("%s##depthreload", TR(Reload)).c_str())) ev.reloadDepth = true;
         }
     }
     if (Toggle(TR(AutoReset), &s.autoReset)) ev.settingsChanged = true;
     Help(TR(TipAutoReset));
-    if (s.autoReset) {
+    if (s.autoReset && SearchMatch(TR(CutThreshold), TR(TipCutThreshold))) {
         LabelSeen(TR(CutThreshold));
-        if (ImGui::SliderFloat(TR(CutThreshold), &s.cutThreshold, 0.01f, 0.5f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) ev.settingsChanged = true;
+        if (SliderFloatFill(TR(CutThreshold), &s.cutThreshold, 0.01f, 0.5f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) ev.settingsChanged = true;
         Tip(TR(TipCutThreshold));
     }
     if (st) {
@@ -2092,25 +2281,27 @@ void MainUI::BlockNgxRuntime(Settings& s, const UiFrameInfo& info, UiEvents& ev)
         ImGui::TextWrapped("%s", I18n::T(st->nrOutState == 2 ? Str::NrOutBlack : Str::NrOutSame));
         ImGui::PopStyleColor();
     }
-    {
+    if (SearchMatch(TR(RuntimePath), TR(Reload))) {
         SyncBuffer(m_runtimeBuf, sizeof(m_runtimeBuf), s.nrDllPath, m_runtimeEditing);
-        const float btnW = ImGui::GetFrameHeight() * 1.6f;
-        ImGui::SetNextItemWidth(ImGui::CalcItemWidth() - btnW - ImGui::GetStyle().ItemInnerSpacing.x);
+        const float btnW = ImGui::GetFrameHeight();
+        const float gap = ImGui::GetStyle().ItemInnerSpacing.x;
+        ImGui::SetNextItemWidth(ImGui::CalcItemWidth() - (btnW + gap) * 2.0f);
         const std::string hint = WideToUtf8(info.nrRuntimePath);
         ImGui::InputTextWithHint("##nrpath", hint.c_str(), m_runtimeBuf, sizeof(m_runtimeBuf));
+        FocusRing();
         m_runtimeEditing = ImGui::IsItemActive();
         if (ImGui::IsItemDeactivatedAfterEdit()) { s.nrDllPath = m_runtimeBuf; ev.reloadRuntime = true; ev.settingsChanged = true; }
-        ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
-        if (FlatButton("...##runtime", ImVec2(btnW, 0))) ev.browseRuntime = true;
-        Tip(TR(Browse));
-        ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
+        ImGui::SameLine(0.0f, gap);
+        if (IconButton("##browseruntime", Icon::Folder, ImVec2(btnW, 0), TR(Browse))) ev.browseRuntime = true;
+        ImGui::SameLine(0.0f, gap);
+        if (IconButton("##reloadruntime", Icon::Refresh, ImVec2(btnW, 0), TR(Reload))) ev.reloadRuntime = true;
+        ImGui::SameLine(0.0f, gap);
         TrailingLabel(TR(RuntimePath));
         if (info.nrSetPathMissing) {
             ImGui::PushStyleColor(ImGuiCol_Text, p.warn);
             ImGui::TextWrapped("%s", TR(RuntimePathMissing));
             ImGui::PopStyleColor();
         }
-        if (ImGui::SmallButton(TR(Reload))) ev.reloadRuntime = true;
     }
 #if !APP_EDITION_AMD
     // The GeForce edition on a Radeon card: the Radeon edition is the one that runs the FSR host.
@@ -2194,7 +2385,7 @@ void MainUI::BlockFsrHost(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         ImGui::PopStyleColor();
     }
     if (info.fsrDllExists) PortActions(info, ev, portLoaded, false);
-    if (FlatButton(TR(Reload))) ev.reloadRuntime = true;   // on its own line: the port's buttons fill the sidebar's width
+    if (IconTextButton(TR(Reload), Icon::Refresh)) ev.reloadRuntime = true;   // on its own line: the port's buttons fill the sidebar's width
     ImGui::PushStyleColor(ImGuiCol_Text, p.muted);
     ImGui::TextWrapped("%s", TR(AmdPortRequirements));
     ImGui::PopStyleColor();
@@ -2275,12 +2466,11 @@ void MainUI::BlockDlaa(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
     ImGui::BeginDisabled(!available || inSr);
     if (Toggle(TR(DlaaEnable), &s.dlaaEnabled)) { ev.dlaaChanged = true; ev.settingsChanged = true; }
     ImGui::EndDisabled();
-    ImGui::SameLine(0.0f, 12.0f);
     if (st) {
-        if (st->dlaaActive) Pill(TR(Active), WithAlpha(p.good, 0.18f), p.good);
-        else if (st->dlaaFailed) Pill(TR(Failed), WithAlpha(p.bad, 0.18f), p.bad);
-        else if (!available) Pill(TR(Unsupported), WithAlpha(p.muted, 0.2f), p.muted);
-        else Pill(TR(Inactive), WithAlpha(p.muted, 0.2f), p.muted);
+        if (st->dlaaActive) PillAfter(TR(Active), WithAlpha(p.good, 0.18f), p.good, Px(12.0f));
+        else if (st->dlaaFailed) PillAfter(TR(Failed), WithAlpha(p.bad, 0.18f), p.bad, Px(12.0f));
+        else if (!available) PillAfter(TR(Unsupported), WithAlpha(p.muted, 0.2f), p.muted, Px(12.0f));
+        else PillAfter(TR(Inactive), WithAlpha(p.muted, 0.2f), p.muted, Px(12.0f));
     }
     Hint(inSr ? TR(DlaaInSr) : (st && st->dlaaTooLarge) ? TR(DlaaTooLarge) : TR(DlaaHint));
     if (st && st->dlaaFailed && !st->dlaaError.empty()) {
@@ -2309,36 +2499,49 @@ void MainUI::BlockInternals(Settings& /*s*/, const UiFrameInfo& info, UiEvents& 
         { GpuTimer::Convert, TR(TmConvert) }, { GpuTimer::Guidance, TR(TmGuidance) }, { GpuTimer::OpticalFlow, TR(TmOpticalFlow) },
         { GpuTimer::Dlaa, TR(TmDlaa) }, { GpuTimer::Neural, TR(TmNeural) }, { GpuTimer::Composite, TR(TmComposite) },
     };
-    // Fixed-width value column in the monospace font: the table must not re-flow when a figure changes width.
+    // The name at the left, the figure flush right in the monospace font, so the figures line up at the decimal point.
+    // The figures' room is fixed: a figure that changes never moves anything, and a name longer than what is left wraps.
     ImFont* mono = m_fonts ? m_fonts->Mono() : nullptr;
     ImGui::PushFont(mono, 0.0f);
-    const float valueW = ImGui::CalcTextSize("0000.00 ms").x + ImGui::GetStyle().CellPadding.x * 2.0f;
+    const float valueW = ImGui::CalcTextSize("000.00 ms").x;
     ImGui::PopFont();
-    if (ImGui::BeginTable("timers", 2)) {
-        ImGui::TableSetupColumn("##name", ImGuiTableColumnFlags_WidthStretch);
-        ImGui::TableSetupColumn("##value", ImGuiTableColumnFlags_WidthFixed, valueW);
-        auto row = [&](const char* name, double ms) {
-            ImGui::TableNextRow();
-            ImGui::TableNextColumn(); ImGui::TextDisabled("%s", name);
-            ImGui::TableNextColumn();
-            ImGui::PushFont(mono, 0.0f);
-            ImGui::TextUnformatted(FormatMsFixed(ms).c_str());
-            ImGui::PopFont();
-        };
-        for (const auto& t : timers) row(t.name, m_shown.gpuMs[(UINT)t.t]);
-        row(TR(TmUi), m_shown.uiGpuMs);
-        row(StrPrintf("%s CPU", TR(UiFps)).c_str(), m_shown.cpuMs);
-        ImGui::EndTable();
-    }
+    const float x0 = ImGui::GetCursorPosX();
+    const float rowW = ImGui::GetContentRegionAvail().x;
+    const float nameEnd = std::max(x0 + rowW - valueW - ImGui::GetStyle().ItemSpacing.x, x0 + 1.0f);
+    auto row = [&](const char* name, double ms) {
+        const float y = ImGui::GetCursorPosY();
+        ImGui::PushTextWrapPos(nameEnd);
+        ImGui::TextDisabled("%s", name);
+        ImGui::PopTextWrapPos();
+        const float next = ImGui::GetCursorPosY();
+        const std::string value = FormatMsFixed(ms);
+        ImGui::PushFont(mono, 0.0f);
+        ImGui::SetCursorPos(ImVec2(std::max(x0, x0 + rowW - ImGui::CalcTextSize(value.c_str()).x), y));
+        ImGui::TextUnformatted(value.c_str());
+        ImGui::PopFont();
+        ImGui::SetCursorPosY(std::max(next, ImGui::GetCursorPosY()));
+    };
+    for (const auto& t : timers) row(t.name, m_shown.gpuMs[(UINT)t.t]);
+    row(TR(TmUi), m_shown.uiGpuMs);
+    row(StrPrintf("%s CPU", TR(UiFps)).c_str(), m_shown.cpuMs);
     ImGui::Spacing();
 }
 
 void MainUI::BlockAbout(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts) {
-    ImGui::PushFont(fonts.Bold(), 0.0f);
-    ImGui::Text("%s %s", TR(AppTitle), info.appVersion.c_str());
-    ImGui::PopFont();
-    if (info.prerelease) { ImGui::SameLine(0.0f, 8.0f); Pill(TR(Prerelease), WithAlpha(Colors().accent, 0.2f), Colors().accentHover); }
-    if (APP_EDITION_AMD) { ImGui::SameLine(0.0f, 8.0f); Pill(TR(EditionAmd), WithAlpha(Colors().accent, 0.2f), Colors().accentHover); }
+    {
+        // The program's mark, then its name and version (and the badges) centred on it.
+        const float logoS = std::round(ImGui::GetFrameHeight() * 1.15f);
+        const ImVec2 at = ImGui::GetCursorScreenPos();
+        DrawLogo(ImGui::GetWindowDrawList(), at, logoS);
+        ImGui::Dummy(ImVec2(logoS, logoS));
+        ImGui::SameLine(0.0f, Px(10.0f));
+        ImGui::SetCursorScreenPos(ImVec2(ImGui::GetCursorScreenPos().x, at.y + std::round((logoS - ImGui::GetTextLineHeight()) * 0.5f)));
+        ImGui::PushFont(fonts.Bold(), 0.0f);
+        ImGui::Text("%s %s", TR(AppTitle), info.appVersion.c_str());
+        ImGui::PopFont();
+    }
+    if (info.prerelease) PillAfter(TR(Prerelease), WithAlpha(Colors().accent, 0.2f), Colors().accentHover, Px(8.0f));
+    if (APP_EDITION_AMD) PillAfter(TR(EditionAmd), WithAlpha(Colors().accent, 0.2f), Colors().accentHover, Px(8.0f));
     Hint(TR(AboutText));
     if (info.adapter) {
         ImGui::TextDisabled("%s:", TR(Gpu)); ImGui::SameLine(); ImGui::TextWrapped("%s", WideToUtf8(info.adapter->name).c_str());
@@ -2353,8 +2556,6 @@ void MainUI::BlockAbout(Settings& s, const UiFrameInfo& info, UiEvents& ev, cons
     // Updates: whether to look at every start, which channel, a check by hand and the result of the last one.
     const ImGuiStyle& style = ImGui::GetStyle();
     const float fullW = ImGui::GetContentRegionAvail().x;
-    const float halfW = std::floor((fullW - style.ItemSpacing.x) * 0.5f);
-    const ImVec2 half(halfW, 0.0f);
     ImGui::Spacing();
     if (Toggle(TR(UpdateAuto), &s.updateCheck)) ev.settingsChanged = true;
     {
@@ -2374,12 +2575,14 @@ void MainUI::BlockAbout(Settings& s, const UiFrameInfo& info, UiEvents& ev, cons
     {
         const int st = info.updateState;
         const bool busy = st == UpChecking || st == UpDownloading || st == UpExtracting || st == UpRestarting;
+        const char* updateNow = info.updateDowngrade ? TR(UpdateDowngradeNow) : TR(UpdateNow);
+        const ImVec2 pair = st == UpAvailable ? PairSize(TR(UpdateCheckNow), updateNow, fullW) : ImVec2(fullW, 0.0f);
         ImGui::BeginDisabled(busy);
-        if (GhostButton(TR(UpdateCheckNow), st == UpAvailable ? half : ImVec2(fullW, 0.0f))) ev.updateCheckNow = true;
+        if (ActionButton(TR(UpdateCheckNow), Icon::Refresh, pair)) ev.updateCheckNow = true;
         ImGui::EndDisabled();
         if (st == UpAvailable) {
-            ImGui::SameLine(0.0f, style.ItemSpacing.x);
-            if (AccentButton(info.updateDowngrade ? TR(UpdateDowngradeNow) : TR(UpdateNow), half)) m_updateOpen = true;
+            if (pair.x < fullW) ImGui::SameLine(0.0f, style.ItemSpacing.x);
+            if (ActionButton(updateNow, Icon::Download, pair, ButtonKind::Accent)) m_updateOpen = true;
         }
         const Palette& p = Colors();
         if (st == UpChecking) ImGui::TextDisabled("%s", TR(UpdateChecking));
@@ -2387,31 +2590,36 @@ void MainUI::BlockAbout(Settings& s, const UiFrameInfo& info, UiEvents& ev, cons
         else if (st == UpAvailable) {
             if (info.updatePrerelease) Pill(TR(ChannelPreview), WithAlpha(p.warn, 0.2f), p.warn);
             else Pill(TR(ReleaseFull), WithAlpha(p.good, 0.2f), p.good);
-            ImGui::SameLine(0.0f, 6.0f);
+            ImGui::SameLine(0.0f, Px(6.0f));
             ImGui::PushStyleColor(ImGuiCol_Text, p.accentHover); ImGui::TextWrapped("%s", StrPrintf(info.updateDowngrade ? TR(UpdateDowngradeFmt) : TR(UpdateVersionFmt), info.updateVersion.c_str(), info.appVersion.c_str()).c_str()); ImGui::PopStyleColor();
         }
         else if (st == UpFailed) { ImGui::PushStyleColor(ImGuiCol_Text, p.bad); ImGui::TextWrapped("%s", info.updateWritable ? StrPrintf(TR(UpdateCheckFailed), info.updateError.c_str()).c_str() : TR(UpdateNotWritable)); ImGui::PopStyleColor(); }
     }
     ImGui::Spacing();
-    // Two rows of two equal buttons and the reset across the full width, all the same height.
-    if (GhostButton(TR(OpenLogFile), half)) ev.openLogFile = true;
-    ImGui::SameLine(0.0f, style.ItemSpacing.x);
-    if (GhostButton(TR(OpenSettingsFolder), half)) ev.openSettingsFolder = true;
-    if (GhostButton(TR(Documentation), half)) ev.openDocs = true;
+    // Rows of two equal buttons (a pair whose names do not fit half the row goes one above the other) and the reset
+    // across the full width, all the same height.
+    const ImVec2 row1 = PairSize(TR(OpenLogFile), TR(OpenSettingsFolder), fullW);
+    if (ActionButton(TR(OpenLogFile), Icon::Terminal, row1)) ev.openLogFile = true;
+    if (row1.x < fullW) ImGui::SameLine(0.0f, style.ItemSpacing.x);
+    if (ActionButton(TR(OpenSettingsFolder), Icon::Folder, row1)) ev.openSettingsFolder = true;
+    const ImVec2 row2 = PairSize(TR(Documentation), TR(ProjectPage), fullW);
+    if (ActionButton(TR(Documentation), Icon::Help, row2)) ev.openDocs = true;
     Spotlight(false);
-    ImGui::SameLine(0.0f, style.ItemSpacing.x);
-    if (GhostButton(TR(ProjectPage), half)) ev.openProjectPage = true;
-    if (GhostButton(TR(GuideTitle), half)) m_guideOpen = true;
+    if (row2.x < fullW) ImGui::SameLine(0.0f, style.ItemSpacing.x);
+    if (ActionButton(TR(ProjectPage), Icon::OpenExternal, row2)) ev.openProjectPage = true;
+    const ImVec2 row3 = PairSize(TR(GuideTitle), TR(Licenses), fullW);
+    if (ActionButton(TR(GuideTitle), Icon::Wand, row3)) m_guideOpen = true;
     Spotlight(false);
-    ImGui::SameLine(0.0f, style.ItemSpacing.x);
-    if (GhostButton(TR(Licenses), half)) ev.openLicenses = true;
-    if (GhostButton(TR(ResetAllSettings), ImVec2(fullW, 0.0f))) ImGui::OpenPopup("##resetall");
+    if (row3.x < fullW) ImGui::SameLine(0.0f, style.ItemSpacing.x);
+    if (ActionButton(TR(Licenses), Icon::Shield, row3)) ev.openLicenses = true;
+    if (ActionButton(TR(ResetAllSettings), Icon::Reset, ImVec2(fullW, 0.0f))) ImGui::OpenPopup("##resetall");
     if (BeginPopupFade("##resetall")) {
+        const float bw = ImGui::GetFontSize() * 7.5f;
         ImGui::TextUnformatted(TR(ResetAllSettings));
         ImGui::Separator();
-        if (AccentButton(TR(Ok), ImVec2(120, 0))) { ev.resetDefaults = true; ImGui::CloseCurrentPopup(); }
+        if (DangerButton(TR(Ok), ImVec2(bw, 0))) { ev.resetDefaults = true; ImGui::CloseCurrentPopup(); }
         ImGui::SameLine();
-        if (FlatButton(TR(Cancel), ImVec2(120, 0))) ImGui::CloseCurrentPopup();
+        if (FlatButton(TR(Cancel), ImVec2(bw, 0))) ImGui::CloseCurrentPopup();
         EndPopupFade();
     }
     ImGui::Spacing();
@@ -2426,43 +2634,58 @@ void MainUI::DrawPreview(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
     if (region.x < 8.0f || region.y < 8.0f) return;
     const ImGuiStyle& style = ImGui::GetStyle();
     const float frameH = ImGui::GetFrameHeight();
-    const bool transport = s.sourceMode == SourceVideo && info.videoLoaded;
-    const float transportH = transport ? frameH * 2.0f + style.ItemSpacing.y * 3.0f + 8.0f : 0.0f;
-    // The library's height is the user's (dragged at its top edge); the thumbnails take what is left of it.
     const float em = ImGui::GetFontSize();
-    const float fixedH = frameH + ImGui::GetTextLineHeight() * 2.0f + style.ItemSpacing.y * 4.0f + style.ScrollbarSize + 16.0f;
-    const float libraryMinH = fixedH + em * 3.0f, libraryMaxH = std::max(libraryMinH, (region.y - transportH) * 0.7f);
-    const float libraryOpenH = std::clamp(s.libraryHeight > 0.0f ? s.libraryHeight * em : fixedH + em * 4.5f, libraryMinH, libraryMaxH);
-    m_thumbH = libraryOpenH - fixedH;
+    const float lineH = ImGui::GetTextLineHeight();
+    const bool transport = s.sourceMode == SourceVideo && info.videoLoaded;
+    const float gap = Px(8.0f);                 // between the picture and the video controls
+    const float transportH = transport ? TransportHeight() : 0.0f;
+    const float transportRoom = transport ? transportH + gap : 0.0f;
+    const float barH = Px(16.0f);               // the gutter above the library: the sidebar's, laid flat
+    // The library's height is the user's (dragged at the line under its gutter); the thumbnails take what is left
+    // after the header, the names under them and the scrollbar. The picture keeps at least a third of the column.
+    const ImVec2 libPad = LibraryPad();
+    const float fixedH = libPad.y * 2.0f + frameH + style.ItemSpacing.y + Px(4.0f) * 2.0f + Px(6.0f) + lineH * 2.0f + style.ScrollbarSize;
+    const float libraryClosedH = libPad.y * 2.0f + frameH;
+    const float libraryMinH = fixedH + em * 3.0f;
+    const float pictureMin = std::max(Px(120.0f), region.y * 0.35f);
+    const float libraryMaxH = std::max(libraryMinH, std::min((region.y - transportH) * 0.7f, region.y - transportRoom - barH - pictureMin));
+    const float libraryWantH = std::clamp(s.libraryHeight > 0.0f ? s.libraryHeight * em : fixedH + em * 4.5f, libraryMinH, libraryMaxH);
+    const float libraryOpenH = std::max(libraryClosedH, std::min(libraryWantH, region.y - transportRoom - barH - Px(60.0f)));
+    m_thumbH = std::max(Px(16.0f), libraryOpenH - fixedH);
     m_libraryFold = Ease(AnimateLinear(ImGui::GetID("##libraryFold"), s.libraryVisible ? 1.0f : 0.0f, 0.2f));
-    const float libraryClosedH = frameH + 12.0f;
-    const float libraryH = libraryClosedH + (libraryOpenH - libraryClosedH) * m_libraryFold;
-    const float barH = 18.0f;   // the bar above the library: like the sidebar's, laid flat
-    const float pictureH = std::max(60.0f, region.y - transportH - barH - libraryH);
+    // An empty library is its header row alone (the header and the welcome page say how to fill it): it opens to its
+    // height with the first file, and its gutter has nothing to fold until then.
+    const bool libraryEmpty = !info.library || info.library->empty();
+    m_libraryFill = Ease(AnimateLinear(ImGui::GetID("##libraryFill"), libraryEmpty ? 0.0f : 1.0f, 0.2f));
+    const float libraryH = libraryClosedH + (libraryOpenH - libraryClosedH) * m_libraryFold * m_libraryFill;
+    const float pictureH = std::max(Px(40.0f), region.y - transportRoom - barH - libraryH);
 
-    // The mode fade covers the picture and the video controls under it; the library below stays as it is.
+    // The mode fade covers the picture's card; the video controls and the library dip their own content with it.
     m_previewMin = origin;
-    m_previewMax = ImVec2(origin.x + region.x, origin.y + pictureH + transportH);
+    m_previewMax = ImVec2(origin.x + region.x, origin.y + pictureH);
 
     DrawPicture(s, info, ev, fonts, origin, ImVec2(region.x, pictureH));
     float y = origin.y + pictureH;
     if (transport) {
+        y += gap;
         DrawTransport(s, info, ev, fonts, ImVec2(origin.x, y), ImVec2(region.x, transportH));
         y += transportH;
     }
     {
-        // The library's bar, with the same two zones as the sidebar's: the bar folds the library, the line along its
-        // bottom edge (the one a drag moves) changes its height.
+        // The gutter above the library, with the same two zones as the sidebar's: the gutter folds the library, the
+        // line along its lower edge (the one a drag moves) changes its height.
         const Palette& p = Colors();
         const ImVec2 bpos(origin.x, y);
-        const bool canResize = s.libraryVisible && m_libraryFold > 0.99f;
-        const float gripH = canResize ? kBarGrip : 0.0f;
+        const bool canResize = s.libraryVisible && m_libraryFold > 0.99f && m_libraryFill > 0.99f;
+        const float gripH = canResize ? Px(kBarGrip) : 0.0f;
         ImGui::SetCursorScreenPos(bpos);
+        ImGui::BeginDisabled(libraryEmpty);
         ImGui::InvisibleButton("##libraryFold", ImVec2(region.x, barH - gripH));
-        const bool foldLit = ImGui::IsItemHovered() || ImGui::IsItemActive();
+        ImGui::EndDisabled();
+        const bool foldLit = !libraryEmpty && (ImGui::IsItemHovered() || ImGui::IsItemActive());
         if (foldLit) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
-        if (ImGui::IsItemDeactivated() && ImGui::IsItemHovered()) { s.libraryVisible = !s.libraryVisible; ev.settingsChanged = true; }
-        Tip(s.libraryVisible ? TR(HideLibrary) : TR(ShowLibrary));
+        if (!libraryEmpty && ImGui::IsItemDeactivated() && ImGui::IsItemHovered()) { s.libraryVisible = !s.libraryVisible; ev.settingsChanged = true; }
+        if (!libraryEmpty) Tip(s.libraryVisible ? TR(HideLibrary) : TR(ShowLibrary));
         bool gripLit = false;
         if (gripH > 0.0f) {
             ImGui::SetCursorScreenPos(ImVec2(bpos.x, bpos.y + barH - gripH));
@@ -2480,12 +2703,17 @@ void MainUI::DrawPreview(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
         const float hov = Animate(ImGui::GetID("##libraryBarHover"), foldLit ? 1.0f : 0.0f, 16.0f);
         const float grip = Animate(ImGui::GetID("##libraryGripHover"), gripLit ? 1.0f : 0.0f, 16.0f);
         ImDrawList* dl = ImGui::GetWindowDrawList();
-        dl->AddRectFilled(bpos, ImVec2(bpos.x + region.x, bpos.y + barH), Mix(p.panel, p.controlHover, std::max(hov, grip * 0.35f)), 0.0f);
-        if (canResize) {
-            const float h = 1.0f + 2.0f * grip;
-            dl->AddRectFilled(ImVec2(bpos.x, bpos.y + barH - h), ImVec2(bpos.x + region.x, bpos.y + barH), Mix(p.panelBorder, p.accent, grip), 0.0f);
+        if (m_libraryFill > 0.01f) {
+            ImGui::PushStyleVar(ImGuiStyleVar_Alpha, style.Alpha * m_libraryFill);
+            DrawGutter(dl, bpos, ImVec2(region.x, barH - gripH), hov, IM_PI * (1.0f - m_libraryFold));
+            ImGui::PopStyleVar();
         }
-        DrawChevron(dl, ImVec2(bpos.x + region.x * 0.5f, bpos.y + (barH - gripH) * 0.5f), 8.0f, IM_PI * (1.0f - m_libraryFold), Mix(p.textDim, p.text, hov));
+        if (canResize) {   // the line a drag moves: always drawn so it can be found, blue under the mouse
+            const float h = std::max(1.0f, Px(1.0f)) + Px(2.0f) * grip;
+            const float ly = bpos.y + barH - Px(3.0f);
+            dl->AddRectFilled(ImVec2(bpos.x + CardRounding(), ly - h * 0.5f), ImVec2(bpos.x + region.x - CardRounding(), ly + h * 0.5f),
+                              Mix(p.cardBorder, p.accent, grip), h * 0.5f);
+        }
         y += barH;
     }
     const float remaining = origin.y + region.y - y;
@@ -2495,78 +2723,57 @@ void MainUI::DrawPreview(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
 
 void MainUI::DrawPicture(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts, const ImVec2& origin, const ImVec2& region) {
     const Palette& p = Colors();
+    const ImGuiStyle& style = ImGui::GetStyle();
     ImDrawList* dl = ImGui::GetWindowDrawList();
+    const double now = ImGui::GetTime();
     ImGui::SetCursorScreenPos(origin);
+    // In the window the picture lies on a card in the preview's background colour; fullscreen it fills the screen.
+    const bool framed = !info.fullscreen;
+    const float rounding = framed ? CardRounding() : 0.0f;
+    const ImVec2 rmax(origin.x + region.x, origin.y + region.y);
+    if (framed) dl->AddRectFilled(origin, rmax, p.surface, rounding);
+    // The card's rim goes on last, over the picture: the corners masked in the window's colour, then the hairline and
+    // the soft shadow outside (drawn with the clipping lifted).
+    auto drawRim = [&]() {
+        if (!framed) return;
+        dl->PushClipRectFullScreen();
+        MaskCorners(dl, origin, rmax, rounding, ImGui::ColorConvertFloat4ToU32(p.window));
+        DrawCardEdge(dl, origin, rmax);
+        dl->PopClipRect();
+    };
 
     if (!info.hasDisplay || !info.displayTexture || !info.displayWidth || !info.displayHeight) {
         const bool loadedSomething = (s.sourceMode == SourceVideo && info.videoLoaded) || (s.sourceMode == SourceImage && info.imageLoaded)
                                   || (s.sourceMode == SourceSpout && info.sourceConnected);
         if (loadedSomething) {
-            const char* text = (s.sourceMode == SourceVideo && (info.videoSeeking || m_seekTarget >= 0.0)) ? TR(Seeking) : TR(NoDisplay);
-            const ImVec2 size = ImGui::CalcTextSize(text);
-            ImGui::SetCursorScreenPos(ImVec2(origin.x + (region.x - size.x) * 0.5f, origin.y + (region.y - size.y) * 0.5f));
-            ImGui::TextDisabled("%s", text);
-            ImGui::Dummy(ImVec2(0, 0));
+            // Something is open but no frame has come yet: a spinner while one is on its way (a seek, the first
+            // passes), plain words once it has taken long.
+            AnimateSnap(ImGui::GetID("##welcomeFade"), 0.0f);
+            if (m_loadingSince < 0.0) m_loadingSince = now;
+            const bool seeking = s.sourceMode == SourceVideo && (info.videoSeeking || m_seekTarget >= 0.0);
+            const bool waiting = seeking || now - m_loadingSince < 10.0;
+            const char* text = seeking ? TR(Seeking) : waiting ? TR(PreparingPicture) : TR(NoDisplay);
+            const float wrap = std::max(Px(80.0f), std::min(region.x - Px(40.0f), ImGui::GetFontSize() * 28.0f));
+            const ImVec2 ts = ImGui::CalcTextSize(text, nullptr, false, wrap);
+            const float spin = waiting ? IconSize(1.6f) : 0.0f;
+            const float spinGap = waiting ? Px(10.0f) : 0.0f;
+            const float top = origin.y + std::floor((region.y - spin - spinGap - ts.y) * 0.5f);
+            dl->PushClipRect(origin, rmax, true);
+            if (waiting) DrawSpinner(dl, ImVec2(origin.x + std::round(region.x * 0.5f), top + spin * 0.5f), spin, p.accent);
+            dl->AddText(nullptr, 0.0f, ImVec2(origin.x + std::floor((region.x - ts.x) * 0.5f), top + spin + spinGap), p.textDim, text, nullptr, wrap);
+            dl->PopClipRect();
+            ImGui::Dummy(region);
+            drawRim();
             FullscreenButton(info, ev, origin, region);
             return;
         }
-        if (info.fullscreen) FullscreenButton(info, ev, origin, region);   // a way out that is not a key
-        // Nothing open yet: the three steps, with the ways to get a picture in. On the FSR host route without
-        // DLSS-NR-on-AMD its installation (or, in the GeForce edition, the Radeon edition) comes first.
-        const bool portStep = EditionRoute() == RouteFsrHost && !(info.status && !info.status->nrAmdPort.empty());
-        const float wrap = std::min(region.x * 0.8f, ImGui::GetFontSize() * 34.0f);
-        const float blockH = ImGui::GetFontSize() * (portStep ? 21.0f : 13.0f);
-        const float x = origin.x + (region.x - wrap) * 0.5f;
-        const float fade = AnimateFrom(ImGui::GetID("##welcome"), 0.0f, 1.0f, 5.0f);
-        ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * fade);
-        ImGui::SetCursorScreenPos(ImVec2(x, origin.y + std::max(12.0f, (region.y - blockH) * 0.5f) + (1.0f - fade) * 12.0f));
-        ImGui::BeginGroup();
-        ImGui::PushTextWrapPos(x + wrap);
-        if (portStep) {
-            ImGui::PushFont(fonts.Bold(), ImGui::GetStyle().FontSizeBase * 1.15f);
-            ImGui::TextUnformatted(TR(AmdWelcomeTitle));
-            ImGui::PopFont();
-            ImGui::PushStyleColor(ImGuiCol_Text, p.textDim);
-            if (!info.fsrDllExists) ImGui::TextUnformatted(TR(FsrDllMissing));
-            else if (info.portWeightsExist && !info.portRestartHint) ImGui::TextUnformatted(TR(AmdPortWeightsNotLoaded));
-            else if (!info.portRestartHint) ImGui::TextUnformatted(TR(AmdPortOffer));
-            ImGui::PopStyleColor();
-            ImGui::Spacing();
-            if (info.fsrDllExists) PortActions(info, ev, false, true);
-#if !APP_EDITION_AMD
-            else { if (AccentButton(TR(EditionGetAmd))) ev.editionSwitch = true; Tip(TR(TipEditionSwitch)); }
-#endif
-            ImGui::Spacing();
-            ImGui::Spacing();
-        }
-        ImGui::PushFont(fonts.Bold(), ImGui::GetStyle().FontSizeBase * 1.15f);
-        ImGui::Text("1  %s", TR(StepOne));
-        ImGui::PopFont();
-        ImGui::PushStyleColor(ImGuiCol_Text, p.textDim);
-        ImGui::TextUnformatted(TR(WelcomeLive));
-        ImGui::Spacing();
-        ImGui::TextUnformatted(TR(WelcomeFiles));
-        ImGui::PopStyleColor();
-        ImGui::Spacing();
-        if (FlatButton(TR(OpenImage))) ev.openImage = true;
-        ImGui::SameLine();
-        if (FlatButton(TR(OpenVideo))) ev.openVideo = true;
-        ImGui::SameLine();
-        if (FlatButton(TR(AddFiles))) ev.libraryAddFiles = true;
-        ImGui::Spacing();
-        ImGui::Spacing();
-        ImGui::PushFont(fonts.Bold(), ImGui::GetStyle().FontSizeBase * 1.15f);
-        ImGui::PushStyleColor(ImGuiCol_Text, p.textDim);
-        ImGui::Text("2  %s", TR(StepTwo));
-        ImGui::Text("3  %s", TR(StepThree));
-        ImGui::PopStyleColor();
-        ImGui::PopFont();
-        ImGui::PopTextWrapPos();
-        ImGui::EndGroup();
-        ImGui::PopStyleVar();
+        m_loadingSince = -1.0;
+        DrawWelcome(s, info, ev, fonts, origin, region);
+        drawRim();
         return;
     }
-    AnimateSnap(ImGui::GetID("##welcome"), 0.0f);   // the card fades in again the next time nothing is open
+    AnimateSnap(ImGui::GetID("##welcomeFade"), 0.0f);   // the welcome fades in again the next time nothing is open
+    m_loadingSince = -1.0;
 
     // Image rectangle: fitted to the view or 1:1, times the manual magnification (wheel, slider; double-click resets).
     // In the wipe compare the display holds the original and the output side by side; each half is the picture.
@@ -2616,11 +2823,13 @@ void MainUI::DrawPicture(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
         const float k = m_zoom / old;
         m_pan.x = (m_pan.x + centre.x - m_zoomAnchor.x) * k + m_zoomAnchor.x - centre.x;
         m_pan.y = (m_pan.y + centre.y - m_zoomAnchor.y) * k + m_zoomAnchor.y - centre.y;
+        MarkAnimating();
     }
     if (m_panHome) {
         const float f = std::exp(-20.0f * std::min(io.DeltaTime, 0.05f));
         m_pan.x *= f; m_pan.y *= f;
         if (std::fabs(m_pan.x) < 0.5f && std::fabs(m_pan.y) < 0.5f) { m_pan = ImVec2(0, 0); m_panHome = false; }
+        MarkAnimating();
     }
     // The picture stays within reach: centred while it is smaller than the view, and never leaving a gap on a side
     // once it is larger.
@@ -2635,7 +2844,7 @@ void MainUI::DrawPicture(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
     // interface's rate whatever the processing rate is.
     if (s.compareMode == CompareWipe) {
         const float wipeX = imgPos.x + imgSize.x * s.wipePosition;
-        const bool nearHandle = hovered && leftFree && std::fabs(io.MousePos.x - wipeX) < 8.0f && io.MousePos.y >= imgPos.y && io.MousePos.y <= imgMax.y;
+        const bool nearHandle = hovered && leftFree && std::fabs(io.MousePos.x - wipeX) < Px(8.0f) && io.MousePos.y >= imgPos.y && io.MousePos.y <= imgMax.y;
         if (nearHandle && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) m_wipeDragging = true;
         if (m_wipeDragging && !ImGui::IsMouseDown(ImGuiMouseButton_Left)) m_wipeDragging = false;
         if (nearHandle || m_wipeDragging) ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
@@ -2648,7 +2857,7 @@ void MainUI::DrawPicture(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
     }
     if (active && leftFree && !m_wipeDragging && (slackX > 0.0f || slackY > 0.0f)) ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
 
-    dl->PushClipRect(origin, ImVec2(origin.x + region.x, origin.y + region.y), true);
+    dl->PushClipRect(origin, rmax, true);
     const ImTextureRef tex(info.displayTexture);
     if (s.compareMode == CompareWipe && info.displayWide) {
         const float wipeX = imgPos.x + imgSize.x * s.wipePosition;
@@ -2662,74 +2871,358 @@ void MainUI::DrawPicture(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
         dl->AddImage(tex, imgPos, imgMax, ImVec2(0, 0), ImVec2(1, 1), IM_COL32_WHITE);
     }
     if (s.compareMode == CompareWipe) {
-        const float wipeX = imgPos.x + imgSize.x * s.wipePosition;
-        dl->AddLine(ImVec2(wipeX, imgPos.y), ImVec2(wipeX, imgMax.y), IM_COL32(255, 255, 255, 220), 2.0f);
-        dl->AddCircleFilled(ImVec2(wipeX, imgPos.y + imgSize.y * 0.5f), 9.0f, IM_COL32(255, 255, 255, 235));
-        dl->AddCircleFilled(ImVec2(wipeX, imgPos.y + imgSize.y * 0.5f), 6.0f, p.accent);
-        ImGui::PushFont(fonts.Bold(), 0.0f);
-        dl->AddText(ImVec2(imgPos.x + 10.0f, imgMax.y - ImGui::GetFontSize() - 8.0f), IM_COL32(255, 255, 255, 200), TR(CompareOriginal));
-        const ImVec2 outSize = ImGui::CalcTextSize(TR(Output));
-        dl->AddText(ImVec2(imgMax.x - outSize.x - 10.0f, imgMax.y - ImGui::GetFontSize() - 8.0f), IM_COL32(255, 255, 255, 200), TR(Output));
-        ImGui::PopFont();
+        // The split line, its handle kept within the part of the picture that shows, and the names of the two sides
+        // at the bottom corners of that part.
+        const float wipeX = std::round(imgPos.x + imgSize.x * s.wipePosition);
+        const float visL = std::max(imgPos.x, origin.x), visR = std::min(imgMax.x, rmax.x);
+        const float visT = std::max(imgPos.y, origin.y), visB = std::min(imgMax.y, rmax.y);
+        if (visB > visT) {
+            dl->AddLine(ImVec2(wipeX, visT), ImVec2(wipeX, visB), IM_COL32(255, 255, 255, 220), std::max(1.0f, Px(2.0f)));
+            if (visB - visT > Px(24.0f)) {
+                const float hy = std::clamp(imgPos.y + imgSize.y * 0.5f, visT + Px(12.0f), visB - Px(12.0f));
+                dl->AddCircleFilled(ImVec2(wipeX, hy), Px(9.0f), IM_COL32(255, 255, 255, 235));
+                dl->AddCircleFilled(ImVec2(wipeX, hy), Px(6.0f), p.accent);
+            }
+            ImGui::PushFont(fonts.Bold(), 0.0f);
+            const float ty = visB - ImGui::GetFontSize() - Px(8.0f);
+            ShadowText(dl, ImVec2(visL + Px(10.0f), ty), IM_COL32(255, 255, 255, 220), TR(CompareOriginal));
+            const float ow = ImGui::CalcTextSize(TR(Output)).x;
+            ShadowText(dl, ImVec2(visR - ow - Px(10.0f), ty), IM_COL32(255, 255, 255, 220), TR(Output));
+            ImGui::PopFont();
+        }
     }
-
     // Overlay.
     if (s.showOverlay && info.status) {
         const PipelineStatus& st = *info.status;
-        std::string lines[4];
-        lines[0] = StrPrintf("%s %ux%u  \xE2\x86\x92  %s %ux%u", TR(Source), st.srcWidth, st.srcHeight, TR(Output), st.outWidth, st.outHeight);
-        lines[1] = StrPrintf("DLSS 5: %s", st.nrActive ? StrPrintf("%s  (%s %d, %.2f)", TR(Active), TR(Style), s.nrStyle, s.nrIntensity).c_str()
-                                                        : (st.nrFailed ? TR(Failed) : TR(Bypass)));
+        // Four lines of readouts. On a preview too narrow for a line it wraps between its readouts, so none is cut
+        // at the edge of the picture.
+        std::vector<std::string> parts[4];
+        const char* seps[4] = { "  ", "  ", "   ", "   " };
+        parts[0] = { StrPrintf("%s %ux%u  \xE2\x86\x92", TR(Source), st.srcWidth, st.srcHeight), StrPrintf("%s %ux%u", TR(Output), st.outWidth, st.outHeight) };
+        if (st.nrActive) parts[1] = { StrPrintf("DLSS 5: %s", TR(Active)), StrPrintf("(%s %d, %.2f)", TR(Style), s.nrStyle, s.nrIntensity) };
+        else parts[1] = { StrPrintf("DLSS 5: %s", st.nrFailed ? TR(Failed) : TR(Bypass)) };
         const char* motion = st.motionModeActive == MotionNvOpticalFlow ? "NVOF"
                            : st.motionModeActive == MotionFsrFlow ? "FSR"
                            : st.motionModeActive == MotionCompute ? TR(MotionCompute) : TR(MotionZero);
         const char* depth = st.depthModeActive == DepthEstimated ? "Depth Anything V2" : st.depthModeActive == DepthGradient ? TR(DepthGradient)
                           : st.depthModeActive == DepthZero ? TR(DepthZero) : TR(DepthFlat);
-        lines[2] = StrPrintf("%s: %s   %s: %s%s%s", TR(MotionSource), motion, TR(DepthSource), depth, st.upscaleMode == 1 ? "  +DLSS SR" : st.dlaaActive ? "  +DLAA" : "",
-                             st.sceneCut ? StrPrintf("  [%s]", TR(SceneCut)).c_str() : "");
-        lines[3] = (s.sourceMode == SourceImage)
-            ? StrPrintf("GPU %s   %s %3.0f %s   %s", FormatMsFixed(m_shown.gpuMs[(UINT)GpuTimer::Frame]).c_str(), TR(UiFps), m_shown.fps, TR(Fps), info.imageName.c_str())
-            : (s.sourceMode == SourceVideo)
-            ? StrPrintf("GPU %s   %s %3.0f %s   %s %3.0f %s   %s", FormatMsFixed(m_shown.gpuMs[(UINT)GpuTimer::Frame]).c_str(),
-                        TR(ProcessingFps), m_shown.processingFps, TR(Fps), TR(UiFps), m_shown.fps, TR(Fps), info.videoName.c_str())
-            : StrPrintf("GPU %s   %s %3.0f %s   %s %3.0f %s   %s %3.0f %s", FormatMsFixed(m_shown.gpuMs[(UINT)GpuTimer::Frame]).c_str(),
-                        TR(ProcessingFps), m_shown.processingFps, TR(Fps), TR(UiFps), m_shown.fps, TR(Fps), TR(SenderFps), m_shown.senderFps, TR(Fps));
-        ImGui::PushFont(fonts.Mono(), ImGui::GetStyle().FontSizeBase * 0.92f);
+        parts[2] = { StrPrintf("%s: %s", TR(MotionSource), motion), StrPrintf("%s: %s", TR(DepthSource), depth) };
+        if (st.upscaleMode == 1) parts[2].push_back("+DLSS SR");
+        else if (st.dlaaActive) parts[2].push_back("+DLAA");
+        if (st.sceneCut) parts[2].push_back(StrPrintf("[%s]", TR(SceneCut)));
+        parts[3] = { StrPrintf("GPU %s", FormatMsFixed(m_shown.gpuMs[(UINT)GpuTimer::Frame]).c_str()) };
+        if (s.sourceMode != SourceImage) parts[3].push_back(StrPrintf("%s %3.0f %s", TR(ProcessingFps), m_shown.processingFps, TR(Fps)));
+        parts[3].push_back(StrPrintf("%s %3.0f %s", TR(UiFps), m_shown.fps, TR(Fps)));
+        if (s.sourceMode == SourceImage) parts[3].push_back(info.imageName);
+        else if (s.sourceMode == SourceVideo) parts[3].push_back(info.videoName);
+        else parts[3].push_back(StrPrintf("%s %3.0f %s", TR(SenderFps), m_shown.senderFps, TR(Fps)));
+        // Clear of the buttons in the top right corner (fullscreen, the magnification): below them on a preview too
+        // narrow for both on one line.
+        const float fh = ImGui::GetFrameHeight();
+        float buttonsLeft = origin.x + region.x - Px(12.0f) - fh;
+        if (s.fitMode == FitOneToOne || std::fabs(m_zoom - 1.0f) > 1e-3f) {
+            ImGui::PushFont(fonts.Mono(), 0.0f);
+            buttonsLeft -= Px(8.0f) + ImGui::CalcTextSize(StrPrintf("%s 800%%", TR(Zoom)).c_str()).x + Px(12.0f) * 2.0f;
+            ImGui::PopFont();
+        }
+        ImGui::PushFont(fonts.Mono(), style.FontSizeBase * 0.92f);
+        const float lh = ImGui::GetFontSize() + Px(3.0f);
+        const ImVec2 pad(Px(10.0f), Px(8.0f));
+        const float maxW = std::max(Px(40.0f), region.x - Px(24.0f) - pad.x * 2.0f);
+        struct Row { std::string text; float w; bool good; };
+        std::vector<Row> rows;
+        for (int i = 0; i < 4; ++i) {
+            const float sepW = ImGui::CalcTextSize(seps[i]).x;
+            bool first = true;
+            for (const std::string& part : parts[i]) {
+                if (part.empty()) continue;
+                const float pw = ImGui::CalcTextSize(part.c_str()).x;
+                if (!first && rows.back().w + sepW + pw <= maxW) {
+                    rows.back().text += seps[i];
+                    rows.back().text += part;
+                    rows.back().w += sepW + pw;
+                } else {
+                    rows.push_back({ part, pw, i == 1 && st.nrActive });
+                }
+                first = false;
+            }
+        }
+        for (Row& r : rows) {   // a single part wider than the preview (a long file name) ends in an ellipsis
+            if (r.w <= maxW) continue;
+            const char* ellipsis = "\xE2\x80\xA6";
+            while (!r.text.empty() && ImGui::CalcTextSize((r.text + ellipsis).c_str()).x > maxW) {
+                while (!r.text.empty() && ((unsigned char)r.text.back() & 0xC0) == 0x80) r.text.pop_back();
+                if (!r.text.empty()) r.text.pop_back();
+            }
+            r.text += ellipsis;
+            r.w = ImGui::CalcTextSize(r.text.c_str()).x;
+        }
         float w = 0.0f;
-        for (auto& l : lines) w = std::max(w, ImGui::CalcTextSize(l.c_str()).x);
-        const float lh = ImGui::GetFontSize() + 3.0f;
-        const ImVec2 pad(10.0f, 8.0f);
-        const ImVec2 bpos(origin.x + 12.0f, origin.y + 12.0f);
-        dl->AddRectFilled(bpos, ImVec2(bpos.x + w + pad.x * 2.0f, bpos.y + lh * 4.0f + pad.y * 2.0f), p.overlayBg, 4.0f);
-        for (int i = 0; i < 4; ++i)
-            dl->AddText(ImVec2(bpos.x + pad.x, bpos.y + pad.y + lh * i), i == 1 && st.nrActive ? p.good : p.text, lines[i].c_str());
+        for (const Row& r : rows) w = std::max(w, r.w);
+        ImVec2 bpos(origin.x + Px(12.0f), origin.y + Px(12.0f));
+        if (bpos.x + w + pad.x * 2.0f > buttonsLeft - Px(8.0f)) bpos.y += fh + Px(8.0f);
+        // On a low preview only the lines with room above the picture tool row (where it was drawn last frame) show.
+        float bottom = origin.y + region.y - Px(8.0f);
+        if (m_toolRowMax.y > m_toolRowMin.y && m_toolRowMin.y > bpos.y && m_toolRowMin.x < bpos.x + w + pad.x * 2.0f && m_toolRowMax.x > bpos.x)
+            bottom = std::min(bottom, m_toolRowMin.y - Px(6.0f));
+        const float fit = std::floor((bottom - bpos.y - pad.y * 2.0f + Px(3.0f)) / lh);
+        if ((float)rows.size() > fit) {
+            rows.resize((size_t)std::max(0.0f, fit));
+            w = 0.0f;
+            for (const Row& r : rows) w = std::max(w, r.w);
+        }
+        if (!rows.empty())
+            dl->AddRectFilled(bpos, ImVec2(bpos.x + w + pad.x * 2.0f, bpos.y + lh * (float)rows.size() - Px(3.0f) + pad.y * 2.0f), p.overlayBg, Px(6.0f));
+        for (size_t i = 0; i < rows.size(); ++i)
+            dl->AddText(ImVec2(bpos.x + pad.x, bpos.y + pad.y + lh * (float)i), rows[i].good ? p.good : p.text, rows[i].text.c_str());
         ImGui::PopFont();
     }
     if (s.fitMode == FitOneToOne || std::fabs(m_zoom - 1.0f) > 1e-3f) {
+        // The magnification left of the fullscreen button, in a box as wide as the widest figure so it keeps still.
         ImGui::PushFont(fonts.Mono(), 0.0f);
-        const std::string z = StrPrintf("%s %.0f%%", TR(Zoom), m_baseScale * m_zoom * 100.0f);
-        const ImVec2 zs = ImGui::CalcTextSize(z.c_str());
-        const float right = origin.x + region.x - ImGui::GetFrameHeight() - 20.0f;   // left of the fullscreen button
-        dl->AddRectFilled(ImVec2(right - zs.x - 16.0f, origin.y + 12.0f), ImVec2(right, origin.y + 12.0f + zs.y + 10.0f), p.overlayBg, 4.0f);
-        dl->AddText(ImVec2(right - zs.x - 8.0f, origin.y + 17.0f), p.text, z.c_str());
+        const std::string z = StrPrintf("%s %3.0f%%", TR(Zoom), m_baseScale * m_zoom * 100.0f);
+        const float boxW = ImGui::CalcTextSize(StrPrintf("%s 800%%", TR(Zoom)).c_str()).x + Px(12.0f) * 2.0f;
+        const float fh = ImGui::GetFrameHeight();
+        const float right = rmax.x - Px(12.0f) - fh - Px(8.0f);
+        const ImVec2 b0(right - boxW, origin.y + Px(12.0f));
+        dl->AddRectFilled(b0, ImVec2(right, b0.y + fh), p.overlayBg, style.FrameRounding);
+        dl->AddText(ImVec2(b0.x + Px(12.0f), b0.y + std::round((fh - ImGui::GetFontSize()) * 0.5f)), p.text, z.c_str());
         ImGui::PopFont();
     }
     // A video frame that is (almost) black, such as the fade-in at the start of a film: say so, or the user takes the
     // dark preview for a failure.
     if (s.sourceMode == SourceVideo && info.videoLoaded && !info.videoPlaying && !info.videoProcessing && info.videoPreviewLuma < 0.02f) {
-        const float wrap = std::min(region.x - 40.0f, ImGui::GetFontSize() * 28.0f);
+        const float wrap = std::max(Px(80.0f), std::min(region.x - Px(40.0f), ImGui::GetFontSize() * 28.0f));
         const ImVec2 ts = ImGui::CalcTextSize(TR(DarkFrameHint), nullptr, false, wrap);
-        const ImVec2 pad(12.0f, 8.0f);
-        const ImVec2 bpos(origin.x + (region.x - ts.x - pad.x * 2.0f) * 0.5f, origin.y + region.y - ts.y - pad.y * 2.0f - 16.0f);
-        dl->AddRectFilled(bpos, ImVec2(bpos.x + ts.x + pad.x * 2.0f, bpos.y + ts.y + pad.y * 2.0f), p.overlayBg, 4.0f);
+        const ImVec2 pad(Px(12.0f), Px(8.0f));
+        const ImVec2 bpos(origin.x + std::floor((region.x - ts.x) * 0.5f) - pad.x, origin.y + std::floor((region.y - ts.y) * 0.5f) - pad.y);
+        dl->AddRectFilled(bpos, ImVec2(bpos.x + ts.x + pad.x * 2.0f, bpos.y + ts.y + pad.y * 2.0f), p.overlayBg, Px(8.0f));
         dl->AddText(nullptr, 0.0f, ImVec2(bpos.x + pad.x, bpos.y + pad.y), p.text, TR(DarkFrameHint), nullptr, wrap);
     }
     dl->PopClipRect();
     DrawTransformTools(s, info, ev, origin, region, imgPos, imgSize, hovered);
+    drawRim();   // after the tools: the crop shading and a tucked tab are cut at the rounded corners too
     FullscreenButton(info, ev, origin, region);
 }
 
-// The video controls: seek bar with the in/out range and a hover picture, play/pause, frame steps, range buttons.
+// Nothing open yet: the three steps, a tile for each way in (live from VRChat, a picture, a video) and a line on
+// dropping files. On the FSR host route without DLSS-NR-on-AMD its installation (or, in the GeForce edition, the
+// Radeon edition) comes first.
+void MainUI::DrawWelcome(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts, const ImVec2& origin, const ImVec2& region) {
+    const Palette& p = Colors();
+    const ImGuiStyle& style = ImGui::GetStyle();
+    const float fade = AnimateFrom(ImGui::GetID("##welcomeFade"), 0.0f, 1.0f, 5.0f);
+    const float inset = Px(4.0f);
+    ImGui::SetCursorScreenPos(ImVec2(origin.x + inset, origin.y + inset));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+    const bool open = ImGui::BeginChild("##welcome", ImVec2(std::max(1.0f, region.x - inset * 2.0f), std::max(1.0f, region.y - inset * 2.0f)),
+                                        ImGuiChildFlags_None, ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoScrollWithMouse);
+    ImGui::PopStyleVar();
+    if (open) {
+        SmoothScroll(false, ImGui::GetFontSize() * 3.6f);
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        const int vtx0 = dl->VtxBuffer.Size;
+        const float em = ImGui::GetFontSize();
+        const float lineH = ImGui::GetTextLineHeight();
+        const float frameH = ImGui::GetFrameHeight();
+        const float availW = ImGui::GetContentRegionAvail().x;
+        const float side = Px(24.0f);
+        const float colW = std::max(Px(120.0f), std::min(availW - side * 2.0f, em * 46.0f));
+        const float x0 = std::max(side, std::floor((availW - colW) * 0.5f));
+        const float winH = ImGui::GetWindowHeight();
+        const float top = m_welcomeH > 0.0f ? std::max(side, std::floor((winH - m_welcomeH) * 0.5f)) : side;
+        ImGui::SetCursorPos(ImVec2(x0, top));
+        ImGui::BeginGroup();
+        ImGui::PushTextWrapPos(x0 + colW);
+
+        // Title and the line under it.
+        ImGui::PushFont(fonts.Bold(), style.FontSizeBase * 1.45f);
+        ImGui::TextUnformatted(TR(WelcomeTitle));
+        ImGui::PopFont();
+        ImGui::PushStyleColor(ImGuiCol_Text, p.textDim);
+        ImGui::TextUnformatted(TR(WelcomeLead));
+        ImGui::PopStyleColor();
+
+        // The three steps, the first one lit: a numbered circle and a name, an arrow between them; a step that does
+        // not fit after the arrow starts a new row.
+        ImGui::Dummy(ImVec2(0.0f, Px(6.0f)));
+        {
+            const char* steps[3] = { TR(StepOne), TR(StepTwo), TR(StepThree) };
+            const float d = std::round(lineH * 1.25f);
+            const float arrowW = Px(28.0f);
+            const float labelGap = Px(8.0f);
+            const ImVec2 start = ImGui::GetCursorScreenPos();
+            float x = start.x, y = start.y;
+            for (int i = 0; i < 3; ++i) {
+                const float w = d + labelGap + ImGui::CalcTextSize(steps[i]).x;
+                if (i > 0) {
+                    if (x + arrowW + w <= start.x + colW) {
+                        DrawChevron(dl, ImVec2(x + arrowW * 0.5f, y + d * 0.5f), IconSize(0.5f), -IM_PI * 0.5f, WithAlpha(p.textDim, 0.7f));
+                        x += arrowW;
+                    } else {
+                        x = start.x;
+                        y += d + Px(6.0f);
+                    }
+                }
+                const ImVec2 c(x + d * 0.5f, y + d * 0.5f);
+                if (i == 0) dl->AddCircleFilled(c, d * 0.5f, p.accent, 0);
+                else dl->AddCircle(c, d * 0.5f - 0.5f, WithAlpha(p.textDim, 0.7f), 0, std::max(1.0f, Px(1.25f)));
+                const char digit[2] = { (char)('1' + i), 0 };
+                ImGui::PushFont(fonts.Bold(), style.FontSizeBase * 0.9f);
+                const ImVec2 ds = ImGui::CalcTextSize(digit);
+                dl->AddText(ImVec2(std::round(c.x - ds.x * 0.5f), std::round(c.y - ds.y * 0.5f)), i == 0 ? p.accentText : p.textDim, digit);
+                ImGui::PopFont();
+                dl->AddText(ImVec2(x + d + labelGap, std::round(y + (d - lineH) * 0.5f)), i == 0 ? p.text : p.textDim, steps[i]);
+                x += w;
+            }
+            ImGui::SetCursorScreenPos(start);
+            ImGui::Dummy(ImVec2(colW, y + d - start.y));
+        }
+
+        // On the FSR host route without DLSS-NR-on-AMD: its installation first, in a card with a warning stripe.
+        const bool portStep = EditionRoute() == RouteFsrHost && !(info.status && !info.status->nrAmdPort.empty());
+        if (portStep) {
+            ImGui::Dummy(ImVec2(0.0f, Px(4.0f)));
+            PanelBegin(colW, ImVec2(Px(16.0f), Px(14.0f)), p.warn);
+            ImGui::PushTextWrapPos(0.0f);
+            ImGui::PushFont(fonts.Bold(), style.FontSizeBase * 1.08f);
+            ImGui::TextUnformatted(TR(AmdWelcomeTitle));
+            ImGui::PopFont();
+            ImGui::PushStyleColor(ImGuiCol_Text, p.textDim);
+            if (!info.fsrDllExists) ImGui::TextUnformatted(TR(FsrDllMissing));
+            else if (info.portWeightsExist && !info.portRestartHint) ImGui::TextUnformatted(TR(AmdPortWeightsNotLoaded));
+            else if (!info.portRestartHint) ImGui::TextUnformatted(TR(AmdPortOffer));
+            ImGui::PopStyleColor();
+            ImGui::Spacing();
+            if (info.fsrDllExists) PortActions(info, ev, false, true);
+#if !APP_EDITION_AMD
+            else { if (AccentButton(TR(EditionGetAmd))) ev.editionSwitch = true; Tip(TR(TipEditionSwitch)); }
+#endif
+            ImGui::PopTextWrapPos();
+            PanelEnd();
+        }
+
+        // A tile for each way in: live from VRChat, a picture, a video. Side by side when three fit, stacked (the
+        // icon at the left of the text) when they do not.
+        ImGui::Dummy(ImVec2(0.0f, Px(4.0f)));
+        {
+            const bool wine = RunningUnderWine();
+            const bool busy = info.batchRunning || info.videoProcessing;
+            const int shownMode = m_modePending >= 0 ? m_modePending : s.sourceMode;
+            struct Tile { Icon icon; int mode; const char* title; const char* text; };
+            const Tile tiles[3] = {
+                { Icon::Broadcast, SourceSpout, TR(WelcomeLiveTitle), wine ? TR(ProtonNoSpout) : TR(WelcomeLiveText) },
+                { Icon::Image, SourceImage, TR(WelcomeImageTitle), TR(WelcomeImageText) },
+                { Icon::Film, SourceVideo, TR(WelcomeVideoTitle), TR(WelcomeVideoText) },
+            };
+            const float gapT = Px(12.0f);
+            const ImVec2 tpad(Px(16.0f), Px(14.0f));
+            const float chip = std::round(frameH * 1.35f);
+            const bool across = (colW - gapT * 2.0f) / 3.0f >= em * 10.5f;
+            const float tileW = across ? std::floor((colW - gapT * 2.0f) / 3.0f) : colW;
+            const float textW = across ? tileW - tpad.x * 2.0f : tileW - tpad.x * 2.0f - chip - Px(14.0f);
+            // Whether a sender is there, under the live tile's text: a dot and the words, wrapped when they are long.
+            const bool liveLine = shownMode == SourceSpout && !wine;
+            const bool senders = info.senders && !info.senders->empty();
+            const char* liveText = senders ? TR(StatusWaiting) : TR(StatusNoSpout);
+            const float dotR = std::round(lineH * 0.22f), dotHalo = std::max(1.0f, Px(2.0f));
+            const float dotW = (dotR + dotHalo) * 2.0f + Px(6.0f);
+            const float liveW = std::max(1.0f, textW - dotW);
+            const float liveH = liveLine ? ImGui::CalcTextSize(liveText, nullptr, false, liveW).y : 0.0f;
+            float titleH[3], bodyH[3], tileH[3];
+            float maxAcross = 0.0f;
+            for (int i = 0; i < 3; ++i) {
+                ImGui::PushFont(fonts.Bold(), style.FontSizeBase * 1.05f);
+                titleH[i] = ImGui::CalcTextSize(tiles[i].title, nullptr, false, textW).y;
+                ImGui::PopFont();
+                bodyH[i] = titleH[i] + Px(4.0f) + ImGui::CalcTextSize(tiles[i].text, nullptr, false, textW).y;
+                if (i == 0 && liveLine) bodyH[i] += liveH + Px(6.0f);
+                maxAcross = std::max(maxAcross, tpad.y * 2.0f + chip + Px(12.0f) + bodyH[i]);
+            }
+            for (int i = 0; i < 3; ++i) tileH[i] = across ? maxAcross : tpad.y * 2.0f + std::max(chip, bodyH[i]);
+            const ImVec2 start = ImGui::GetCursorScreenPos();
+            float blockH = 0.0f;
+            for (int i = 0; i < 3; ++i) {
+                const Tile& t = tiles[i];
+                const ImVec2 a = across ? ImVec2(start.x + (tileW + gapT) * (float)i, start.y) : ImVec2(start.x, start.y + blockH);
+                const ImVec2 b(a.x + tileW, a.y + tileH[i]);
+                blockH = across ? tileH[i] : blockH + tileH[i] + (i < 2 ? gapT : 0.0f);
+                const bool current = shownMode == t.mode;
+                const bool clickable = !(i == 0 && (wine || current || busy));
+                const float dim = (i == 0 && wine) ? 0.6f : 1.0f;
+                ImGui::PushID(i);
+                ImGui::SetCursorScreenPos(a);
+                const bool pressed = ImGui::InvisibleButton("##tile", ImVec2(tileW, tileH[i])) && clickable;
+                const bool hovered = clickable && ImGui::IsItemHovered();
+                if (hovered) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+                const float hov = Animate(ImGui::GetID("##tileHover"), hovered ? 1.0f : 0.0f, 16.0f);
+                ImGui::PopID();
+                DrawCard(dl, a, b);
+                if (hov > 0.001f) dl->AddRectFilled(a, b, WithAlpha(p.accent, 0.05f * hov), CardRounding());
+                const float ring = std::max(current ? 0.9f : 0.0f, 0.8f * hov);
+                if (ring > 0.001f) dl->AddRect(a, b, WithAlpha(p.accent, ring), CardRounding(), Px(1.5f));
+                const ImVec2 c0(a.x + tpad.x, a.y + tpad.y);
+                dl->AddRectFilled(c0, ImVec2(c0.x + chip, c0.y + chip), WithAlpha(p.accent, (0.22f - 0.10f * p.light) * dim), Px(8.0f));
+                DrawIcon(dl, t.icon, ImVec2(c0.x + chip * 0.5f, c0.y + chip * 0.5f), IconSize(1.2f), WithAlpha(Mix(p.accentHover, p.accent, p.light), dim));
+                const float bodyTop = across ? c0.y + chip + Px(12.0f) : c0.y + std::floor((std::max(chip, bodyH[i]) - bodyH[i]) * 0.5f);
+                const float tx = across ? c0.x : c0.x + chip + Px(14.0f);
+                ImGui::PushFont(fonts.Bold(), style.FontSizeBase * 1.05f);
+                dl->AddText(nullptr, 0.0f, ImVec2(tx, bodyTop), WithAlpha(p.text, dim), t.title, nullptr, textW);
+                ImGui::PopFont();
+                dl->AddText(nullptr, 0.0f, ImVec2(tx, bodyTop + titleH[i] + Px(4.0f)), WithAlpha(p.textDim, dim), t.text, nullptr, textW);
+                if (i == 0 && liveLine) {
+                    const float ly = bodyTop + bodyH[i] - liveH;
+                    const ImU32 dot = senders ? p.warn : p.muted;
+                    const ImVec2 dc(tx + dotHalo + dotR, ly + lineH * 0.5f);
+                    dl->AddCircleFilled(dc, dotR + dotHalo, Col(WithAlpha(dot, 0.22f)), 0);
+                    dl->AddCircleFilled(dc, dotR, Col(dot), 0);
+                    dl->AddText(nullptr, 0.0f, ImVec2(tx + dotW, ly), p.textDim, liveText, nullptr, liveW);
+                }
+                if (pressed) {
+                    if (t.mode == SourceSpout) {
+                        if (m_modePending < 0 && s.sourceMode != SourceSpout) { m_modePending = SourceSpout; m_modeFadeStart = ImGui::GetTime(); }
+                    } else if (t.mode == SourceImage) {
+                        ev.openImage = true;   // opening the file switches the mode
+                    } else {
+                        ev.openVideo = true;
+                    }
+                }
+            }
+            ImGui::SetCursorScreenPos(start);
+            ImGui::Dummy(ImVec2(colW, blockH));
+        }
+
+        // Dropping files, and the library's add button beside the words (under them when the row is narrow).
+        ImGui::Dummy(ImVec2(0.0f, Px(4.0f)));
+        {
+            const ImVec2 r0 = ImGui::GetCursorScreenPos();
+            const float is = IconSize();
+            const float textX = is + Px(10.0f);
+            const char* addLabel = TR(AddFiles);
+            const float btnW = IconTextButtonWidth(addLabel);
+            const bool beside = colW - textX - btnW - Px(16.0f) >= em * 14.0f;
+            const float textW = beside ? colW - textX - btnW - Px(16.0f) : colW - textX;
+            const ImVec2 ts = ImGui::CalcTextSize(TR(WelcomeDrop), nullptr, false, textW);
+            const float rowH = beside ? std::max(ts.y, frameH) : ts.y + Px(10.0f) + frameH;
+            const float textY = beside ? r0.y + std::floor((rowH - ts.y) * 0.5f) : r0.y;
+            const float btnY = beside ? r0.y + std::floor((rowH - frameH) * 0.5f) : r0.y + ts.y + Px(10.0f);
+            DrawIcon(dl, Icon::Import, ImVec2(r0.x + is * 0.5f, textY + lineH * 0.5f), is, p.textDim);
+            dl->AddText(nullptr, 0.0f, ImVec2(r0.x + textX, textY), p.textDim, TR(WelcomeDrop), nullptr, textW);
+            ImGui::SetCursorScreenPos(ImVec2(beside ? r0.x + colW - btnW : r0.x + textX, btnY));
+            if (IconTextButton(addLabel, Icon::Images, ImVec2(0, 0), ButtonKind::Ghost)) ev.libraryAddFiles = true;
+            ImGui::SetCursorScreenPos(r0);
+            ImGui::Dummy(ImVec2(colW, rowH));
+        }
+        ImGui::PopTextWrapPos();
+        ImGui::EndGroup();
+        m_welcomeH = ImGui::GetItemRectSize().y;
+        ImGui::Dummy(ImVec2(0.0f, side));
+        FadeDrawn(dl, vtx0, fade, (1.0f - fade) * Px(12.0f));
+        if (info.fullscreen) FullscreenButton(info, ev, ImGui::GetWindowPos(), ImGui::GetWindowSize());   // a way out that is not a key
+    }
+    ImGui::EndChild();
+}
+
 // Keyboard control of a video: space, arrows (shift: ten frames), I / O, Home / End. Not while typing or while a
 // popup is open. Shared by the transport bar and the fullscreen view, whose bar may have faded out.
 void MainUI::VideoKeys(const UiFrameInfo& info, UiEvents& ev) {
@@ -2752,21 +3245,34 @@ void MainUI::VideoKeys(const UiFrameInfo& info, UiEvents& ev) {
     if (ImGui::IsKeyPressed(ImGuiKey_End, false)) sendSeek(duration - frame);
 }
 
+// The video controls: seek bar with the in/out range and a hover picture, play/pause, frame steps, range buttons.
 void MainUI::DrawTransport(Settings& /*s*/, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts, const ImVec2& pos, const ImVec2& size) {
     const Palette& p = Colors();
     const ImGuiStyle& style = ImGui::GetStyle();
+    {
+        // The card goes on the parent's list with the clipping lifted, so its shadow shows around it. Fullscreen it
+        // floats over the picture with a deeper shadow.
+        ImDrawList* host = ImGui::GetWindowDrawList();
+        const ImVec2 max(pos.x + size.x, pos.y + size.y);
+        host->PushClipRectFullScreen();
+        if (info.fullscreen) DrawShadow(host, pos, max, CardRounding(), 1.0f);
+        DrawCard(host, pos, max, info.fullscreen ? 1.0f : 1.0f - Ease(m_modeFade));
+        host->PopClipRect();
+    }
     ImGui::SetCursorScreenPos(pos);
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, p.panel);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(12, 6));
-    ImGui::BeginChild("##transport", size, ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(Px(14.0f), Px(10.0f)));
+    const bool open = ImGui::BeginChild("##transport", size, ImGuiChildFlags_AlwaysUseWindowPadding,
+                                        ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     ImGui::PopStyleVar();
-    ImGui::PopStyleColor();
+    if (!open) { ImGui::EndChild(); VideoKeys(info, ev); return; }
+    const int vtx0 = ImGui::GetWindowDrawList()->VtxBuffer.Size;
     ImGuiIO& io = ImGui::GetIO();
     const double now = ImGui::GetTime();
     const bool busy = info.videoProcessing || info.batchRunning;
     const double frame = info.videoFps > 0.0 ? 1.0 / info.videoFps : 1.0 / 30.0;
     const double duration = std::max(info.videoDurationSeconds, frame);
     const float frameH = ImGui::GetFrameHeight();
+    const float lineH = ImGui::GetTextLineHeight();
 
     auto sendSeek = [&](double t) {
         t = std::clamp(t, 0.0, std::max(0.0, duration - frame * 0.5));
@@ -2784,7 +3290,7 @@ void MainUI::DrawTransport(Settings& /*s*/, const UiFrameInfo& info, UiEvents& e
     VideoKeys(info, ev);
 
     // Seek bar.
-    const float barH = frameH * 0.9f;
+    const float barH = std::round(frameH * 0.9f);
     const ImVec2 barPos = ImGui::GetCursorScreenPos();
     const float barW = ImGui::GetContentRegionAvail().x;
     ImGui::InvisibleButton("##seek", ImVec2(barW, barH));
@@ -2808,28 +3314,28 @@ void MainUI::DrawTransport(Settings& /*s*/, const UiFrameInfo& info, UiEvents& e
 
     ImDrawList* dl = ImGui::GetWindowDrawList();
     const float cy = barPos.y + barH * 0.5f;
-    const float trackH = std::max(4.0f, barH * 0.28f);
-    dl->AddRectFilled(ImVec2(barPos.x, cy - trackH * 0.5f), ImVec2(barPos.x + barW, cy + trackH * 0.5f), p.track, trackH * 0.5f);
+    const float trackH = std::max(Px(4.0f), barH * 0.28f);
+    dl->AddRectFilled(ImVec2(barPos.x, cy - trackH * 0.5f), ImVec2(barPos.x + barW, cy + trackH * 0.5f), Col(p.track), trackH * 0.5f);
     const double inSec = std::max(0.0, info.videoIn);
     const double outSec = info.videoOut > inSec ? info.videoOut : duration;
     const bool ranged = inSec > 0.0 || info.videoOut > 0.0;
     if (ranged)
-        dl->AddRectFilled(ImVec2(xAt(inSec), cy - trackH * 0.9f), ImVec2(xAt(outSec), cy + trackH * 0.9f), p.rangeFill, trackH * 0.5f);
+        dl->AddRectFilled(ImVec2(xAt(inSec), cy - trackH * 0.9f), ImVec2(xAt(outSec), cy + trackH * 0.9f), Col(p.rangeFill), trackH * 0.5f);
     if (busy && info.videoProcessing) {
         const unsigned long long total = std::max(info.videoFrames, info.videoFrame);
         const double frac = total ? (double)info.videoFrame / (double)total : 0.0;
         const double from = info.batchRunning ? 0.0 : inSec, to = info.batchRunning ? duration : outSec;
-        dl->AddRectFilled(ImVec2(xAt(from), cy - trackH * 0.5f), ImVec2(xAt(from + (to - from) * frac), cy + trackH * 0.5f), p.warn, trackH * 0.5f);
+        dl->AddRectFilled(ImVec2(xAt(from), cy - trackH * 0.5f), ImVec2(xAt(from + (to - from) * frac), cy + trackH * 0.5f), Col(p.warn), trackH * 0.5f);
     } else {
-        dl->AddRectFilled(ImVec2(barPos.x, cy - trackH * 0.5f), ImVec2(xAt(shownPos), cy + trackH * 0.5f), p.accent, trackH * 0.5f);
+        dl->AddRectFilled(ImVec2(barPos.x, cy - trackH * 0.5f), ImVec2(xAt(shownPos), cy + trackH * 0.5f), Col(p.accent), trackH * 0.5f);
         if (ranged) {
-            const float mh = barH * 0.42f;
-            dl->AddRectFilled(ImVec2(xAt(inSec) - 1.5f, cy - mh), ImVec2(xAt(inSec) + 1.5f, cy + mh), p.knob);
-            if (info.videoOut > 0.0) dl->AddRectFilled(ImVec2(xAt(outSec) - 1.5f, cy - mh), ImVec2(xAt(outSec) + 1.5f, cy + mh), p.knob);
+            const float mh = barH * 0.42f, mw = std::max(1.0f, 1.5f * Dpi());
+            dl->AddRectFilled(ImVec2(xAt(inSec) - mw, cy - mh), ImVec2(xAt(inSec) + mw, cy + mh), Col(p.knob));
+            if (info.videoOut > 0.0) dl->AddRectFilled(ImVec2(xAt(outSec) - mw, cy - mh), ImVec2(xAt(outSec) + mw, cy + mh), Col(p.knob));
         }
         const float grow = Animate(ImGui::GetID("##knob"), (barHovered || m_seekDragging) ? 1.0f : 0.0f, 18.0f);
         const float r = barH * (0.27f + 0.07f * grow);
-        dl->AddCircleFilled(ImVec2(xAt(shownPos), cy), r, p.knob);
+        dl->AddCircleFilled(ImVec2(xAt(shownPos), cy), r, Col(p.knob));
     }
 
     // Hover: the frame under the cursor, from the storyboard or the exact frame the scanner decoded for this spot.
@@ -2849,84 +3355,117 @@ void MainUI::DrawTransport(Settings& /*s*/, const UiFrameInfo& info, UiEvents& e
             if (info.hoverCell >= 0 && info.hoverCellTime >= 0.0 && info.atlas->Filled(info.hoverCell) && std::fabs(info.hoverCellTime - t) <= best)
                 cell = info.hoverCell;
         }
+        // A card above the bar with the picture and the time; it rises and fades in.
         const float w = std::min(ImGui::GetFontSize() * 13.0f, barW);
-        const float h = w * 9.0f / 16.0f;
-        const float lineH = ImGui::GetTextLineHeight();
-        const float boxH = (cell >= 0 ? h + 4.0f : 0.0f) + lineH + 10.0f;
-        const float x = std::clamp(io.MousePos.x - w * 0.5f, barPos.x, barPos.x + barW - w);
-        const float y0 = barPos.y - boxH - 6.0f;
+        const float inset = Px(4.0f);
+        const float imgH = std::round((w - inset * 2.0f) * 9.0f / 16.0f);
+        const float boxH = (cell >= 0 ? imgH + inset : 0.0f) + lineH + Px(10.0f);
+        const float x = std::round(std::clamp(io.MousePos.x - w * 0.5f, barPos.x, barPos.x + barW - w));
+        const float lift = (1.0f - hoverT) * Px(6.0f);
+        const float y0 = std::round(barPos.y - boxH - Px(10.0f) + lift);
         ImDrawList* fg = ImGui::GetForegroundDrawList();
-        const float lift = (1.0f - hoverT) * 6.0f;   // the card rises and fades in
-        fg->AddRectFilled(ImVec2(x, y0 + lift), ImVec2(x + w, y0 + boxH + lift), WithAlpha(p.overlayBg, 0.82f * hoverT), 4.0f);
+        const ImVec2 b0(x, y0), b1(x + w, y0 + boxH);
+        const float a = hoverT * style.Alpha;
+        DrawShadow(fg, b0, b1, Px(8.0f), hoverT);
+        fg->AddRectFilled(b0, b1, WithAlpha(p.card, a), Px(8.0f));
+        fg->AddRect(b0, b1, WithAlpha(p.cardBorder, a), Px(8.0f), 1.0f);
         if (cell >= 0) {
             float u0, v0, u1, v1;
             info.atlas->Uv(cell, u0, v0, u1, v1);
-            fg->AddImageRounded(ImTextureRef((ImTextureID)info.atlas->TextureHandle()), ImVec2(x + 2.0f, y0 + 2.0f + lift), ImVec2(x + w - 2.0f, y0 + 2.0f + h + lift),
-                                ImVec2(u0, v0), ImVec2(u1, v1), WithAlpha(IM_COL32_WHITE, hoverT), 3.0f);
+            fg->AddImageRounded(ImTextureRef((ImTextureID)info.atlas->TextureHandle()), ImVec2(x + inset, y0 + inset), ImVec2(x + w - inset, y0 + inset + imgH),
+                                ImVec2(u0, v0), ImVec2(u1, v1), WithAlpha(IM_COL32_WHITE, a), Px(4.0f));
         }
         ImGui::PushFont(fonts.Mono(), 0.0f);
         const std::string tt = FormatClock(t);
         const ImVec2 ts = ImGui::CalcTextSize(tt.c_str());
-        fg->AddText(ImVec2(x + (w - ts.x) * 0.5f, y0 + boxH - lineH - 5.0f + lift), WithAlpha(IM_COL32(235, 237, 242, 255), hoverT), tt.c_str());
+        fg->AddText(ImVec2(std::round(x + (w - ts.x) * 0.5f), y0 + boxH - lineH - Px(5.0f)), WithAlpha(p.text, a), tt.c_str());
         ImGui::PopFont();
-        fg->AddLine(ImVec2(io.MousePos.x, barPos.y), ImVec2(io.MousePos.x, barPos.y + barH), WithAlpha(p.knob, 0.5f * hoverT));
+        fg->AddLine(ImVec2(io.MousePos.x, barPos.y), ImVec2(io.MousePos.x, barPos.y + barH), WithAlpha(p.knob, 0.5f * a));
     }
 
-    // Controls row.
+    // Controls row: frame back, play/pause, frame forward and the clock at the left; the range at the right, folded
+    // into a menu when the row is too narrow for its buttons.
+    const float stepW = std::round(frameH * 1.5f), playW = std::round(frameH * 2.1f);
     ImGui::BeginDisabled(busy);
-    if (IconButton("##back", Icon::StepBack, ImVec2(frameH * 1.6f, frameH), TR(PrevFrame))) ev.videoStep -= 1;
-    ImGui::SameLine(0.0f, 4.0f);
-    if (IconButton("##play", info.videoPlaying ? Icon::Pause : Icon::Play, ImVec2(frameH * 2.2f, frameH), info.videoPlaying ? TR(Pause) : TR(Play), ButtonKind::Accent))
+    if (IconButton("##back", Icon::StepBack, ImVec2(stepW, frameH), TR(PrevFrame))) ev.videoStep -= 1;
+    ImGui::SameLine(0.0f, Px(4.0f));
+    if (IconButton("##play", info.videoPlaying ? Icon::Pause : Icon::Play, ImVec2(playW, frameH), info.videoPlaying ? TR(Pause) : TR(Play), ButtonKind::Accent))
         ev.videoPlayToggle = true;
-    ImGui::SameLine(0.0f, 4.0f);
-    if (IconButton("##fwd", Icon::StepForward, ImVec2(frameH * 1.6f, frameH), TR(NextFrame))) ev.videoStep += 1;
+    ImGui::SameLine(0.0f, Px(4.0f));
+    if (IconButton("##fwd", Icon::StepForward, ImVec2(stepW, frameH), TR(NextFrame))) ev.videoStep += 1;
     ImGui::EndDisabled();
-    ImGui::SameLine(0.0f, 12.0f);
+    // The widths the row can take, widest first; the first level that fits is used. The "Seeking" room is always
+    // counted, so the level does not flip while a seek runs.
+    const float contentRight = ImGui::GetWindowWidth() - style.WindowPadding.x;   // window-local
+    const float clockX = ImGui::GetItemRectMax().x - ImGui::GetWindowPos().x + Px(12.0f);
+    const bool processing = busy && info.videoProcessing;
+    const unsigned long long frames = std::max(info.videoFrames, info.videoFrame);
+    ImGui::PushFont(fonts.Mono(), 0.0f);
+    const std::string clock = processing ? StrPrintf(TR(FrameOf), (unsigned long long)info.videoFrame, frames) : FormatClock(shownPos);
+    const std::string total = StrPrintf(" / %s", FormatClock(duration).c_str());
+    const float clockW = processing ? ImGui::CalcTextSize(StrPrintf(TR(FrameOf), frames, frames).c_str()).x : ImGui::CalcTextSize(clock.c_str()).x;
+    const float totalW = ImGui::CalcTextSize(total.c_str()).x;
+    ImGui::PopFont();
+    const float seekW = Px(10.0f) + ImGui::CalcTextSize(TR(Seeking)).x;
+    auto bw = [&](const char* t) { return ImGui::CalcTextSize(t, nullptr, true).x + style.FramePadding.x * 2.0f; };
+    const std::string rangeText = ranged ? StrPrintf("%s %s \xE2\x80\x93 %s", TR(RangeLabel), FormatDuration(inSec).c_str(), FormatDuration(outSec).c_str()) : std::string();
+    const float rangeW = ranged ? ImGui::CalcTextSize(rangeText.c_str()).x + Px(12.0f) : 0.0f;
+    const float helpW = style.ItemSpacing.x + IconSize();
+    const float btnsW = bw(TR(SetIn)) + bw(TR(SetOut)) + bw(TR(WholeVideo)) + style.ItemSpacing.x * 2.0f;
+    const float left0 = clockX + clockW + totalW + seekW, left4 = clockX + clockW;
+    const float leftW[5] = { left0, left0, left0, left0, left4 };
+    const float rightW[5] = { rangeW + btnsW + helpW, btnsW + helpW, btnsW, frameH, frameH };
+    int level = 4;
+    for (int i = 0; i < 5; ++i) if (leftW[i] + Px(16.0f) + rightW[i] <= contentRight) { level = i; break; }
+
+    ImGui::SameLine(0.0f, Px(12.0f));
     ImGui::PushFont(fonts.Mono(), 0.0f);
     ImGui::AlignTextToFramePadding();
-    if (busy && info.videoProcessing) {
-        ImGui::TextUnformatted(StrPrintf(TR(FrameOf), (unsigned long long)info.videoFrame, (unsigned long long)std::max(info.videoFrames, info.videoFrame)).c_str());
-    } else {
-        ImGui::TextUnformatted(FormatClock(shownPos).c_str());
-        ImGui::SameLine(0.0f, 0.0f);
-        ImGui::TextDisabled(" / %s", FormatDuration(duration).c_str());
-    }
+    ImGui::TextUnformatted(clock.c_str());
+    if (!processing && level < 4) { ImGui::SameLine(0.0f, 0.0f); ImGui::TextDisabled("%s", total.c_str()); }
     ImGui::PopFont();
-    if (!busy && (info.videoSeeking || m_seekTarget >= 0.0)) {
-        ImGui::SameLine(0.0f, 10.0f);
+    if (level < 4 && !busy && (info.videoSeeking || m_seekTarget >= 0.0)) {
+        ImGui::SameLine(0.0f, Px(10.0f));
         ImGui::AlignTextToFramePadding();
         ImGui::TextDisabled("%s", TR(Seeking));
     }
-
-    // Range buttons at the right end.
-    const char* inText = TR(SetIn);
-    const char* outText = TR(SetOut);
-    const char* wholeText = TR(WholeVideo);
-    auto bw = [&](const char* t) { return ImGui::CalcTextSize(t).x + style.FramePadding.x * 2.0f; };
-    const std::string rangeText = ranged ? StrPrintf("%s %s \xE2\x80\x93 %s", TR(RangeLabel), FormatDuration(inSec).c_str(), FormatDuration(outSec).c_str()) : std::string();
-    const float rangeW = ranged ? ImGui::CalcTextSize(rangeText.c_str()).x + 12.0f : 0.0f;
-    const float helpW = ImGui::GetFontSize() * 1.05f + style.ItemSpacing.x;
-    const float rightW = bw(inText) + bw(outText) + bw(wholeText) + style.ItemSpacing.x * 2.0f + rangeW + helpW;
-    const float rightX = ImGui::GetWindowWidth() - style.WindowPadding.x - rightW;
     const float leftEnd = ImGui::GetItemRectMax().x - ImGui::GetWindowPos().x;
-    {
-        ImGui::SameLine(std::max(leftEnd + 16.0f, rightX));
-        if (ranged) {
+    ImGui::SameLine(std::max(leftEnd + Px(16.0f), contentRight - rightW[level]));
+    if (level <= 2) {
+        if (level == 0 && ranged) {
             ImGui::AlignTextToFramePadding();
             ImGui::TextDisabled("%s", rangeText.c_str());
-            ImGui::SameLine(0.0f, 12.0f);
+            ImGui::SameLine(0.0f, Px(12.0f));
         }
         ImGui::BeginDisabled(busy);
-        if (GhostButton(inText)) ev.videoSetIn = true;
+        if (GhostButton(TR(SetIn))) ev.videoSetIn = true;
         ImGui::SameLine();
-        if (GhostButton(outText)) ev.videoSetOut = true;
+        if (GhostButton(TR(SetOut))) ev.videoSetOut = true;
         ImGui::SameLine();
         ImGui::BeginDisabled(!ranged);
-        if (GhostButton(wholeText)) ev.videoClearRange = true;
+        if (GhostButton(TR(WholeVideo))) ev.videoClearRange = true;
         ImGui::EndDisabled();
         ImGui::EndDisabled();
-        Help(TR(RangeHint));
+        if (level <= 1) Help(TR(RangeHint));
+    } else {
+        ImGui::BeginDisabled(busy);
+        const ImVec2 bpos = ImGui::GetCursorScreenPos();
+        if (IconButton("##range", Icon::Scissors, ImVec2(frameH, frameH), TR(RangeLabel), ButtonKind::Ghost)) ImGui::OpenPopup("##rangeMenu");
+        if (ranged) ImGui::GetWindowDrawList()->AddCircleFilled(ImVec2(bpos.x + frameH - Px(5.0f), bpos.y + Px(5.0f)), Px(3.0f), Col(p.accent), 0);
+        ImGui::EndDisabled();
+        if (BeginPopupFade("##rangeMenu")) {
+            if (ImGui::MenuItem(TR(SetIn), "I")) ev.videoSetIn = true;
+            if (ImGui::MenuItem(TR(SetOut), "O")) ev.videoSetOut = true;
+            if (ImGui::MenuItem(TR(WholeVideo), nullptr, false, ranged)) ev.videoClearRange = true;
+            if (ranged) { ImGui::Separator(); ImGui::TextDisabled("%s", rangeText.c_str()); }
+            ImGui::Separator();
+            ImGui::PushTextWrapPos(ImGui::GetFontSize() * 22.0f);
+            ImGui::TextDisabled("%s", TR(RangeHint));
+            ImGui::PopTextWrapPos();
+            EndPopupFade();
+        }
     }
+    if (!info.fullscreen) ModeFadeContent(vtx0);
     ImGui::EndChild();
 }
 
@@ -2935,14 +3474,20 @@ void MainUI::DrawTransport(Settings& /*s*/, const UiFrameInfo& info, UiEvents& e
 void MainUI::DrawLibrary(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts, const ImVec2& pos, const ImVec2& size) {
     const Palette& p = Colors();
     const ImGuiStyle& style = ImGui::GetStyle();
+    {
+        // The card on the parent's list with the clipping lifted, so its shadow shows around it.
+        ImDrawList* host = ImGui::GetWindowDrawList();
+        host->PushClipRectFullScreen();
+        DrawCard(host, pos, ImVec2(pos.x + size.x, pos.y + size.y));
+        host->PopClipRect();
+    }
     ImGui::SetCursorScreenPos(pos);
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, p.panel);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(12, 6));
-    ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 0.0f);   // flush with the bar above and the sidebar's bar
-    ImGui::BeginChild("##library", size, ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-    ImGui::PopStyleVar(2);
-    ImGui::PopStyleColor();
-    const int vtxRow = ImGui::GetWindowDrawList()->VtxBuffer.Size;   // the tool row, faded around a mode switch
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, LibraryPad());
+    const bool open = ImGui::BeginChild("##library", size, ImGuiChildFlags_AlwaysUseWindowPadding,
+                                        ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+    ImGui::PopStyleVar();
+    if (!open) { ImGui::EndChild(); return; }
+    const int vtxRow = ImGui::GetWindowDrawList()->VtxBuffer.Size;   // the header, faded around a mode switch
     std::vector<LibraryItem>* lib = info.library;
     const int count = lib ? (int)lib->size() : 0;
     int selected = 0;
@@ -2952,94 +3497,148 @@ void MainUI::DrawLibrary(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
     const float frameH = ImGui::GetFrameHeight();
     const float fold = m_libraryFold;
 
-    // Header line: caption, counts, and the actions at the right end.
-    ImGui::AlignTextToFramePadding();
-    ImGui::PushFont(fonts.Bold(), 0.0f);
-    ImGui::TextUnformatted(TR(SecLibrary));
-    ImGui::PopFont();
-    ImGui::SameLine(0.0f, 10.0f);
-    ImGui::AlignTextToFramePadding();
-    std::string caption = count ? StrPrintf(TR(LibraryCount), count, selected) : std::string(TR(BatchEmpty));
+    // Header line: the name, the counts and the actions at the right end. A narrow row folds the actions step by
+    // step: the "?" goes, the two add buttons become one, "Process all" and "Delete" move into the "more" menu, the
+    // counts go, and "Process selected" keeps only its icon.
+    std::string caption = count ? StrPrintf(count == 1 ? TR(LibraryCountOne) : TR(LibraryCount), count, selected) : std::string(TR(BatchEmpty));
     if (running) {
         const double left = BatchRemaining(info);
         if (left >= 0.0) caption += "  \xC2\xB7  " + StrPrintf(TR(RemainingFmt), ("\xE2\x89\x88 " + FormatEstimate(left)).c_str());
     }
-    ImGui::TextDisabled("%s", caption.c_str());
-    if (count && !running && fold > 0.5f) {
-        ImGui::SameLine(0.0f, 10.0f);
-        if (ImGui::SmallButton(TR(SelectAll))) { for (auto& it : *lib) it.selected = it.probe != 2; }
-        ImGui::SameLine();
-        if (ImGui::SmallButton(TR(SelectNone))) { for (auto& it : *lib) it.selected = false; }
-        Help(TR(TipLibrarySelect));
+    const char* addF = TR(AddFiles);
+    const char* addD = TR(AddFolder);
+    const char* procSel = TR(ProcessSelected);
+    const char* procAll = TR(BatchStart);
+    const char* del = TR(Delete);
+    const char* cancel = TR(Cancel);
+    const float sp = style.ItemSpacing.x;
+    const bool showHelp = count > 0 && !running;
+    ImGui::PushFont(fonts.Bold(), 0.0f);
+    const float titleW = ImGui::CalcTextSize(TR(SecLibrary)).x;
+    ImGui::PopFont();
+    const float captionW = Px(10.0f) + ImGui::CalcTextSize(caption.c_str()).x;
+    const float helpW = showHelp ? sp + IconSize() : 0.0f;
+    float leftW[6], rightW[6];
+    for (int l = 0; l < 6; ++l) {
+        leftW[l] = titleW + (l < 4 ? captionW : 0.0f) + (l < 1 ? helpW : 0.0f);
+        if (running) { rightW[l] = IconTextButtonWidth(cancel); continue; }
+        float w = (l < 2) ? IconTextButtonWidth(addF) + sp + IconTextButtonWidth(addD) + sp : frameH + sp;
+        w += (l < 5) ? IconTextButtonWidth(procSel) + sp : frameH + sp;
+        if (l < 3) w += IconTextButtonWidth(procAll) + sp + IconTextButtonWidth(del) + sp;
+        rightW[l] = w + frameH;   // the "more" button
     }
+    const float availW = ImGui::GetContentRegionAvail().x;
+    int level = 5;
+    for (int l = 0; l < 6; ++l) if (leftW[l] + Px(12.0f) + rightW[l] <= availW) { level = l; break; }
+    // An empty library offers the two add buttons alone: on a short row the caption goes first, then the buttons
+    // become one.
+    const bool empty = count == 0 && !running;
+    const float addBothW = IconTextButtonWidth(addF) + sp + IconTextButtonWidth(addD);
+    const bool showCaption = empty ? titleW + captionW + Px(12.0f) + addBothW <= availW : level < 4;
+    const bool fullAdd = empty ? showCaption || titleW + Px(12.0f) + addBothW <= availW : level < 2;
+    const float rightWidth = empty ? (fullAdd ? addBothW : frameH) : rightW[level];
+
+    ImGui::AlignTextToFramePadding();
+    ImGui::PushFont(fonts.Bold(), 0.0f);
+    ImGui::TextUnformatted(TR(SecLibrary));
+    ImGui::PopFont();
+    if (showCaption) {
+        ImGui::SameLine(0.0f, Px(10.0f));
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextDisabled("%s", caption.c_str());
+    }
+    if (level < 1 && showHelp) Help(TR(TipLibrarySelect));
     {
-        const char* addF = TR(AddFiles);
-        const char* addD = TR(AddFolder);
-        const char* procSel = TR(ProcessSelected);
-        const char* procAll = TR(BatchStart);
-        const char* del = TR(Delete);
-        const char* cancel = TR(Cancel);
-        auto bw = [&](const char* t) { return ImGui::CalcTextSize(t).x + style.FramePadding.x * 2.0f; };
-        float rightW = 0.0f;
-        if (running) rightW += bw(cancel) + style.ItemSpacing.x;
-        else rightW += bw(addF) + bw(addD) + bw(procSel) + bw(procAll) + bw(del) + style.ItemSpacing.x * 5.0f;
-        const float rightX = ImGui::GetWindowWidth() - style.WindowPadding.x - rightW;
         const float leftEnd = ImGui::GetItemRectMax().x - ImGui::GetWindowPos().x;
-        ImGui::SameLine(std::max(leftEnd + 12.0f, rightX));
+        const float rightX = ImGui::GetWindowWidth() - style.WindowPadding.x - rightWidth;
+        ImGui::SameLine(std::max(leftEnd + Px(12.0f), rightX));
         if (running) {
-            if (AccentButton(cancel)) ev.batchCancel = true;
+            if (IconTextButton(cancel, Icon::Stop, ImVec2(0, 0), ButtonKind::Flat)) ev.batchCancel = true;
         } else {
-            if (GhostButton(addF)) ev.libraryAddFiles = true;
-            ImGui::SameLine();
-            if (GhostButton(addD)) ev.libraryAddFolder = true;
+            if (fullAdd) {
+                if (IconTextButton(addF, Icon::ImagePlus, ImVec2(0, 0), ButtonKind::Ghost)) ev.libraryAddFiles = true;
+                ImGui::SameLine();
+                if (IconTextButton(addD, Icon::Folder, ImVec2(0, 0), ButtonKind::Ghost)) ev.libraryAddFolder = true;
+            } else {
+                if (IconButton("##libAdd", Icon::Plus, ImVec2(0, 0), addF, ButtonKind::Ghost)) ImGui::OpenPopup("##libAddMenu");
+                if (BeginPopupFade("##libAddMenu")) {
+                    if (ImGui::MenuItem(addF)) ev.libraryAddFiles = true;
+                    if (ImGui::MenuItem(addD)) ev.libraryAddFolder = true;
+                    EndPopupFade();
+                }
+            }
+        }
+        if (!running && !empty) {
             ImGui::SameLine();
             ImGui::BeginDisabled(selected == 0 || busy);
-            if (AccentButton(procSel)) ev.libraryProcessSelected = true;
+            const bool process = level < 5 ? IconTextButton(procSel, Icon::Wand, ImVec2(0, 0), ButtonKind::Accent)
+                                           : IconButton("##procSel", Icon::Wand, ImVec2(0, 0), procSel, ButtonKind::Accent);
+            if (process) ev.libraryProcessSelected = true;
             ImGui::EndDisabled();
+            if (level < 3) {
+                ImGui::SameLine();
+                ImGui::BeginDisabled(count == 0 || busy);
+                if (IconTextButton(procAll, Icon::ListChecks, ImVec2(0, 0), ButtonKind::Flat)) ev.libraryProcessAll = true;
+                ImGui::EndDisabled();
+                ImGui::SameLine();
+                // Red only while something is selected. It drops the items from the library; the files stay.
+                ImGui::BeginDisabled(selected == 0);
+                if (IconTextButton(del, Icon::Trash, ImVec2(0, 0), selected ? ButtonKind::Danger : ButtonKind::Ghost)) ev.libraryDeleteSelected = true;
+                Tip(TR(TipDelete));
+                ImGui::EndDisabled();
+            }
             ImGui::SameLine();
-            ImGui::BeginDisabled(count == 0 || busy);
-            if (FlatButton(procAll)) ev.libraryProcessAll = true;
-            ImGui::EndDisabled();
-            ImGui::SameLine();
-            // Red only while something is selected. It drops the items from the library; the files stay.
-            ImGui::BeginDisabled(selected == 0);
-            if (DangerButton(del)) ev.libraryDeleteSelected = true;
-            Tip(TR(TipDelete));
-            ImGui::EndDisabled();
+            if (IconButton("##libMore", Icon::Ellipsis, ImVec2(0, 0), TR(More), ButtonKind::Plain)) ImGui::OpenPopup("##libMenu");
+            if (BeginPopupFade("##libMenu")) {
+                if (level >= 3) {
+                    if (ImGui::MenuItem(procAll, nullptr, false, count > 0 && !busy)) ev.libraryProcessAll = true;
+                    if (ImGui::MenuItem(del, "Del", false, selected > 0)) ev.libraryDeleteSelected = true;
+                    ImGui::Separator();
+                }
+                if (ImGui::MenuItem(TR(SelectAll), "Ctrl+A", false, count > 0) && lib) for (auto& it : *lib) it.selected = it.probe != 2;
+                if (ImGui::MenuItem(TR(SelectNone), nullptr, false, selected > 0) && lib) for (auto& it : *lib) it.selected = false;
+                EndPopupFade();
+            }
         }
     }
-    if (fold <= 0.001f) { m_libDrag = false; ModeFadeContent(vtxRow); ImGui::EndChild(); return; }
+    if (fold * m_libraryFill <= 0.001f) { m_libDrag = false; ModeFadeContent(vtxRow); ImGui::EndChild(); return; }
     ModeFadeContent(vtxRow);
 
-    // The strip.
+    // The strip. The cards keep a margin inside it so the plate around a selected card is not cut at its edges.
     const float thumbH = m_thumbH > 0.0f ? m_thumbH : ImGui::GetFontSize() * 4.5f;
     const float cardW = std::floor(thumbH * 16.0f / 9.0f);
     const float lineH = ImGui::GetTextLineHeight();
-    const float cardH = thumbH + lineH * 2.0f + 6.0f;
-    const float stripH = std::max(cardH + style.ScrollbarSize + 4.0f, ImGui::GetContentRegionAvail().y);
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(0, 0, 0, 0));
-    ImGui::BeginChild("##strip", ImVec2(0, stripH), ImGuiChildFlags_None, ImGuiWindowFlags_HorizontalScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-    ImGui::PopStyleColor();
+    const float cardH = thumbH + Px(6.0f) + lineH * 2.0f;
+    const float margin = Px(4.0f);
+    const float stripW = ImGui::GetContentRegionAvail().x + margin * 2.0f;
+    const float stripH = std::max(cardH + style.ScrollbarSize + margin * 2.0f, ImGui::GetContentRegionAvail().y);
+    ImGui::SetCursorPosX(ImGui::GetCursorPosX() - margin);
+    const bool stripOpen = ImGui::BeginChild("##strip", ImVec2(stripW, stripH), ImGuiChildFlags_None,
+                                             ImGuiWindowFlags_HorizontalScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+    if (!stripOpen) { ImGui::EndChild(); ImGui::EndChild(); return; }
     const int vtxStrip = ImGui::GetWindowDrawList()->VtxBuffer.Size;
     ImGuiIO& io = ImGui::GetIO();
     SmoothScroll(true, cardW + style.ItemSpacing.x);
+    ImDrawList* dl = ImGui::GetWindowDrawList();
     if (count == 0) {
+        // Nothing yet: a tray icon and the hint in the middle of the strip (the icon goes when the room is short).
         m_libDrag = false;
-        const float wrap = std::min(ImGui::GetContentRegionAvail().x - 20.0f, ImGui::GetFontSize() * 40.0f);
+        const ImVec2 o = ImGui::GetWindowPos(), wsz = ImGui::GetWindowSize();
+        const float is = IconSize(1.3f);
+        const float wrap = std::max(Px(80.0f), std::min(wsz.x - Px(40.0f), ImGui::GetFontSize() * 40.0f));
         const ImVec2 ts = ImGui::CalcTextSize(TR(LibraryHint), nullptr, false, wrap);
-        const ImVec2 o = ImGui::GetCursorScreenPos();
-        const ImVec2 avail = ImGui::GetContentRegionAvail();
-        ImGui::SetCursorScreenPos(ImVec2(o.x + std::max(0.0f, (avail.x - ts.x) * 0.5f), o.y + std::max(0.0f, (avail.y - ts.y) * 0.5f)));
-        ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + wrap);
-        ImGui::TextDisabled("%s", TR(LibraryHint));
-        ImGui::PopTextWrapPos();
+        const bool icon = wsz.y >= ts.y + is + Px(8.0f) * 2.0f;
+        const float lift = icon ? is + Px(8.0f) : 0.0f;
+        const float top = o.y + std::max(0.0f, std::floor((wsz.y - lift - ts.y) * 0.5f));
+        if (icon) DrawIcon(dl, Icon::Import, ImVec2(o.x + std::round(wsz.x * 0.5f), top + is * 0.5f), is, p.textDim);
+        dl->AddText(nullptr, 0.0f, ImVec2(o.x + std::floor((wsz.x - ts.x) * 0.5f), top + lift), p.textDim, TR(LibraryHint), nullptr, wrap);
         ModeFadeContent(vtxStrip);
         ImGui::EndChild();
         ImGui::EndChild();
         return;
     }
-    ImDrawList* dl = ImGui::GetWindowDrawList();
     const ImTextureRef atlasTex = (info.atlas && info.atlas->Ready()) ? ImTextureRef((ImTextureID)info.atlas->TextureHandle()) : ImTextureRef();
+    ImGui::SetCursorPos(ImVec2(margin, margin));
     const ImVec2 rowStart = ImGui::GetCursorScreenPos();
     const bool stripHovered = ImGui::IsWindowHovered(ImGuiHoveredFlags_ChildWindows);
     const bool menuOpen = ImGui::IsPopupOpen("##libctx");   // judged here: inside a card's PushID the name would hash differently
@@ -3063,6 +3662,8 @@ void MainUI::DrawLibrary(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
     bool overControl = false;   // the cursor is on a card's box or its remove button
     unsigned underCursor = 0;   // the card under the cursor
     unsigned menuCard = 0;
+    const bool anySelected = selected > 0;
+    const float tr = Px(6.0f);   // the picture's corners
     for (size_t i = 0; i < lib->size(); ++i) {
         LibraryItem& it = (*lib)[i];
         ImGui::PushID((int)it.id);
@@ -3083,58 +3684,63 @@ void MainUI::DrawLibrary(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
         }
         const float hov = Animate(ImGui::GetID("##hover"), hovered ? 1.0f : 0.0f, 16.0f);
         const float sel = Animate(ImGui::GetID("##selected"), it.selected ? 1.0f : 0.0f, 16.0f);
-        if (hovered && !dragging && !menuOpen) {
-            if (it.probe == 2 && !it.error.empty()) TooltipShow(it.id, it.error.c_str());
-            else if (it.state == LibraryItem::Failed && !it.error.empty()) TooltipShow(it.id, it.error.c_str());
-            else if (it.state == LibraryItem::Done && !it.outName.empty()) TooltipShow(it.id, StrPrintf("%s: %s", TR(Saved), it.outName.c_str()).c_str());
-            else TooltipShow(it.id, it.name.c_str());
-        }
         const bool current = (s.sourceMode == SourceVideo && it.isVideo && !info.videoPath.empty() && it.path == info.videoPath)
                           || (s.sourceMode == SourceImage && !it.isVideo && !info.imagePath.empty() && it.path == info.imagePath);
-        if (sel > 0.001f) dl->AddRectFilled(ImVec2(c0.x - 3.0f, c0.y - 3.0f), ImVec2(c1.x + 3.0f, c1.y + 1.0f), WithAlpha(p.selection, sel * 0.9f), 5.0f);
-        dl->AddRectFilled(c0, t1, p.control, 3.0f);
+        // A plate behind a selected card (or the one under the mouse), the picture on a rounded tile, its marks.
+        const float pl = Px(4.0f);
+        if (sel > 0.001f) dl->AddRectFilled(ImVec2(c0.x - pl, c0.y - pl), ImVec2(c1.x + pl, c1.y + pl), WithAlpha(p.accent, (0.2f - 0.06f * p.light) * sel), Px(8.0f));
+        else if (hov > 0.001f) dl->AddRectFilled(ImVec2(c0.x - pl, c0.y - pl), ImVec2(c1.x + pl, c1.y + pl), WithAlpha(p.controlHover, 0.6f * hov), Px(8.0f));
+        dl->AddRectFilled(c0, t1, p.control, tr);
+        const ImVec2 tc((c0.x + t1.x) * 0.5f, (c0.y + t1.y) * 0.5f);
         if (info.atlas && it.thumbCell >= 0 && info.atlas->Filled(it.thumbCell)) {
             float u0, v0, u1, v1;
             info.atlas->Uv(it.thumbCell, u0, v0, u1, v1);
-            dl->AddImageRounded(atlasTex, c0, t1, ImVec2(u0, v0), ImVec2(u1, v1), IM_COL32_WHITE, 3.0f);
+            dl->AddImageRounded(atlasTex, c0, t1, ImVec2(u0, v0), ImVec2(u1, v1), IM_COL32_WHITE, tr);
+        } else if (it.probe == 2) {
+            DrawIcon(dl, Icon::Warning, tc, IconSize(1.2f), p.bad);
         } else {
-            const char* mark = it.probe == 2 ? "!" : "\xE2\x80\xA6";
-            const ImVec2 ms = ImGui::CalcTextSize(mark);
-            dl->AddText(ImVec2(c0.x + (cardW - ms.x) * 0.5f, c0.y + (thumbH - ms.y) * 0.5f), it.probe == 2 ? p.bad : p.textDim, mark);
+            DrawIcon(dl, it.isVideo ? Icon::Film : Icon::Image, tc, IconSize(1.2f), WithAlpha(p.textDim, 0.6f));
         }
-        if (it.state == LibraryItem::Queued) dl->AddRectFilled(c0, t1, IM_COL32(0, 0, 0, 110), 3.0f);
+        if (it.state == LibraryItem::Queued) dl->AddRectFilled(c0, t1, IM_COL32(0, 0, 0, 110), tr);
         if (it.state == LibraryItem::Processing) {
-            const float ph = 4.0f;
-            dl->AddRectFilled(ImVec2(c0.x, t1.y - ph), t1, IM_COL32(0, 0, 0, 160), 3.0f, ImDrawFlags_RoundCornersBottom);
-            dl->AddRectFilled(ImVec2(c0.x, t1.y - ph), ImVec2(c0.x + cardW * std::clamp(it.progress, 0.02f, 1.0f), t1.y), p.accent, 3.0f, ImDrawFlags_RoundCornersBottom);
+            const float ph = Px(4.0f);
+            dl->AddRectFilled(ImVec2(c0.x, t1.y - ph), t1, IM_COL32(0, 0, 0, 160), tr, ImDrawFlags_RoundCornersBottom);
+            dl->AddRectFilled(ImVec2(c0.x, t1.y - ph), ImVec2(c0.x + cardW * std::clamp(it.progress, 0.02f, 1.0f), t1.y), p.accent, tr, ImDrawFlags_RoundCornersBottom);
         }
-        if (hov > 0.001f) dl->AddRectFilled(c0, t1, WithAlpha(IM_COL32(255, 255, 255, 255), 0.05f * hov), 3.0f);
-        if (current) dl->AddRect(ImVec2(c0.x - 1.0f, c0.y - 1.0f), ImVec2(t1.x + 1.0f, t1.y + 1.0f), p.accent, 4.0f, 2.0f);
-        else if (sel > 0.001f) dl->AddRect(c0, t1, WithAlpha(p.accent, sel), 3.0f);
-        else if (hov > 0.001f) dl->AddRect(c0, t1, WithAlpha(p.knob, 0.6f * hov), 3.0f);
-        // State badge at the top right of the picture.
+        if (hov > 0.001f) dl->AddRectFilled(c0, t1, WithAlpha(IM_COL32(255, 255, 255, 255), 0.05f * hov), tr);
+        if (current) dl->AddRect(ImVec2(c0.x - Px(1.0f), c0.y - Px(1.0f)), ImVec2(t1.x + Px(1.0f), t1.y + Px(1.0f)), p.accent, Px(7.0f), Px(2.0f));
+        else if (sel > 0.001f) dl->AddRect(c0, t1, WithAlpha(p.accent, sel), tr, std::max(1.0f, 1.5f * Dpi()));
+        // State at the top right of the picture: a dark pill with a coloured dot.
         if (const char* st = StateText(it)) {
             const ImU32 col = (it.state == LibraryItem::Done) ? p.good : (it.state == LibraryItem::Failed || it.probe == 2) ? p.bad
                             : (it.state == LibraryItem::Processing) ? p.accentHover : p.warn;
-            ImGui::PushFont(nullptr, ImGui::GetFontSize() * 0.82f);
+            ImGui::PushFont(nullptr, style.FontSizeBase * 0.82f);
             const ImVec2 ss = ImGui::CalcTextSize(st);
-            const ImVec2 b0(t1.x - ss.x - 12.0f, c0.y + 4.0f);
-            dl->AddRectFilled(b0, ImVec2(b0.x + ss.x + 8.0f, b0.y + ss.y + 4.0f), WithAlpha(IM_COL32(0, 0, 0, 255), 0.7f), 3.0f);
-            dl->AddText(ImVec2(b0.x + 4.0f, b0.y + 2.0f), col, st);
+            const float d = std::max(4.0f, std::round(ss.y * 0.4f));
+            const ImVec2 pad(Px(6.0f), Px(2.0f));
+            const float w = pad.x + d + Px(5.0f) + ss.x + pad.x;
+            const ImVec2 b0(t1.x - w - Px(4.0f), c0.y + Px(4.0f));
+            const ImVec2 b1(b0.x + w, b0.y + ss.y + pad.y * 2.0f);
+            dl->AddRectFilled(b0, b1, IM_COL32(0, 0, 0, 160), (b1.y - b0.y) * 0.5f);
+            dl->AddCircleFilled(ImVec2(b0.x + pad.x + d * 0.5f, (b0.y + b1.y) * 0.5f), d * 0.5f, col, 0);
+            dl->AddText(ImVec2(b0.x + pad.x + d + Px(5.0f), b0.y + pad.y), IM_COL32(255, 255, 255, 235), st);
             ImGui::PopFont();
         }
         // A file with its own values carries a small mark at the bottom left of the picture.
         if (it.useOwn && it.own) {
-            ImGui::PushFont(nullptr, ImGui::GetFontSize() * 0.78f);
+            ImGui::PushFont(nullptr, style.FontSizeBase * 0.78f);
             const ImVec2 os = ImGui::CalcTextSize(TR(OwnBadge));
-            const ImVec2 b0(c0.x + 4.0f, t1.y - os.y - 8.0f);
-            dl->AddRectFilled(b0, ImVec2(b0.x + os.x + 8.0f, b0.y + os.y + 4.0f), WithAlpha(p.accent, 0.85f), 3.0f);
-            dl->AddText(ImVec2(b0.x + 4.0f, b0.y + 2.0f), p.accentText, TR(OwnBadge));
+            const ImVec2 pad(Px(6.0f), Px(2.0f));
+            const ImVec2 b0(c0.x + Px(4.0f), t1.y - os.y - pad.y * 2.0f - Px(4.0f));
+            dl->AddRectFilled(b0, ImVec2(b0.x + os.x + pad.x * 2.0f, b0.y + os.y + pad.y * 2.0f), WithAlpha(p.accent, 0.85f), Px(4.0f));
+            dl->AddText(ImVec2(b0.x + pad.x, b0.y + pad.y), p.accentText, TR(OwnBadge));
             ImGui::PopFont();
         }
         // Name and details.
-        const float textY = t1.y + 3.0f;
+        const float textY = t1.y + Px(3.0f);
+        ImGui::PushStyleColor(ImGuiCol_Text, p.text);
         ImGui::RenderTextEllipsis(dl, ImVec2(c0.x, textY), ImVec2(c0.x + cardW, textY + lineH), c0.x + cardW, it.name.c_str(), nullptr, nullptr);
+        ImGui::PopStyleColor();
         std::string detail;
         if (it.probe == 1) {
             detail = it.isVideo ? StrPrintf("%ux%u  %s", it.width, it.height, FormatDuration(it.duration).c_str()) : StrPrintf("%ux%u", it.width, it.height);
@@ -3145,30 +3751,46 @@ void MainUI::DrawLibrary(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
         } else {
             detail = "\xE2\x80\xA6";
         }
-        ImGui::PushFont(nullptr, ImGui::GetFontSize() * 0.88f);
+        ImGui::PushFont(nullptr, style.FontSizeBase * 0.88f);
+        ImGui::PushStyleColor(ImGuiCol_Text, p.textDim);
         ImGui::RenderTextEllipsis(dl, ImVec2(c0.x, textY + lineH), ImVec2(c0.x + cardW, textY + lineH * 2.0f), c0.x + cardW, detail.c_str(), nullptr, nullptr);
+        ImGui::PopStyleColor();
         ImGui::PopFont();
-        // The selection box and the remove button sit on the picture.
+        // The selection box at the top left of the picture: under the mouse, on a selected card, and on every card
+        // while any is selected.
         if (it.probe != 2) {
-            ImGui::SetCursorScreenPos(ImVec2(c0.x + 4.0f, c0.y + 4.0f));
-            ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(2, 2));
-            ImGui::BeginDisabled(running);
-            if (ImGui::Checkbox("##sel", &it.selected)) m_lastClicked = it.id;
-            ImGui::EndDisabled();
-            ImGui::PopStyleVar();
-            onControl |= ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled);
+            const float boxA = std::max({ hov, sel, anySelected ? 1.0f : 0.0f });
+            if (boxA > 0.01f) {
+                const float box = std::round(frameH * 0.66f);
+                ImGui::SetCursorScreenPos(ImVec2(c0.x + Px(6.0f), c0.y + Px(6.0f) - std::round((frameH - box) * 0.5f)));
+                ImGui::PushStyleVar(ImGuiStyleVar_Alpha, style.Alpha * boxA);
+                ImGui::BeginDisabled(running);
+                if (Checkbox("##sel", &it.selected)) m_lastClicked = it.id;
+                ImGui::EndDisabled();
+                ImGui::PopStyleVar();
+                onControl |= ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled);
+            }
         }
+        // The remove button at the bottom right of the picture, under the mouse: white on a dark square in both themes.
         if (hov > 0.01f && !running && it.state != LibraryItem::Processing) {
-            const float bs = frameH * 0.8f;
-            const ImVec2 b0(t1.x - bs - 4.0f, t1.y - bs - 4.0f);
-            dl->AddRectFilled(b0, ImVec2(b0.x + bs, b0.y + bs), WithAlpha(IM_COL32(0, 0, 0, 255), 0.55f * hov), 3.0f);
+            const float bs = std::round(frameH * 0.8f);
+            const ImVec2 b0(t1.x - bs - Px(4.0f), t1.y - bs - Px(4.0f));
             ImGui::SetCursorScreenPos(b0);
-            ImGui::PushStyleVar(ImGuiStyleVar_Alpha, style.Alpha * hov);
-            if (IconButton("##remove", Icon::Close, ImVec2(bs, bs), TR(Remove), ButtonKind::Plain)) ev.libraryRemove = it.id;
-            ImGui::PopStyleVar();
-            onControl |= ImGui::IsItemHovered();
+            const bool remove = ImGui::InvisibleButton("##remove", ImVec2(bs, bs));
+            const bool overRemove = ImGui::IsItemHovered();
+            dl->AddRectFilled(b0, ImVec2(b0.x + bs, b0.y + bs), WithAlpha(IM_COL32(0, 0, 0, 255), (overRemove ? 0.75f : 0.55f) * hov), Px(4.0f));
+            DrawIcon(dl, Icon::Close, ImVec2(b0.x + bs * 0.5f, b0.y + bs * 0.5f), IconSize(0.8f), WithAlpha(IM_COL32(255, 255, 255, 255), hov));
+            Tooltip(TR(Remove));
+            if (remove) ev.libraryRemove = it.id;
+            onControl |= overRemove;
         }
         overControl |= onControl;
+        if (hovered && !dragging && !menuOpen && !onControl) {
+            if (it.probe == 2 && !it.error.empty()) TooltipShow(it.id, it.error.c_str());
+            else if (it.state == LibraryItem::Failed && !it.error.empty()) TooltipShow(it.id, it.error.c_str());
+            else if (it.state == LibraryItem::Done && !it.outName.empty()) TooltipShow(it.id, StrPrintf("%s: %s", TR(Saved), it.outName.c_str()).c_str());
+            else TooltipShow(it.id, it.name.c_str());
+        }
         // A double click opens the file in the preview.
         if (hovered && !onControl && !running && !menuOpen && it.probe != 2 && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
             ev.libraryPreview = it.id;
@@ -3177,9 +3799,8 @@ void MainUI::DrawLibrary(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
         }
         ImGui::PopID();
     }
-    ImGui::SetCursorScreenPos(ImVec2(rowStart.x + (float)count * (cardW + style.ItemSpacing.x), rowStart.y));
-    ImGui::Dummy(ImVec2(1.0f, cardH));
-
+    ImGui::SetCursorScreenPos(ImVec2(rowStart.x + (float)count * (cardW + style.ItemSpacing.x) - style.ItemSpacing.x, rowStart.y));
+    ImGui::Dummy(ImVec2(margin, cardH));
     // Presses on the strip: a click selects the card alone (Ctrl toggles it, Shift extends from the last one), a drag
     // selects a range; a double click (above) opens the file in the preview.
     if (!m_libDrag && stripHovered && !overControl && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !menuOpen) {
@@ -3192,7 +3813,7 @@ void MainUI::DrawLibrary(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
     if (m_libDrag) {
         if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
             const ImVec2 a = toScreen(m_libDragStart);
-            if (!m_libDragMoved && !running && (std::fabs(io.MousePos.x - a.x) > 4.0f || std::fabs(io.MousePos.y - a.y) > 4.0f)) m_libDragMoved = true;
+            if (!m_libDragMoved && !running && (std::fabs(io.MousePos.x - a.x) > Px(4.0f) || std::fabs(io.MousePos.y - a.y) > Px(4.0f))) m_libDragMoved = true;
         } else {
             if (!m_libDragMoved && underCursor && !running) {
                 LibraryItem* item = nullptr;
@@ -3222,8 +3843,8 @@ void MainUI::DrawLibrary(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
         }
     }
     if (dragging) {
-        dl->AddRectFilled(marquee.Min, marquee.Max, WithAlpha(p.accent, 0.14f), 2.0f);
-        dl->AddRect(marquee.Min, marquee.Max, WithAlpha(p.accent, 0.8f), 2.0f);
+        dl->AddRectFilled(marquee.Min, marquee.Max, WithAlpha(p.accent, 0.14f), Px(3.0f));
+        dl->AddRect(marquee.Min, marquee.Max, WithAlpha(p.accent, 0.8f), Px(3.0f));
     }
     if (menuCard) { m_ctxItem = menuCard; m_libDrag = false; ImGui::OpenPopup("##libctx"); }
     DrawLibraryMenu(s, info, ev);
@@ -3278,6 +3899,7 @@ void MainUI::DrawItemParams(Settings& s, const UiFrameInfo& info, UiEvents& ev, 
     ImGui::SetNextWindowSize(ImVec2(ImGui::GetFontSize() * 27.0f, ImGui::GetFontSize() * 32.0f), ImGuiCond_FirstUseEver);
     const std::string title = (n > 1 ? StrPrintf(TR(OwnParamsMany), n) : StrPrintf(TR(OwnParamsTitle), lead->name.c_str())) + "###itemparams";
     if (ImGui::Begin(title.c_str(), &open, ImGuiWindowFlags_NoScrollWithMouse)) {
+        WindowShadow();
         SmoothScroll(false, ImGui::GetFontSize() * 3.6f);
         ImGui::PushItemWidth(-LabelColumn(ImGui::GetContentRegionAvail().x));
         const bool locked = info.batchRunning || info.videoProcessing || info.videoFinishing;
@@ -3326,76 +3948,114 @@ void MainUI::DrawItemParams(Settings& s, const UiFrameInfo& info, UiEvents& ev, 
 
 // ------------------------------------------------------------------------------------------
 
-void MainUI::DrawStatusBar(Settings& s, const UiFrameInfo& info, UiEvents& /*ev*/, const Fonts& fonts) {
+void MainUI::DrawStatusBar(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& /*fonts*/) {
     const Palette& p = Colors();
-    ImGui::BeginChild("##status", ImVec2(0, 0), ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+    const bool open = ImGui::BeginChild("##status", ImVec2(0, 0), ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+    if (!open) { ImGui::EndChild(); return; }
     ImGui::SetScrollX(0.0f);
-    const int vtx0 = ImGui::GetWindowDrawList()->VtxBuffer.Size;
-    ImGui::SetCursorPosY(ImGui::GetStyle().ItemSpacing.y);
-    // Monospace, padded figures throughout: nothing here may shift when a number changes.
-    ImGui::PushFont(fonts.Mono(), 0.0f);
-    auto leftText = [&](double seconds) { return "  \xC2\xB7  " + StrPrintf(TR(RemainingFmt), ("\xE2\x89\x88 " + FormatEstimate(seconds)).c_str()); };
+    ImGui::SetScrollY(0.0f);
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    const int vtx0 = dl->VtxBuffer.Size;
+    const ImVec2 wpos = ImGui::GetWindowPos(), wsz = ImGui::GetWindowSize();
+    const float frameH = ImGui::GetFrameHeight();
+    m_toastBottom = wpos.y - Px(6.0f);   // notices rise from just above the bar
+    const float rowY = wpos.y + std::floor((wsz.y - frameH) * 0.5f);
+    const float x0 = wpos.x, x1 = wpos.x + wsz.x;
+    // What the program is doing, at the left: the batch, the video run, or the source and its size.
+    std::string line, detail;
+    ImU32 dot = p.muted;
+    const char* kDot = "  \xC2\xB7  ";
+    auto leftText = [&](double seconds) { return kDot + StrPrintf(TR(RemainingFmt), ("\xE2\x89\x88 " + FormatEstimate(seconds)).c_str()); };
     if (info.batchRunning) {
-        const std::string progress = StrPrintf(TR(BatchRunning), std::min(info.batchIndex + 1, info.batchCount), info.batchCount);
-        std::string line = StrPrintf("%s  %s", progress.c_str(), info.batchItemName.c_str());
+        line = StrPrintf(TR(BatchRunning), std::min(info.batchIndex + 1, info.batchCount), info.batchCount);
+        detail = info.batchItemName;
         const double left = BatchRemaining(info);
-        if (left >= 0.0) line += leftText(left);
-        StatusDot(p.accentHover, line.c_str());
+        if (left >= 0.0) detail += leftText(left);
+        dot = p.accentHover;
     } else if (s.sourceMode == SourceVideo) {
         if (info.videoProcessing) {
             const unsigned long long total = std::max(info.videoFrames, info.videoFrame);
-            std::string line = StrPrintf("%s  %s", info.videoName.c_str(), StrPrintf(TR(FrameOf), (unsigned long long)info.videoFrame, total).c_str());
+            line = info.videoName;
+            detail = StrPrintf(TR(FrameOf), (unsigned long long)info.videoFrame, total);
             if (info.videoFrame >= 5 && info.videoElapsed > 0.5 && !info.videoFinishing)
-                line += leftText((double)(total - info.videoFrame) * info.videoElapsed / (double)info.videoFrame);
-            StatusDot(p.warn, line.c_str());
+                detail += leftText((double)(total - info.videoFrame) * info.videoElapsed / (double)info.videoFrame);
+            dot = p.warn;
         } else if (info.videoLoaded) {
-            StatusDot(p.good, StrPrintf("%s  %ux%u @ %3.0f", info.videoName.c_str(), info.videoWidth, info.videoHeight, info.videoFps).c_str());
+            line = info.videoName;
+            detail = StrPrintf("%ux%u%s%.0f %s", info.videoWidth, info.videoHeight, kDot, info.videoFps, TR(Fps));
+            dot = p.good;
         } else {
-            StatusDot(p.muted, TR(NoVideo));
+            line = TR(NoVideo);
         }
     } else if (s.sourceMode == SourceImage) {
-        if (info.imageLoaded) StatusDot(p.good, StrPrintf("%s  %ux%u", info.imageName.c_str(), info.imageWidth, info.imageHeight).c_str());
-        else StatusDot(p.muted, TR(NoImage));
+        if (info.imageLoaded) { line = info.imageName; detail = StrPrintf("%ux%u", info.imageWidth, info.imageHeight); dot = p.good; }
+        else line = TR(NoImage);
     } else if (info.sourceConnected && info.status) {
-        StatusDot(p.good, StrPrintf("%s  %ux%u @ %3.0f", info.senderName.c_str(), info.status->srcWidth, info.status->srcHeight, m_shown.senderFps).c_str());
+        line = info.senderName;
+        detail = StrPrintf("%ux%u%s%.0f %s", info.status->srcWidth, info.status->srcHeight, kDot, m_shown.senderFps, TR(Fps));
+        dot = p.good;
     } else {
-        StatusDot(p.muted, TR(StatusWaiting));
+        line = info.senders && !info.senders->empty() ? TR(StatusWaiting) : TR(StatusNoSpout);
     }
-    const float rightEdge = ImGui::GetWindowWidth() - ImGui::GetStyle().WindowPadding.x;
-    float leftEnd = ImGui::GetItemRectMax().x - ImGui::GetWindowPos().x;
-    std::string capture;
-    float captureW = 0.0f;
-    if (!info.lastCapture.empty()) {
-        capture = StrPrintf("%s: %s", TR(LastCapture), info.lastCapture.c_str());
-        captureW = ImGui::CalcTextSize(capture.c_str()).x;
-    }
-    if (info.status) {
-        const std::string timers = StrPrintf("%s %s | %s %s | %s %s | %s %s", TR(TmGuidance),
-                            FormatMsFixed(m_shown.gpuMs[(UINT)GpuTimer::Guidance] + m_shown.gpuMs[(UINT)GpuTimer::OpticalFlow]).c_str(),
-                            TR(TmNeural), FormatMsFixed(m_shown.gpuMs[(UINT)GpuTimer::Neural]).c_str(),
-                            TR(TmComposite), FormatMsFixed(m_shown.gpuMs[(UINT)GpuTimer::Composite]).c_str(),
-                            TR(TmUi), FormatMsFixed(m_shown.uiGpuMs).c_str());
-        const float timersW = ImGui::CalcTextSize(timers.c_str()).x;
-        if (leftEnd + 24.0f + timersW + (captureW > 0.0f ? captureW + 24.0f : 0.0f) <= rightEdge) {
-            ImGui::SameLine(0.0f, 24.0f);
-            ImGui::TextDisabled("%s", timers.c_str());
-            leftEnd = ImGui::GetItemRectMax().x - ImGui::GetWindowPos().x;
+    // The last file saved at the right end, with a button that shows it in Explorer (or why the capture failed).
+    float right = x1;
+    if (info.lastSavedKnown && !info.lastSaved.empty()) {
+        const std::string text = StrPrintf("%s: %s", info.lastSavedOk ? TR(Saved) : TR(CaptureFailed), info.lastSaved.c_str());
+        const float btnW = info.lastSavedOk ? frameH : 0.0f;
+        const float tw = std::min(ImGui::CalcTextSize(text.c_str()).x, std::max(0.0f, (x1 - x0) * 0.45f - btnW));
+        if (tw > ImGui::GetFontSize() * 4.0f) {
+            float bx = x1;
+            if (info.lastSavedOk) {
+                bx = x1 - frameH;
+                ImGui::SetCursorScreenPos(ImVec2(bx, rowY));
+                if (IconButton("##reveal", Icon::Folder, ImVec2(frameH, frameH), TR(LocateFile), ButtonKind::Plain)) ev.revealLastSaved = true;
+                bx -= Px(4.0f);
+            }
+            const float th = ImGui::GetTextLineHeight();
+            const float ty = rowY + std::floor((frameH - th) * 0.5f);
+            ImGui::PushStyleColor(ImGuiCol_Text, info.lastSavedOk ? p.textDim : p.bad);
+            ImGui::RenderTextEllipsis(dl, ImVec2(bx - tw, ty), ImVec2(bx, ty + th), bx, text.c_str(), nullptr, nullptr);
+            ImGui::PopStyleColor();
+            right = bx - tw - Px(24.0f);
         }
     }
-    ImGui::PopFont();
-    if (captureW > 0.0f && leftEnd + 24.0f + captureW <= rightEdge) {
-        ImGui::SameLine(rightEdge - captureW);
-        ImGui::PushStyleColor(ImGuiCol_Text, info.lastCaptureOk ? ImGui::GetColorU32(ImGuiCol_TextDisabled) : p.bad);
-        ImGui::TextUnformatted(capture.c_str());
-        ImGui::PopStyleColor();
+    const float lineH = ImGui::GetTextLineHeight();
+    const float ty = rowY + std::floor((frameH - lineH) * 0.5f);
+    if (s.showAdvanced && info.status) {
+        // The pass timings, for those who asked for the details. Each figure sits right-aligned in a slot as wide as
+        // "000.00 ms" (the interface font's digits all have one width), so nothing moves when a number changes.
+        const double ms[4] = { m_shown.gpuMs[(UINT)GpuTimer::Guidance] + m_shown.gpuMs[(UINT)GpuTimer::OpticalFlow],
+                               m_shown.gpuMs[(UINT)GpuTimer::Neural], m_shown.gpuMs[(UINT)GpuTimer::Composite], m_shown.uiGpuMs };
+        const char* names[4] = { TR(TmGuidance), TR(TmNeural), TR(TmComposite), TR(TmUi) };
+        const float slotW = ImGui::CalcTextSize("000.00 ms").x;
+        const float nameGap = Px(5.0f), sepW = Px(20.0f);
+        float tw = 0.0f;
+        for (int i = 0; i < 4; ++i) tw += ImGui::CalcTextSize(names[i]).x + nameGap + slotW + (i < 3 ? sepW : 0.0f);
+        if (right - tw - Px(24.0f) - x0 >= ImGui::GetFontSize() * 16.0f) {
+            float x = right - tw;
+            for (int i = 0; i < 4; ++i) {
+                dl->AddText(ImVec2(x, ty), p.textDim, names[i]);
+                x += ImGui::CalcTextSize(names[i]).x + nameGap;
+                const std::string v = StrPrintf("%.2f ms", ms[i]);
+                dl->AddText(ImVec2(x + slotW - ImGui::CalcTextSize(v.c_str()).x, ty), Mix(p.textDim, p.text, 0.6f), v.c_str());
+                x += slotW;
+                if (i < 3) {
+                    dl->AddCircleFilled(ImVec2(std::round(x + sepW * 0.5f), ty + lineH * 0.5f), std::max(1.0f, Px(1.5f)), WithAlpha(p.textDim, 0.7f), 0);
+                    x += sepW;
+                }
+            }
+            right -= tw + Px(24.0f);
+        }
     }
+    DotLine(dl, ImVec2(x0, ty), lineH, right, dot, p.text, line.c_str(), detail.c_str());
     ModeFadeContent(vtx0);
     ImGui::EndChild();
 }
 
 void MainUI::DrawLogWindow(Settings& s, UiEvents& ev, const Fonts& fonts) {
-    ImGui::SetNextWindowSize(ImVec2(760, 420), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(Px(760.0f), Px(420.0f)), ImGuiCond_FirstUseEver);
     if (ImGui::Begin(TR(LogTitle), &s.showLog)) {
+        WindowShadow();
         if (FlatButton(TR(OpenLogFile))) ev.openLogFile = true;
         ImGui::SameLine();
         if (FlatButton(TR(Clear))) { m_logCache.clear(); m_logGeneration = Log::Generation(); }
@@ -3420,27 +4080,37 @@ void MainUI::DrawLogWindow(Settings& s, UiEvents& ev, const Fonts& fonts) {
 
 void MainUI::DrawToasts(const Fonts& fonts) {
     const double now = ImGui::GetTime();
-    const double lifetime = 4.5;
-    m_toasts.erase(std::remove_if(m_toasts.begin(), m_toasts.end(), [&](const ToastItem& t) { return now - t.time > lifetime; }), m_toasts.end());
+    auto lifetime = [](const ToastItem& t) { return t.error ? 7.0 : 4.5; };   // an error stays longer
+    m_toasts.erase(std::remove_if(m_toasts.begin(), m_toasts.end(), [&](const ToastItem& t) { return now - t.time > lifetime(t); }), m_toasts.end());
     if (m_toasts.empty()) return;
     const Palette& p = Colors();
     ImGuiViewport* vp = ImGui::GetMainViewport();
     ImDrawList* dl = ImGui::GetForegroundDrawList();
     ImGui::PushFont(fonts.Ui(), 0.0f);
-    float y = vp->WorkPos.y + vp->WorkSize.y - 48.0f;
+    const float wrap = std::min(vp->WorkSize.x * 0.5f, ImGui::GetFontSize() * 36.0f);
+    const float is = IconSize();
+    const float lineH = ImGui::GetTextLineHeight();
+    const ImVec2 pad(Px(14.0f), Px(10.0f));
+    const float rightX = vp->WorkPos.x + vp->WorkSize.x - Px(16.0f);
+    // Cards stacked upward from just above the status bar (or the fullscreen video controls), newest at the bottom.
+    float y = m_toastBottom > 0.0f ? m_toastBottom : vp->WorkPos.y + vp->WorkSize.y - Px(16.0f);
     for (auto it = m_toasts.rbegin(); it != m_toasts.rend(); ++it) {
         const double age = now - it->time;
-        const float alpha = (float)std::clamp(std::min(age / 0.2, (lifetime - age) / 0.6), 0.0, 1.0);
-        const float slide = (1.0f - Ease((float)std::clamp(age / 0.25, 0.0, 1.0))) * 24.0f;
-        const float wrap = std::min(vp->WorkSize.x * 0.5f, ImGui::GetFontSize() * 36.0f);
+        const double life = lifetime(*it);
+        const float alpha = (float)std::clamp(std::min(age / 0.2, (life - age) / 0.6), 0.0, 1.0);
+        const float slide = (1.0f - Ease((float)std::clamp(age / 0.25, 0.0, 1.0))) * Px(24.0f);
         const ImVec2 ts = ImGui::CalcTextSize(it->text.c_str(), nullptr, false, wrap);
-        const ImVec2 pad(14.0f, 10.0f);
-        const ImVec2 size(ts.x + pad.x * 2.0f + 14.0f, ts.y + pad.y * 2.0f);
-        const ImVec2 pos(vp->WorkPos.x + vp->WorkSize.x - size.x - 22.0f + slide, y - size.y);
-        dl->AddRectFilled(pos, ImVec2(pos.x + size.x, pos.y + size.y), WithAlpha(IM_COL32(30, 33, 41, 255), alpha * 0.96f), 4.0f);
-        dl->AddRectFilled(pos, ImVec2(pos.x + 4.0f, pos.y + size.y), WithAlpha(it->error ? p.bad : p.accent, alpha), 4.0f, ImDrawFlags_RoundCornersLeft);
-        dl->AddText(nullptr, 0.0f, ImVec2(pos.x + pad.x + 8.0f, pos.y + pad.y), WithAlpha(IM_COL32(235, 237, 242, 255), alpha), it->text.c_str(), nullptr, wrap);
-        y = pos.y - 8.0f;
+        const ImVec2 size(pad.x + is + Px(10.0f) + ts.x + pad.x, std::max(ts.y, is) + pad.y * 2.0f);
+        const ImVec2 pos(std::round(rightX - size.x + slide), std::round(y - size.y));
+        const ImVec2 max(pos.x + size.x, pos.y + size.y);
+        DrawShadow(dl, pos, max, Px(8.0f), alpha);
+        dl->AddRectFilled(pos, max, WithAlpha(p.card, alpha), Px(8.0f));
+        dl->AddRect(pos, max, WithAlpha(p.cardBorder, alpha), Px(8.0f), 1.0f);
+        const Icon icon = it->error ? Icon::CircleX : it->success ? Icon::CircleCheck : Icon::Info;
+        const ImU32 iconCol = it->error ? p.bad : it->success ? p.good : p.accent;
+        DrawIcon(dl, icon, ImVec2(pos.x + pad.x + is * 0.5f, pos.y + pad.y + lineH * 0.5f), is, WithAlpha(iconCol, alpha));
+        dl->AddText(nullptr, 0.0f, ImVec2(pos.x + pad.x + is + Px(10.0f), pos.y + pad.y), WithAlpha(p.text, alpha), it->text.c_str(), nullptr, wrap);
+        y = pos.y - Px(8.0f);
     }
     ImGui::PopFont();
 }
@@ -3484,7 +4154,7 @@ void MainUI::DrawPresetRow(Settings& s, UiEvents& ev) {
                 }
                 if (ImGui::IsKeyPressed(ImGuiKey_Escape, false)) m_presetEdit = -1;
                 ImGui::SameLine(0.0f, style.ItemInnerSpacing.x);
-                if (AccentButton(TR(Ok), ImVec2(frameH, frameH))) { ev.presetRename = i; ev.presetName = m_presetBuf; m_presetEdit = -1; }
+                if (IconButton("##ok", Icon::Check, ImVec2(frameH, frameH), TR(Ok), ButtonKind::Accent)) { ev.presetRename = i; ev.presetName = m_presetBuf; m_presetEdit = -1; }
             } else {
                 if (ImGui::Selectable(pr.name.c_str(), match == i, ImGuiSelectableFlags_None, ImVec2(rowW - toolsW - style.ItemSpacing.x, 0.0f))) apply(pr.text);
                 ImGui::SameLine(0.0f, style.ItemSpacing.x);
@@ -3495,7 +4165,7 @@ void MainUI::DrawPresetRow(Settings& s, UiEvents& ev) {
                     std::snprintf(m_presetBuf, sizeof(m_presetBuf), "%s", pr.name.c_str());
                 }
                 ImGui::SameLine(0.0f, style.ItemInnerSpacing.x);
-                if (IconButton("##del", Icon::Close, ImVec2(frameH, frameH), TR(PresetDelete), ButtonKind::Plain)) ev.presetDelete = i;
+                if (IconButton("##del", Icon::Trash, ImVec2(frameH, frameH), TR(PresetDelete), ButtonKind::Plain)) ev.presetDelete = i;
             }
             ImGui::PopID();
         }
@@ -3517,10 +4187,10 @@ void MainUI::DrawPresetRow(Settings& s, UiEvents& ev) {
         bool save = ImGui::InputText("##name", m_presetBuf, sizeof(m_presetBuf), ImGuiInputTextFlags_EnterReturnsTrue);
         ImGui::Spacing();
         ImGui::BeginDisabled(m_presetBuf[0] == 0);
-        if (AccentButton(TR(Save), ImVec2(120, 0))) save = true;
+        if (AccentButton(TR(Save), ImVec2(ImGui::GetFontSize() * 7.5f, 0))) save = true;
         ImGui::EndDisabled();
         ImGui::SameLine();
-        if (FlatButton(TR(Cancel), ImVec2(120, 0))) ImGui::CloseCurrentPopup();
+        if (FlatButton(TR(Cancel), ImVec2(ImGui::GetFontSize() * 7.5f, 0))) ImGui::CloseCurrentPopup();
         if (save && m_presetBuf[0]) { ev.presetSave = true; ev.presetName = m_presetBuf; ImGui::CloseCurrentPopup(); }
         EndPopupFade();
     }
@@ -3559,13 +4229,14 @@ void MainUI::DrawTransformTools(Settings& s, const UiFrameInfo& info, UiEvents& 
     const bool live = !item && s.sourceMode == SourceSpout && info.sourceConnected;
     const bool locked = info.batchRunning || info.videoProcessing || info.videoFinishing;
     const float bsz = ImGui::GetFrameHeight();
+    m_toolRowMin = m_toolRowMax = ImVec2(0.0f, 0.0f);
     if ((!item && !live) || info.fullscreen || locked || region.x < bsz * 10.0f || region.y < bsz * 4.0f) { m_cropEditing = false; m_cropHandle = -1; return; }
     if (m_cropEditing && (!item || m_cropItem != item->id)) m_cropEditing = false;
     const Palette& p = Colors();
     const ImGuiStyle& style = ImGui::GetStyle();
     ImGuiIO& io = ImGui::GetIO();
     ImDrawList* dl = ImGui::GetWindowDrawList();
-    const float gap = 4.0f, pad = 6.0f;
+    const float gap = Px(4.0f), pad = Px(6.0f);
 
     if (m_cropEditing) {
         ev.cropEditing = true;
@@ -3580,7 +4251,7 @@ void MainUI::DrawTransformTools(Settings& s, const UiFrameInfo& info, UiEvents& 
         int over = -1;
         if (canvasHovered) {
             for (int i = 0; i < 8 && over < 0; ++i)
-                if (std::fabs(io.MousePos.x - handles[i].x) <= 9.0f && std::fabs(io.MousePos.y - handles[i].y) <= 9.0f) over = i;
+                if (std::fabs(io.MousePos.x - handles[i].x) <= Px(9.0f) && std::fabs(io.MousePos.y - handles[i].y) <= Px(9.0f)) over = i;
             if (over < 0 && io.MousePos.x > r0.x && io.MousePos.x < r1.x && io.MousePos.y > r0.y && io.MousePos.y < r1.y) over = 8;
         }
         if (over >= 0 && m_cropHandle < 0 && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) { m_cropHandle = over; m_cropDragStart = io.MousePos; m_cropDragBase = c; }
@@ -3623,23 +4294,23 @@ void MainUI::DrawTransformTools(Settings& s, const UiFrameInfo& info, UiEvents& 
             dl->AddLine(ImVec2(fx, r0.y), ImVec2(fx, r1.y), thin);
             dl->AddLine(ImVec2(r0.x, fy), ImVec2(r1.x, fy), thin);
         }
-        dl->AddRect(r0, r1, IM_COL32(255, 255, 255, 230), 0.0f, 1.5f);
+        dl->AddRect(r0, r1, IM_COL32(255, 255, 255, 230), 0.0f, std::max(1.0f, 1.5f * Dpi()));
         for (int i = 0; i < 8; ++i)
-            dl->AddRectFilled(ImVec2(handles[i].x - 5.0f, handles[i].y - 5.0f), ImVec2(handles[i].x + 5.0f, handles[i].y + 5.0f),
-                              i == lit ? p.accent : IM_COL32(255, 255, 255, 235), 2.0f);
+            dl->AddRectFilled(ImVec2(handles[i].x - Px(5.0f), handles[i].y - Px(5.0f)), ImVec2(handles[i].x + Px(5.0f), handles[i].y + Px(5.0f)),
+                              i == lit ? p.accent : IM_COL32(255, 255, 255, 235), Px(2.0f));
         dl->PopClipRect();
         // Apply and cancel in a pill at the bottom, with a line on how the rectangle is moved above it.
-        const float applyW = ImGui::CalcTextSize(TR(CropApply)).x + style.FramePadding.x * 2.0f + 16.0f;
-        const float cancelW = ImGui::CalcTextSize(TR(Cancel)).x + style.FramePadding.x * 2.0f + 16.0f;
+        const float applyW = ImGui::CalcTextSize(TR(CropApply)).x + style.FramePadding.x * 2.0f + Px(16.0f);
+        const float cancelW = ImGui::CalcTextSize(TR(Cancel)).x + style.FramePadding.x * 2.0f + Px(16.0f);
         const float pillW = applyW + cancelW + gap + pad * 2.0f, pillH = bsz + pad * 2.0f;
-        const ImVec2 pill(origin.x + (region.x - pillW) * 0.5f, origin.y + region.y - pillH - 12.0f);
+        const ImVec2 pill(origin.x + (region.x - pillW) * 0.5f, origin.y + region.y - pillH - Px(12.0f));
         const ImVec2 hintSize = ImGui::CalcTextSize(TR(CropHint));
-        if (hintSize.x + 24.0f < region.x) {
-            const ImVec2 h0(origin.x + (region.x - hintSize.x) * 0.5f - 8.0f, pill.y - hintSize.y - 14.0f);
-            dl->AddRectFilled(h0, ImVec2(h0.x + hintSize.x + 16.0f, h0.y + hintSize.y + 8.0f), p.overlayBg, 4.0f);
-            dl->AddText(ImVec2(h0.x + 8.0f, h0.y + 4.0f), p.text, TR(CropHint));
+        if (hintSize.x + Px(24.0f) < region.x) {
+            const ImVec2 h0(origin.x + (region.x - hintSize.x) * 0.5f - Px(8.0f), pill.y - hintSize.y - Px(14.0f));
+            dl->AddRectFilled(h0, ImVec2(h0.x + hintSize.x + Px(16.0f), h0.y + hintSize.y + Px(8.0f)), p.overlayBg, Px(6.0f));
+            dl->AddText(ImVec2(h0.x + Px(8.0f), h0.y + Px(4.0f)), p.text, TR(CropHint));
         }
-        dl->AddRectFilled(pill, ImVec2(pill.x + pillW, pill.y + pillH), p.overlayBg, 6.0f);
+        dl->AddRectFilled(pill, ImVec2(pill.x + pillW, pill.y + pillH), p.overlayBg, style.FrameRounding + pad);
         ImGui::SetCursorScreenPos(ImVec2(pill.x + pad, pill.y + pad));
         bool apply = AccentButton(TR(CropApply), ImVec2(applyW, bsz));
         ImGui::SameLine(0.0f, gap);
@@ -3660,8 +4331,8 @@ void MainUI::DrawTransformTools(Settings& s, const UiFrameInfo& info, UiEvents& 
     const float gripW = std::round(bsz * 0.5f), tuckW = std::round(bsz * 0.75f);
     const int nBtn = item ? 6 : 5;
     const float pillW = gripW + tuckW + nBtn * bsz + (nBtn + 1) * gap + pad * 2.0f, pillH = bsz + pad * 2.0f;
-    const ImVec2 lo(origin.x + pillW * 0.5f + 4.0f, origin.y + pillH * 0.5f + 4.0f);                 // the range of the centre
-    const ImVec2 hi(origin.x + region.x - pillW * 0.5f - 4.0f, origin.y + region.y - pillH * 0.5f - 12.0f);
+    const ImVec2 lo(origin.x + pillW * 0.5f + Px(4.0f), origin.y + pillH * 0.5f + Px(4.0f));                 // the range of the centre
+    const ImVec2 hi(origin.x + region.x - pillW * 0.5f - Px(4.0f), origin.y + region.y - pillH * 0.5f - Px(12.0f));
     auto inside = [&](const ImVec2& c) { return ImVec2(std::max(lo.x, std::min(c.x, hi.x)), std::max(lo.y, std::min(c.y, hi.y))); };
     ImVec2 centre = (s.toolRowX < 0.0f || s.toolRowY < 0.0f) ? ImVec2(origin.x + region.x * 0.5f, hi.y)
                                                               : inside(ImVec2(origin.x + s.toolRowX * region.x, origin.y + s.toolRowY * region.y));
@@ -3682,7 +4353,7 @@ void MainUI::DrawTransformTools(Settings& s, const UiFrameInfo& info, UiEvents& 
     }
     if (edgeUnder) {   // the edge the row would tuck away at lights up
         const ImU32 glow = WithAlpha(p.accent, 0.7f);
-        const float t = 3.0f;
+        const float t = Px(3.0f);
         switch (edgeUnder) {
         case 1:  dl->AddRectFilled(origin, ImVec2(origin.x + t, origin.y + region.y), glow); break;
         case 2:  dl->AddRectFilled(ImVec2(origin.x + region.x - t, origin.y), ImVec2(origin.x + region.x, origin.y + region.y), glow); break;
@@ -3696,8 +4367,8 @@ void MainUI::DrawTransformTools(Settings& s, const UiFrameInfo& info, UiEvents& 
         const int dock = std::clamp(s.toolRowDock, 1, 4);
         const bool upright = dock <= 2;   // along the left or the right edge
         const float tabL = std::round(bsz * 2.2f), tabT = std::round(bsz * 0.6f);
-        const float along = upright ? std::max(origin.y + 4.0f, std::min(centre.y - tabL * 0.5f, origin.y + region.y - tabL - 4.0f))
-                                    : std::max(origin.x + 4.0f, std::min(centre.x - tabL * 0.5f, origin.x + region.x - tabL - 4.0f));
+        const float along = upright ? std::max(origin.y + Px(4.0f), std::min(centre.y - tabL * 0.5f, origin.y + region.y - tabL - Px(4.0f)))
+                                    : std::max(origin.x + Px(4.0f), std::min(centre.x - tabL * 0.5f, origin.x + region.x - tabL - Px(4.0f)));
         ImVec2 a, b;
         ImDrawFlags corners = ImDrawFlags_RoundCornersTop;
         float angle = pi;
@@ -3714,7 +4385,7 @@ void MainUI::DrawTransformTools(Settings& s, const UiFrameInfo& info, UiEvents& 
         Tooltip(TR(TipToolRowShow));
         const float tabLift = Animate(ImGui::GetID("##toolRowTabLift"), hot ? 1.0f : 0.0f, 14.0f);
         ImGui::PushStyleVar(ImGuiStyleVar_Alpha, style.Alpha * (0.55f + 0.45f * tabLift));
-        dl->AddRectFilled(a, b, ImGui::GetColorU32(p.overlayBg), 6.0f, corners);
+        dl->AddRectFilled(a, b, ImGui::GetColorU32(p.overlayBg), Px(6.0f), corners);
         DrawChevron(dl, ImVec2((a.x + b.x) * 0.5f, (a.y + b.y) * 0.5f), bsz * 0.36f, angle, ImGui::GetColorU32(p.text));
         ImGui::PopStyleVar();
         if (show) { s.toolRowDock = 0; ev.settingsChanged = true; }
@@ -3722,11 +4393,12 @@ void MainUI::DrawTransformTools(Settings& s, const UiFrameInfo& info, UiEvents& 
     }
 
     const ImVec2 pill(centre.x - pillW * 0.5f, centre.y - pillH * 0.5f);
-    const bool over = m_toolRowDragging || (ImGui::IsMousePosValid() && io.MousePos.x >= pill.x - 12.0f && io.MousePos.x <= pill.x + pillW + 12.0f
-                                            && io.MousePos.y >= pill.y - 12.0f && io.MousePos.y <= pill.y + pillH + 12.0f);
+    m_toolRowMin = pill; m_toolRowMax = ImVec2(pill.x + pillW, pill.y + pillH);
+    const bool over = m_toolRowDragging || (ImGui::IsMousePosValid() && io.MousePos.x >= pill.x - Px(12.0f) && io.MousePos.x <= pill.x + pillW + Px(12.0f)
+                                            && io.MousePos.y >= pill.y - Px(12.0f) && io.MousePos.y <= pill.y + pillH + Px(12.0f));
     const float lift = Animate(ImGui::GetID("##xformTools"), over ? 1.0f : 0.0f, 14.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_Alpha, style.Alpha * (0.55f + 0.45f * lift));
-    dl->AddRectFilled(pill, ImVec2(pill.x + pillW, pill.y + pillH), ImGui::GetColorU32(p.overlayBg), 6.0f);
+    dl->AddRectFilled(pill, ImVec2(pill.x + pillW, pill.y + pillH), ImGui::GetColorU32(p.overlayBg), style.FrameRounding + pad);
     SourceTransform x = item ? item->transform : SourceTransform::Turned(s.spoutRotate, s.spoutFlipH, s.spoutFlipV);
     bool changed = false;
     // The grip: two columns of dots. A drag from it moves the row; it keeps the mouse's offset from the centre.
@@ -3741,9 +4413,9 @@ void MainUI::DrawTransformTools(Settings& s, const UiFrameInfo& info, UiEvents& 
         const ImVec2 gmin = ImGui::GetItemRectMin(), gmax = ImGui::GetItemRectMax();
         const ImVec2 gc((gmin.x + gmax.x) * 0.5f, (gmin.y + gmax.y) * 0.5f);
         const ImU32 dot = ImGui::GetColorU32(gripHot ? p.text : p.textDim);
-        const float step = std::max(4.0f, std::round(bsz * 0.18f));
+        const float step = std::max(Px(4.0f), std::round(bsz * 0.18f));
         for (int col = -1; col <= 1; col += 2)
-            for (int row = -1; row <= 1; ++row) dl->AddCircleFilled(ImVec2(gc.x + col * step * 0.5f, gc.y + row * step), 1.3f, dot);
+            for (int row = -1; row <= 1; ++row) dl->AddCircleFilled(ImVec2(gc.x + col * step * 0.5f, gc.y + row * step), 1.3f * Dpi(), dot);
     }
     ImGui::SameLine(0.0f, gap);
     if (IconButton("##turnL", Icon::RotateLeft, ImVec2(bsz, bsz), TR(TipRotateLeft), ButtonKind::Plain)) { TurnTransform(x, false); changed = true; }
@@ -3780,6 +4452,20 @@ void MainUI::DrawTransformTools(Settings& s, const UiFrameInfo& info, UiEvents& 
     if (!changed) return;
     if (item) item->transform = x;
     else { s.spoutRotate = x.rotate; s.spoutFlipH = x.flipH; s.spoutFlipV = x.flipV; ev.settingsChanged = true; }
+}
+
+// Whether anything moves or waits for the user's hand: App draws at full rate while it does and rests otherwise.
+bool MainUI::WantsFrames() const {
+    if (Animating() || !m_toasts.empty()) return true;
+    if (m_modePending >= 0 || m_modeFade > 0.0f || m_fsPending || m_fsRise) return true;
+    const double now = ImGui::GetTime();
+    if (m_startFade >= 0.0 && now - m_startFade < 0.6) return true;
+    if (m_seekDragging || m_wipeDragging || m_toolRowDragging || m_libDrag || m_cropHandle >= 0 || m_seekTarget >= 0.0) return true;
+    if ((m_spotUntil >= 0.0 && now < m_spotUntil) || m_scrollToAbout > 0.0) return true;
+    if (m_mirrorBlockTime >= 0.0 && now - m_mirrorBlockTime < 0.5) return true;
+    if (m_fullscreenControls > 0.0f && now - m_fullscreenMouseTime < 2.6) return true;
+    if (ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel)) return true;
+    return ImGui::IsAnyItemActive() || ImGui::GetIO().WantTextInput;
 }
 
 // Fades --------------------------------------------------------------------------------------
@@ -3833,8 +4519,10 @@ void MainUI::DrawFades(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         m_modeFade = std::max(0.0f, 1.0f - (float)((now - m_modeFadeStart) / kRise));
     }
     if (m_modeFade > 0.001f) {
-        const ImU32 cover = info.fullscreen ? IM_COL32(0, 0, 0, 255) : p.surface;
-        fg->AddRectFilled(m_previewMin, m_previewMax, WithAlpha(cover, Ease(m_modeFade)));
+        // Over the picture's card: square and black fullscreen, inside the card's rounded edge in the window.
+        if (info.fullscreen) fg->AddRectFilled(m_previewMin, m_previewMax, WithAlpha(IM_COL32(0, 0, 0, 255), Ease(m_modeFade)));
+        else fg->AddRectFilled(ImVec2(m_previewMin.x + 1.0f, m_previewMin.y + 1.0f), ImVec2(m_previewMax.x - 1.0f, m_previewMax.y - 1.0f),
+                               WithAlpha(p.surface, Ease(m_modeFade)), std::max(0.0f, CardRounding() - 1.0f));
     }
 
     // Fullscreen: the switch is sent at the bottom of the dip and the cover lifts once the new layout has settled.

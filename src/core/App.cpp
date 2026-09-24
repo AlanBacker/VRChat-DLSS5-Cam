@@ -9,6 +9,7 @@
 #include "imgui_impl_dx12.h"
 #include "imgui_impl_win32.h"
 #include <dwmapi.h>
+#include <psapi.h>
 #include <shellapi.h>
 #include <shobjidl.h>
 #include <timeapi.h>
@@ -650,9 +651,9 @@ void App::PostCommand(Command&& c) {
     WakeWorker();
 }
 
-void App::PostNotice(const std::string& text, bool error) {
+void App::PostNotice(const std::string& text, bool error, bool success, const std::wstring& path) {
     std::lock_guard<std::mutex> lock(m_shared.mutex);
-    m_shared.notices.push_back(Notice{ text, error });
+    m_shared.notices.push_back(Notice{ text, error, success, path });
 }
 
 void App::PostBatchEvent(unsigned id, int state, const std::string& outName, const std::string& error) {
@@ -939,7 +940,7 @@ bool App::WorkerEndVideo(GpuContext& gpu, VideoRun& run, FrameSink& sink, bool c
         Log::Info("Video: %llu frames processed in %.1f s (%.1f fps) -> %s", (unsigned long long)run.delivered, seconds,
                   (double)run.delivered / seconds, WideToUtf8(run.outPath).c_str());
         PostNotice(StrPrintf("%s: %s (%llu %s, %.0f s)", TR(VideoSaved), outName.c_str(), (unsigned long long)run.delivered,
-                             "frames", seconds), false);
+                             "frames", seconds), false, true, run.outPath);
     } else if (run.cancel) {
         m_workerLastError = "cancelled";
         Log::Info("Video: cancelled after %llu frames (%s)", (unsigned long long)run.delivered, WideToUtf8(run.outPath).c_str());
@@ -1274,7 +1275,7 @@ void App::WorkerMain() {
                     PostNotice(StrPrintf(TR(BatchCancelled), batch.done, (int)batch.items.size()), false);
                 } else {
                     Log::Info("Batch: finished, %d files processed, %d failed", batch.done, batch.failed);
-                    PostNotice(StrPrintf(TR(BatchFinished), batch.done, batch.failed), batch.failed > 0);
+                    PostNotice(StrPrintf(TR(BatchFinished), batch.done, batch.failed), batch.failed > 0, batch.failed == 0);
                 }
                 const BatchRun ended = std::move(batch);
                 batch = BatchRun{};
@@ -1696,15 +1697,18 @@ void App::WorkerMain() {
                 const double other = std::max(0.0, g(GpuTimer::Frame) - stages);
                 uint64_t vramUsed = 0, vramBudget = 0;
                 m_device.VideoMemory(vramUsed, vramBudget);
+                PROCESS_MEMORY_COUNTERS_EX mem{};
+                mem.cb = sizeof(mem);
+                if (!GetProcessMemoryInfo(GetCurrentProcess(), reinterpret_cast<PROCESS_MEMORY_COUNTERS*>(&mem), sizeof(mem))) mem.PrivateUsage = 0;
                 Log::Info("Perf: %s %.1f fps (sender %.1f, ui %.0f fps / %.2f ms gpu), cpu %.2f ms/frame (receive %.2f, wait %.2f, record %.2f, submit %.2f, update %.2f), "
                           "gpu %.2f ms (convert %.2f, guidance %.2f, flow %.2f, dlaa %.2f, neural %.2f, composite %.2f, other %.2f), depth net %.1f ms x %u, frames %u, "
-                          "vram %llu / %llu MB",
+                          "vram %llu / %llu MB, ram %llu MB",
                           videoRun.active ? "video" : imageMode ? "image passes" : previewPlaying ? "video playback" : videoMode ? "video preview" : "processing",
                           perf.frames / (now - perf.logTime), m_spout.SenderFps(),
                           m_uiFpsShared.load(), m_uiGpuMsShared.load(), cpu, perf.receive / n, perf.wait / n, perf.record / n, perf.submit / n, perf.update / n,
                           g(GpuTimer::Frame), g(GpuTimer::Convert), g(GpuTimer::Guidance), g(GpuTimer::OpticalFlow), g(GpuTimer::Dlaa),
                           g(GpuTimer::Neural), g(GpuTimer::Composite), other, perf.depthRuns ? perf.depthMs / perf.depthRuns : 0.0, perf.depthRuns, perf.frames,
-                          (unsigned long long)(vramUsed >> 20), (unsigned long long)(vramBudget >> 20));
+                          (unsigned long long)(vramUsed >> 20), (unsigned long long)(vramBudget >> 20), (unsigned long long)(mem.PrivateUsage >> 20));
             }
             perf.Reset(now);
         }
@@ -1743,7 +1747,8 @@ void App::DrainNotices() {
         if (cr.ok) {
             m_lastCapture = WideToUtf8(name);
             m_lastCaptureOk = true;
-            m_ui.Toast(StrPrintf("%s: %s (%.1f MB, %.0f ms)", TR(Saved), m_lastCapture.c_str(), cr.bytes / 1048576.0, cr.seconds * 1000.0));
+            m_lastSaved = m_lastCapture; m_lastSavedPath = cr.path; m_lastSavedOk = true; m_lastSavedKnown = true;
+            m_ui.Toast(StrPrintf("%s: %s (%.1f MB, %.0f ms)", TR(Saved), m_lastCapture.c_str(), cr.bytes / 1048576.0, cr.seconds * 1000.0), false, true);
             Log::Info("Saved %s (%llu bytes)", WideToUtf8(cr.path).c_str(), (unsigned long long)cr.bytes);
             // The picture of a library item being processed (the item may be marked done already: its event and this result travel apart).
             if (LibraryItem* item = cr.tag ? FindItem(cr.tag) : nullptr)
@@ -1751,6 +1756,7 @@ void App::DrainNotices() {
         } else {
             m_lastCapture = cr.error;
             m_lastCaptureOk = false;
+            m_lastSaved = cr.error; m_lastSavedPath.clear(); m_lastSavedOk = false; m_lastSavedKnown = true;
             m_ui.Toast(StrPrintf("%s: %s", TR(CaptureFailed), cr.error.c_str()), true);
             Log::Error("Capture failed for %s: %s", WideToUtf8(cr.path).c_str(), cr.error.c_str());
         }
@@ -1762,7 +1768,10 @@ void App::DrainNotices() {
         notices.swap(m_shared.notices);
         events.swap(m_shared.batchEvents);
     }
-    for (const Notice& n : notices) m_ui.Toast(n.text, n.error);
+    for (const Notice& n : notices) {
+        m_ui.Toast(n.text, n.error, n.success);
+        if (!n.path.empty()) { m_lastSaved = WideToUtf8(FileNameOf(n.path)); m_lastSavedPath = n.path; m_lastSavedOk = true; m_lastSavedKnown = true; }
+    }
     for (const BatchEvent& e : events) {
         if (e.id == 0) {
             // The batch is over: whatever is still waiting was not processed.
@@ -2018,6 +2027,9 @@ void App::Frame() {
     info.capturePending = m_capture.Pending() + m_status.capturesInFlight;
     info.lastCapture = m_lastCapture;
     info.lastCaptureOk = m_lastCaptureOk;
+    info.lastSaved = m_lastSaved;
+    info.lastSavedOk = m_lastSavedOk;
+    info.lastSavedKnown = m_lastSavedKnown;
 
     ui::UiEvents ev;
     m_ui.Draw(m_settings, info, ev, m_fonts);
@@ -2077,6 +2089,22 @@ void App::Frame() {
     if (!m_settings.vsync || m_headless) {
         const double budget = m_headless ? 0.016 : 0.003;
         while (NowSeconds() - frameStart < budget) Sleep(1);
+    }
+    RestIfIdle(frameStart);
+}
+
+// With nothing moving on the screen the interface rests between frames: it wakes for a message (input, a resize), a
+// newly processed picture, or after a tenth of a second, so figures and progress stay current at a fraction of the
+// cost of drawing every frame. A headless run (an MCP server waiting for jobs) rests the same way.
+void App::RestIfIdle(double frameStart) {
+    if (m_quit || m_sizing || m_minimized || (!m_headless && !m_mainShown)) return;
+    if (m_ui.WantsFrames() || NowSeconds() - m_lastInputTime < 0.3) return;
+    while (!m_quit) {
+        const double left = frameStart + 0.1 - NowSeconds();
+        if (left <= 0.0) break;
+        if (m_pipeline.DisplayWaiting(m_device.Ui())) break;   // a new picture to show
+        const DWORD ms = (DWORD)std::clamp(left * 1000.0, 1.0, 4.0);
+        if (MsgWaitForMultipleObjectsEx(0, nullptr, ms, QS_ALLINPUT, MWMO_INPUTAVAILABLE) != WAIT_TIMEOUT) break;
     }
 }
 
@@ -2228,6 +2256,7 @@ void App::HandleEvents(ui::UiEvents& ev) {
     if (ev.libraryProcessAll) StartLibraryProcessing(false);
     if (ev.libraryProcessSelected) StartLibraryProcessing(true);
     if (ev.libraryLocate) LocateLibraryItem(ev.libraryLocate);
+    if (ev.revealLastSaved) RevealFile(m_lastSavedPath);
     if (ev.libraryDeleteSelected) RemoveSelectedLibraryItems();
     // A file with effect values of its own is previewed with them: the pushed settings carry them while it is shown.
     {
@@ -2688,11 +2717,14 @@ void App::RemoveSelectedLibraryItems() {
 }
 
 void App::LocateLibraryItem(unsigned id) {
-    const LibraryItem* item = FindItem(id);
-    if (!item) return;
-    const std::wstring args = L"/select,\"" + item->path + L"\"";
+    if (const LibraryItem* item = FindItem(id)) RevealFile(item->path);
+}
+
+void App::RevealFile(const std::wstring& path) {
+    if (path.empty()) return;
+    const std::wstring args = L"/select,\"" + path + L"\"";
     const HINSTANCE r = ShellExecuteW(m_hwnd, L"open", L"explorer.exe", args.c_str(), nullptr, SW_SHOWNORMAL);
-    if ((INT_PTR)r <= 32) Log::Warn("Explorer could not be opened for %s (%d)", WideToUtf8(item->path).c_str(), (int)(INT_PTR)r);
+    if ((INT_PTR)r <= 32) Log::Warn("Explorer could not be opened for %s (%d)", WideToUtf8(path).c_str(), (int)(INT_PTR)r);
 }
 
 void App::ReadSystemTheme() {
@@ -3399,6 +3431,9 @@ LRESULT CALLBACK App::WndProcThunk(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
 }
 
 LRESULT App::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    if ((msg >= WM_MOUSEFIRST && msg <= WM_MOUSELAST) || (msg >= WM_KEYFIRST && msg <= WM_KEYLAST) || msg == WM_MOUSELEAVE
+        || msg == WM_SETFOCUS || msg == WM_KILLFOCUS || msg == WM_SIZE || msg == WM_DROPFILES)
+        m_lastInputTime = NowSeconds();   // the interface draws at full rate for a moment after the user's hand
     if (m_imguiReady && ImGui_ImplWin32_WndProcHandler(hwnd, msg, wParam, lParam)) return 1;
     switch (msg) {
     case WM_SIZE:

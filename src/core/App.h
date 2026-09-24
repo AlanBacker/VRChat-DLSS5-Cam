@@ -123,7 +123,7 @@ private:
         UINT64       videoLastFrames = 0;
         double       videoLastSeconds = 0.0;
     };
-    struct Notice { std::string text; bool error = false; };
+    struct Notice { std::string text; bool error = false; bool success = false; std::wstring path; };   // path: a file just saved
     struct BatchItem {
         unsigned     id = 0;
         std::wstring path;
@@ -235,6 +235,7 @@ private:
 
     // Interface thread.
     void Frame();
+    void RestIfIdle(double frameStart);          // waits between frames while nothing on the screen moves
     void DrainNotices();
     void HandleEvents(ui::UiEvents& ev);
     void CaptureNow();
@@ -286,6 +287,7 @@ private:
     void RemoveSelectedLibraryItems();
     void RestoreLibrary(const std::vector<ui::LibrarySnapshotItem>& wanted);   // undo/redo of library changes
     void LocateLibraryItem(unsigned id);         // Explorer with the file selected
+    void RevealFile(const std::wstring& path);   // Explorer with this file selected
     // The user's presets: a file of named effect values in the data folder.
     void LoadPresets();
     void SavePresets() const;
@@ -442,7 +444,7 @@ private:
     // the still passes should start over; `fresh` is set when a played frame is pending, `reset` when the temporal
     // history should be dropped (a jump).
     bool WorkerPreviewStep(bool& fresh, bool& reset);
-    void PostNotice(const std::string& text, bool error);
+    void PostNotice(const std::string& text, bool error, bool success = false, const std::wstring& path = std::wstring());
     void PostBatchEvent(unsigned id, int state, const std::string& outName, const std::string& error);
 
     HINSTANCE     m_hInstance = nullptr;
@@ -556,6 +558,11 @@ private:
     double         m_fps = 0.0;
     double         m_cpuMs = 0.0;
     std::string    m_lastCapture;
+    std::string    m_lastSaved;             // the status bar's "saved" line: the file name, or why a capture failed
+    std::wstring   m_lastSavedPath;         // the file itself, for the button that shows it in Explorer
+    bool           m_lastSavedOk = true;
+    bool           m_lastSavedKnown = false;
+    double         m_lastInputTime = 0.0;   // the last mouse or keyboard message: frames at full rate for a moment after it
     bool           m_lastCaptureOk = true;
     double         m_pngSecPerMegapixel = 0.12;   // PNG encoding time, refined from each saved picture
 

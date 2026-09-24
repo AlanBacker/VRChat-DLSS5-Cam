@@ -591,6 +591,17 @@ DisplayView Pipeline::AcquireDisplay(GpuContext& ui) {
     return v;
 }
 
+// Whether AcquireDisplay would bring something new: a finished composite, or buffers rebuilt under the one the
+// interface holds. The interface rests between frames until this turns true (or input arrives).
+bool Pipeline::DisplayWaiting(GpuContext& ui) {
+    GpuContext& proc = ui.Dev().Proc();
+    std::lock_guard<std::mutex> lock(m_displayMutex);
+    if (m_disp.uiUsing >= 0 && m_disp.uiGeneration != m_disp.generation) return true;
+    for (UINT i = 0; i < m_disp.pendingCount; ++i)
+        if (proc.IsFenceComplete(m_disp.pending[i].fence)) return true;
+    return false;
+}
+
 void Pipeline::ReleaseDisplay(UINT64 uiFenceValue) {
     std::lock_guard<std::mutex> lock(m_displayMutex);
     if (m_disp.uiUsing >= 0) m_disp.uiRelease[m_disp.uiUsing] = uiFenceValue;
@@ -1509,7 +1520,8 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
     m_status.nvofGrid = m_nvofReady ? m_nvof.Grid() : 0;
     m_status.nvofError = m_nvofError;
     m_status.flowLevels = m_levels;
-    m_status.depthState = (int)((m_depthRestart && m_depthInBuf) ? DepthEstimatorState::Initializing : m_depthEst.State());
+    m_status.depthState = (int)((m_depthRestart && m_depthInBuf && !m_depthParked) ? DepthEstimatorState::Initializing : m_depthEst.State());
+    m_status.depthParked = m_depthParked && m_depthInBuf;
     m_status.depthMessage = m_depthEst.Message();
     m_status.depthBackend = m_depthEst.Backend();
     m_status.depthInferW = m_depthInferW; m_status.depthInferH = m_depthInferH;
@@ -1562,6 +1574,18 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
     // goes through the conversion and the composite. The compare views of the motion or the depth keep them running.
     const bool nrRuns = nrWanted && !m_nrFailed && NeuralRouteReady(s);
     const bool guidanceIdle = !nrRuns && !dlssWanted && s.compareMode != CompareMotion && s.compareMode != CompareDepth;
+    // The depth network (ONNX Runtime with DirectML, some 400 MB of memory) is kept only while something can use its
+    // estimate: DLSS 5 switched on (between the bursts of "only for captures" too), DLAA or super resolution, or the
+    // depth view. Otherwise it is stopped, and the usual deferred start (after any feature creation) brings it back
+    // once it is wanted again: the same stop and start as switching the depth source away and back.
+    const bool depthParked = !s.nrEnabled && !dlssWanted && s.compareMode != CompareDepth;
+    if (depthParked && m_depthInBuf && !m_depthRestart) {
+        m_depthEst.Stop();
+        m_depthRestart = true;
+        m_depthHaveRaw = false; m_depthHistValid = false; m_depthStillCaptured = false;
+        Log::Info("Depth estimator stopped: DLSS 5, DLAA and the depth view are off");
+    }
+    m_depthParked = depthParked;
     // Neural pass size: the pass works on the output-sized picture (the DLSS result, or the input itself when both
     // are the same size) or on a smaller one: a percentage of it (nrInputScale) or a cap on the long edge
     // (nrMaxLongEdge); either way the aspect is kept. The pass is always same-size; its guidance is resampled
@@ -1616,7 +1640,7 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
             if (NeuralCreated()) m_nrSkipped = true;   // between capture bursts: the history is stale when the pass resumes
             // A pending (re)start of the depth network worker goes ahead here (no feature is created on an idle
             // frame), so the network is warmed up by the time a capture wants it.
-            if (m_depthRestart && m_depthInBuf && gpu.IsFenceComplete(m_featureCreateFence)) {
+            if (m_depthRestart && m_depthInBuf && !m_depthParked && gpu.IsFenceComplete(m_featureCreateFence)) {
                 m_depthRestart = false;
                 m_depthEst.Start(gpu.Dev(), m_exeDir, m_cfg.depthModel, m_depthInferW, m_depthInferH);
                 m_depthModelExists = FileExists(m_cfg.depthModel);
@@ -1665,14 +1689,14 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
             // before such a frame is recorded: the depth network (DirectML, on its own queue) working alongside the
             // creation and first evaluation of the neural feature leaves some runtime builds with a black picture for
             // good, which is what a resolution change with the estimator active used to do.
-            const bool depthWanted = s.depthMode == DepthEstimated && m_depthInBuf;
+            const bool depthWanted = s.depthMode == DepthEstimated && m_depthInBuf && !m_depthParked;   // parked: only the motion view runs
             const bool featureCreating = FeatureCreatesThisFrame(s, nrWanted, nrInW, nrInH, nrOutW, nrOutH, dlssWanted);
             featureCreatedNow = featureCreating;
             if (depthWanted && featureCreating && !m_depthEst.WaitIdle(2.0))
                 Log::Warn("Depth estimator still busy while a neural feature is created");
             const bool featureSettling = featureCreating || !gpu.IsFenceComplete(m_featureCreateFence);
             // A pending (re)start of the depth network worker waits for the same thing (its warm-up inference).
-            if (m_depthRestart && m_depthInBuf && !featureSettling) {
+            if (m_depthRestart && m_depthInBuf && !m_depthParked && !featureSettling) {
                 m_depthRestart = false;
                 m_depthEst.Start(gpu.Dev(), m_exeDir, m_cfg.depthModel, m_depthInferW, m_depthInferH);
                 m_depthModelExists = FileExists(m_cfg.depthModel);

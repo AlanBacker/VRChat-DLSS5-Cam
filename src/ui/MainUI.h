@@ -127,6 +127,9 @@ struct UiFrameInfo {
     size_t                capturePending = 0;
     std::string           lastCapture;
     bool                  lastCaptureOk = true;
+    std::string           lastSaved;                // file name of the last picture or video saved (or that failed)
+    bool                  lastSavedOk = true;
+    bool                  lastSavedKnown = false;
     bool                  systemLight = false;      // Windows uses light app colours (theme "System" follows it)
     // Updates (App copies the updater's state; the values follow Updater::State in order).
     int                   updateState = 0;          // UpdateState
@@ -223,6 +226,7 @@ struct UiEvents {
     bool libraryAddFiles = false;
     bool libraryAddFolder = false;
     unsigned libraryLocate = 0;      // show this item's file in Explorer
+    bool revealLastSaved = false;    // show the last saved file in Explorer
     bool libraryDeleteSelected = false;   // drop the selected items from the library
     bool itemParamsChanged = false;  // an item's own effect values were edited
     bool cropEditing = false;        // the crop of the shown file is being drawn: show the whole turned picture
@@ -245,20 +249,22 @@ struct UiEvents {
 class MainUI {
 public:
     void Draw(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts);
-    void Toast(const std::string& text, bool error = false);
+    void Toast(const std::string& text, bool error = false, bool success = false);
     // A client (App's MCP tools) shares the undo history: an undo or redo like Ctrl+Z / Ctrl+Y, a jump to an
     // entry of the history list, and the list itself (oldest first, the current entry's index).
     void ExternalUndo(Settings& s, const UiFrameInfo& info, UiEvents& ev, bool redo) { ApplyUndo(s, info, ev, redo); }
     void ExternalGoToHistory(Settings& s, const UiFrameInfo& info, UiEvents& ev, int index) { GoToHistory(s, info, ev, index); }
     std::vector<std::string> HistoryLabels(int& current) const;
+    bool WantsFrames() const;   // something moves or waits: keep drawing at full rate
 
 private:
-    struct ToastItem { std::string text; double time; bool error; };
+    struct ToastItem { std::string text; double time; bool error; bool success; };
 
     void DrawTopBar(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts);
     void DrawSidebar(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts);
     void DrawPreview(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts);
     void DrawPicture(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts, const ImVec2& pos, const ImVec2& size);
+    void DrawWelcome(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts, const ImVec2& origin, const ImVec2& region);   // nothing open yet
     void DrawTransport(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts, const ImVec2& pos, const ImVec2& size);
     void DrawFullscreen(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts);   // the picture alone
     void FullscreenButton(const UiFrameInfo& info, UiEvents& ev, const ImVec2& origin, const ImVec2& region);
@@ -290,7 +296,7 @@ private:
     void ModeFadeContent(int fromVtx);
     void DrawFades(Settings& s, const UiFrameInfo& info, UiEvents& ev);              // the mode, fullscreen and start-up fades
     void RequestFullscreen();                                                        // the switch, behind a short dip to black
-    void TrackUndo(const Settings& s, const UiFrameInfo& info);                    // records a settings or library change as an undo step
+    void TrackUndo(const Settings& s, const UiFrameInfo& info, bool force = false);   // records a settings or library change as an undo step
     void ApplyUndo(Settings& s, const UiFrameInfo& info, UiEvents& ev, bool redo);
     void GoToHistory(Settings& s, const UiFrameInfo& info, UiEvents& ev, int index);   // to an entry of the history list
     void DrawHistory(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts, const ImVec2& anchor);   // the history popup, under its button
@@ -377,6 +383,7 @@ private:
     // after a seek the bar shows the target until the processing thread reports a position near it.
     bool   m_seekDragging = false;
     float  m_libraryFold = 1.0f;     // 0 = the library strip is folded away, 1 = fully shown (animated)
+    float  m_libraryFill = 1.0f;     // 0 = the library is empty and only its header shows, 1 = it has files (animated)
     std::vector<unsigned> m_paramsItems;   // the library items whose own parameters are open in a window (first = shown)
     unsigned m_ctxItem = 0;          // the item under the context menu
     unsigned m_lastClicked = 0;      // anchor of a shift-click range
@@ -401,6 +408,10 @@ private:
     int    m_fsFrames = 0;
     double m_startFade = -1.0;
     ImVec2 m_previewMin, m_previewMax;   // where the preview fade is painted
+    float  m_welcomeH = 0.0f;        // height of the welcome's content (centred in the preview from the next frame)
+    double m_undoCheckTime = -1.0;   // when TrackUndo last compared the state
+    double m_loadingSince = -1.0;    // since when an open source has had no picture (-1: not waiting)
+    float  m_toastBottom = 0.0f;     // the notices stack up from here (just above the status bar or the video controls)
     // Presets.
     const std::vector<UserPreset>* m_presetList = nullptr;
     char   m_presetBuf[96] = {};
@@ -417,6 +428,7 @@ private:
     // The turn/mirror/crop tool row being moved by its grip: the mouse keeps this offset from the row's centre.
     bool   m_toolRowDragging = false;
     ImVec2 m_toolRowDragOffset;
+    ImVec2 m_toolRowMin, m_toolRowMax;   // where the row was drawn last frame (empty when it was not): the overlay stays above it
 };
 
 } // namespace vdc::ui

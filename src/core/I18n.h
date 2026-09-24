@@ -85,7 +85,7 @@ enum class Lang { English = 0, Chinese = 1, Japanese = 2, Korean = 3, Count = 4 
     X(SenderAuto,         "Auto (VRChat)", "自动（VRChat）", "自動（VRChat）", "자동(VRChat)") \
     X(Refresh,            "Refresh", "刷新", "更新", "새로 고침") \
     X(Detected,           "Detected", "检测到", "検出", "감지됨") \
-    X(SenderFps,          "Sender FPS", "发送端帧率", "送信元 FPS", "송신자 FPS") \
+    X(SenderFps,          "sender", "发送端", "送信元", "송신자") \
     X(Format,             "Format", "格式", "フォーマット", "형식") \
     X(CustomResolution,   "Custom output resolution", "自定义输出分辨率", "出力解像度をカスタム指定", "사용자 지정 출력 해상도") \
     X(CustomResolutionHint, "Off = the source size (follows the VRChat stream automatically). Larger than the source = upscaling (super resolution), smaller = downscaling.", "关闭 = 使用来源分辨率（自动跟随 VRChat 串流）。大于来源即放大（超分辨率），小于来源即缩小。", "オフ = ソースの解像度（VRChat のストリームに自動で追従）。ソースより大きければアップスケール（超解像）、小さければ縮小です。", "끄기 = 소스 해상도(VRChat 스트림을 자동으로 따름). 소스보다 크면 업스케일(초해상도), 작으면 축소입니다.") \
@@ -206,6 +206,7 @@ enum class Lang { English = 0, Chinese = 1, Japanese = 2, Korean = 3, Count = 4 
     X(DepthInitializing,  "initializing…", "正在初始化…", "初期化中…", "초기화 중…") \
     X(DepthReady,         "ready", "就绪", "準備完了", "준비됨") \
     X(DepthUnavailable,   "unavailable, zero depth is used", "不可用，改用零深度", "利用不可、ゼロ深度を使用", "사용 불가, 0 깊이 사용") \
+    X(DepthParked,        "not loaded while DLSS 5 and DLAA are off", "DLSS 5 和 DLAA 关闭时不加载", "DLSS 5 と DLAA がオフの間は読み込みません", "DLSS 5와 DLAA가 꺼져 있는 동안 로드하지 않음") \
     X(DepthWaitingSource, "waiting for a picture, it starts with the first frame", "等待画面，收到第一帧后启动", "映像待ち、最初のフレームで開始します", "화면 대기 중, 첫 프레임과 함께 시작합니다") \
     X(DepthModelMissing,  "Depth model not found. Re-extract the release package (models\\depth_anything_v2_small_fp16.onnx) or select a model file.", "未找到深度模型。请重新解压发布包（models\\depth_anything_v2_small_fp16.onnx）或选择模型文件。", "深度モデルが見つかりません。リリースパッケージを再展開する（models\\depth_anything_v2_small_fp16.onnx）か、モデルファイルを選択してください。", "깊이 모델을 찾을 수 없습니다. 릴리스 패키지를 다시 압축 해제하거나(models\\depth_anything_v2_small_fp16.onnx) 모델 파일을 선택하세요.") \
     X(NvofBidirectional,  "Bidirectional consistency check", "双向一致性检查", "双方向一貫性チェック", "양방향 일관성 검사") \
@@ -268,7 +269,7 @@ enum class Lang { English = 0, Chinese = 1, Japanese = 2, Korean = 3, Count = 4 
     X(OpenLogFile,        "Open log file", "打开日志文件", "ログファイルを開く", "로그 파일 열기") \
     X(OpenSettingsFolder, "Open settings folder", "打开设置文件夹", "設定フォルダを開く", "설정 폴더 열기") \
     X(ProjectPage,        "Project page", "项目主页", "プロジェクトページ", "프로젝트 페이지") \
-    X(Fps,                "FPS", "帧率", "FPS", "FPS") \
+    X(Fps,                "FPS", "FPS", "FPS", "FPS") \
     X(Source,             "Source", "源", "ソース", "소스") \
     X(Output,             "Output", "输出", "出力", "출력") \
     X(Processing,         "Processing", "处理中", "処理中", "처리 중") \
@@ -402,6 +403,7 @@ enum class Lang { English = 0, Chinese = 1, Japanese = 2, Korean = 3, Count = 4 
     X(LibraryHint,        "Drop pictures and videos here, or add them with the buttons. Click an item to select it, double-click to open it in the preview; tick the ones to process. Delete removes the selected ones from the library.", "把图片和视频拖到这里，或用按钮添加。单击条目选中，双击在预览中打开；勾选要处理的条目。按 Delete 从素材库移除选中的条目。", "画像や動画をここにドロップするか、ボタンで追加してください。クリックで選択、ダブルクリックでプレビューに開きます。処理する項目にチェックを入れてください。Delete キーで選択した項目をライブラリから外します。", "이미지와 동영상을 여기에 끌어다 놓거나 버튼으로 추가하세요. 클릭하면 선택, 더블클릭하면 미리보기에서 열립니다. 처리할 항목에 체크하세요. Delete 키는 선택한 항목을 라이브러리에서 제거합니다.") \
     X(ProcessSelected,    "Process selected", "处理选中", "選択項目を処理", "선택 항목 처리") \
     X(LibraryCount,       "%d files, %d selected", "%d 个文件，已选 %d 个", "%d ファイル、%d 件選択", "파일 %d개, %d개 선택") \
+    X(LibraryCountOne,    "%d file, %d selected", "%d 个文件，已选 %d 个", "%d ファイル、%d 件選択", "파일 %d개, %d개 선택") \
     X(StateQueued,        "Queued", "排队中", "待機中", "대기 중") \
     X(StateDone,          "Done", "完成", "完了", "완료") \
     X(StateFailed,        "Failed", "失败", "失敗", "실패") \
@@ -409,6 +411,7 @@ enum class Lang { English = 0, Chinese = 1, Japanese = 2, Korean = 3, Count = 4 
     X(SelectAll,          "Select all", "全选", "すべて選択", "모두 선택") \
     X(SelectNone,         "Select none", "全不选", "選択解除", "모두 해제") \
     X(Play,               "Play", "播放", "再生", "재생") \
+    X(Playing,            "Playing", "正在播放", "再生中", "재생 중") \
     X(Pause,              "Pause", "暂停", "一時停止", "일시정지") \
     X(PrevFrame,          "Previous frame", "上一帧", "前のフレーム", "이전 프레임") \
     X(NextFrame,          "Next frame", "下一帧", "次のフレーム", "다음 프레임") \
@@ -421,7 +424,7 @@ enum class Lang { English = 0, Chinese = 1, Japanese = 2, Korean = 3, Count = 4 
     X(StaticPreview,      "Static preview, no motion", "静态预览，无运动", "静止プレビュー、動きなし", "정지 미리보기, 움직임 없음") \
     X(DarkFrameHint,      "This frame is almost black. Move along the seek bar to find a picture.", "当前帧几乎全黑，请拖动进度条寻找有画面的位置。", "このフレームはほぼ真っ黒です。シークバーで別の位置に移動してください。", "이 프레임은 거의 검은색입니다. 탐색 막대로 다른 위치를 찾아보세요.") \
     X(Advanced,           "Advanced", "高级", "詳細", "고급") \
-    X(TipAdvanced,        "Shows every control: the runtime route, capture-only mode, the fine strengths, frame guidance, DLAA and the display internals. Off, only the essentials are shown.", "显示全部控件：运行库加载方式、仅拍照时启用、细分强度、帧引导、DLAA 与显示内部信息。关闭时只显示常用项。", "すべてのコントロールを表示します：ランタイム経路、撮影時のみモード、細かな強度、フレームガイダンス、DLAA、表示内部情報。オフでは基本項目だけを表示します。", "모든 컨트롤을 표시합니다: 런타임 경로, 촬영 시에만 모드, 세부 강도, 프레임 가이드, DLAA, 표시 내부 정보. 끄면 기본 항목만 표시합니다.") \
+    X(TipAdvanced,        "Shows every control: capture-only mode, the fine strengths, frame guidance, DLAA, the display internals and the timings in the status bar. Off, only the essentials are shown.", "显示全部控件：仅拍照时启用、细分强度、帧引导、DLAA、显示内部信息以及状态栏中的耗时。关闭时只显示常用项。", "すべてのコントロールを表示します：撮影時のみモード、細かな強度、フレームガイダンス、DLAA、表示内部情報、ステータスバーの処理時間。オフでは基本項目だけを表示します。", "모든 컨트롤을 표시합니다: 촬영 시에만 모드, 세부 강도, 프레임 가이드, DLAA, 표시 내부 정보, 상태 표시줄의 처리 시간. 끄면 기본 항목만 표시합니다.") \
     X(Basics,             "Basics", "基本", "基本", "기본") \
     X(SecOutput,          "Output", "输出", "出力", "출력") \
     X(SecInternals,       "Internals", "内部信息", "内部情報", "내부 정보") \
@@ -431,8 +434,17 @@ enum class Lang { English = 0, Chinese = 1, Japanese = 2, Korean = 3, Count = 4 
     X(StepOne,            "Choose the source", "选择输入源", "入力ソースを選ぶ", "입력 소스 선택") \
     X(StepTwo,            "Adjust DLSS 5", "调整 DLSS 5", "DLSS 5 を調整", "DLSS 5 조정") \
     X(StepThree,          "Save", "保存", "保存", "저장") \
-    X(WelcomeLive,        "Live: start VRChat, open the camera, switch to Stream mode and enable Spout Stream. The picture appears here.", "实时：启动 VRChat，打开相机，切换到 Stream 模式并开启 Spout Stream，画面会显示在这里。", "ライブ：VRChat を起動し、カメラを開いて Stream モードに切り替え、Spout Stream を有効にすると、ここに映像が表示されます。", "라이브: VRChat를 실행하고 카메라를 열어 Stream 모드로 전환한 뒤 Spout Stream을 켜면 여기에 화면이 표시됩니다.") \
-    X(WelcomeFiles,       "Pictures and videos: drop them onto this window or use Open. They appear in the library below, one click previews them.", "图片和视频：拖进这个窗口或点“打开”。它们会出现在下方的素材库中，点一下即可预览。", "画像と動画：このウィンドウにドロップするか「開く」を使ってください。下のライブラリに表示され、クリックでプレビューできます。", "이미지와 동영상: 이 창에 끌어다 놓거나 열기를 사용하세요. 아래 라이브러리에 나타나며 클릭하면 미리 봅니다.") \
+    X(WelcomeTitle,       "Get started", "开始使用", "はじめましょう", "시작하기") \
+    X(WelcomeLead,        "Pick where the picture comes from. The sidebar on the right changes the look; the button at the top right saves the result.", "选择画面来源。右侧侧栏调整效果，右上角的按钮保存结果。", "まず画像の入力元を選んでください。右のサイドバーで見た目を調整し、右上のボタンで結果を保存します。", "먼저 화면을 가져올 곳을 고르세요. 오른쪽 사이드바에서 효과를 조정하고, 오른쪽 위 버튼으로 결과를 저장합니다.") \
+    X(WelcomeLiveTitle,   "Live from VRChat", "VRChat 实时画面", "VRChat からライブ", "VRChat 실시간") \
+    X(WelcomeLiveText,    "In VRChat open the camera, choose Stream mode and turn on Spout Stream.", "在 VRChat 中打开相机，切换到 Stream 模式并开启 Spout Stream。", "VRChat でカメラを開き、Stream モードにして Spout Stream をオンにします。", "VRChat에서 카메라를 열고 Stream 모드로 바꾼 뒤 Spout Stream을 켜세요.") \
+    X(WelcomeImageTitle,  "Open a picture", "打开图片", "画像を開く", "사진 열기") \
+    X(WelcomeImageText,   "A VRChat photo or any other picture: PNG, JPEG, WebP, HEIC…", "VRChat 照片或其他图片：PNG、JPEG、WebP、HEIC…", "VRChat の写真やその他の画像：PNG、JPEG、WebP、HEIC…", "VRChat 사진이나 다른 이미지: PNG, JPEG, WebP, HEIC…") \
+    X(WelcomeVideoTitle,  "Open a video", "打开视频", "動画を開く", "동영상 열기") \
+    X(WelcomeVideoText,   "MP4, MOV, MKV and more, or an animated GIF, APNG or WebP.", "MP4、MOV、MKV 等视频，或 GIF、APNG、WebP 动图。", "MP4、MOV、MKV など、またはアニメーション GIF・APNG・WebP。", "MP4, MOV, MKV 등, 또는 움직이는 GIF·APNG·WebP.") \
+    X(WelcomeDrop,        "Or drop a file anywhere on the window to open it; several files or a folder go to the library.", "也可以把文件拖到窗口任意位置打开；一次拖入多个文件或文件夹会加入素材库。", "ファイルをウィンドウのどこかにドロップしても開けます。複数のファイルやフォルダーはライブラリに入ります。", "파일을 창 아무 곳에나 끌어다 놓아도 열립니다. 여러 파일이나 폴더는 라이브러리에 들어갑니다.") \
+    X(PreparingPicture,   "Preparing the picture…", "正在准备画面…", "画像を準備中…", "화면 준비 중…") \
+    X(More,               "More", "更多", "その他", "더 보기") \
     X(ShowLibrary,        "Show the library", "显示素材库", "ライブラリを表示", "라이브러리 표시") \
     X(HideLibrary,        "Hide the library", "收起素材库", "ライブラリを隠す", "라이브러리 숨기기") \
     X(Thumbnails,         "Thumbnails", "缩略图", "サムネイル", "썸네일") \
@@ -596,7 +608,7 @@ enum class Lang { English = 0, Chinese = 1, Japanese = 2, Korean = 3, Count = 4 
     X(GuideSetBlendT,      "Output blend and resolution", "输出混合与分辨率", "出力ブレンドと解像度", "출력 블렌드와 해상도") \
     X(GuideSetBlend,       "Output blend mixes the result with the source, so a change can be softened without switching it off. Neural pass resolution lowers the cost on a weaker card; DLSS super resolution renders a larger output at a much higher cost.", "“输出混合”把结果与原图按比例混合，可以柔化变化而不必关闭。“神经渲染分辨率”能降低弱一些的显卡的负担；“DLSS 超分辨率”输出更大的画面，但开销大得多。", "出力ブレンドは結果と元の画像を混ぜ、オフにせずに変化を和らげます。ニューラルパス解像度は非力なカードの負荷を下げ、DLSS 超解像はずっと高い負荷で大きな出力を描きます。", "출력 블렌드는 결과와 원본을 섞어 끄지 않고도 변화를 부드럽게 합니다. 뉴럴 패스 해상도는 약한 카드의 부담을 줄이고, DLSS 초해상도는 훨씬 큰 비용으로 더 큰 출력을 만듭니다.") \
     X(GuideSetGuidanceT,   "Guidance, save, display", "引导、保存、显示", "ガイダンス、保存、表示", "가이던스, 저장, 표시") \
-    X(GuideSetGuidance,    "Motion and depth help the model keep the picture stable and tell near from far; the defaults suit most pictures. Capture holds the folder, the file format and the video output; Display holds the compare mode, the theme and the language.", "运动与深度信息帮助模型保持画面稳定并区分远近，默认值适合大多数画面。“拍照”分节包含保存文件夹、文件格式与视频输出；“显示”分节包含对比模式、主题与语言。", "モーションと深度はモデルが映像を安定させ、遠近を区別するのを助けます。既定値でほとんどの映像に合います。撮影にはフォルダー、ファイル形式、動画出力が、表示には比較モード、テーマ、言語があります。", "모션과 깊이는 모델이 화면을 안정시키고 원근을 구분하도록 돕습니다. 기본값이 대부분의 화면에 맞습니다. 촬영에는 폴더, 파일 형식, 동영상 출력이, 표시에는 비교 모드, 테마, 언어가 있습니다.") \
+    X(GuideSetGuidance,    "Motion and depth help the model keep the picture stable and tell near from far; the defaults suit most pictures. Capture holds the folder, the file format and the video output; Display holds the compare mode and the theme, and the language is chosen in the top bar.", "运动与深度信息帮助模型保持画面稳定并区分远近，默认值适合大多数画面。“拍照”分节包含保存文件夹、文件格式与视频输出；“显示”分节包含对比模式与主题；界面语言在顶栏中选择。", "モーションと深度はモデルが映像を安定させ、遠近を区別するのを助けます。既定値でほとんどの映像に合います。撮影にはフォルダー、ファイル形式、動画出力が、表示には比較モードとテーマがあります。言語はトップバーで選びます。", "모션과 깊이는 모델이 화면을 안정시키고 원근을 구분하도록 돕습니다. 기본값이 대부분의 화면에 맞습니다. 촬영에는 폴더, 파일 형식, 동영상 출력이, 표시에는 비교 모드와 테마가 있습니다. 언어는 상단 바에서 고릅니다.") \
     X(GuideSetTip,         "Not sure? Leave everything at its default and change only Intensity and Style. Every control has a tooltip, and the ? marks explain the rest.", "拿不准？保持默认，只调“强度”和“风格”即可。每个控件都有悬停提示，? 标记里有更多说明。", "迷ったら既定のままにして、強度とスタイルだけ変えてください。各コントロールにはツールチップがあり、? マークが残りを説明します。", "잘 모르겠다면 모두 기본값으로 두고 강도와 스타일만 바꾸세요. 모든 컨트롤에 도움말이 있고, ? 표시가 나머지를 설명합니다.") \
     X(GuideWhereGuideT,    "This guide", "本向导", "このガイド", "이 가이드") \
     X(GuideWhereGuide,     "Scroll the sidebar to its bottom, open the About section and press Setup guide.", "把右侧侧边栏滚动到底部，展开“关于”分节，点击“设置向导”。", "サイドバーを一番下までスクロールし、情報セクションを開いてセットアップガイドを押します。", "사이드바를 맨 아래로 내려 정보 섹션을 열고 설정 가이드를 누르세요.") \

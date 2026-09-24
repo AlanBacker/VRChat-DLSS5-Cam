@@ -34,10 +34,14 @@ as a batch. It is an ordinary Windows application: the VRChat process is never t
   provide. An optional DLAA pass can clean up edges first.
 - **Comparison and inspection.** Wipe, side-by-side and original views, wheel zoom, drag panning and a fullscreen
   mode make the difference before and after processing verifiable at 1:1.
-- **Built for daily use.** Dark and light themes that follow the Windows setting, undo and redo with a full history,
-  user-defined presets, a search across every setting, a resizable layout, an automatic update check, four
-  languages (English, 简体中文, 日本語, 한국어), a dedicated interface thread for a consistently responsive window,
-  and a command line for scripted runs.
+- **Built for daily use.** A start page that leads through the first steps, a flat interface in dark and light
+  themes that follow the Windows setting, one *Advanced* switch for everything beyond the essentials, undo and redo
+  with a full history, user-defined presets, a search across every setting, a resizable layout that stays readable
+  in a narrow sidebar, an automatic update check, four languages (English, 简体中文, 日本語, 한국어), a dedicated
+  interface thread for a consistently responsive window, and a command line for scripted runs.
+- **Light on the computer.** While nothing changes, the window redraws only a few times a second; the live camera is
+  read only when VRChat has sent a new frame; and the depth network is loaded only while DLSS 5, DLAA or the depth
+  view needs it.
 
 ## Requirements
 
@@ -73,14 +77,24 @@ as a batch. It is an ordinary Windows application: the VRChat process is never t
    A file of your own can be used instead: `nvngx_dlssnr.dll` next to `VRChatDLSS5Cam.exe` is tried after the build
    for the card, and any file can be selected under *DLSS 5 Neural Rendering → Runtime path*.
 3. In VRChat, open the **Camera**, switch it to **Stream** mode and enable **Spout Stream** in its settings.
-4. Start `VRChatDLSS5Cam.exe`. The camera picture appears in the preview with DLSS 5 applied, and the badge next to the *Enable DLSS 5* switch reads *Active*.
+4. Start `VRChatDLSS5Cam.exe`. The first start opens a short setup guide (language, GitHub access, what the controls do). The camera picture then appears in the preview with DLSS 5 applied, and the badge next to the *Enable DLSS 5* switch reads *Active*.
 5. Frame the shot in VRChat and press **Ctrl+Alt+P** (or use the *Capture photo* button). The PNG is written to `Pictures\VRChat DLSS5 Cam`.
+
+While nothing is open, the preview shows the **Get started** page: the three steps (choose the source, adjust DLSS 5,
+save) and a tile for each way in. *Live from VRChat* switches to the live camera and says whether a Spout sender is
+there; *Open a picture* and *Open a video* open a file. A file dropped anywhere on the window opens as well, and
+several files or a folder go to the library.
+
+<p align="center">
+  <img src="docs/images/welcome.png" width="900" alt="The Get started page shown while nothing is open: three steps, and a tile each for the live camera, a picture and a video">
+</p>
 
 Notes on the live camera
 
 - The stream resolution is decided by VRChat. Raising `camera_spout_res_width` / `camera_spout_res_height` in VRChat's `config.json` produces a sharper input, and the application adapts to it automatically.
 - When the neural pass is too slow for a live preview on a given card, *Neural pass only for captures* in the DLSS 5 section keeps the preview on the plain picture with the neural, motion and depth passes at rest, and runs the neural pass for each capture only.
 - *Processing rate cap* in the *Display* section limits how many camera frames per second are processed, which keeps the GPU free for VRChat.
+- Both are expert controls: they are shown while the *Advanced* switch at the top of the sidebar is on (the default).
 
 ## AMD Radeon cards
 
@@ -175,13 +189,17 @@ or WebP, and *WebP quality* sets the compression (100 = lossless). Transparency 
 ## Batch processing
 
 Every file that is opened or dropped is collected in the **library** below the preview; *Add files…* and *Add
-folder…* add more. A **double-click** on a thumbnail opens that file in the preview for adjustment. A single click
-selects it alone, **Ctrl+click** adds or removes one file, **Shift+click** extends the selection from the file
-clicked last, dragging on empty space draws a selection rectangle, a click on empty space clears the selection, the
-box on each thumbnail toggles it, and **Ctrl+A** selects every readable file. The **Delete** key takes the selected
-files out of the library while the mouse is over it (or after the last click was inside it); the files themselves
-stay on disk. *Process selected* or *Process all* then runs the files one after another, with a bar on each
-thumbnail showing the progress and the state remaining visible afterwards.
+folder…* add more; while it is empty, the library is a single row with those buttons and opens with the first file.
+A **double-click** on a thumbnail opens that file in the preview for adjustment. A single click selects it alone,
+**Ctrl+click** adds or removes one file, **Shift+click** extends the selection from the file clicked last, dragging on
+empty space draws a selection rectangle, and a click on empty space clears the selection. The box that appears at a
+thumbnail's corner under the mouse (and on every thumbnail while any is selected) ticks it, the ✕ at its other
+corner takes it out of the library, and **Ctrl+A** or *Select all* in the **…** menu selects every readable file.
+The **Delete** key or the *Delete* button takes the selected files out of the library while the mouse is over it (or
+after the last click was inside it); the files themselves stay on disk. *Process selected* or *Process all* then runs
+the files one after another, with a bar on each thumbnail showing the progress and the state remaining visible
+afterwards. In a narrow window the header's buttons shrink to icons, and those that no longer fit move into the
+**…** menu.
 
 The right mouse button opens a menu on a thumbnail: show the file in Explorer, take it out of the library, or give
 it **its own DLSS 5 parameters** in a separate window. With several files selected the same menu offers *Own
@@ -200,9 +218,20 @@ is kept across sessions as well.
 ## Working with the interface
 
 - **Three sections cover the everyday work:** *Source* (what comes in), *DLSS 5 Neural Rendering* (how it looks) and
-  *Capture* (where it goes), followed by *Display* and *About*. The *Advanced* switch in the DLSS 5 section shows or
-  hides the tone and structure sliders, the output blend, the *Frame guidance* and *DLAA pre-pass* sections after
-  *Capture*, and *Internals* with the timers before *About*.
+  *Capture* (where it goes), followed by *Display*, *MCP* and *About*; a click on a section's title folds it. The
+  **Advanced** switch at the top of the sidebar, beside the search field, shows or hides everything beyond the
+  essentials: the tone and structure sliders, the neural pass resolution and the output blend, *Neural pass only for
+  captures*, the *Frame guidance* and *DLAA pre-pass* sections, *V-Sync* and the processing rate cap, *Internals* with
+  the timers, and the pass timings in the status bar. It is on by default; switched off, the sidebar keeps only what
+  a first picture needs.
+- **The top bar** holds the source switch (*Live*, *Picture*, *Video*) with a badge for its state and a *DLSS 5*
+  badge while the neural pass runs; on the right undo, redo, the history, help, the language and the main action:
+  *Capture photo*, *Process & save PNG* or *Process & save video*. The **status bar** at the bottom names what is
+  open with its size and frame rate, the progress of a running job with the time left, and the file saved last,
+  with a button that shows it in Explorer.
+- **Every label fits.** Long names wrap onto a second line instead of being cut, a value or badge with no room left
+  moves to the next line, and a button pair that no longer fits side by side is stacked, in all four languages and
+  down to the narrowest sidebar.
 - **Comparison** is done with the wipe (the handle in the preview is dragged), side by side or the original view.
   The wipe follows the mouse at the interface's own frame rate, even while a video plays slowly. The mouse wheel
   over the preview zooms around the cursor, dragging pans, and a double-click returns to the fitted view.
@@ -222,11 +251,11 @@ is kept across sessions as well.
   leaving fade, and so does the switch between *Live*, *Picture* and *Video*.
 - **Dark or light.** *Theme* in the *Display* section: *System* follows the Windows app colour setting, or *Dark*
   and *Light* can be selected directly.
-- **The sidebar** slides away behind the slim bar at its edge, and the library has the same kind of bar above it.
-  A **click on a bar** folds or unfolds the panel; the **thin line along the bar's inner edge** — the one that turns
-  blue under the mouse, where the pointer becomes a resize arrow — is the drag target for the sidebar's width or the
-  library's height, and the thumbnails grow or shrink with it. Both sizes are remembered for the next start. While a
-  file is being processed the sidebar is locked and offers *Cancel*.
+- **The sidebar** slides away when the gap between it and the preview is clicked (a small arrow in the middle of the
+  gap shows the direction), and the gap above the library folds the library the same way. The **thin line along the
+  gap's edge** — the one that turns blue under the mouse, where the pointer becomes a resize arrow — is the drag
+  target for the sidebar's width or the library's height, and the thumbnails grow or shrink with it. Both sizes are
+  remembered for the next start. While a file is being processed the sidebar is locked and offers *Cancel*.
 - **Help** is one click away: the *?* button in the top bar (or *Documentation* in *About*) opens this guide in the
   interface's language.
 - **At start** a small card with the icon, the name, the version (marked *Pre-release* on pre-release builds), a
@@ -252,7 +281,7 @@ is kept across sessions as well.
 | Mouse wheel over the preview · drag · double-click | Zoom · pan · back to the fitted view |
 | Click a thumbnail · double-click · `Ctrl`+click · `Shift`+click · right button | Select only that file · open it in the preview · add or remove one · extend the selection · open the menu |
 | Drag on the library's empty space · click on it | Selection rectangle · clear the selection |
-| Click a bar · drag the thin line at its edge | Fold or unfold the library or the sidebar · change its height or width |
+| Click the gap beside the sidebar or above the library · drag the thin line at its edge | Fold or unfold that panel · change its width or height |
 | `Enter` · `Esc` while cropping | Apply the crop · cancel it |
 
 ## Updates
@@ -336,11 +365,11 @@ and a minimal bot are described in [docs/MCP.md](docs/MCP.md).
 | Capture | Folder / File name / Keep alpha / Also save the original / Hotkey / Time-lapse | Where and how photos and videos are saved. The file name comes from a template: `{name}` (the source file's name, *VRChat* for a live capture), `{date}`, `{time}`, `{size}`, `{width}`, `{height}`, `{insize}`, `{inwidth}`, `{inheight}`; anything else is kept as typed, and a name already taken gets `_2`, `_3`, … Live captures default to `VRChat_DLSS5_{date}_{time}_{size}`, processed pictures and videos to `{name}_DLSS5_{size}`. |
 | Capture | Estimated time | Rough processing time of the open image or video with the current settings, refined by every run. |
 | Frame guidance | Motion vectors | NVIDIA Optical Flow (with a forward/backward consistency check), the FSR optical flow (this program's own pyramid of compute passes, on any card, with its own search radius and consistency check), GPU block matching, or none. |
-| Frame guidance | Depth | AI estimated (Depth Anything V2 Small on DirectML; update interval and network resolution adjustable), flat, gradient, or zero. |
+| Frame guidance | Depth | AI estimated (Depth Anything V2 Small on DirectML; update interval and network resolution adjustable), flat, gradient, or zero. The network is loaded only while DLSS 5, DLAA or the depth view needs it. |
 | Frame guidance | Auto reset | Clears the temporal history on scene cuts. Off by default. |
 | DLAA pre-pass | Enable / Preset | Optional DLSS anti-aliasing pass at native resolution before neural rendering. While DLSS super resolution is in effect it already includes this pass; the preset applies to both. |
 | Display | Theme | *System* (follows Windows), *Dark* or *Light*. |
-| Display | Compare / Fit / Zoom / VSync / Overlay / Show the library | Preview options. |
+| Display | Compare / Fit to window or 1:1 / Zoom / Checkerboard behind transparency / Show the library / Show overlay info / Show log / V-Sync | Preview options. |
 | Display | Reopen the last file at start | Open the file from the previous session again at the next start. Off by default. |
 | Display | Processing rate cap | Live camera: process at most this many frames per second and skip the rest. 0 = every frame. |
 | About | Check for updates at start / Update channel / Check for updates | Look for a newer release at every start (on by default), on the *Stable* or the *Pre-release* channel, or right away with the button. The result of the last check is shown underneath. |
@@ -356,14 +385,14 @@ Command-line options (open files, process unattended, screenshots, headless runs
 
 ## Troubleshooting
 
-- **"Waiting for VRChat Spout stream…"** – *Spout Stream* has to be enabled on VRChat's Stream camera, and the camera must be open. Other Spout senders are listed in the *Sender* box.
+- **"No Spout sender found" / "Waiting for VRChat Spout stream…"** – *Spout Stream* has to be enabled on VRChat's Stream camera, and the camera must be open. The first appears while no Spout sender runs at all, the second while senders run but the chosen one has not sent a picture yet. Other Spout senders are listed in the *Spout sender* box.
 - **"The runtime files are missing"** – the archive was not extracted completely: `runtimes\blackwell\nvngx_dlssnr.dll` and `runtimes\universal\nvngx_dlssnr.dll` belong next to `VRChatDLSS5Cam.exe`. Extract it again, or select a runtime file under *Runtime path*.
 - **Neural rendering failed** – the application switches to the other bundled build by itself and says so in a notice. When neither build starts, the message under the error says so; a newer graphics driver is the first thing to try, `log.txt` carries the NGX result code, and *Preset* 0 is worth trying. On a Radeon card the neural pass runs through the Radeon edition and DLSS-NR-on-AMD instead (see *AMD Radeon cards*).
 - **FSR host runs, but the picture is unchanged** – DLSS-NR-on-AMD is not attached to the process: the DLSS 5 section reads *DLSS-NR-on-AMD: not loaded*. Install it there (**Install DLSS-NR-on-AMD…**); the application restarts by itself once the installer is through. When it is installed but not loaded, run its installer again. When it is loaded and nothing changes, open its overlay (**End** key) to see that it is enabled and try the other *Mode*; its own log (`dlssnr_on_amd.log` in the program folder; its last lines also end `log.txt`) says what it did. The port is a separate project with its own requirements.
 - **amd_fidelityfx_dx12.dll is missing** – the FSR host route needs that file next to the executable; the Radeon edition (`VRChatDLSS5Cam-win64-amd.zip`) carries it.
 - **Neural pass active, but the picture is black or unchanged** – every neural frame is compared with its input, and a warning appears when the runtime reports success but delivers a black or unchanged picture (`log.txt`: "DLSSNR output check"). Switching DLSS 5 off and on again starts it fresh. If it persists, that runtime build does not produce a picture on this GPU. (With *Intensity* at 0 an unchanged picture is normal and no warning is shown.)
 - **The application does not start / closes immediately** – `%LOCALAPPDATA%\VRChatDLSS5Cam\` holds `log.txt` (its last line is the step that failed) and `crash.txt`. Both files belong in the issue report.
-- **NGX not initialized / DLAA unsupported** – the NGX runtime needs an NVIDIA GPU and a current driver. DLSS 5 still works through the *Signed snippet* route.
+- **NGX not initialized / DLAA unsupported** – the NGX runtime needs an NVIDIA GPU and a current driver. It serves DLAA and DLSS super resolution only; the DLSS 5 neural pass does not depend on it and keeps working.
 - **Depth estimator unavailable** – `onnxruntime.dll`, `onnxruntime_providers_shared.dll`, `DirectML.dll` and `models\depth_anything_v2_small_fp16.onnx` must sit next to the executable (all are in the release package). Until the estimator is ready the application uses zero depth; its state is shown under *Frame guidance*.
 - **Optical flow unavailable** – on a Radeon card this is expected: the optical flow engine is part of the GeForce driver and has no counterpart on Radeon, so the FSR optical flow is used and the status dot under *Frame guidance* says so. On a GeForce card, when `log.txt` says "NVOF unavailable, falling back to the FSR optical flow", the GeForce driver needs an update; the FSR optical flow is used until then.
 - **The video preview is black** – many films start with a fade from black; the preview skips those frames and says so under the picture while the frame on show is still dark. Seeking forward with the bar or the arrow keys moves past them.

@@ -13,12 +13,18 @@ struct Palette {
     ImU32 surface;                       // the preview background
     ImU32 track, rangeFill, knob;        // seek bar
     ImU32 selection;                     // selected library item
+    ImU32 card, cardBorder;              // the raised panels: sidebar sections, the library, the video controls
+    ImU32 shadow;                        // the soft shadow under floating things (popups, toasts)
     ImVec4 window;                       // the clear colour behind everything
     float  light;                        // 0 = the dark theme, 1 = the light one (in between while switching)
 };
 const Palette& Colors();
 
 void ApplyTheme(ImGuiStyle& style, float dpiScale);
+float Dpi();                                                   // the display scale the style was built for (1 at 96 dpi)
+void SetFonts(ImFont* bold, ImFont* mono, ImFont* icons);   // the faces the widgets use for titles, figures and icons (set every frame)
+ImFont* BoldFont();
+ImFont* MonoFont();
 // Moves between the dark (0) and the light (1) theme: blends the palette and rewrites the style colours. Cheap enough
 // to call every frame while a switch animates.
 void SetThemeLight(ImGuiStyle& style, float light);
@@ -33,6 +39,12 @@ float AnimateFrom(ImGuiID id, float from, float target, float speed = 14.0f);  /
 float AnimateLinear(ImGuiID id, float target, float seconds);                  // constant speed; the whole way takes "seconds"
 void AnimateSnap(ImGuiID id, float value);                                     // jump without motion
 float Ease(float t);                                                           // smoothstep of 0..1
+// Whether anything moved on this frame (a value still on its way, a scroll gliding, a fade): the interface keeps
+// drawing at full rate while it does and may rest once everything has settled. Cleared by ResetAnimating() at the
+// start of a frame; MarkAnimating() is for motion kept outside these helpers.
+void ResetAnimating();
+void MarkAnimating();
+bool Animating();
 // Fades and shifts what a window has drawn since vertex `fromVtx` (its draw list is edited in place): the bars
 // around the preview dip their content in step with the preview's own dip around a change of the source.
 void FadeDrawn(ImDrawList* dl, int fromVtx, float alpha, float dy);
@@ -45,46 +57,92 @@ void SmoothScrollTo(float target, bool horizontal = false);                    /
 // Popups and tooltips that fade in instead of appearing at once ---------------------------------------------------
 bool BeginPopupFade(const char* strId, ImGuiWindowFlags flags = 0);            // pair with EndPopupFade() when true
 void EndPopupFade();
+void ScrollEdgeFade(ImU32 bg, float height);   // in a scrolled child, before EndChild: the rows cut off above or below fade into bg
 bool BeginDropdown(const char* label, const char* preview, ImGuiComboFlags flags = 0);   // flat combo box; pair with EndDropdown()
 void EndDropdown();
 void Tooltip(const char* text);                                                // tooltip of the last item, fading in
 void TooltipShow(ImGuiID key, const char* text);                               // shows it now; "key" tells one tooltip from another
 
-// Icons drawn from lines and triangles, so they scale with the interface -----------------------------------------
+// Icons: the Lucide line icons from the icon font (sharp at every size), the media controls drawn as filled shapes --
 enum class Icon { Play, Pause, StepBack, StepForward, ChevronDown, ChevronUp, ChevronLeft, ChevronRight,
                   Reset, Refresh, OpenExternal, Close, Lock, Undo, Redo, Fullscreen, ExitFullscreen, History,
-                  Help, Save, Edit, Plus, Search, RotateLeft, RotateRight, FlipH, FlipV, Crop };
+                  Help, Save, Edit, Plus, Search, RotateLeft, RotateRight, FlipH, FlipV, Crop,
+                  Image, Film, Broadcast, Sparkle, Download, Layers, Grid, Eye, Plug, Gauge, Info, Folder, Check,
+                  Camera, Warning, Stop, Sliders, CircleCheck, CircleX, ImagePlus, Languages, Trash, Keyboard, Monitor,
+                  Wand, Settings, Compare, ZoomIn, ZoomOut, Terminal, Key, Upload, Copy, Images, Video, Cpu, Loader,
+                  Import, Minus, Ellipsis, ListChecks, SquareCheck, ArrowRight, Sun, Moon, Bell, Scissors, Flag, Repeat,
+                  FileImage, FileVideo, Mouse, Hand, Move, Focus, Aperture, Shield, Wifi, HardDrive, PanelLeft,
+                  PanelRight, None };
 void DrawIcon(ImDrawList* dl, Icon icon, const ImVec2& center, float size, ImU32 color);          // size: side of the icon's box
+float IconSize(float scale = 1.0f);                                                              // a whole-pixel icon size that suits the current font
 void DrawChevron(ImDrawList* dl, const ImVec2& center, float size, float angle, ImU32 color);    // 0 points down, turns clockwise
+void DrawSpinner(ImDrawList* dl, const ImVec2& center, float size, ImU32 color);                 // a turning arc (keeps frames coming)
+void DrawLogo(ImDrawList* dl, const ImVec2& min, float size, float alpha = 1.0f);                // the program's mark, drawn
+// A soft shadow around a rectangle, drawn outside it only (so it may be painted after the rectangle's own fill).
+void DrawShadow(ImDrawList* dl, const ImVec2& min, const ImVec2& max, float rounding, float alpha = 1.0f);
+// A raised card: soft shadow, card fill, hairline border (the sidebar sections, the video controls, the library).
+void DrawCard(ImDrawList* dl, const ImVec2& min, const ImVec2& max, float alpha = 1.0f);
+// A card's rim without its fill: the shadow and the hairline, for a card whose inside is painted by its owner (the
+// picture). Drawn after that inside.
+void DrawCardEdge(ImDrawList* dl, const ImVec2& min, const ImVec2& max, float alpha = 1.0f);
+float CardRounding();                                                                            // corner radius of cards and panels
+float CardInset();                                                                               // the padding inside a card
+void WindowShadow();                                                                             // a soft shadow around the current popup, tooltip or floating window
+// Paints the outside of a rectangle's rounded corners in "bg" (the colour behind it), so something drawn square on
+// top of a rounded panel (the picture) reads as clipped to the panel.
+void MaskCorners(ImDrawList* dl, const ImVec2& min, const ImVec2& max, float rounding, ImU32 bg);
+// A dropdown with an icon at the start of its box ("preview" may be null: the icon alone, for a narrow bar).
+bool BeginDropdown(const char* label, const char* preview, Icon icon, ImGuiComboFlags flags = 0);
 
-enum class ButtonKind { Flat, Accent, Ghost, Plain };
+enum class ButtonKind { Flat, Accent, Ghost, Plain, Danger };
 
 // Widgets ----------------------------------------------------------------------------------
 bool Toggle(const char* label, bool* v);                                           // switch-style checkbox
-bool SectionHeader(const char* label, const char* id, bool defaultOpen = true);    // flat collapsing header; true while the content shows
+bool Checkbox(const char* label, bool* v);                                         // flat box with a drawn check mark
+bool Radio(const char* label, bool active);                                        // round choice mark; true when clicked
+// A section of the sidebar: a card with an icon, a title and a fold chevron; true while its content shows (it is
+// drawn inside the card, inset from its edges). Pair a true return with SectionEnd().
+bool SectionHeader(const char* label, const char* id, bool defaultOpen = true, Icon icon = Icon::None);
 void SectionEnd();                                                                 // closes the content of a header that returned true
+// A card around widgets whose height is known only once they are drawn: between PanelBegin and PanelEnd the
+// widgets are laid out inside it, "pad" in from its edges ("width" 0: the rest of the line). A colour in "stripe"
+// paints a band along its left edge (a notice).
+void PanelBegin(float width, const ImVec2& pad, ImU32 stripe = 0);
+void PanelEnd();
+void FocusRing();                                                                  // an accent ring around the last item while it has the keyboard
 void SectionLabel(const char* text);                                               // caption + thin rule (not collapsible)
 void Help(const char* text);                                                       // "?" marker with tooltip
 void StatusDot(ImU32 color, const char* text);                                     // coloured dot + text
 void Pill(const char* text, ImU32 bg, ImU32 fg);                                   // rounded badge
+void PillAfter(const char* text, ImU32 bg, ImU32 fg, float spacing);               // a badge right of the last item, or on the next line when it has no room there
 // The label column: the room a control leaves for the label to its right. It is as wide as the widest trailing
 // label drawn so far in the current language (a ratchet in font sizes, started over on a language change), never
 // under 7.5 em and never more than half the row, so a long label (Japanese, English) is not cut at the edge.
 void  LabelSeen(const char* label);                                                // every trailing label reports itself
 void  TrailingLabel(const char* label);                                            // draws it and reports it
+void  LabelAfterItem(const char* label);                                           // a trailing label that leaves the control the last item (its tip covers the label)
 float LabelColumn(float rowWidth);                                                 // PushItemWidth(-LabelColumn(avail))
 void  SameLineIfFits(const char* buttonLabel);                                     // SameLine() only when a button of this label has room left on the line
+void  SameLineIfRoom(float width, float spacing);                                  // SameLine(0, spacing) only when "width" has room left on the line
 bool SliderReset(const char* label, float* v, float minV, float maxV, float def, const char* fmt, const char* tooltip);
 bool SliderIntReset(const char* label, int* v, int minV, int maxV, int def, const char* fmt, const char* tooltip);
+bool InputIntLabel(const char* label, int* v, int step, int stepFast);             // ImGui::InputInt with a trailing label that wraps
+// ImGui sliders whose track fills with the accent up to the value (the look of every slider in the program).
+bool SliderFloatFill(const char* label, float* v, float minV, float maxV, const char* fmt = "%.3f", ImGuiSliderFlags flags = 0);
+bool SliderIntFill(const char* label, int* v, int minV, int maxV, const char* fmt = "%d", ImGuiSliderFlags flags = 0);
 bool FlatButton(const char* label, const ImVec2& size = ImVec2(0, 0));             // the ordinary button
 bool AccentButton(const char* label, const ImVec2& size = ImVec2(0, 0));           // the primary action
 bool GhostButton(const char* label, const ImVec2& size = ImVec2(0, 0));            // outlined secondary action
+bool IconTextButton(const char* label, Icon icon, const ImVec2& size = ImVec2(0, 0), ButtonKind kind = ButtonKind::Flat);   // icon before the label
+float IconTextButtonWidth(const char* label);                                      // the natural width of such a button
 bool DangerButton(const char* label, const ImVec2& size = ImVec2(0, 0));           // red, for removing things
 bool IconButton(const char* id, Icon icon, const ImVec2& size = ImVec2(0, 0), const char* tooltip = nullptr,
                 ButtonKind kind = ButtonKind::Flat);
 bool ChevronButton(const char* id, float angle, const ImVec2& size = ImVec2(0, 0), const char* tooltip = nullptr,
                    ButtonKind kind = ButtonKind::Flat);
-bool Segmented(const char* id, const char* const* labels, int count, int* value, float width = 0.0f);  // one-of-n switch
+bool Segmented(const char* id, const char* const* labels, int count, int* value, float width = 0.0f,
+               const Icon* icons = nullptr);                                       // one-of-n switch, optionally with an icon per segment
+float SegmentedWidth(const char* const* labels, int count, const Icon* icons = nullptr);   // its natural width
 void KeyValue(const char* key, const char* value);                                 // two-column line
 
 // Search: between SearchBegin and SearchEnd the labelled widgets that do not match the query are left out, and a
@@ -93,6 +151,9 @@ void KeyValue(const char* key, const char* value);                              
 void SearchBegin(const char* query);                                               // empty or null: no filtering
 void SearchEnd();
 bool Searching();                                                                  // a query is set
+// Between SearchHold(true) and SearchHold(false) every widget shows whatever the query: the parts of a control that
+// belong to it as a whole (the modifier keys of the capture hotkey, the size fields under "Custom resolution").
+void SearchHold(bool hold);
 bool SearchMatch(const char* label, const char* tooltip = nullptr);               // whether such a widget shows
 bool SearchSkipped();                                                              // the last labelled widget was left out
 int  SearchHits();                                                                 // matches so far in this frame

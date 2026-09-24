@@ -48,6 +48,14 @@ private:
     void ReleaseTexture(GpuContext& gpu);
     void ApplySenderName(const char* name);
 
+    // New-frame test for a sender without Spout's frame count: a small D3D11 device of its own hashes the sender's
+    // shared texture on the GPU, and a received frame counts as new only when the hash changed. Its own device keeps
+    // the test out of the processing queue, which may still be busy with the previous frame.
+    bool ProbeOpen(Device& device);   // for the sender just connected; false: the test is not available
+    void ProbeClose();
+    void ProbeStart();
+    int  ProbePoll();                 // -1: no answer yet, 0: the same picture, 1: a new picture (or the test failed)
+
     spoutDX                    m_spout;
     bool                       m_open = false;
     std::mutex                 m_requestMutex;
@@ -58,6 +66,24 @@ private:
     double                     m_lastScan = 0.0;
     double                     m_lastFrameTime = 0.0;
     double                     m_senderFps = 0.0;
+    double                     m_uncountedNext = 0.0;           // a sender without Spout's frame count: the next check
+    double                     m_uncountedInterval = 1.0 / 60.0;
+
+    ComPtr<ID3D11Device>              m_probeDevice;
+    ComPtr<ID3D11DeviceContext>       m_probeContext;
+    ComPtr<ID3D11ComputeShader>       m_probeShader;
+    ComPtr<ID3D11Buffer>              m_probeSums, m_probeReadback, m_probeConstants;
+    ComPtr<ID3D11UnorderedAccessView> m_probeUav;
+    ComPtr<ID3D11Texture2D>           m_probeTexture;              // the sender's texture, opened on the probe device
+    ComPtr<ID3D11ShaderResourceView>  m_probeSrv;
+    UINT                              m_probeWidth = 0, m_probeHeight = 0;
+    bool                              m_probeUnavailable = false;  // the device or the shader could not be made
+    bool                              m_probeReady = false;        // the test runs for the current sender
+    bool                              m_probePending = false;      // a hash is on its way back
+    bool                              m_probeKnown = false;        // m_probeLast holds the last picture's hash
+    uint64_t                          m_probeLast = 0;
+    double                            m_probeRateStart = 0.0;      // the sender's rate, measured from the new pictures found
+    UINT                              m_probeRateCount = 0;
 
     ComPtr<ID3D12Resource>     m_tex12;
     ComPtr<ID3D11Texture2D>    m_tex11;       // wrapped view of m_tex12
