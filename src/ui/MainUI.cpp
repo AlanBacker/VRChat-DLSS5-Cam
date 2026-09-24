@@ -1904,9 +1904,8 @@ void MainUI::BlockView(Settings& s, const UiFrameInfo& /*info*/, UiEvents& ev) {
             }
             Tip(TR(TipZoom));
             ImGui::SameLine(0.0f, style.ItemInnerSpacing.x);
-            ImGui::BeginDisabled(std::fabs(m_zoomTarget - 1.0f) < 1e-4f && m_pan.x == 0.0f && m_pan.y == 0.0f);
-            if (IconButton("##resetview", Icon::Reset, ImVec2(resetW, 0), TR(ResetView), ButtonKind::Plain)) ResetView(true);
-            ImGui::EndDisabled();
+            const bool moved = std::fabs(m_zoomTarget - 1.0f) >= 1e-4f || m_pan.x != 0.0f || m_pan.y != 0.0f;
+            if (ResetButton("##resetview", moved, resetW, TR(ResetView))) ResetView(true);
             ImGui::SameLine(0.0f, style.ItemInnerSpacing.x);
             TrailingLabel(TR(Zoom));
             ImGui::PopID();
@@ -2102,11 +2101,7 @@ void MainUI::BlockGuidance(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         if (ComboIds(TR(MotionSource), &s.motionMode, items, 4, s.motionMode == MotionFsrFlow ? TR(TipFsrFlow) : TR(TipMotion))) ev.settingsChanged = true;
     }
     if (s.motionMode == MotionCompute) {
-        if (SearchMatch(TR(SearchRadius), TR(TipSearchRadius))) {
-            LabelSeen(TR(SearchRadius));
-            if (SliderIntFill(TR(SearchRadius), &s.searchRadius, 2, 12, "%d px", ImGuiSliderFlags_AlwaysClamp)) ev.settingsChanged = true;
-            Tip(TR(TipSearchRadius));
-        }
+        if (SliderIntReset(TR(SearchRadius), &s.searchRadius, 2, 12, 7, "%d px", TR(TipSearchRadius))) ev.settingsChanged = true;
     } else if (s.motionMode == MotionNvOpticalFlow) {
         int grid = (s.nvofGrid == 4) ? 0 : (s.nvofGrid == 1) ? 2 : 1;
         const char* grids[] = { "4 px", "2 px", "1 px" };
@@ -2127,11 +2122,7 @@ void MainUI::BlockGuidance(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         }
     }
     if (s.motionMode == MotionFsrFlow) {
-        if (SearchMatch(TR(SearchRadius), TR(TipFlowRadius))) {
-            LabelSeen(TR(SearchRadius));
-            if (SliderIntFill(TR(SearchRadius), &s.searchRadius, 2, 12, "%d px", ImGuiSliderFlags_AlwaysClamp)) ev.settingsChanged = true;
-            Tip(TR(TipFlowRadius));
-        }
+        if (SliderIntReset(TR(SearchRadius), &s.searchRadius, 2, 12, 7, "%d px", TR(TipFlowRadius))) ev.settingsChanged = true;
         if (Toggle(TR(FlowBidirectional), &s.flowBidirectional)) ev.settingsChanged = true;
         Help(TR(TipFlowBidirectional));
         if (st) {
@@ -2141,11 +2132,8 @@ void MainUI::BlockGuidance(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
                                              s.flowBidirectional ? " \xE2\x87\x84" : "").c_str());
         }
     }
-    if (s.motionMode != MotionZero && SearchMatch(TR(MotionConfidence), TR(TipConfidence))) {
-        LabelSeen(TR(MotionConfidence));
-        if (SliderFloatFill(TR(MotionConfidence), &s.motionConfidence, 0.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) ev.settingsChanged = true;
-        Tip(TR(TipConfidence));
-    }
+    if (s.motionMode != MotionZero && SliderReset(TR(MotionConfidence), &s.motionConfidence, 0.0f, 1.0f, 0.35f, "%.2f", TR(TipConfidence)))
+        ev.settingsChanged = true;
     {
         // Display order puts the estimated depth first; the enum keeps the 0.1.x numbering.
         const char* items[] = { TR(DepthEstimated), TR(DepthFlat), TR(DepthGradient), TR(DepthZero) };
@@ -2181,11 +2169,7 @@ void MainUI::BlockGuidance(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
                 break;
             }
         }
-        if (SearchMatch(TR(DepthInterval), TR(TipDepthInterval))) {
-            LabelSeen(TR(DepthInterval));
-            if (SliderIntFill(TR(DepthInterval), &s.depthInterval, 1, 10, "%d", ImGuiSliderFlags_AlwaysClamp)) ev.settingsChanged = true;
-            Tip(TR(TipDepthInterval));
-        }
+        if (SliderIntReset(TR(DepthInterval), &s.depthInterval, 1, 10, 4, "%d", TR(TipDepthInterval))) ev.settingsChanged = true;
         {
             static const int kSides[] = { 252, 336, 420, 518 };
             const char* sides[] = { "252 px", "336 px", "420 px", "518 px" };
@@ -2214,11 +2198,8 @@ void MainUI::BlockGuidance(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
     }
     if (Toggle(TR(AutoReset), &s.autoReset)) ev.settingsChanged = true;
     Help(TR(TipAutoReset));
-    if (s.autoReset && SearchMatch(TR(CutThreshold), TR(TipCutThreshold))) {
-        LabelSeen(TR(CutThreshold));
-        if (SliderFloatFill(TR(CutThreshold), &s.cutThreshold, 0.01f, 0.5f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) ev.settingsChanged = true;
-        Tip(TR(TipCutThreshold));
-    }
+    if (s.autoReset && SliderReset(TR(CutThreshold), &s.cutThreshold, 0.01f, 0.5f, 0.10f, "%.2f", TR(TipCutThreshold)))
+        ev.settingsChanged = true;
     if (st) {
         Readout(m_fonts, TR(FrameCost), StrPrintf("%5.3f  max %5.3f", m_shown.statAvgCost, m_shown.statMaxCost));
         Readout(m_fonts, "|mv|", StrPrintf("%5.2f px", m_shown.statAvgMotion));

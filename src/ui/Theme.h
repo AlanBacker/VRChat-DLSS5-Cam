@@ -124,8 +124,13 @@ void  LabelAfterItem(const char* label);                                        
 float LabelColumn(float rowWidth);                                                 // PushItemWidth(-LabelColumn(avail))
 void  SameLineIfFits(const char* buttonLabel);                                     // SameLine() only when a button of this label has room left on the line
 void  SameLineIfRoom(float width, float spacing);                                  // SameLine(0, spacing) only when "width" has room left on the line
+// A slider, its reset icon and its trailing label. The icon is only there once the value differs from "def"; the
+// tooltip covers the label too.
 bool SliderReset(const char* label, float* v, float minV, float maxV, float def, const char* fmt, const char* tooltip);
 bool SliderIntReset(const char* label, int* v, int minV, int maxV, int def, const char* fmt, const char* tooltip);
+// The reset icon beside a control: shown while "modified", fading in and out, its room kept either way so the
+// control beside it keeps its width.
+bool ResetButton(const char* id, bool modified, float size, const char* tooltip = nullptr);
 bool InputIntLabel(const char* label, int* v, int step, int stepFast);             // ImGui::InputInt with a trailing label that wraps
 // ImGui sliders whose track fills with the accent up to the value (the look of every slider in the program).
 bool SliderFloatFill(const char* label, float* v, float minV, float maxV, const char* fmt = "%.3f", ImGuiSliderFlags flags = 0);

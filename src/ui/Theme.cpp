@@ -130,6 +130,7 @@ void ThemeColors(ImVec4* c, const Palette& p) {
 }
 
 constexpr ImGuiID kHoverKey = 0x9E3779B9u;   // mixed into an item's id for its hover animation
+constexpr ImGuiID kShownKey = 0x85EBCA6Bu;   // mixed into an item's id for its fade in and out
 
 float* MotionValue(ImGuiID id, float seed) { return ImGui::GetCurrentWindow()->DC.StateStorage->GetFloatRef(id, seed); }
 float FrameStep() { return ImMin(ImGui::GetIO().DeltaTime, 0.05f); }
@@ -1391,12 +1392,39 @@ void PillAfter(const char* text, ImU32 bg, ImU32 fg, float spacing) {
     Pill(text, bg, fg);
 }
 
+bool ResetButton(const char* id, bool modified, float size, const char* tooltip) {
+    ImGuiWindow* window = ImGui::GetCurrentWindow();
+    const float shown = Animate(window->GetID(id) ^ kShownKey, modified ? 1.0f : 0.0f, 16.0f);
+    if (shown < 0.01f) {
+        const ImVec2 pos = window->DC.CursorPos;
+        const ImRect bb(pos, ImVec2(pos.x + size, pos.y + size));
+        ImGui::ItemSize(bb, ImGui::GetStyle().FramePadding.y);
+        ImGui::ItemAdd(bb, 0);
+        return false;
+    }
+    // While it fades out it takes no press. The disabled flag is only ever added here, never cleared, so the icon of a
+    // control in a disabled section stays disabled.
+    ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * shown);
+    if (!modified) ImGui::PushItemFlag(ImGuiItemFlags_Disabled, true);
+    const bool pressed = IconButton(id, Icon::Reset, ImVec2(size, size), modified ? tooltip : nullptr, ButtonKind::Plain);
+    if (!modified) ImGui::PopItemFlag();
+    ImGui::PopStyleVar();
+    return pressed && modified;
+}
+
 namespace {
-bool ResetButton(bool enabled, float size) {
-    ImGui::BeginDisabled(!enabled);
-    const bool pressed = IconButton("##reset", Icon::Reset, ImVec2(size, size), nullptr, ButtonKind::Plain);
-    ImGui::EndDisabled();
-    return pressed;
+// After a reset slider: the icon, then the label, over which the slider's tooltip shows as well.
+bool ResetTail(const char* label, const char* tooltip, bool modified, float resetW) {
+    const ImGuiStyle& style = ImGui::GetStyle();
+    const ImGuiID slider = ImGui::GetItemID();
+    bool tip = ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip);
+    ImGui::SameLine(0.0f, style.ItemInnerSpacing.x);
+    const bool reset = ResetButton("##reset", modified, resetW);
+    ImGui::SameLine(0.0f, style.ItemInnerSpacing.x);
+    TrailingLabel(label);
+    tip = tip || ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip);
+    if (tip && tooltip) TooltipShow(slider, tooltip);
+    return reset;
 }
 }
 
@@ -1591,11 +1619,7 @@ bool SliderReset(const char* label, float* v, float minV, float maxV, float def,
     const ImGuiStyle& style = ImGui::GetStyle();
     ImGui::SetNextItemWidth(ImGui::CalcItemWidth() - resetW - style.ItemInnerSpacing.x);
     bool changed = SliderFloatFill("##s", v, minV, maxV, fmt, ImGuiSliderFlags_AlwaysClamp);
-    Tooltip(tooltip);
-    ImGui::SameLine(0.0f, style.ItemInnerSpacing.x);
-    if (ResetButton(*v != def, resetW)) { *v = def; changed = true; }
-    ImGui::SameLine(0.0f, style.ItemInnerSpacing.x);
-    TrailingLabel(label);
+    if (ResetTail(label, tooltip, *v != def, resetW)) { *v = def; changed = true; }
     ImGui::PopID();
     return changed;
 }
@@ -1607,11 +1631,7 @@ bool SliderIntReset(const char* label, int* v, int minV, int maxV, int def, cons
     const ImGuiStyle& style = ImGui::GetStyle();
     ImGui::SetNextItemWidth(ImGui::CalcItemWidth() - resetW - style.ItemInnerSpacing.x);
     bool changed = SliderIntFill("##s", v, minV, maxV, fmt, ImGuiSliderFlags_AlwaysClamp);
-    Tooltip(tooltip);
-    ImGui::SameLine(0.0f, style.ItemInnerSpacing.x);
-    if (ResetButton(*v != def, resetW)) { *v = def; changed = true; }
-    ImGui::SameLine(0.0f, style.ItemInnerSpacing.x);
-    TrailingLabel(label);
+    if (ResetTail(label, tooltip, *v != def, resetW)) { *v = def; changed = true; }
     ImGui::PopID();
     return changed;
 }
