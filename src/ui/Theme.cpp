@@ -4,11 +4,13 @@
 #include "imgui_internal.h"
 #include <algorithm>
 #include <cfloat>
+#include <climits>
 #include <cmath>
 #include <cstddef>
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <vector>
 
 namespace vdc::ui {
 
@@ -422,12 +424,24 @@ void SideLabel(const char* label, const ImVec2& pos) {
 
 // Popups ------------------------------------------------------------------------------------
 
+namespace {
+// The fade of a popup: 0 while it is closed and on the frame it opens, then up to 1. ImGui keeps a popup hidden on
+// the frame it opens while it measures it, and that frame may follow a rest (a tenth of a second): counted, it
+// would have run most of the fade unseen.
+float PopupFade(ImGuiID key, bool open) {
+    float* v = MotionValue(key, -1.0f);
+    if (!open) { *v = -1.0f; return 0.0f; }
+    if (*v < 0.0f) { *v = 0.0f; g_animating = true; return 0.0f; }
+    return Ease(AnimateFrom(key, 0.0f, 1.0f, 24.0f));
+}
+}
+
 bool BeginPopupFade(const char* strId, ImGuiWindowFlags flags) {
     const ImGuiID id = ImGui::GetID(strId);
     const bool open = ImGui::IsPopupOpen(strId);
-    if (!open) { AnimateSnap(id ^ kFadeKey, 0.0f); return false; }
-    const float t = AnimateFrom(id ^ kFadeKey, 0.0f, 1.0f, 24.0f);
-    ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * Ease(t));
+    const float t = PopupFade(id ^ kFadeKey, open);
+    if (!open) return false;
+    ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * t);
     if (!ImGui::BeginPopup(strId, flags)) { ImGui::PopStyleVar(); return false; }
     WindowShadow();
     return true;
@@ -436,6 +450,143 @@ bool BeginPopupFade(const char* strId, ImGuiWindowFlags flags) {
 void EndPopupFade() {
     ImGui::EndPopup();
     ImGui::PopStyleVar();
+}
+
+// Dialogs -----------------------------------------------------------------------------------
+
+namespace {
+constexpr float kDialogOpenSeconds = 0.26f;
+constexpr float kDialogCloseSeconds = 0.16f;
+
+// One dialog's motion. "shown" runs from 0 (away) to 1 (in place) at an even pace, and the look follows it through
+// easing curves, the same ones both ways: it decelerates into place and accelerates away, and a dialog closed
+// while it still rises turns back from where it is.
+struct DialogMotion {
+    ImGuiID id = 0;
+    float shown = 0.0f;
+    float drawnAt = 0.0f;                // "shown" of the last frame it was drawn live: its vertices carry that look
+    std::vector<ImGuiWindow*> windows;   // that frame's windows (the popup, then its visible children, in drawing order)
+};
+std::vector<DialogMotion> g_dialogs;
+std::vector<size_t> g_dialogStack;       // the BeginDialog calls not yet ended
+
+DialogMotion& FindDialog(ImGuiID id) {
+    for (DialogMotion& d : g_dialogs) if (d.id == id) return d;
+    g_dialogs.emplace_back();
+    g_dialogs.back().id = id;
+    return g_dialogs.back();
+}
+
+float DialogEase(float shown) { const float t = 1.0f - ImSaturate(shown); return 1.0f - t * t * t; }
+float DialogScale(float shown) { return 0.94f + 0.06f * DialogEase(shown); }
+float DialogRise(float shown) { return (1.0f - DialogEase(shown)) * Px(12.0f); }
+float DialogAlpha(float shown) { const float t = 1.0f - ImSaturate(shown); return 1.0f - t * t; }
+
+void CollectWindows(ImGuiWindow* w, std::vector<ImGuiWindow*>& out) {
+    out.push_back(w);
+    for (ImGuiWindow* child : w->DC.ChildWindows)
+        if (child->Active && !child->Hidden) CollectWindows(child, out);   // what ImGui renders of it
+}
+
+// A point of a dialog drawn with the rise "dyFrom" and its scale taken by "k" to the rise "dyTo", about "c".
+struct DialogMove {
+    ImVec2 c; float k, dyFrom, dyTo, alpha;
+    ImVec2 Pos(const ImVec2& p) const { return ImVec2(c.x + (p.x - c.x) * k, c.y + (p.y - dyFrom - c.y) * k + dyTo); }
+    ImU32 Color(ImU32 col) const {
+        const ImU32 a = (ImU32)((float)((col >> IM_COL32_A_SHIFT) & 0xFF) * alpha + 0.5f);
+        return (col & ~IM_COL32_A_MASK) | (a << IM_COL32_A_SHIFT);
+    }
+    ImVec4 Clip(const ImVec4& r) const { const ImVec2 a = Pos(ImVec2(r.x, r.y)), b = Pos(ImVec2(r.z, r.w)); return ImVec4(a.x, a.y, b.x, b.y); }
+};
+
+// The live frame: its draw lists moved in place.
+void MoveDrawn(ImDrawList* dl, const DialogMove& m) {
+    for (ImDrawVert& v : dl->VtxBuffer) { v.pos = m.Pos(v.pos); v.col = m.Color(v.col); }
+    for (ImDrawCmd& cmd : dl->CmdBuffer) cmd.ClipRect = m.Clip(cmd.ClipRect);
+}
+
+// The fade-out: a closed popup's windows are not drawn again, so their draw lists still hold its last frame, and it
+// is copied (moved) into the foreground on every frame of the fade.
+void CopyDrawn(ImDrawList* out, const ImDrawList* src, const DialogMove& m) {
+    for (const ImDrawCmd& cmd : src->CmdBuffer) {
+        if (cmd.UserCallback || cmd.ElemCount == 0) continue;
+        const ImDrawIdx* idx = src->IdxBuffer.Data + cmd.IdxOffset;
+        unsigned int lo = UINT_MAX, hi = 0;
+        for (unsigned int i = 0; i < cmd.ElemCount; ++i) { lo = ImMin(lo, (unsigned int)idx[i]); hi = ImMax(hi, (unsigned int)idx[i]); }
+        const int vtxCount = (int)(hi - lo + 1);
+        const ImVec4 clip = m.Clip(cmd.ClipRect);
+        out->PushClipRect(ImVec2(clip.x, clip.y), ImVec2(clip.z, clip.w), false);
+        out->PushTexture(cmd.TexRef);
+        out->PrimReserve((int)cmd.ElemCount, vtxCount);
+        const unsigned int base = out->_VtxCurrentIdx;
+        const ImDrawVert* vtx = src->VtxBuffer.Data + cmd.VtxOffset + lo;
+        for (int i = 0; i < vtxCount; ++i) {
+            ImDrawVert v = vtx[i];
+            v.pos = m.Pos(v.pos);
+            v.col = m.Color(v.col);
+            out->_VtxWritePtr[i] = v;
+        }
+        out->_VtxWritePtr += vtxCount;
+        for (unsigned int i = 0; i < cmd.ElemCount; ++i) out->_IdxWritePtr[i] = (ImDrawIdx)(base + (idx[i] - lo));
+        out->_IdxWritePtr += cmd.ElemCount;
+        out->_VtxCurrentIdx += (unsigned int)vtxCount;
+        out->PopTexture();
+        out->PopClipRect();
+    }
+}
+
+ImVec2 WindowCenter(const ImGuiWindow* w) { return ImVec2(w->Pos.x + w->Size.x * 0.5f, w->Pos.y + w->Size.y * 0.5f); }
+}
+
+bool BeginDialog(const char* strId, const ImVec2& center, ImGuiWindowFlags flags) {
+    const ImGuiID id = ImGui::GetID(strId);
+    DialogMotion& d = FindDialog(id);
+    if (!ImGui::IsPopupOpen(strId)) {
+        // Closed, by whatever means: the last frame it drew sinks away.
+        if (d.shown > 0.0f) d.shown = ImMax(0.0f, d.shown - FrameStep() / kDialogCloseSeconds);
+        if (d.shown > 0.0f && !d.windows.empty() && d.drawnAt > 0.0f) {
+            DialogMove m;
+            m.c = WindowCenter(d.windows.front());
+            m.k = DialogScale(d.shown) / DialogScale(d.drawnAt);
+            m.dyFrom = DialogRise(d.drawnAt);
+            m.dyTo = DialogRise(d.shown);
+            m.alpha = ImSaturate(DialogAlpha(d.shown) / ImMax(DialogAlpha(d.drawnAt), 0.001f));
+            ImDrawList* fg = ImGui::GetForegroundDrawList();
+            for (ImGuiWindow* w : d.windows) CopyDrawn(fg, w->DrawList, m);
+            g_animating = true;
+        } else {
+            d.shown = 0.0f;
+            d.windows.clear();
+        }
+        return false;
+    }
+    ImGui::SetNextWindowPos(center, ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    if (!ImGui::BeginPopup(strId, flags | ImGuiWindowFlags_NoMove)) return false;
+    // ImGui keeps a popup hidden on the frame it opens while it measures it: the rise starts on the frame it shows.
+    if (!ImGui::GetCurrentWindow()->Hidden && d.shown < 1.0f) d.shown = ImMin(1.0f, d.shown + FrameStep() / kDialogOpenSeconds);
+    if (d.shown < 1.0f) g_animating = true;
+    g_dialogStack.push_back((size_t)(&d - g_dialogs.data()));
+    WindowShadow();
+    return true;
+}
+
+void EndDialog() {
+    ImGuiWindow* w = ImGui::GetCurrentWindow();
+    ImGui::EndPopup();
+    if (g_dialogStack.empty()) return;
+    DialogMotion& d = g_dialogs[g_dialogStack.back()];
+    g_dialogStack.pop_back();
+    d.windows.clear();
+    CollectWindows(w, d.windows);
+    d.drawnAt = w->Hidden ? 0.0f : d.shown;
+    if (d.shown >= 1.0f || w->Hidden) return;
+    DialogMove m;
+    m.c = WindowCenter(w);
+    m.k = DialogScale(d.shown);
+    m.dyFrom = 0.0f;
+    m.dyTo = DialogRise(d.shown);
+    m.alpha = DialogAlpha(d.shown);
+    for (ImGuiWindow* x : d.windows) MoveDrawn(x->DrawList, m);
 }
 
 // Where more content lies above or below the visible part of a scrolled region, its edge fades into the background
@@ -500,9 +651,9 @@ bool BeginDropdown(const char* label, const char* preview, Icon icon, ImGuiCombo
         ImGui::PopStyleColor();
     }
     if (labelSize.x > 0.0f) SideLabel(label, ImVec2(bb.Max.x + style.ItemInnerSpacing.x, bb.Min.y + style.FramePadding.y));
-    if (!open) { AnimateSnap(id ^ kFadeKey, 0.0f); return false; }
-    const float t = AnimateFrom(id ^ kFadeKey, 0.0f, 1.0f, 24.0f);
-    ImGui::PushStyleVar(ImGuiStyleVar_Alpha, style.Alpha * Ease(t));
+    const float t = PopupFade(id ^ kFadeKey, open);
+    if (!open) return false;
+    ImGui::PushStyleVar(ImGuiStyleVar_Alpha, style.Alpha * t);
     if (!ImGui::BeginComboPopup(popupId, bb, flags)) { ImGui::PopStyleVar(); return false; }
     WindowShadow();
     return true;
@@ -521,9 +672,12 @@ void TooltipShow(ImGuiID key, const char* text) {
     const int frame = ImGui::GetFrameCount();
     const bool more = key == lastKey && frame == lastFrame;   // a second text for the same item this frame: it goes below the first
     if (!more) {
-        if (key != lastKey || frame - lastFrame > 2) t = 0.0f;   // another item, or the tooltip was away for a while
+        // Another item, or the tooltip was away for a while: it starts over, and its fade starts on the next frame
+        // (ImGui keeps a tooltip hidden on its first frame while it measures it).
+        const bool fresh = key != lastKey || frame - lastFrame > 2;
+        if (fresh) t = 0.0f;
+        else t += (1.0f - t) * (1.0f - std::exp(-22.0f * FrameStep()));
         lastKey = key; lastFrame = frame;
-        t += (1.0f - t) * (1.0f - std::exp(-22.0f * FrameStep()));
         if (t > 0.995f) t = 1.0f; else g_animating = true;
     }
     const ImGuiStyle& style = ImGui::GetStyle();
@@ -1573,6 +1727,54 @@ void Hint(const char* text) {
     ImGui::TextUnformatted(text);
     ImGui::PopTextWrapPos();
     ImGui::PopStyleColor();
+}
+
+void ProgressLine(const char* id, const char* text, float fraction, float width) {
+    ImGuiWindow* window = ImGui::GetCurrentWindow();
+    if (window->SkipItems) return;
+    const Palette& p = g_palette;
+    const ImGuiStyle& style = ImGui::GetStyle();
+    const ImGuiID key = window->GetID(id);
+    if (width <= 0.0f) width = ImGui::GetContentRegionAvail().x;
+    const bool known = fraction >= 0.0f;
+    char share[16] = "";
+    if (known) ImFormatString(share, sizeof(share), "%d%%", (int)(ImSaturate(fraction) * 100.0f));
+    const bool caption = (text && *text) || known;
+    const float textH = caption ? ImGui::GetTextLineHeight() : 0.0f;
+    const float gap = caption ? Px(5.0f) : 0.0f;
+    const float lineH = Px(6.0f);
+    const ImVec2 pos = window->DC.CursorPos;
+    const ImRect bb(pos, ImVec2(pos.x + width, pos.y + textH + gap + lineH));
+    ImGui::ItemSize(bb);
+    if (!ImGui::ItemAdd(bb, 0)) return;
+    ImDrawList* dl = window->DrawList;
+    const float shareW = share[0] ? ImGui::CalcTextSize(share).x : 0.0f;
+    if (text && *text) {   // a caption longer than its room ends in an ellipsis before the share
+        const float maxX = bb.Max.x - (shareW > 0.0f ? shareW + style.ItemInnerSpacing.x * 2.0f : 0.0f);
+        ImGui::PushStyleColor(ImGuiCol_Text, p.textDim);
+        ImGui::RenderTextEllipsis(dl, pos, ImVec2(maxX, pos.y + textH), maxX, text, nullptr, nullptr);
+        ImGui::PopStyleColor();
+    }
+    if (share[0]) dl->AddText(ImVec2(bb.Max.x - shareW, pos.y), Col(p.text), share);
+    const float y0 = pos.y + textH + gap, y1 = y0 + lineH, r = lineH * 0.5f;
+    dl->AddRectFilled(ImVec2(bb.Min.x, y0), ImVec2(bb.Max.x, y1), Col(p.track), r);
+    if (known) {
+        // The fill glides to each new value; one that goes back (a new run) is taken at once.
+        const float target = ImSaturate(fraction);
+        float* last = MotionValue(key, target);
+        if (target < *last - 0.001f) *last = target;
+        const float v = Animate(key, target, 12.0f);
+        if (v > 0.0f) dl->AddRectFilled(ImVec2(bb.Min.x, y0), ImVec2(ImMax(bb.Min.x + lineH, bb.Min.x + width * v), y1), Col(p.accent), r);
+    } else {
+        // A third of the track sweeps across it, easing in and out.
+        constexpr float kPeriod = 1.5f;
+        const float t = Ease(std::fmod((float)ImGui::GetTime(), kPeriod) / kPeriod);
+        const float seg = width * 0.34f;
+        const float a = ImMax(bb.Min.x, bb.Min.x - seg + (width + seg) * t);
+        const float b = ImMin(bb.Max.x, bb.Min.x + (width + seg) * t);
+        if (b - a > 0.5f) dl->AddRectFilled(ImVec2(a, y0), ImVec2(b, y1), Col(p.accent), ImMin(r, (b - a) * 0.5f));
+        g_animating = true;
+    }
 }
 
 // Inline badges sit on the text baseline of their line, like text does: after a framed control (a toggle, a

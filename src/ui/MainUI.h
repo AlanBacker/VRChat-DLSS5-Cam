@@ -368,8 +368,9 @@ private:
     bool   m_guideAutoDone = false;  // the first-start opening was decided
     int    m_guidePage = 0;
     double m_guidePageTime = -1.0;   // when the page changed (its content fades in)
-    bool   m_updateDeferred = false; // an update popup waits for the guide to close
+    bool   m_updateDeferred = false; // an update popup waits for the window to come up and for the guide to close
     bool   m_mirrorOpen = false;     // open the mirror-sites popup on this frame
+    bool   m_mirrorDeferred = false; // the mirror-sites popup waits for the window to come up
     int    m_mirrorBlockState = -1;  // the mirror controls' mode-specific part: what it showed last (its content fades in on a change)
     double m_mirrorBlockTime = -1.0; // when that changed
     bool   m_openAbout = false;      // open the About section (once, in the sidebar)

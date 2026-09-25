@@ -57,6 +57,11 @@ void SmoothScrollTo(float target, bool horizontal = false);                    /
 // Popups and tooltips that fade in instead of appearing at once ---------------------------------------------------
 bool BeginPopupFade(const char* strId, ImGuiWindowFlags flags = 0);            // pair with EndPopupFade() when true
 void EndPopupFade();
+// A dialog: a popup centred on "center" that opens with a short rise (it fades in while it grows from a little
+// smaller and settles a few pixels up into place) and, however it closes (a button, a click outside, Escape), sinks
+// away the same way. Pair a true return with EndDialog().
+bool BeginDialog(const char* strId, const ImVec2& center, ImGuiWindowFlags flags = 0);
+void EndDialog();
 void ScrollEdgeFade(ImU32 bg, float height);   // in a scrolled child, before EndChild: the rows cut off above or below fade into bg
 bool BeginDropdown(const char* label, const char* preview, ImGuiComboFlags flags = 0);   // flat combo box; pair with EndDropdown()
 void EndDropdown();
@@ -163,5 +168,9 @@ bool SearchMatch(const char* label, const char* tooltip = nullptr);             
 bool SearchSkipped();                                                              // the last labelled widget was left out
 int  SearchHits();                                                                 // matches so far in this frame
 void Hint(const char* text);                                                       // wrapped dim paragraph
+// A progress line: "text" at the left of a row and the share done at its right, over a slim rounded track that the
+// accent fills, gliding to each new value. A negative fraction sweeps a segment along the track instead, for a step
+// whose length is unknown. "width" 0: the rest of the row.
+void ProgressLine(const char* id, const char* text, float fraction, float width = 0.0f);
 
 } // namespace vdc::ui

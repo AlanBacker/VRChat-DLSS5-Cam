@@ -521,6 +521,7 @@ enum class Lang { English = 0, Chinese = 1, Japanese = 2, Korean = 3, Count = 4 
     X(UpdateLater,        "Later", "以后再说", "あとで", "나중에") \
     X(UpdatePage,         "Release page", "查看发布页", "リリースページ", "릴리스 페이지") \
     X(UpdateDownloading,  "Downloading\xE2\x80\xA6 %.1f / %.1f MB", "正在下载… %.1f / %.1f MB", "ダウンロード中… %.1f / %.1f MB", "다운로드 중… %.1f / %.1f MB") \
+    X(UpdateDownloadingMb, "Downloading\xE2\x80\xA6 %.1f MB", "正在下载… %.1f MB", "ダウンロード中… %.1f MB", "다운로드 중… %.1f MB") \
     X(UpdateExtracting,   "Unpacking\xE2\x80\xA6", "正在解压…", "展開しています…", "압축을 푸는 중…") \
     X(UpdateRestarting,   "Restarting to finish the update\xE2\x80\xA6", "正在重启以完成更新…", "更新を完了するために再起動しています…", "업데이트를 마치기 위해 다시 시작하는 중…") \
     X(UpdateFailed,       "Update failed: %s", "更新失败：%s", "更新に失敗しました: %s", "업데이트 실패: %s") \

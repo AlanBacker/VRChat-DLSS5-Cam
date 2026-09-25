@@ -261,9 +261,16 @@ void MainUI::Draw(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Font
     }
     if (!m_undoInit) { m_undoBase = { s.ParameterText(), LibrarySnapshot(info), std::string() }; m_undoInit = true; }
     // The update popup waits while the setup guide is up; the guide shows the same access controls as the popup
-    // that a failed mirror check would open, so that one is not opened over it.
-    if (info.updateShow) { if (m_guideShowing) m_updateDeferred = true; else m_updateOpen = true; }
-    if (info.mirrorPrompt && !m_guideShowing) m_mirrorOpen = true;
+    // that a failed mirror check would open, so that one is not opened over it. Both also wait until the window has
+    // come up after the start-up card (when the guide would open): a check that answers at once finds its result
+    // within the first frames, and the window's own fade-in would cover the popup's rise.
+    if (info.updateShow) m_updateDeferred = true;
+    if (info.mirrorPrompt && !m_guideShowing) m_mirrorDeferred = true;
+    if (m_guideShowing) m_mirrorDeferred = false;
+    if (m_guideAutoDone && !m_guideShowing) {
+        if (m_updateDeferred) { m_updateDeferred = false; m_updateOpen = true; }
+        if (m_mirrorDeferred) { m_mirrorDeferred = false; m_mirrorOpen = true; }
+    }
     if (!io.WantTextInput && io.KeyCtrl && !io.KeyAlt) {
         if (ImGui::IsKeyPressed(ImGuiKey_Z, false)) ApplyUndo(s, info, ev, io.KeyShift);
         else if (ImGui::IsKeyPressed(ImGuiKey_Y, false)) ApplyUndo(s, info, ev, true);
@@ -687,9 +694,7 @@ void MainUI::DrawUpdatePopup(Settings& /*s*/, const UiFrameInfo& info, UiEvents&
     if (m_updateOpen) { ImGui::OpenPopup("##update"); m_updateOpen = false; }
     // Centred on every frame from its own size, so it stays put when the progress bar appears.
     ImGuiViewport* vp = ImGui::GetMainViewport();
-    if (ImGui::IsPopupOpen("##update"))
-        ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x + vp->WorkSize.x * 0.5f, vp->WorkPos.y + vp->WorkSize.y * 0.45f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
-    if (!BeginPopupFade("##update", ImGuiWindowFlags_NoMove)) return;
+    if (!BeginDialog("##update", ImVec2(vp->WorkPos.x + vp->WorkSize.x * 0.5f, vp->WorkPos.y + vp->WorkSize.y * 0.45f))) return;
     const Palette& p = Colors();
     const float em = ImGui::GetFontSize();
     const float w = em * 28.0f;
@@ -732,11 +737,13 @@ void MainUI::DrawUpdatePopup(Settings& /*s*/, const UiFrameInfo& info, UiEvents&
     }
     ImGui::Spacing();
     if (st == UpDownloading) {
-        ImGui::ProgressBar(info.updateProgress, ImVec2(w, 0.0f), "");
-        ImGui::TextDisabled("%s", StrPrintf(TR(UpdateDownloading), info.updateDownloadedMb, info.updateTotalMb).c_str());
+        // A site that does not say the size: the amount so far, over a sweeping line.
+        const bool sized = info.updateTotalMb > 0.0;
+        ProgressLine("##updateBar", (sized ? StrPrintf(TR(UpdateDownloading), info.updateDownloadedMb, info.updateTotalMb)
+                                           : StrPrintf(TR(UpdateDownloadingMb), info.updateDownloadedMb)).c_str(),
+                     sized ? info.updateProgress : -1.0f, w);
     } else if (st == UpExtracting) {
-        ImGui::ProgressBar(-1.0f * (float)ImGui::GetTime(), ImVec2(w, 0.0f), "");
-        ImGui::TextDisabled("%s", TR(UpdateExtracting));
+        ProgressLine("##updateBar", TR(UpdateExtracting), -1.0f, w);
     } else if (st == UpRestarting) {
         ImGui::TextDisabled("%s", TR(UpdateRestarting));
     } else if (st == UpFailed) {
@@ -764,7 +771,7 @@ void MainUI::DrawUpdatePopup(Settings& /*s*/, const UiFrameInfo& info, UiEvents&
         if (FlatButton(TR(UpdateLater), ImVec2(em * 7.0f, 0.0f))) ImGui::CloseCurrentPopup();
         ImGui::EndDisabled();
     }
-    EndPopupFade();
+    EndDialog();
 }
 
 namespace {
@@ -871,9 +878,7 @@ void MainUI::MirrorControls(Settings& s, const UiFrameInfo& info, UiEvents& ev, 
 void MainUI::DrawMirrorPopup(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts) {
     if (m_mirrorOpen) { ImGui::OpenPopup("##mirror"); m_mirrorOpen = false; }
     ImGuiViewport* vp = ImGui::GetMainViewport();
-    if (ImGui::IsPopupOpen("##mirror"))
-        ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x + vp->WorkSize.x * 0.5f, vp->WorkPos.y + vp->WorkSize.y * 0.45f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
-    if (!BeginPopupFade("##mirror", ImGuiWindowFlags_NoMove)) return;
+    if (!BeginDialog("##mirror", ImVec2(vp->WorkPos.x + vp->WorkSize.x * 0.5f, vp->WorkPos.y + vp->WorkSize.y * 0.45f))) return;
     const Palette& p = Colors();
     const float em = ImGui::GetFontSize();
     const float w = em * 28.0f;
@@ -893,7 +898,7 @@ void MainUI::DrawMirrorPopup(Settings& s, const UiFrameInfo& info, UiEvents& ev,
     if (AccentButton(TR(MirrorCheckAgain), ImVec2(em * 9.0f, 0.0f))) { ev.updateCheckNow = true; ImGui::CloseCurrentPopup(); }
     ImGui::SameLine();
     if (FlatButton(TR(UpdateLater), ImVec2(em * 7.0f, 0.0f))) ImGui::CloseCurrentPopup();
-    EndPopupFade();
+    EndDialog();
 }
 
 // A pulsing accent ring around the last item while the setup guide's pointers are lit (Spotlight is called after
@@ -940,9 +945,7 @@ void MainUI::DrawSetupGuide(Settings& s, const UiFrameInfo& info, UiEvents& ev, 
     // Closed by a click outside or Escape: counts as seen, without the pointers.
     if (m_guideShowing && !ImGui::IsPopupOpen("##guide")) CloseGuide(s, ev, false);
     ImGuiViewport* vp = ImGui::GetMainViewport();
-    if (ImGui::IsPopupOpen("##guide"))
-        ImGui::SetNextWindowPos(ImVec2(vp->WorkPos.x + vp->WorkSize.x * 0.5f, vp->WorkPos.y + vp->WorkSize.y * 0.5f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
-    if (!BeginPopupFade("##guide", ImGuiWindowFlags_NoMove)) return;
+    if (!BeginDialog("##guide", ImVec2(vp->WorkPos.x + vp->WorkSize.x * 0.5f, vp->WorkPos.y + vp->WorkSize.y * 0.5f))) return;
     m_guideShowing = true;
     const Palette& p = Colors();
     const ImGuiStyle& style = ImGui::GetStyle();
@@ -1070,7 +1073,7 @@ void MainUI::DrawSetupGuide(Settings& s, const UiFrameInfo& info, UiEvents& ev, 
         if (last) { CloseGuide(s, ev, true); ImGui::CloseCurrentPopup(); }
         else { ++m_guidePage; m_guidePageTime = now; }
     }
-    EndPopupFade();
+    EndDialog();
 }
 
 void MainUI::ResetView(bool animate) {
@@ -1444,7 +1447,7 @@ void MainUI::BlockSource(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
                 const unsigned long long total = std::max(info.videoFrames, info.videoFrame);
                 const float frac = total ? (float)((double)info.videoFrame / (double)total) : 0.0f;
                 const std::string label = StrPrintf(TR(FrameOf), (unsigned long long)info.videoFrame, total);
-                ImGui::ProgressBar(frac, ImVec2(-FLT_MIN, 0), label.c_str());
+                ProgressLine("##videoBar", label.c_str(), frac);
                 const double rate = info.videoElapsed > 0.5 ? (double)info.videoFrame / info.videoElapsed : 0.0;
                 const double remaining = (rate > 0.0 && total > info.videoFrame) ? (double)(total - info.videoFrame) / rate : 0.0;
                 if (info.videoFinishing) ImGui::TextDisabled("%s", TR(VideoFinishing));
