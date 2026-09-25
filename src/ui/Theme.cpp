@@ -1624,6 +1624,55 @@ void SectionEnd() {
 }
 
 namespace {
+struct RevealFrame {
+    ImGuiWindow* window = nullptr;
+    ImGuiID id = 0;
+    float t = 1.0f;
+    float startY = 0.0f, maxY = 0.0f, idealMaxY = 0.0f;
+};
+RevealFrame g_reveals[8];
+int g_revealDepth = 0;
+ImGuiStorage g_revealHeights;   // each run's full height, from the last frame it was drawn
+}
+
+bool RevealBegin(const char* id, float t) {
+    ImGuiWindow* window = ImGui::GetCurrentWindow();
+    if (window->SkipItems || t <= 0.001f) return false;
+    IM_ASSERT(g_revealDepth < (int)IM_ARRAYSIZE(g_reveals));
+    RevealFrame& f = g_reveals[g_revealDepth++];
+    f.window = window;
+    f.id = window->GetID(id);
+    f.t = ImMin(t, 1.0f);
+    f.startY = window->DC.CursorPos.y;
+    f.maxY = window->DC.CursorMaxPos.y;
+    f.idealMaxY = window->DC.IdealMaxPos.y;
+    if (f.t < 0.999f) {
+        // Last frame's height: the first frame of an opening has none yet and shows nothing.
+        const float shown = g_revealHeights.GetFloat(f.id, 0.0f) * Ease(f.t);
+        ImGui::PushClipRect(window->ClipRect.Min, ImVec2(window->ClipRect.Max.x, f.startY + shown), true);
+        ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * f.t);
+    }
+    return true;
+}
+
+void RevealEnd() {
+    if (g_revealDepth <= 0) return;
+    RevealFrame& f = g_reveals[--g_revealDepth];
+    ImGuiWindow* window = f.window;
+    // The run ended one item spacing above the cursor; with that spacing it is what the widgets after it move by.
+    const float fullH = ImMax(0.0f, window->DC.CursorPos.y - f.startY);
+    g_revealHeights.SetFloat(f.id, fullH);
+    if (f.t >= 0.999f) return;
+    ImGui::PopStyleVar();
+    ImGui::PopClipRect();
+    const float shown = fullH * Ease(f.t);
+    window->DC.CursorPos.y = f.startY + shown;
+    window->DC.CursorMaxPos.y = ImMax(f.maxY, f.startY + shown - ImGui::GetStyle().ItemSpacing.y);
+    window->DC.IdealMaxPos.y = ImMax(f.idealMaxY, window->DC.CursorMaxPos.y);
+    window->DC.CurrLineSize.y = 0.0f;
+}
+
+namespace {
 // Panels, like sections, draw their widgets on the upper channel of a splitter and the card under them on the
 // lower one once PanelEnd knows how tall they came out.
 struct PanelFrame {

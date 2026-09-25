@@ -215,6 +215,16 @@ const char* StateText(const LibraryItem& it) {
     }
 }
 
+// While a file is processed the settings are locked: a change half-way through would make a result that mixes two
+// looks, and a still image being saved must not restart its passes.
+bool SettingsLocked(const UiFrameInfo& info) {
+    return info.videoProcessing || info.videoFinishing || info.batchRunning || info.capturePending > 0
+        || (info.status && info.status->capturesInFlight > 0);
+}
+
+// The room the lock banner takes at the top of the sidebar column: the banner and the gap below it.
+float LockBannerSpace() { return ImGui::GetFrameHeight() + Px(5.0f) * 2.0f + ImGui::GetStyle().ItemSpacing.y; }
+
 } // namespace
 
 void MainUI::Toast(const std::string& text, bool error, bool success) {
@@ -374,13 +384,23 @@ void MainUI::Draw(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Font
         }
     }
 
+    // The Advanced switch's controls open and close with it (RevealBegin), in the sidebar, the status bar and the
+    // window of a library item's own values.
+    m_advShown = AnimateLinear(ImGui::GetID("##advanced"), s.showAdvanced ? 1.0f : 0.0f, 0.2f);
     if (shownW > 0.5f) {
         ImGui::SameLine(0.0f, 0.0f);
         ImGui::PushClipRect(bodyOrigin, ImVec2(bodyOrigin.x + avail.x, bodyOrigin.y + bodyH), true);
+        // While the settings are locked their banner holds the top of the column, outside the scrolled settings, so a
+        // scrolled sidebar can neither cut it nor carry it away; the settings make room for it as it comes in.
+        const ImVec2 column = ImGui::GetCursorScreenPos();
+        const float lockT = Animate(ImGui::GetID("##lock"), SettingsLocked(info) ? 1.0f : 0.0f, 12.0f);
+        const float lockSpace = std::round(LockBannerSpace() * lockT);
+        if (lockSpace > 0.0f) ImGui::SetCursorScreenPos(ImVec2(column.x, column.y + lockSpace));
         // The cards reach the edges of the column; the side padding leaves room for their shadows only.
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(Px(6.0f), 0.0f));
-        ImGui::BeginChild("##sidebar", ImVec2(sidebarW, bodyH), ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_NoScrollWithMouse);
+        ImGui::BeginChild("##sidebar", ImVec2(sidebarW, std::max(1.0f, bodyH - lockSpace)), ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_NoScrollWithMouse);
         ImGui::PopStyleVar();
+        const float barW = ImGui::GetCurrentWindow()->ScrollbarSizes.x;   // the banner ends where the cards do
         ImGui::SetScrollX(0.0f);   // the sidebar only ever scrolls vertically
         SmoothScroll(false, ImGui::GetFontSize() * 3.6f);
         if (m_openAbout) {   // after the setup guide: the About section opens and the sidebar glides to it
@@ -397,6 +417,12 @@ void MainUI::Draw(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Font
         DrawSidebar(s, info, ev, fonts);
         ModeFadeContent(vtx0);
         ImGui::EndChild();
+        if (lockSpace > 0.0f) {   // after the settings, whose scrollbar is known by then; the layout goes on below them
+            const ImVec2 next = ImGui::GetCursorScreenPos();
+            ImGui::SetCursorScreenPos(column);
+            DrawLockBanner(info, ev, lockT, lockSpace, sidebarW, barW);
+            ImGui::SetCursorScreenPos(next);
+        }
         ImGui::PopClipRect();
     }
 
@@ -1252,44 +1278,51 @@ void MainUI::DrawTopBar(Settings& s, const UiFrameInfo& info, UiEvents& ev, cons
 
 // ------------------------------------------------------------------------------------------
 
+// The banner over the locked settings: what is running, and the button that stops it. It has a strip of its own at the
+// top of the sidebar column (`space` high, the settings below it) and slides down from the strip's top edge as it
+// fades in (t).
+void MainUI::DrawLockBanner(const UiFrameInfo& info, UiEvents& ev, float t, float space, float width, float barW) {
+    const Palette& p = Colors();
+    const ImGuiStyle& style = ImGui::GetStyle();
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(Px(6.0f), 0.0f));
+    ImGui::BeginChild("##sidebarLock", ImVec2(width, space), ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+    ImGui::PopStyleVar();
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    const int vtx0 = dl->VtxBuffer.Size;
+    const float frameH = ImGui::GetFrameHeight();
+    const float inner = Px(5.0f);
+    const float bannerH = frameH + inner * 2.0f;
+    const ImVec2 top = ImGui::GetCursorScreenPos();
+    const ImVec2 b0(top.x, top.y + space - LockBannerSpace());
+    const ImVec2 b1(b0.x + ImGui::GetContentRegionAvail().x - barW, b0.y + bannerH);
+    dl->AddRectFilled(b0, b1, WithAlpha(p.warn, 0.13f * t), CardRounding());
+    dl->AddRect(b0, b1, WithAlpha(p.warn, 0.35f * t), CardRounding(), 1.0f);
+    const float iconS = IconSize();
+    DrawIcon(dl, Icon::Lock, ImVec2(b0.x + Px(12.0f) + iconS * 0.5f, b0.y + bannerH * 0.5f), iconS, WithAlpha(p.warn, t));
+    const bool cancellable = info.batchRunning || info.videoProcessing;
+    const float cancelW = cancellable ? IconTextButtonWidth(TR(Cancel)) : 0.0f;
+    const float textX = b0.x + Px(12.0f) + iconS + Px(8.0f);
+    ImGui::PushStyleColor(ImGuiCol_Text, WithAlpha(p.warn, t));
+    ImGui::PushClipRect(b0, ImVec2(b1.x - (cancellable ? cancelW + inner * 2.0f : inner), b1.y), true);
+    ImGui::SetCursorScreenPos(ImVec2(textX, b0.y + (bannerH - ImGui::GetTextLineHeight()) * 0.5f));
+    ImGui::TextUnformatted(info.mcpJob.empty() ? TR(LockedWhileBusy) : StrPrintf(TR(McpJobRunningFmt), info.mcpJob.c_str()).c_str());
+    ImGui::PopClipRect();
+    ImGui::PopStyleColor();
+    if (cancellable) {
+        ImGui::SameLine();
+        ImGui::SetCursorScreenPos(ImVec2(b1.x - cancelW - inner, b0.y + inner));
+        ImGui::PushStyleVar(ImGuiStyleVar_Alpha, style.Alpha * t);
+        if (IconTextButton(TR(Cancel), Icon::Stop, ImVec2(cancelW, frameH), ButtonKind::Accent)) { if (info.batchRunning) ev.batchCancel = true; else ev.cancelVideo = true; }
+        ImGui::PopStyleVar();
+    }
+    ModeFadeContent(vtx0);
+    ImGui::EndChild();
+}
+
 void MainUI::DrawSidebar(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts) {
     const Palette& p = Colors();
     const ImGuiStyle& style = ImGui::GetStyle();
-    // While a file is processed the settings are locked: a change half-way through would make a result that mixes
-    // two looks, and a still image being saved must not restart its passes.
-    const bool locked = info.videoProcessing || info.videoFinishing || info.batchRunning || info.capturePending > 0
-                     || (info.status && info.status->capturesInFlight > 0);
-    const float lockT = Animate(ImGui::GetID("##lock"), locked ? 1.0f : 0.0f, 12.0f);
-    if (lockT > 0.001f) {
-        const float frameH = ImGui::GetFrameHeight();
-        const float inner = Px(5.0f);
-        const float bannerH = frameH + inner * 2.0f;
-        const ImVec2 b0 = ImGui::GetCursorScreenPos();
-        const float w = ImGui::GetContentRegionAvail().x;
-        ImDrawList* dl = ImGui::GetWindowDrawList();
-        const ImVec2 b1(b0.x + w, b0.y + bannerH);
-        dl->AddRectFilled(b0, b1, WithAlpha(p.warn, 0.13f * lockT), CardRounding());
-        dl->AddRect(b0, b1, WithAlpha(p.warn, 0.35f * lockT), CardRounding(), 1.0f);
-        const float iconS = IconSize();
-        DrawIcon(dl, Icon::Lock, ImVec2(b0.x + Px(12.0f) + iconS * 0.5f, b0.y + bannerH * 0.5f), iconS, WithAlpha(p.warn, lockT));
-        const bool cancellable = info.batchRunning || info.videoProcessing;
-        const float cancelW = cancellable ? IconTextButtonWidth(TR(Cancel)) : 0.0f;
-        const float textX = b0.x + Px(12.0f) + iconS + Px(8.0f);
-        ImGui::PushStyleColor(ImGuiCol_Text, WithAlpha(p.warn, lockT));
-        ImGui::PushClipRect(b0, ImVec2(b1.x - (cancellable ? cancelW + inner * 2.0f : inner), b1.y), true);
-        ImGui::SetCursorScreenPos(ImVec2(textX, b0.y + (bannerH - ImGui::GetTextLineHeight()) * 0.5f));
-        ImGui::TextUnformatted(info.mcpJob.empty() ? TR(LockedWhileBusy) : StrPrintf(TR(McpJobRunningFmt), info.mcpJob.c_str()).c_str());
-        ImGui::PopClipRect();
-        ImGui::PopStyleColor();
-        if (cancellable) {
-            ImGui::SameLine();
-            ImGui::SetCursorScreenPos(ImVec2(b1.x - cancelW - inner, b0.y + inner));
-            ImGui::PushStyleVar(ImGuiStyleVar_Alpha, style.Alpha * lockT);
-            if (IconTextButton(TR(Cancel), Icon::Stop, ImVec2(cancelW, frameH), ButtonKind::Accent)) { if (info.batchRunning) ev.batchCancel = true; else ev.cancelVideo = true; }
-            ImGui::PopStyleVar();
-        }
-        ImGui::SetCursorScreenPos(ImVec2(b0.x, b0.y + (bannerH + style.ItemSpacing.y) * lockT));
-    }
+    const bool locked = SettingsLocked(info);   // the banner over the column says so (DrawLockBanner)
     // The search field, and the Advanced switch at the end of its row (on a row of its own when the sidebar is too
     // narrow for both): while the field holds text only the matching controls show, in their sections (Theme's
     // Search*); the switch decides how much of every section is shown.
@@ -1329,28 +1362,25 @@ void MainUI::DrawSidebar(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
         ImGui::Dummy(ImVec2(0.0f, Px(2.0f)));
     }
     SearchBegin(m_searchBuf);
+    m_adv = Searching() ? 1.0f : m_advShown;   // a search looks through the expert controls too
     ImGui::BeginDisabled(locked);
     ImGui::PushItemWidth(-LabelColumn(ImGui::GetContentRegionAvail().x));
     if (SectionHeader(TR(SecSource), "source", true, Icon::Import)) { BlockSource(s, info, ev); SectionEnd(); }
     if (SectionHeader(TR(SecNeural), "neural", true, Icon::Sparkle)) { BlockNeural(s, info, ev); SectionEnd(); }
     if (SectionHeader(TR(SecCapture), "save", true, Icon::Save)) { BlockSave(s, info, ev); SectionEnd(); }
-    // The expert sections fade in and out with the Advanced switch; Display sits under DLAA, before the internals.
-    // A search looks through the expert sections too, and through the expert controls of the everyday ones.
-    const float adv = Searching() ? 1.0f : Animate(ImGui::GetID("##advanced"), s.showAdvanced ? 1.0f : 0.0f, 12.0f);
-    if (adv > 0.001f) {
-        ImGui::PushStyleVar(ImGuiStyleVar_Alpha, style.Alpha * adv);
+    // The expert sections open and close with the Advanced switch; Display sits under DLAA, before the internals.
+    if (RevealBegin("##advSections", m_adv)) {
         if (SectionHeader(TR(SecGuidance), "guidance", false, Icon::Layers)) { BlockGuidance(s, info, ev); SectionEnd(); }
 #if !APP_EDITION_AMD   // DLAA is NVIDIA-only
         if (SectionHeader(TR(SecDlaa), "dlaa", false, Icon::Grid)) { BlockDlaa(s, info, ev); SectionEnd(); }
 #endif
-        ImGui::PopStyleVar();
+        RevealEnd();
     }
     if (SectionHeader(TR(SecDisplay), "view", false, Icon::Monitor)) { BlockView(s, info, ev); SectionEnd(); }
     if (SectionHeader(TR(SecMcp), "mcp", false, Icon::Plug)) { BlockMcp(s, info, ev); SectionEnd(); }
-    if (adv > 0.001f) {
-        ImGui::PushStyleVar(ImGuiStyleVar_Alpha, style.Alpha * adv);
+    if (RevealBegin("##advInternals", m_adv)) {
         if (SectionHeader(TR(SecInternals), "internals", false, Icon::Cpu)) { BlockInternals(s, info, ev); SectionEnd(); }
-        ImGui::PopStyleVar();
+        RevealEnd();
     }
     m_aboutY = ImGui::GetCursorPosY() - ImGui::GetCurrentWindow()->WindowPadding.y;   // where the sidebar glides to after the setup guide
     if (SectionHeader(TR(SecAbout), "about", false, Icon::Info)) { BlockAbout(s, info, ev, fonts); SectionEnd(); }
@@ -1505,9 +1535,10 @@ void MainUI::BlockSource(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
                     if (SliderIntReset(TR(WebpQuality), &s.webpQuality, 50, 100, 90, "%d", TR(TipWebpQuality))) ev.settingsChanged = true;
                 }
             }
-            if ((s.showAdvanced || Searching()) && info.videoAnimation == 0) {
+            if (info.videoAnimation == 0 && RevealBegin("##advDecode", m_adv)) {
                 if (Toggle(TR(HardwareDecode), &s.videoHardwareDecode)) ev.settingsChanged = true;
                 Help(TR(TipHardwareDecode));
+                RevealEnd();
             }
             ImGui::EndDisabled();
         }
@@ -1656,9 +1687,10 @@ void MainUI::BlockNeural(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         else PillAfter(TR(Inactive), WithAlpha(p.muted, 0.2f), p.muted, Px(10.0f));
     }
     Hint(TR(NrHint));
-    if (s.sourceMode == SourceSpout && (s.showAdvanced || Searching())) {
+    if (s.sourceMode == SourceSpout && RevealBegin("##advCaptureOnly", m_adv)) {
         if (Toggle(TR(NrCaptureOnly), &s.nrCaptureOnly)) ev.settingsChanged = true;
         Help(TR(TipNrCaptureOnly));
+        RevealEnd();
     }
 
     // Runtime.
@@ -1668,18 +1700,19 @@ void MainUI::BlockNeural(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
     if (EditionRoute() == RouteFsrHost) BlockFsrHost(s, info, ev);
     else BlockNgxRuntime(s, info, ev);
     ImGui::Spacing();
-    EffectControls(s, ev, s.showAdvanced || Searching(), s.nrEnabled, st);
-    if (st && (s.showAdvanced || Searching())) {
+    EffectControls(s, ev, m_adv, s.nrEnabled, st);
+    if (st && RevealBegin("##advNeuralReadouts", m_adv)) {
         Readout(m_fonts, TR(GpuTime), FormatMsFixed(m_shown.gpuMs[(UINT)GpuTimer::Neural]));
         Readout(m_fonts, TR(Frames), StrPrintf("%llu", m_shown.processedFrames));
         Readout(m_fonts, TR(NrPassSize), st->nrActive && st->nrPassWidth ? StrPrintf("%ux%u", st->nrPassWidth, st->nrPassHeight) : std::string("-"));
         Readout(m_fonts, TR(NrOutputCheck), st->nrActive && m_shown.nrOutDelta >= 0.0f ? StrPrintf("%5.3f", m_shown.nrOutDelta) : std::string("-"), TR(TipNrOutputCheck));
+        RevealEnd();
     }
     ImGui::Spacing();
 }
 
 // The effect controls of the DLSS 5 pass: shared by the sidebar and by the window of a library item's own values.
-void MainUI::EffectControls(Settings& s, UiEvents& ev, bool advanced, bool enabled, const PipelineStatus* st) {
+void MainUI::EffectControls(Settings& s, UiEvents& ev, float advanced, bool enabled, const PipelineStatus* st) {
     ImGui::BeginDisabled(!enabled);
     {
         DrawPresetRow(s, ev);
@@ -1690,9 +1723,9 @@ void MainUI::EffectControls(Settings& s, UiEvents& ev, bool advanced, bool enabl
     // 0..2: up to 1 goes to the runtime (which stops there); above 1 the composite pass amplifies the matching part
     // of the change the network made (see the tooltips).
     ch |= SliderReset(TR(Intensity), &s.nrIntensity, 0.0f, 2.0f, 1.0f, "%.2f", TR(TipIntensity));
-    if (!advanced) Hint(TR(NrStrengthHint));
+    if (RevealBegin("##basicHint", 1.0f - advanced)) { Hint(TR(NrStrengthHint)); RevealEnd(); }
     bool blend = false;
-    if (advanced) {
+    if (RevealBegin("##advEffect", advanced)) {
         ch |= SliderReset(TR(GlobalTone), &s.nrGlobalTone, 0.0f, 2.0f, 1.0f, "%.2f", TR(TipGlobalTone));
         ch |= SliderReset(TR(LocalTone), &s.nrLocalTone, 0.0f, 2.0f, 1.0f, "%.2f", TR(TipLocalTone));
         ch |= SliderReset(TR(LocalStructure), &s.nrLocalStructure, 0.0f, 2.0f, 1.0f, "%.2f", TR(TipLocalStructure));
@@ -1751,6 +1784,7 @@ void MainUI::EffectControls(Settings& s, UiEvents& ev, bool advanced, bool enabl
         blend |= SliderReset(TR(ColorStrength), &s.nrColorStrength, 0.0f, 2.0f, 1.0f, "%.2f", TR(TipColorStrength));
         blend |= SliderReset(TR(ShadowGain), &s.nrShadowGain, 0.0f, 2.0f, 1.0f, "%.2f", TR(TipShadowGain));
         blend |= SliderReset(TR(HighlightGain), &s.nrHighlightGain, 0.0f, 2.0f, 1.0f, "%.2f", TR(TipHighlightGain));
+        RevealEnd();
     }
     ImGui::EndDisabled();
     if (blend) ev.settingsChanged = true;
@@ -1813,9 +1847,10 @@ void MainUI::BlockSave(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         Help(TR(TipFileName));
     }
     if (Toggle(TR(SaveOriginal), &s.saveOriginal)) ev.settingsChanged = true;
-    if (s.showAdvanced || Searching()) {
+    if (RevealBegin("##advKeepAlpha", m_adv)) {
         if (Toggle(TR(KeepAlpha), &s.keepAlpha)) ev.settingsChanged = true;
         Help(TR(TipKeepAlpha));
+        RevealEnd();
     }
     if (s.sourceMode == SourceSpout) {
         ImGui::Spacing();
@@ -1920,10 +1955,11 @@ void MainUI::BlockView(Settings& s, const UiFrameInfo& /*info*/, UiEvents& ev) {
     if (Toggle(TR(ShowLog), &s.showLog)) ev.settingsChanged = true;
     if (Toggle(TR(ReopenLast), &s.reopenLast)) ev.settingsChanged = true;
     Help(TR(TipReopenLast));
-    if (s.showAdvanced || Searching()) {
+    if (RevealBegin("##advView", m_adv)) {
         if (Toggle(TR(Vsync), &s.vsync)) ev.settingsChanged = true;
         if (SliderIntReset(TR(RateLimit), &s.processRateLimit, 0, 240, 0, s.processRateLimit > 0 ? "%d fps" : TR(RateLimitOff), TR(TipRateLimit)))
             ev.settingsChanged = true;
+        RevealEnd();
     }
     ImGui::Spacing();
 }
@@ -2060,7 +2096,7 @@ void MainUI::BlockMcp(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         Tip(TR(TipMcpKeepHours));
         if (ActionButton(TR(McpOpenJobs), Icon::Folder, ImVec2(fullW, 0.0f))) ev.mcpOpenJobs = true;
     }
-    if (s.showAdvanced || Searching()) {
+    if (RevealBegin("##advMcp", m_adv)) {
         if (SearchMatch(TR(McpQueueMax), TR(TipMcpQueueMax))) {
             LabelSeen(TR(McpQueueMax));
             if (InputIntLabel(TR(McpQueueMax), &s.mcpQueueMax, 1, 10)) { s.Clamp(); ev.settingsChanged = true; }
@@ -2089,6 +2125,7 @@ void MainUI::BlockMcp(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
             TrailingLabel(TR(McpJobFolder));
             Tip(TR(TipMcpJobFolder));
         }
+        RevealEnd();
     }
     ImGui::Spacing();
 }
@@ -3910,7 +3947,7 @@ void MainUI::DrawItemParams(Settings& s, const UiFrameInfo& info, UiEvents& ev, 
         if (lead->useOwn && lead->own) {
             ImGui::Spacing();
             UiEvents sub;
-            EffectControls(*lead->own, sub, s.showAdvanced, s.nrEnabled, nullptr);
+            EffectControls(*lead->own, sub, m_advShown, s.nrEnabled, nullptr);
             if (sub.nrChanged || sub.settingsChanged) {
                 changed = true;
                 for (LibraryItem* it : items) {
@@ -4005,7 +4042,7 @@ void MainUI::DrawStatusBar(Settings& s, const UiFrameInfo& info, UiEvents& ev, c
     }
     const float lineH = ImGui::GetTextLineHeight();
     const float ty = rowY + std::floor((frameH - lineH) * 0.5f);
-    if (s.showAdvanced && info.status) {
+    if (m_advShown > 0.001f && info.status) {
         // The pass timings, for those who asked for the details. Each figure sits right-aligned in a slot as wide as
         // "000.00 ms" (the interface font's digits all have one width), so nothing moves when a number changes.
         const double ms[4] = { m_shown.gpuMs[(UINT)GpuTimer::Guidance] + m_shown.gpuMs[(UINT)GpuTimer::OpticalFlow],
@@ -4016,6 +4053,7 @@ void MainUI::DrawStatusBar(Settings& s, const UiFrameInfo& info, UiEvents& ev, c
         float tw = 0.0f;
         for (int i = 0; i < 4; ++i) tw += ImGui::CalcTextSize(names[i]).x + nameGap + slotW + (i < 3 ? sepW : 0.0f);
         if (right - tw - Px(24.0f) - x0 >= ImGui::GetFontSize() * 16.0f) {
+            const int vtxTimes = dl->VtxBuffer.Size;
             float x = right - tw;
             for (int i = 0; i < 4; ++i) {
                 dl->AddText(ImVec2(x, ty), p.textDim, names[i]);
@@ -4028,6 +4066,7 @@ void MainUI::DrawStatusBar(Settings& s, const UiFrameInfo& info, UiEvents& ev, c
                     x += sepW;
                 }
             }
+            FadeDrawn(dl, vtxTimes, m_advShown, 0.0f);   // they come and go with the Advanced switch
             right -= tw + Px(24.0f);
         }
     }

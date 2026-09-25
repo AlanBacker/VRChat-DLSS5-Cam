@@ -262,6 +262,7 @@ private:
 
     void DrawTopBar(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts);
     void DrawSidebar(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts);
+    void DrawLockBanner(const UiFrameInfo& info, UiEvents& ev, float t, float space, float width, float barW);   // over the locked settings
     void DrawPreview(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts);
     void DrawPicture(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts, const ImVec2& pos, const ImVec2& size);
     void DrawWelcome(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts, const ImVec2& origin, const ImVec2& region);   // nothing open yet
@@ -287,7 +288,7 @@ private:
     void BlockInternals(Settings& s, const UiFrameInfo& info, UiEvents& ev);
     void BlockMcp(Settings& s, const UiFrameInfo& info, UiEvents& ev);         // the MCP section
     void BlockAbout(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts);
-    void EffectControls(Settings& s, UiEvents& ev, bool advanced, bool enabled, const PipelineStatus* st);   // the DLSS 5 effect controls
+    void EffectControls(Settings& s, UiEvents& ev, float advanced, bool enabled, const PipelineStatus* st);   // the DLSS 5 effect controls (advanced: how far the expert ones show, 0..1)
     void DrawItemParams(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts);   // a library item's own values
     void DrawLibraryMenu(Settings& s, const UiFrameInfo& info, UiEvents& ev);      // the context menu of a card
     void DrawPresetRow(Settings& s, UiEvents& ev);                                   // the user's presets of the effect values
@@ -376,6 +377,8 @@ private:
     bool   m_openAbout = false;      // open the About section (once, in the sidebar)
     double m_scrollToAbout = -1.0;   // the sidebar glides to the About section until this time (its fold opens over a few frames)
     float  m_aboutY = -1.0f;         // the About header's place in the sidebar (content coordinates)
+    float  m_advShown = 0.0f;        // how far the Advanced switch's controls show (0..1, moving while it is flipped)
+    float  m_adv = 0.0f;             // the same in the sidebar, where a search shows them all
     double m_spotAt = -1.0;          // the spotlight rings flash once, from this time ...
     double m_spotUntil = -1.0;       // ... until this one
     bool   m_upscaleWarned = false;  // the notice about the cost of super resolution was shown for the current upscale

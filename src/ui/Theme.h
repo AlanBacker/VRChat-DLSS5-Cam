@@ -109,6 +109,11 @@ bool Radio(const char* label, bool active);                                     
 // drawn inside the card, inset from its edges). Pair a true return with SectionEnd().
 bool SectionHeader(const char* label, const char* id, bool defaultOpen = true, Icon icon = Icon::None);
 void SectionEnd();                                                                 // closes the content of a header that returned true
+// Widgets that come and go (the Advanced switch's) open and close the way a section folds: between RevealBegin and
+// RevealEnd they are laid out in full but show only as far down as "t" (0..1) reaches, faded by it, and whatever
+// follows moves with that edge. False when t is 0: nothing is drawn, and RevealEnd is not called.
+bool RevealBegin(const char* id, float t);
+void RevealEnd();
 // A card around widgets whose height is known only once they are drawn: between PanelBegin and PanelEnd the
 // widgets are laid out inside it, "pad" in from its edges ("width" 0: the rest of the line). A colour in "stripe"
 // paints a band along its left edge (a notice).
