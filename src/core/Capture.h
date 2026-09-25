@@ -19,7 +19,8 @@ struct CaptureJob {
     UINT         height = 0;
     UINT         rowPitch = 0;
     bool         keepAlpha = false;
-    bool         quiet = false;     // a frame of a video sequence: no per-file log line or toast
+    bool         quiet = false;     // a side product (a frame of a video sequence, a screenshot, a preview's copy):
+                                    // no per-file log line or toast, and not one of the saves the sidebar counts
     unsigned     tag = 0;           // who asked for it (a library item id), carried into the result
     std::wstring path;
 };
@@ -43,6 +44,7 @@ public:
     void Enqueue(CaptureJob&& job);
     bool PollResult(CaptureResult& out);
     size_t Pending() const;
+    size_t PendingSaves() const;   // the same without the quiet jobs: the pictures someone asked to save
 
     // Output file names come from a template with tokens: {name} the source file's name without its extension
     // ("VRChat" for a live capture), {date} 2026-09-14, {time} 12-34-56.123, {size} 1920x1080, {width} and {height}
@@ -74,6 +76,7 @@ private:
     std::deque<CaptureJob>      m_jobs;
     std::deque<CaptureResult>   m_results;
     size_t                      m_active = 0;   // the job being encoded (its file is not written yet)
+    size_t                      m_activeSave = 0;   // ... when it is not a quiet one
     bool                        m_quit = false;
     bool                        m_running = false;
 };

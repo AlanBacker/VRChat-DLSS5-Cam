@@ -2024,7 +2024,7 @@ void App::Frame() {
             }
         }
     }
-    info.capturePending = m_capture.Pending() + m_status.capturesInFlight;
+    info.capturePending = m_capture.PendingSaves() + m_status.capturesInFlight;   // screenshots and preview copies do not lock the settings
     info.lastCapture = m_lastCapture;
     info.lastCaptureOk = m_lastCaptureOk;
     info.lastSaved = m_lastSaved;

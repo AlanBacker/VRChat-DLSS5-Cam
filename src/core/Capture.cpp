@@ -50,6 +50,14 @@ size_t Capture::Pending() const {
     return m_jobs.size() + m_active;
 }
 
+// The settings are held while these are written; a screenshot or a preview's copy is a picture already made.
+size_t Capture::PendingSaves() const {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    size_t n = m_activeSave;
+    for (const CaptureJob& job : m_jobs) if (!job.quiet) ++n;
+    return n;
+}
+
 const wchar_t* const Capture::kDefaultCaptureName = L"VRChat_DLSS5_{date}_{time}_{size}";
 const wchar_t* const Capture::kDefaultOutputName  = L"{name}_DLSS5_{size}";
 
@@ -131,6 +139,7 @@ void Capture::WorkerMain() {
             job = std::move(m_jobs.front());
             m_jobs.pop_front();
             ++m_active;
+            if (!job.quiet) ++m_activeSave;
         }
         CaptureResult result;
         result.path = job.path;
@@ -147,6 +156,7 @@ void Capture::WorkerMain() {
             std::lock_guard<std::mutex> lock(m_mutex);
             m_results.push_back(std::move(result));
             --m_active;
+            if (!job.quiet) --m_activeSave;
         }
     }
     if (SUCCEEDED(coInit)) CoUninitialize();
