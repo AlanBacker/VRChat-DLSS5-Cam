@@ -1,5 +1,5 @@
-// VRChat DLSS5 Cam - font loading (Segoe UI + CJK fallbacks from the Windows font folder, the built-in icon font,
-// dynamic sizes).
+// VRChat DLSS5 Cam - font loading (Segoe UI + CJK fallbacks from the Windows font folder, stand-ins for them under
+// Proton, the built-in icon font, dynamic sizes).
 #pragma once
 #include "core/I18n.h"
 #include "imgui.h"

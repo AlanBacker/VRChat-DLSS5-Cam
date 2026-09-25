@@ -3,7 +3,9 @@
 #include "core/Log.h"
 #include <algorithm>
 #include <climits>
+#include <cmath>
 #include <cstring>
+#include <cwchar>
 #include <vector>
 
 namespace vdc::ui {
@@ -12,16 +14,47 @@ namespace {
 
 #include "ui/IconFont.inc"
 
-const wchar_t* kCjkFonts[][3] = {
-    { L"msyh.ttc", L"msyhbd.ttc", L"simhei.ttf" },       // Chinese (Microsoft YaHei / SimHei)
-    { L"YuGothM.ttc", L"YuGothB.ttc", L"meiryo.ttc" },   // Japanese (Yu Gothic / Meiryo)
-    { L"malgun.ttf", L"malgunbd.ttf", L"gulim.ttc" },    // Korean (Malgun Gothic / Gulim)
-};
-
 // A face's vertical proportions from its tables, as shares of the font size: ImGui sizes a face by its ascent minus
 // its descent, so a face that leaves little room above and below its letters (Consolas) draws them larger than
 // another (Segoe UI) at the same size. Zero when the tables cannot be read.
 struct Shares { float em = 0.0f, cap = 0.0f; };
+
+// Where a face the layout is made for is missing (Proton has none of them), a stand-in, drawn at the scale that makes
+// its text as wide as the face's (measured over the English strings; its letters then stand within 7 % of the face's
+// height). Proton's Liberation Sans and Liberation Mono have the widths of Arial and Courier New, whose file names they
+// take, so the scales hold for either. The bold one takes the room of the titles, which Windows draws in Segoe UI
+// Semibold.
+struct StandIn { const wchar_t* face; const wchar_t* file; float scale; };
+const StandIn kStandIns[] = {
+    { L"segoeui.ttf",  L"arial.ttf",   0.831f },
+    { L"segoeuib.ttf", L"arialbd.ttf", 0.798f },
+    { L"consola.ttf",  L"cour.ttf",    1.038f },
+};
+
+// The CJK faces for each language, each list in the order tried, and the regular face's em share (see Shares).
+struct CjkFaces { const wchar_t* regular[2]; const wchar_t* bold[2]; float em; };
+const CjkFaces kCjkFonts[3] = {
+    { { L"msyh.ttc", L"simhei.ttf" }, { L"msyhbd.ttc", L"msyh.ttc" }, 0.7577f },          // Chinese (Microsoft YaHei / SimHei)
+    { { L"YuGothM.ttc", L"meiryo.ttc" }, { L"YuGothB.ttc", L"YuGothM.ttc" }, 0.9074f },   // Japanese (Yu Gothic / Meiryo)
+    { { L"malgun.ttf", L"gulim.ttc" }, { L"malgunbd.ttf", L"malgun.ttf" }, 0.7518f },     // Korean (Malgun Gothic / Gulim)
+};
+
+// Proton has none of these but malgun.ttf, and that one in another design: its Windows font folder holds stand-ins
+// under Windows file names, Source Han Sans (simsun.ttc, msyhbd.ttf, malgun.ttf) and Ume Gothic (msgothic.ttc), tried
+// under Wine where a language's faces are missing. Their glyphs fill another share of the em square than the Windows
+// faces' do, so each is drawn at the em share the Windows face would have, times "body" (measured on the glyphs of the
+// program's strings against Microsoft YaHei, Yu Gothic Medium and Malgun Gothic, and their bold faces), and comes out
+// as large. Source Han Sans SC Bold, the only bold one, carries kana and hangul too, so it takes the Japanese and
+// Korean titles as well. "em", the stand-in's own em share, tells it from a Windows face with the same file name.
+struct CjkStandIn { const wchar_t* file; int lang; bool bold; float em, body; };
+const CjkStandIn kCjkStandIns[] = {
+    { L"simsun.ttc",   0, false, 0.6906f, 1.050f },   // Source Han Sans SC
+    { L"msyhbd.ttf",   0, true,  0.6906f, 1.030f },   // Source Han Sans SC Bold
+    { L"msgothic.ttc", 1, false, 1.0f,    0.924f },   // Ume Gothic
+    { L"msyhbd.ttf",   1, true,  0.6906f, 0.953f },   // Source Han Sans SC Bold
+    { L"malgun.ttf",   2, false, 0.6906f, 1.037f },   // Source Han Sans K
+    { L"msyhbd.ttf",   2, true,  0.6906f, 1.023f },   // Source Han Sans SC Bold
+};
 
 Shares ReadShares(const void* data, int size, int faceNo) {
     const unsigned char* d = static_cast<const unsigned char*>(data);
@@ -49,10 +82,14 @@ Shares ReadShares(const void* data, int size, int faceNo) {
     return s;
 }
 
+// The shares of a font's own face as it is drawn, a stand-in's scale included.
 Shares ReadShares(const ImFont* font) {
     if (!font || font->Sources.Size == 0) return {};
     const ImFontConfig* src = font->Sources[0];
-    return ReadShares(src->FontData, src->FontDataSize, src->FontNo);
+    Shares s = ReadShares(src->FontData, src->FontDataSize, src->FontNo);
+    s.em *= src->ExtraSizeScale;
+    s.cap *= src->ExtraSizeScale;
+    return s;
 }
 
 } // namespace
@@ -104,8 +141,13 @@ ImFont* Fonts::AddFamily(const wchar_t* baseFile, Lang lang, bool bold, float ma
     ImFontConfig cfg;
     cfg.PixelSnapH = false;
     if (!Add(JoinPath(fontsDir, baseFile), cfg, &font)) {
-        if (!bold && !Add(JoinPath(fontsDir, L"arial.ttf"), cfg, &font)) { cfg.FontDataOwnedByAtlas = true; font = io.Fonts->AddFontDefault(&cfg); }
-        else if (bold) font = nullptr;
+        for (const StandIn& s : kStandIns) {
+            if (std::wcscmp(s.face, baseFile) != 0) continue;
+            ImFontConfig scaled = cfg;
+            scaled.ExtraSizeScale = s.scale;
+            if (Add(JoinPath(fontsDir, s.file), scaled, &font)) Log::Info("Fonts: %ls stands in for %ls", s.file, baseFile);
+        }
+        if (!font && !bold && !Add(JoinPath(fontsDir, L"arial.ttf"), cfg, &font)) { cfg.FontDataOwnedByAtlas = true; font = io.Fonts->AddFontDefault(&cfg); }
     }
     if (!font) return nullptr;
 
@@ -118,30 +160,42 @@ ImFont* Fonts::AddFamily(const wchar_t* baseFile, Lang lang, bool bold, float ma
         const Shares own = ReadShares(font);
         if (own.cap > 0.0f) cjkEm = matchEm * own.cap / matchCap;
     }
-    auto addCjk = [&](const wchar_t* file) {
+    const bool wine = RunningUnderWine();
+    std::vector<std::wstring> merged;
+    auto addCjk = [&](const wchar_t* file, int idx) {
         const std::wstring path = JoinPath(fontsDir, file);
+        if (std::find(merged.begin(), merged.end(), path) != merged.end()) return true;   // a stand-in for several languages
         const File* f = Load(path);
         if (!f) return false;
         ImFontConfig m;
         m.MergeMode = true;
         m.PixelSnapH = false;
-        if (cjkEm > 0.0f) {
-            const Shares s = ReadShares(f->data, f->size, 0);
-            if (s.em > 0.0f) m.ExtraSizeScale = std::clamp(cjkEm / s.em, 0.8f, 1.5f);
-        }
-        return Add(path, m, nullptr);
+        const Shares s = ReadShares(f->data, f->size, 0);
+        float em = cjkEm;
+        for (const CjkStandIn& c : kCjkStandIns)   // one of Proton's: as large as the Windows face would come out
+            if (wine && c.lang == idx && std::wcscmp(c.file, file) == 0 && std::fabs(s.em - c.em) < 0.002f) {
+                em = (em > 0.0f ? em : kCjkFonts[idx].em) * c.body;
+                break;
+            }
+        if (em > 0.0f && s.em > 0.0f) m.ExtraSizeScale = std::clamp(em / s.em, 0.8f, 1.5f);
+        if (!Add(path, m, nullptr)) return false;
+        merged.push_back(path);
+        return true;
     };
     // Merge CJK fallbacks; the current language's font comes first so its glyph variants win.
     std::vector<int> order = { 0, 1, 2 };
     const int primary = (lang == Lang::Chinese) ? 0 : (lang == Lang::Japanese) ? 1 : (lang == Lang::Korean) ? 2 : -1;
     if (primary >= 0) { order.erase(order.begin() + primary); order.insert(order.begin(), primary); }
     for (int idx : order) {
-        const wchar_t* candidates[2] = { bold ? kCjkFonts[idx][1] : kCjkFonts[idx][0], bold ? kCjkFonts[idx][0] : kCjkFonts[idx][2] };
-        bool added = false;
-        for (const wchar_t* c : candidates) {
-            if (addCjk(c)) { added = true; break; }
-        }
-        if (!added && !bold) addCjk(kCjkFonts[idx][2]);
+        const wchar_t* const* files = bold ? kCjkFonts[idx].bold : kCjkFonts[idx].regular;
+        auto addStandIn = [&](bool boldOne) {   // Proton's for this language
+            for (const CjkStandIn& c : kCjkStandIns)
+                if (c.lang == idx && c.bold == boldOne && addCjk(c.file, idx)) return true;
+            return false;
+        };
+        // Under Wine a bold family takes Proton's bold stand-in before the Windows regular face, so its titles stay bold.
+        if (addCjk(files[0], idx) || (wine && bold && addStandIn(true)) || addCjk(files[1], idx)) continue;
+        if (wine) addStandIn(false);
     }
     // Symbols (status glyphs).
     ImFontConfig sym;
