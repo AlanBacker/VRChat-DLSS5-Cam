@@ -156,10 +156,10 @@ log (`dlssnr_on_amd.log` in the program folder); reports with it are welcome in 
   pass that ran alongside the estimator's warm-up stretched from 0.17 s to 2.7 s, past the driver's two-second limit, and the
   graphics device was lost (the driver restarts, the program has to be started again). Since v1.5.0 the program waits for the
   estimator before every neural pass, so the two never overlap; the first passes of a picture start once the estimator is ready.
-- **Now and then a frame waits about a second.** On the RX 9060 XT a few of every hundred network jobs stall until the port's wait
-  gives up, 2 to 2.5 times `InlineWaitMs` later, and that frame shows the previous frame's result. With the 1000 ms earlier versions
-  set, the wait reached the driver's two-second limit and a video could end with the graphics device lost; with 500 ms it stays near
-  1.3 s, and the next frame waits until the stalled job has ended. The stalls come with or without the depth network.
+- **A stalled network job.** A DLSS-NR-on-AMD job that does not end in time holds the frame until the port's wait gives up,
+  2 to 2.5 times `InlineWaitMs` later, and that frame shows the previous frame's result. With the 1000 ms earlier versions set, the
+  wait reached the driver's two-second limit and a video could end with the graphics device lost; with 500 ms it stays near 1.3 s,
+  and the next frame waits until the stalled job has ended.
 - **Idle load.** Once a picture has run its passes the card idles (about 2 % on the RX 9060 XT, the same as on a GeForce). One CPU
   core, though, stays busy from the first neural pass until the program closes: a thread of DLSS-NR-on-AMD polls the card at full
   speed (its inline mode). That thread belongs to the port; releasing the FSR context does not end it.
