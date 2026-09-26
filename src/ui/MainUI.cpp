@@ -1144,6 +1144,8 @@ void MainUI::DrawTopBar(Settings& s, const UiFrameInfo& info, UiEvents& ev, cons
     auto centred = [&](float itemH) { return top + (rowH - itemH) * 0.5f; };
     // Text items add the line's baseline offset themselves (a badge before them leaves one): taken off here.
     auto centredText = [&](float itemH) { return centred(itemH) - ImGui::GetCurrentWindow()->DC.CurrLineTextBaseOffset; };
+    // A badge adds the part of that offset its padding does not cover (Pill()), after the source switch the frame padding.
+    auto centredPill = [&](float itemH) { return centred(itemH) - ImMax(0.0f, ImGui::GetCurrentWindow()->DC.CurrLineTextBaseOffset - Px(3.0f)); };
     const bool imageMode = s.sourceMode == SourceImage;
     const bool videoMode = s.sourceMode == SourceVideo;
     const bool busy = info.videoProcessing || info.batchRunning;   // the main button cancels the run
@@ -1235,12 +1237,12 @@ void MainUI::DrawTopBar(Settings& s, const UiFrameInfo& info, UiEvents& ev, cons
     if (showBadges && badgesW > 0.0f) {
         ImGui::SameLine(0.0f, Px(12.0f));
         if (badge) {
-            ImGui::SetCursorPosY(centred(pillH));
+            ImGui::SetCursorPosY(centredPill(pillH));
             Pill(badge, badgeBg, badgeFg);
         }
         if (nrBadge) {
             if (badge) ImGui::SameLine(0.0f, Px(6.0f));
-            ImGui::SetCursorPosY(centred(pillH));
+            ImGui::SetCursorPosY(centredPill(pillH));
             Pill("DLSS 5", WithAlpha(p.accent, 0.18f), Mix(p.accentHover, p.accent, p.light));
         }
     }
