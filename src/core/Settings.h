@@ -173,6 +173,7 @@ struct Settings {
 
     bool Load(const std::wstring& path);
     bool Save(const std::wstring& path) const;
+    static bool WriteText(const std::wstring& path, const std::string& text);   // writes a settings text as the file
     std::string Text() const;          // the whole settings file as text (what Save writes)
     // Applies one "key=value" pair as found in the settings file (command line --set). False for an unknown key.
     bool Apply(const std::string& key, const std::string& value);

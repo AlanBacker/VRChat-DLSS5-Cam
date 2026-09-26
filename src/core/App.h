@@ -251,6 +251,10 @@ private:
     void PushSettings();
     void MarkSettingsDirty();
     void SaveSettings();
+    // The settings file's text: the current values, except that a value the command line set for this run
+    // (--set, --lang, the --process folder, headless) goes back to the file's own value unless it was changed again.
+    std::string SettingsFileText() const;
+    void WriteSettingsFile();
     void SaveWindowPlacement();
     void ApplyDpi(float scale);
     // The runtime builds in the order they are tried on this adapter: the bundled ones under runtimes\, the file
@@ -499,6 +503,8 @@ private:
     std::wstring  m_screenshotPath;
 
     Settings      m_settings;
+    struct CliOverride { std::string key, fileValue, applied; };   // a value the command line changed for this run
+    std::vector<CliOverride> m_cliOverrides;
     Device        m_device;
     Pipeline      m_pipeline;
     SpoutReceiver m_spout;                 // processing thread (SetRequestedSender is thread-safe)

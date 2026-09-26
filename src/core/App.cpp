@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <cstring>
 #include <cmath>
+#include <map>
 #include <cstdlib>
 #include <cwctype>
 
@@ -290,7 +291,37 @@ void App::FatalMessage(const std::wstring& text) {
     MessageBoxW(m_hwnd, text.c_str(), L"VRChat DLSS5 Cam", MB_ICONERROR | MB_OK);
 }
 
+namespace {
+// The "key=value" lines of a settings text, and the text with one key's value replaced.
+std::map<std::string, std::string> SettingsLines(const std::string& text) {
+    std::map<std::string, std::string> out;
+    size_t pos = 0;
+    while (pos < text.size()) {
+        size_t eol = text.find('\n', pos);
+        if (eol == std::string::npos) eol = text.size();
+        const std::string line = text.substr(pos, eol - pos);
+        pos = eol + 1;
+        const size_t eq = line.find('=');
+        if (line.empty() || line[0] == '#' || eq == std::string::npos) continue;
+        out[line.substr(0, eq)] = line.substr(eq + 1);
+    }
+    return out;
+}
+std::string WithSettingsLine(const std::string& text, const std::string& key, const std::string& value) {
+    const std::string head = key + "=";
+    size_t pos = 0;
+    while (pos < text.size()) {
+        size_t eol = text.find('\n', pos);
+        if (eol == std::string::npos) eol = text.size();
+        if (text.compare(pos, head.size(), head) == 0) return text.substr(0, pos) + head + value + text.substr(eol);
+        pos = eol + 1;
+    }
+    return text;
+}
+} // namespace
+
 void App::ApplyCommandLineSettings() {
+    const std::string fileValues = m_settings.Text();
     for (const auto& kv : m_cli.sets) {
         if (m_settings.Apply(kv.first, kv.second)) Log::Info("Command line: %s=%s", kv.first.c_str(), kv.second.c_str());
         else Log::Warn("Command line: unknown setting %s", kv.first.c_str());
@@ -299,6 +330,31 @@ void App::ApplyCommandLineSettings() {
     if (!m_cli.processDir.empty()) m_settings.captureFolder = WideToUtf8(m_cli.processDir);
     if (m_headless) { m_settings.vsync = false; m_settings.windowMaximized = false; }
     m_settings.Clamp();
+    // Whatever the command line changed is remembered together with the file's value: these values hold for this
+    // run and are not written into settings.ini (docs/COMMAND_LINE.md), so a scripted run leaves the user's settings
+    // alone. A value changed again during the run (sidebar, MCP) is saved as usual.
+    m_cliOverrides.clear();
+    const auto was = SettingsLines(fileValues);
+    for (const auto& [key, value] : SettingsLines(m_settings.Text())) {
+        const auto it = was.find(key);
+        if (it != was.end() && it->second != value) m_cliOverrides.push_back({key, it->second, value});
+    }
+}
+
+std::string App::SettingsFileText() const {
+    std::string text = m_settings.Text();
+    if (m_cliOverrides.empty()) return text;
+    const auto now = SettingsLines(text);
+    for (const CliOverride& o : m_cliOverrides) {
+        const auto it = now.find(o.key);
+        if (it != now.end() && it->second == o.applied) text = WithSettingsLine(text, o.key, o.fileValue);
+    }
+    return text;
+}
+
+void App::WriteSettingsFile() {
+    if (m_settingsPath.empty()) return;
+    if (!Settings::WriteText(m_settingsPath, SettingsFileText())) Log::Warn("Failed to save settings to %s", WideToUtf8(m_settingsPath).c_str());
 }
 
 bool App::Init(HINSTANCE hInstance, int nCmdShow) {
@@ -616,7 +672,7 @@ void App::Shutdown() {
     m_capture.Shutdown();
     mf::Shutdown();
     if (m_deviceReady) { m_device.Shutdown(); m_deviceReady = false; }
-    if (!m_settingsPath.empty()) m_settings.Save(m_settingsPath);
+    WriteSettingsFile();
     Log::Info("Shutdown complete (exit code %d)", m_exitCode);
     Log::Shutdown();
     if (m_wake) { CloseHandle(m_wake); m_wake = nullptr; }
@@ -2209,6 +2265,10 @@ void App::RunCommandLineActions() {
     // A headless session a client asked for (--mcp-port), or one whose MCP server is switched on (a server for
     // the bots), stays until --exit-after or the window's close: the clients' calls are its task.
     if (m_headless && !m_cli.process && (m_mcpSessionPort > 0 || m_settings.mcpEnabled)) return;
+    // A headless run given --exit-after and no --process stays for that time (an idle measurement, a session
+    // for a client that connects later); with --process, --exit-after is the upper bound and the run still ends
+    // when the processing has finished.
+    if (m_headless && !m_cli.process && m_cli.exitAfter >= 0.0) return;
     if ((m_headless || m_cli.process) && screenshotsFlushed && processDone && elapsed >= 1.0) {
         // A headless run without a task still waits for the runtime to load, so the log tells whether it works.
         if (!m_cli.process && m_cli.screenshots.empty() && elapsed < 3.0) return;
@@ -2959,7 +3019,7 @@ void App::MarkSettingsDirty() {
 
 void App::SaveSettings() {
     m_settingsDirtyTime = -1.0;
-    if (!m_settings.Save(m_settingsPath)) Log::Warn("Failed to save settings to %s", WideToUtf8(m_settingsPath).c_str());
+    WriteSettingsFile();
 }
 
 void App::SaveWindowPlacement() {

@@ -464,7 +464,10 @@ std::string Settings::Text() const {
 }
 
 bool Settings::Save(const std::wstring& path) const {
-    const std::string text = Text();
+    return WriteText(path, Text());
+}
+
+bool Settings::WriteText(const std::wstring& path, const std::string& text) {
     FILE* f = nullptr;
     if (_wfopen_s(&f, path.c_str(), L"wb") != 0 || !f) return false;
     fwrite(text.data(), 1, text.size(), f);

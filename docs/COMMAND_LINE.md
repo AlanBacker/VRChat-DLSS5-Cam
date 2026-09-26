@@ -21,7 +21,7 @@ A bare `file` argument (what Windows passes for *Open with*) opens that picture 
 | `--lang <en\|zh\|ja\|ko\|auto>` | Interface language for this run. |
 | `--window <W>x<H>` | Start with this client size instead of the saved one (320×240 up to 16384×16384). |
 | `--screenshot <seconds> <file.png>` | Save a picture of the whole window `seconds` after the start (repeatable). |
-| `--exit-after <seconds>` | Quit after this many seconds, once pending screenshots and captures are written. |
+| `--exit-after <seconds>` | Quit after this many seconds, once pending screenshots and captures are written. A `--headless` run without `--process` stays for this time instead of ending as soon as it has nothing to do. |
 | `--headless` | No window: everything is drawn into an off-screen buffer. Screenshots and processing work as usual, and the program exits by itself when its work is done. Meant for scripted tests and for sessions without a desktop (services, SSH). |
 | `--data-dir <folder>` | Keep `settings.ini`, `presets.txt`, `log.txt` and `crash.txt` in this folder instead of `%LOCALAPPDATA%\VRChatDLSS5Cam`. |
 | `--mcp` | The stdio bridge for an MCP client: no window; the MCP client's messages are relayed to the running program's MCP server, and the program is started when none runs (the other options travel to it). See [MCP.md](MCP.md). |
@@ -34,6 +34,9 @@ C++ exception), `2` after a crash (`crash.txt` is written) or after the graphics
 `--process`, `--headless` or `--exit-after` stays open like a normal session; when such a session loses the graphics
 device (a driver reset) it starts itself again with `--after-device-loss` added to its arguments and keeps the log of
 the lost session as `log-device-loss.txt`, while a scripted run exits with code 2.
+
+Values given on the command line – `--set`, `--lang` and the folder of `--process` – hold for that run only and are not
+written into `settings.ini`; a value changed again during the run (in the sidebar or through MCP) is saved as usual.
 
 ## Examples
 
