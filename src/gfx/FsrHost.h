@@ -49,6 +49,11 @@ public:
     // short cap passes (see the definition); returns at once when no port is loaded. `next` names, for the log
     // line, what follows the hold.
     static void WaitForPortHooks(const std::wstring& exeDir, const char* next);
+    // The size of the port's log in bytes (0 without one), and a hold until the log, past `fromBytes`, reports a
+    // network job that ran long (its "SPIKE" and GPU wait time-out lines, written when such a job has ended) or until
+    // capMs pass. True when the report came.
+    static unsigned long long PortLogSize(const std::wstring& exeDir);
+    static bool WaitForPortJobReport(const std::wstring& exeDir, unsigned long long fromBytes, unsigned capMs);
 
 private:
     struct Fn { void* create = nullptr; void* destroy = nullptr; void* configure = nullptr; void* query = nullptr; void* dispatch = nullptr; };

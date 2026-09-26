@@ -336,6 +336,24 @@ void GpuContext::ReadTimers() {
     m_queryReadback->Unmap(0, &none);
 }
 
+double GpuContext::FinishedTimerMs(UINT64 frameNumber, GpuTimer t) {
+    if (!m_queryHeap || !m_timestampFreq || frameNumber >= m_frameNumber) return 0.0;
+    const UINT64 age = m_frameNumber - frameNumber;
+    if (age > kFramesInFlight) return 0.0;
+    if (age == kFramesInFlight && m_cmdOpen) return m_timerMs[(UINT)t];   // its slot was read (and reused) by this frame's BeginFrame
+    const FrameSlot& f = m_frames[frameNumber % kFramesInFlight];
+    if (!f.timerUsed[(UINT)t] || !IsFenceComplete(f.fenceValue)) return 0.0;
+    const UINT i = ((UINT)(frameNumber % kFramesInFlight) * (UINT)GpuTimer::Count + (UINT)t) * 2;
+    D3D12_RANGE range{ (SIZE_T)i * sizeof(UINT64), (SIZE_T)(i + 2) * sizeof(UINT64) };
+    void* data = nullptr;
+    if (FAILED(m_queryReadback->Map(0, &range, &data)) || !data) return 0.0;
+    const UINT64* ts = reinterpret_cast<const UINT64*>(data) + i;
+    const UINT64 b = ts[0], e = ts[1];
+    D3D12_RANGE none{ 0, 0 };
+    m_queryReadback->Unmap(0, &none);
+    return e > b ? (double)(e - b) * 1000.0 / (double)m_timestampFreq : 0.0;
+}
+
 // ===========================================================================
 // Device
 

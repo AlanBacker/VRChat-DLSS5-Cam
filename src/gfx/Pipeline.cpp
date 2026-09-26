@@ -1244,6 +1244,7 @@ bool Pipeline::RunFsrHost(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const
         m_nrCreatedPreset = s.nrPreset;
         m_featureCreated = true;
         m_nrOutState = 0; m_nrOutDelta = -1.0f;   // the output check reports again for the new context
+        m_portJobMs = 0.0;                        // a job's usual time depends on the size
         reset = true;
     }
     if (m_nrSkipped) { reset = true; m_nrSkipped = false; }
@@ -1255,7 +1256,8 @@ bool Pipeline::RunFsrHost(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const
     // The port's network and the depth network (DirectML, on its own queue) do not share the card: a job that runs
     // alongside the estimator's warm-up or an inference stretches from a fifth of a second to several, past the
     // driver's two-second limit, and the device is lost (seen on an RX 9060 XT). So no dispatch while the estimator
-    // works; an inference submitted after a frame is waited for before the next one is recorded.
+    // works, and no inference while a job runs: the input captured in a frame goes to the estimator once that frame's
+    // job has ended (SettlePortJob in Update).
     if (!m_fsrPortModule.empty()) {
         if (!m_depthEst.WaitIdle(15.0)) Log::Warn("FSR host: depth estimator still busy after 15 s, dispatching anyway");
         gpu.WaitIdle();
@@ -1282,9 +1284,42 @@ bool Pipeline::RunFsrHost(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const
     if (!ok) {
         m_nrFailed = true; m_nrError = err;
         Log::Error("FSR host: %s", err.c_str());
+    } else if (!m_fsrPortModule.empty()) {
+        m_portJobFrame = gpu.FrameNumber() + 1;
+        m_portLogBytes = FsrHost::PortLogSize(m_exeDir);
     }
     m_nrDirty = false;
     return ok;
+}
+
+// DLSS-NR-on-AMD holds the frame's queue on the GPU until its network job has ended, but only so long: two to two and
+// a half times its budget (InlineWaitMs, see PortSetup::TuneIni). On an RX 9060 XT a few jobs in a hundred stall that long; most
+// end as the queue is let go, some run on. In the runs where the next frame reached the queue in that time, its
+// capture never ran and the device was lost seconds later. So nothing of the next frame is submitted before the last
+// dispatch's frame has finished, and when its neural pass held the queue far longer than usual, not before the port's
+// log reports the long job either, which it writes once the job has ended.
+void Pipeline::SettlePortJob(GpuContext& gpu) {
+    if (!m_portJobFrame) return;
+    const UINT64 frame = m_portJobFrame - 1;
+    m_portJobFrame = 0;
+    gpu.WaitIdle();
+    const double ms = gpu.FinishedTimerMs(frame, GpuTimer::Neural);
+    if (ms <= 0.0) return;
+    const double usual = m_portJobMs;
+    auto fold = [&]() { m_portJobMs = usual <= 0.0 ? ms : usual * 0.9 + ms * 0.1; };
+    if (ms < std::max(kPortSlowMs, usual * 2.5)) { fold(); return; }
+    const double t0 = NowSeconds();
+    const bool reported = FsrHost::WaitForPortJobReport(m_exeDir, m_portLogBytes, kPortReportMs);
+    const unsigned waited = (unsigned)((NowSeconds() - t0) * 1000.0);
+    if (reported) {
+        Log::Warn("FSR host: DLSS-NR-on-AMD held the frame for %.0f ms (usually %.0f ms) and its log reports a long job; "
+                  "the next frame waited %u ms more for it to end", ms, usual, waited);
+    } else {
+        // A size whose jobs all take that long: counted into the usual time, so the next ones pass straight on.
+        Log::Info("FSR host: a dispatch held the frame for %.0f ms (usually %.0f ms) and the port's log reported no long "
+                  "job within %u ms", ms, usual, waited);
+        fold();
+    }
 }
 
 void Pipeline::RunComposite(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const Settings& s, Tex& processed, Tex* neuralBase,
@@ -1464,6 +1499,7 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
             m_fsrPortModule = port;
         }
     }
+    SettlePortJob(gpu);   // before anything of this frame is submitted
 
     m_status.ngxInitialized = m_ngx.Initialized();
     m_status.dlssAvailable = m_ngx.DlssAvailable();
@@ -1858,8 +1894,9 @@ void Pipeline::AfterSubmit(GpuContext& gpu, UINT64 fenceValue) {
 
 void Pipeline::Update(GpuContext& gpu, Capture& capture, FrameSink* sink) {
     // The captured network input goes to the estimator only once the frame that created an NGX feature has completed
-    // (see the depth capture in Render).
+    // (see the depth capture in Render), and with DLSS-NR-on-AMD once the job of the frame just submitted has ended.
     if (m_depthInPending && m_depthInFence && gpu.IsFenceComplete(m_depthInFence) && gpu.IsFenceComplete(m_featureCreateFence)) {
+        SettlePortJob(gpu);
         m_depthInPending = false;
         const size_t count = (size_t)m_depthInferW * m_depthInferH * 3;
         D3D12_RANGE range{ 0, count * sizeof(float) };

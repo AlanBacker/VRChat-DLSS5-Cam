@@ -230,6 +230,7 @@ private:
     bool EnsureNeuralTextures(GpuContext& gpu, UINT inW, UINT inH, UINT outW, UINT outH, bool scaled);
     bool RunNeural(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const Settings& s, Tex& input, bool reset);
     bool RunFsrHost(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, const Settings& s, Tex& input, bool reset);
+    void SettlePortJob(GpuContext& gpu);   // DLSS-NR-on-AMD: the last dispatch's network job has really ended
     int  Route(const Settings&) const { return EditionRoute(); }
     bool NeuralCreated() const { return m_nr.Created() || m_fsr.Created(); }   // the feature or the FSR context
     bool NeuralNeedsCreate(const Settings& s, UINT inW, UINT inH, UINT outW, UINT outH) const;
@@ -370,6 +371,11 @@ private:
     std::string m_fsrError;
     std::string m_fsrPortModule;      // DLSS-NR-on-AMD module seen in the process (looked up every few seconds)
     double m_fsrPortCheckTime = 0.0;
+    UINT64 m_portJobFrame = 0;        // FrameNumber() + 1 of the frame with the last port dispatch, until SettlePortJob
+    unsigned long long m_portLogBytes = 0;   // the port's log size when that dispatch was recorded
+    double m_portJobMs = 0.0;         // usual GPU time of a port dispatch at the context's size (running mean)
+    static constexpr double kPortSlowMs = 400.0;       // under the shortest hold that ended in a time-out (0.77 s)
+    static constexpr unsigned kPortReportMs = 4000;    // longest wait for its report of such a job (they ran up to ~3 s)
     bool   m_dlssFailed = false;
     std::string m_dlssError;
     int    m_dlssCreatedPreset = -1;

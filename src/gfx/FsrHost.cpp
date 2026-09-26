@@ -236,4 +236,33 @@ void FsrHost::WaitForPortHooks(const std::wstring& exeDir, const char* next) {
     else Log::Warn("DLSS-NR-on-AMD (%s): interface hooks not reported after %u ms (its log: %llu bytes); %s", port.c_str(), waited, bytes, next);
 }
 
+unsigned long long FsrHost::PortLogSize(const std::wstring& exeDir) {
+    WIN32_FILE_ATTRIBUTE_DATA a{};
+    if (!GetFileAttributesExW((exeDir + L"\\dlssnr_on_amd.log").c_str(), GetFileExInfoStandard, &a)) return 0;
+    return ((unsigned long long)a.nFileSizeHigh << 32) | a.nFileSizeLow;
+}
+
+bool FsrHost::WaitForPortJobReport(const std::wstring& exeDir, unsigned long long fromBytes, unsigned capMs) {
+    const std::wstring logPath = exeDir + L"\\dlssnr_on_amd.log";
+    const ULONGLONG start = GetTickCount64();
+    for (;;) {
+        HANDLE h = CreateFileW(logPath.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                               nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (h != INVALID_HANDLE_VALUE) {
+            std::string text;
+            LARGE_INTEGER size{}, at{};
+            at.QuadPart = (LONGLONG)fromBytes;
+            if (GetFileSizeEx(h, &size) && (unsigned long long)size.QuadPart > fromBytes && SetFilePointerEx(h, at, nullptr, FILE_BEGIN)) {
+                char buf[4096];
+                DWORD n = 0;
+                while (ReadFile(h, buf, sizeof(buf), &n, nullptr) && n) { text.append(buf, n); if (text.size() > (256u << 10)) break; }
+            }
+            CloseHandle(h);
+            if (text.find("SPIKE") != std::string::npos || text.find("wait timeout") != std::string::npos) return true;
+        }
+        if (GetTickCount64() - start >= capMs) return false;
+        Sleep(10);
+    }
+}
+
 } // namespace vdc

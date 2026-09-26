@@ -98,6 +98,10 @@ public:
     void   TimerBegin(ID3D12GraphicsCommandList* cmd, GpuTimer t);
     void   TimerEnd(ID3D12GraphicsCommandList* cmd, GpuTimer t);
     double TimerMs(GpuTimer t) const { return m_timerMs[(UINT)t]; }
+    // One section of a frame that has finished (frameNumber: FrameNumber() while it was recorded), read at once
+    // instead of kFramesInFlight frames later. 0 when the frame is older than that, has not finished or did not
+    // record the section.
+    double FinishedTimerMs(UINT64 frameNumber, GpuTimer t);
 
 private:
     struct Deferred {

@@ -914,9 +914,10 @@ bool PortSetup::RunInstall(const std::wstring& exeDir, std::string& error) {
 // The port's settings file, written by its installer with values chosen for a game: the network runs inline, the
 // frame's queue waiting for it on the GPU, with a budget of 200 ms after which the frame shows the previous frame's
 // result. A game prefers a late frame; a picture or a video frame that is saved must carry its own result, so here
-// the budget is raised to a second: the most the port's wait honours (its iteration cap, measured on an RX 9060 XT),
-// enough for a 4K frame on that card (0.2 s, the first one 0.4-0.6 s) and under the driver's two-second hang
-// detection. The inline mode is kept on, as the asynchronous one hands the result to the next frame. Only the
+// the budget is raised to half a second, enough for a 4K frame on an RX 9060 XT (0.2 s). It is not raised further:
+// now and then a job stalls, and the port lets the queue go only after two to two and a half times its budget
+// (2.0 s with the 1000 ms earlier versions set, 1.3 s with 500 ms, measured on that card); past the driver's
+// two-second hang detection the device is lost. The inline mode is kept on, as the asynchronous one hands the result to the next frame. Only the
 // values of keys the file already has are changed; every other byte of the file stays as it is.
 bool PortSetup::TuneIni(const std::wstring& exeDir, std::string& changes) {
     changes.clear();
@@ -931,7 +932,7 @@ bool PortSetup::TuneIni(const std::wstring& exeDir, std::string& changes) {
         while (ReadFile(h, buf, sizeof(buf), &n, nullptr) && n) { text.append(buf, n); if (text.size() > (1u << 20)) break; }
         CloseHandle(h);
     }
-    static constexpr unsigned long kInlineWaitMs = 1000;
+    static constexpr unsigned long kInlineWaitMs = 500;
     std::string out;
     size_t pos = 0;
     while (pos < text.size()) {
@@ -944,7 +945,7 @@ bool PortSetup::TuneIni(const std::wstring& exeDir, std::string& changes) {
         auto key = [&](const char* k) { return body.compare(0, strlen(k), k) == 0; };
         if (key("InlineWaitMs=")) {
             const unsigned long v = strtoul(body.c_str() + strlen("InlineWaitMs="), nullptr, 10);
-            if (v < kInlineWaitMs) {
+            if (v != kInlineWaitMs) {
                 changes += (changes.empty() ? "" : ", ") + StrPrintf("InlineWaitMs %lu -> %lu", v, kInlineWaitMs);
                 line = StrPrintf("InlineWaitMs=%lu", kInlineWaitMs) + tail;
             }

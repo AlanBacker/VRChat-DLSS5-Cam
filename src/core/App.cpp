@@ -287,7 +287,8 @@ int App::Run(HINSTANCE hInstance, int nCmdShow) {
 
 void App::FatalMessage(const std::wstring& text) {
     Log::Error("%s", WideToUtf8(text).c_str());
-    if (m_headless) return;
+    // A scripted run reports through its exit code and the log: a box would keep it from exiting.
+    if (m_headless || m_cli.process || m_cli.exitAfter >= 0.0) return;
     MessageBoxW(m_hwnd, text.c_str(), L"VRChat DLSS5 Cam", MB_ICONERROR | MB_OK);
 }
 
@@ -1496,6 +1497,9 @@ void App::WorkerMain() {
                 bool ended = false, completed = false;
                 if (videoRun.cancel) {
                     ended = true;
+                } else if (m_device.DeviceRemoved()) {
+                    // No frame is processed any more: the file would end at the loss with the rest of the source missing.
+                    videoRun.error = "the graphics device was lost"; ended = true;
                 } else if (mp4Run && m_videoWriter.Failed()) {
                     videoRun.error = m_videoWriter.Error(); ended = true;
                 } else if (videoRun.animFormat != AnimFormat::None && m_animWriter.Failed()) {
