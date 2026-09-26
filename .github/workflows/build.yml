@@ -74,7 +74,7 @@ jobs:
           Compress-Archive -Path "$out/*" -DestinationPath "dist/VRChatDLSS5Cam-win64.zip"
           # Linux package: the same GeForce edition plus the launcher scripts (docs/LINUX.md); Python writes the
           # tarball so that the scripts carry their executable bit.
-          Copy-Item linux/vrchat-dlss5-cam, linux/install-linux.sh, "$out"
+          Copy-Item linux/vrchat-dlss5-cam, linux/install-linux.sh "$out"
           Copy-Item resources/app-256.png "$out/icon.png"
           # The Direct3D shader compiler from the Windows SDK's redistributables: Proton's own d3dcompiler_47 miscompiles
           # the program's shaders (the picture's alpha comes out as zero), so the Linux package carries Microsoft's.
