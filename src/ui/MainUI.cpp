@@ -222,9 +222,6 @@ bool SettingsLocked(const UiFrameInfo& info) {
         || (info.status && info.status->capturesInFlight > 0);
 }
 
-// The room the lock banner takes at the top of the sidebar column: the banner and the gap below it.
-float LockBannerSpace() { return ImGui::GetFrameHeight() + Px(5.0f) * 2.0f + ImGui::GetStyle().ItemSpacing.y; }
-
 } // namespace
 
 void MainUI::Toast(const std::string& text, bool error, bool success) {
@@ -396,20 +393,27 @@ void MainUI::Draw(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Font
         // scrolled sidebar can neither cut it nor carry it away; the settings make room for it as it comes in. The
         // search row stays above the scrolled settings for the same reason, under the banner while there is one.
         const ImVec2 column = ImGui::GetCursorScreenPos();
-        const float lockT = Animate(ImGui::GetID("##lock"), SettingsLocked(info) ? 1.0f : 0.0f, 12.0f);
-        const float lockSpace = std::round(LockBannerSpace() * lockT);
+        const bool locked = SettingsLocked(info);
+        if (locked) m_lockText = info.mcpJob.empty() ? TR(LockedWhileBusy) : StrPrintf(TR(McpJobRunningFmt), info.mcpJob.c_str());
+        const float lockT = Animate(ImGui::GetID("##lock"), locked ? 1.0f : 0.0f, 12.0f);
         // The cards reach the edges of the column; the side padding leaves room for their shadows only.
         const float pad = Px(6.0f);
+        // The banner and the search row end where the cards do. They are laid out before the settings are drawn, with
+        // the settings' scrollbar as it was on the last frame. When the Cancel button comes or goes (a video that is
+        // finishing can no longer be cancelled), its room below the text opens or closes smoothly.
+        const float barW = m_sidebarBarW;
+        const LockLayout lock = LayOutLockBanner(m_lockText, info.batchRunning || info.videoProcessing, std::floor(sidebarW) - pad * 2.0f - barW);
+        const float lockH = Animate(ImGui::GetID("##lockHeight"), lock.height, 12.0f);
+        const float lockSpace = std::round((lockH + style.ItemSpacing.y) * lockT);
         ImGui::SetCursorScreenPos(ImVec2(column.x + pad, column.y + lockSpace));
         const int vtxSearch = ImGui::GetWindowDrawList()->VtxBuffer.Size;
-        const float settingsTop = std::floor(DrawSidebarSearch(s, ev, std::max(1.0f, sidebarW - pad * 2.0f - m_sidebarBarW)) + style.ItemSpacing.y);
+        const float settingsTop = std::floor(DrawSidebarSearch(s, ev, std::max(1.0f, sidebarW - pad * 2.0f - barW)) + style.ItemSpacing.y);
         ModeFadeContent(vtxSearch);
         ImGui::SetCursorScreenPos(ImVec2(column.x, settingsTop));
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(pad, 0.0f));
         ImGui::BeginChild("##sidebar", ImVec2(sidebarW, std::max(1.0f, column.y + bodyH - settingsTop)), ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_NoScrollWithMouse);
         ImGui::PopStyleVar();
-        const float barW = ImGui::GetCurrentWindow()->ScrollbarSizes.x;   // the banner and the search row end where the cards do
-        m_sidebarBarW = barW;
+        m_sidebarBarW = ImGui::GetCurrentWindow()->ScrollbarSizes.x;   // for the banner and the search row on the next frame
         ImGui::SetScrollX(0.0f);   // the sidebar only ever scrolls vertically
         SmoothScroll(false, ImGui::GetFontSize() * 3.6f);
         if (m_openAbout) {   // after the setup guide: the About section opens and the sidebar glides to it
@@ -426,10 +430,10 @@ void MainUI::Draw(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Font
         DrawSidebar(s, info, ev, fonts);
         ModeFadeContent(vtx0);
         ImGui::EndChild();
-        if (lockSpace > 0.0f) {   // after the settings, whose scrollbar is known by then; the layout goes on below them
+        if (lockSpace > 0.0f) {   // the layout goes on below the settings
             const ImVec2 next = ImGui::GetCursorScreenPos();
             ImGui::SetCursorScreenPos(column);
-            DrawLockBanner(info, ev, lockT, lockSpace, sidebarW, barW);
+            DrawLockBanner(info, ev, lock, lockT, lockSpace, lockH, sidebarW, barW);
             ImGui::SetCursorScreenPos(next);
         }
         ImGui::PopClipRect();
@@ -1287,10 +1291,27 @@ void MainUI::DrawTopBar(Settings& s, const UiFrameInfo& info, UiEvents& ev, cons
 
 // ------------------------------------------------------------------------------------------
 
+// The lock banner's layout in a banner `width` wide: the text and the Cancel button side by side while both fit, else
+// the button under the text, at the right, so neither a narrow sidebar nor a longer language cuts the text; a text too
+// long for a row of its own wraps.
+MainUI::LockLayout MainUI::LayOutLockBanner(const std::string& text, bool cancellable, float width) {
+    LockLayout l;
+    const float frameH = ImGui::GetFrameHeight();
+    const float inner = Px(5.0f);
+    const float textW = ImGui::CalcTextSize(text.c_str()).x;
+    const float rowW = width - (Px(12.0f) + IconSize() + Px(8.0f)) - inner;   // the text's room in a row of its own, after the lock icon
+    l.cancelW = cancellable ? IconTextButtonWidth(TR(Cancel)) : 0.0f;
+    l.buttonBelow = cancellable && textW > rowW - l.cancelW - inner;
+    if (textW > rowW) l.wrapW = std::max(1.0f, rowW);
+    l.textH = l.wrapW > 0.0f ? ImGui::CalcTextSize(text.c_str(), nullptr, false, l.wrapW).y - ImGui::GetTextLineHeight() + frameH : frameH;
+    l.height = inner * 2.0f + l.textH + (l.buttonBelow ? inner + frameH : 0.0f);
+    return l;
+}
+
 // The banner over the locked settings: what is running, and the button that stops it. It has a strip of its own at the
 // top of the sidebar column (`space` high, the settings below it) and slides down from the strip's top edge as it
-// fades in (t).
-void MainUI::DrawLockBanner(const UiFrameInfo& info, UiEvents& ev, float t, float space, float width, float barW) {
+// fades in (t). `height` is the banner's, gliding towards the layout's when the button's room opens or closes.
+void MainUI::DrawLockBanner(const UiFrameInfo& info, UiEvents& ev, const LockLayout& lock, float t, float space, float height, float width, float barW) {
     const Palette& p = Colors();
     const ImGuiStyle& style = ImGui::GetStyle();
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(Px(6.0f), 0.0f));
@@ -1300,29 +1321,37 @@ void MainUI::DrawLockBanner(const UiFrameInfo& info, UiEvents& ev, float t, floa
     const int vtx0 = dl->VtxBuffer.Size;
     const float frameH = ImGui::GetFrameHeight();
     const float inner = Px(5.0f);
-    const float bannerH = frameH + inner * 2.0f;
+    const float rowH = frameH + inner * 2.0f;   // the first row: the lock icon, the text's first line and a button beside it
     const ImVec2 top = ImGui::GetCursorScreenPos();
-    const ImVec2 b0(top.x, top.y + space - LockBannerSpace());
-    const ImVec2 b1(b0.x + ImGui::GetContentRegionAvail().x - barW, b0.y + bannerH);
+    const ImVec2 b0(top.x, top.y + space - (height + style.ItemSpacing.y));
+    const ImVec2 b1(b0.x + ImGui::GetContentRegionAvail().x - barW, b0.y + height);
     dl->AddRectFilled(b0, b1, WithAlpha(p.warn, 0.13f * t), CardRounding());
     dl->AddRect(b0, b1, WithAlpha(p.warn, 0.35f * t), CardRounding(), 1.0f);
     const float iconS = IconSize();
-    DrawIcon(dl, Icon::Lock, ImVec2(b0.x + Px(12.0f) + iconS * 0.5f, b0.y + bannerH * 0.5f), iconS, WithAlpha(p.warn, t));
+    DrawIcon(dl, Icon::Lock, ImVec2(b0.x + Px(12.0f) + iconS * 0.5f, b0.y + rowH * 0.5f), iconS, WithAlpha(p.warn, t));
     const bool cancellable = info.batchRunning || info.videoProcessing;
-    const float cancelW = cancellable ? IconTextButtonWidth(TR(Cancel)) : 0.0f;
+    const bool beside = cancellable && !lock.buttonBelow;
     const float textX = b0.x + Px(12.0f) + iconS + Px(8.0f);
     ImGui::PushStyleColor(ImGuiCol_Text, WithAlpha(p.warn, t));
-    ImGui::PushClipRect(b0, ImVec2(b1.x - (cancellable ? cancelW + inner * 2.0f : inner), b1.y), true);
-    ImGui::SetCursorScreenPos(ImVec2(textX, b0.y + (bannerH - ImGui::GetTextLineHeight()) * 0.5f));
-    ImGui::TextUnformatted(info.mcpJob.empty() ? TR(LockedWhileBusy) : StrPrintf(TR(McpJobRunningFmt), info.mcpJob.c_str()).c_str());
+    ImGui::PushClipRect(b0, ImVec2(b1.x - (beside ? lock.cancelW + inner * 2.0f : inner), b1.y), true);
+    ImGui::SetCursorScreenPos(ImVec2(textX, b0.y + (rowH - ImGui::GetTextLineHeight()) * 0.5f));
+    if (lock.wrapW > 0.0f) ImGui::PushTextWrapPos(textX + lock.wrapW - ImGui::GetWindowPos().x);
+    ImGui::TextUnformatted(m_lockText.c_str());
+    if (lock.wrapW > 0.0f) ImGui::PopTextWrapPos();
     ImGui::PopClipRect();
     ImGui::PopStyleColor();
     if (cancellable) {
-        ImGui::SameLine();
-        ImGui::SetCursorScreenPos(ImVec2(b1.x - cancelW - inner, b0.y + inner));
+        if (beside) {
+            ImGui::SameLine();
+            ImGui::SetCursorScreenPos(ImVec2(b1.x - lock.cancelW - inner, b0.y + inner));
+        } else {   // under the text; the banner clips it while its room opens
+            ImGui::PushClipRect(b0, b1, true);
+            ImGui::SetCursorScreenPos(ImVec2(b1.x - lock.cancelW - inner, b0.y + inner + lock.textH + inner));
+        }
         ImGui::PushStyleVar(ImGuiStyleVar_Alpha, style.Alpha * t);
-        if (IconTextButton(TR(Cancel), Icon::Stop, ImVec2(cancelW, frameH), ButtonKind::Accent)) { if (info.batchRunning) ev.batchCancel = true; else ev.cancelVideo = true; }
+        if (IconTextButton(TR(Cancel), Icon::Stop, ImVec2(lock.cancelW, frameH), ButtonKind::Accent)) { if (info.batchRunning) ev.batchCancel = true; else ev.cancelVideo = true; }
         ImGui::PopStyleVar();
+        if (!beside) ImGui::PopClipRect();
     }
     ModeFadeContent(vtx0);
     ImGui::EndChild();

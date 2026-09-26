@@ -259,11 +259,19 @@ public:
 
 private:
     struct ToastItem { std::string text; double time; bool error; bool success; };
+    struct LockLayout {              // the lock banner's layout (LayOutLockBanner)
+        float cancelW = 0.0f;        // the Cancel button's width (0: none)
+        bool  buttonBelow = false;   // the button sits under the text: the two don't fit side by side
+        float wrapW = 0.0f;          // the text's wrap width (0: one line)
+        float textH = 0.0f;          // the height of the text's lines, padded like a frame
+        float height = 0.0f;         // the banner's height
+    };
 
     void DrawTopBar(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts);
     void DrawSidebar(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts);
     float DrawSidebarSearch(Settings& s, UiEvents& ev, float rowW);   // the search field and the Advanced switch, above the scrolled settings
-    void DrawLockBanner(const UiFrameInfo& info, UiEvents& ev, float t, float space, float width, float barW);   // over the locked settings
+    static LockLayout LayOutLockBanner(const std::string& text, bool cancellable, float width);   // in a banner that wide
+    void DrawLockBanner(const UiFrameInfo& info, UiEvents& ev, const LockLayout& lock, float t, float space, float height, float width, float barW);   // over the locked settings
     void DrawPreview(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts);
     void DrawPicture(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts, const ImVec2& pos, const ImVec2& size);
     void DrawWelcome(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts, const ImVec2& origin, const ImVec2& region);   // nothing open yet
@@ -380,7 +388,8 @@ private:
     float  m_aboutY = -1.0f;         // the About header's place in the sidebar (content coordinates)
     float  m_advShown = 0.0f;        // how far the Advanced switch's controls show (0..1, moving while it is flipped)
     float  m_adv = 0.0f;             // the same in the sidebar, where a search shows them all
-    float  m_sidebarBarW = 0.0f;     // the settings' scrollbar width on the last frame: the search row ends where the cards do
+    float  m_sidebarBarW = 0.0f;     // the settings' scrollbar width on the last frame: the banner and the search row end where the cards do
+    std::string m_lockText;          // the lock banner's text, kept while the banner fades out
     double m_spotAt = -1.0;          // the spotlight rings flash once, from this time ...
     double m_spotUntil = -1.0;       // ... until this one
     bool   m_upscaleWarned = false;  // the notice about the cost of super resolution was shown for the current upscale
