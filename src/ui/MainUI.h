@@ -262,6 +262,7 @@ private:
 
     void DrawTopBar(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts);
     void DrawSidebar(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts);
+    float DrawSidebarSearch(Settings& s, UiEvents& ev, float rowW);   // the search field and the Advanced switch, above the scrolled settings
     void DrawLockBanner(const UiFrameInfo& info, UiEvents& ev, float t, float space, float width, float barW);   // over the locked settings
     void DrawPreview(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts);
     void DrawPicture(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts, const ImVec2& pos, const ImVec2& size);
@@ -379,6 +380,7 @@ private:
     float  m_aboutY = -1.0f;         // the About header's place in the sidebar (content coordinates)
     float  m_advShown = 0.0f;        // how far the Advanced switch's controls show (0..1, moving while it is flipped)
     float  m_adv = 0.0f;             // the same in the sidebar, where a search shows them all
+    float  m_sidebarBarW = 0.0f;     // the settings' scrollbar width on the last frame: the search row ends where the cards do
     double m_spotAt = -1.0;          // the spotlight rings flash once, from this time ...
     double m_spotUntil = -1.0;       // ... until this one
     bool   m_upscaleWarned = false;  // the notice about the cost of super resolution was shown for the current upscale

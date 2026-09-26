@@ -389,18 +389,27 @@ void MainUI::Draw(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Font
     m_advShown = AnimateLinear(ImGui::GetID("##advanced"), s.showAdvanced ? 1.0f : 0.0f, 0.2f);
     if (shownW > 0.5f) {
         ImGui::SameLine(0.0f, 0.0f);
-        ImGui::PushClipRect(bodyOrigin, ImVec2(bodyOrigin.x + avail.x, bodyOrigin.y + bodyH), true);
+        // The clip reaches a little above the body, into the gap under the top bar, so the search field's focus ring
+        // shows whole.
+        ImGui::PushClipRect(ImVec2(bodyOrigin.x, bodyOrigin.y - Px(4.0f)), ImVec2(bodyOrigin.x + avail.x, bodyOrigin.y + bodyH), true);
         // While the settings are locked their banner holds the top of the column, outside the scrolled settings, so a
-        // scrolled sidebar can neither cut it nor carry it away; the settings make room for it as it comes in.
+        // scrolled sidebar can neither cut it nor carry it away; the settings make room for it as it comes in. The
+        // search row stays above the scrolled settings for the same reason, under the banner while there is one.
         const ImVec2 column = ImGui::GetCursorScreenPos();
         const float lockT = Animate(ImGui::GetID("##lock"), SettingsLocked(info) ? 1.0f : 0.0f, 12.0f);
         const float lockSpace = std::round(LockBannerSpace() * lockT);
-        if (lockSpace > 0.0f) ImGui::SetCursorScreenPos(ImVec2(column.x, column.y + lockSpace));
         // The cards reach the edges of the column; the side padding leaves room for their shadows only.
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(Px(6.0f), 0.0f));
-        ImGui::BeginChild("##sidebar", ImVec2(sidebarW, std::max(1.0f, bodyH - lockSpace)), ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_NoScrollWithMouse);
+        const float pad = Px(6.0f);
+        ImGui::SetCursorScreenPos(ImVec2(column.x + pad, column.y + lockSpace));
+        const int vtxSearch = ImGui::GetWindowDrawList()->VtxBuffer.Size;
+        const float settingsTop = std::floor(DrawSidebarSearch(s, ev, std::max(1.0f, sidebarW - pad * 2.0f - m_sidebarBarW)) + style.ItemSpacing.y);
+        ModeFadeContent(vtxSearch);
+        ImGui::SetCursorScreenPos(ImVec2(column.x, settingsTop));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(pad, 0.0f));
+        ImGui::BeginChild("##sidebar", ImVec2(sidebarW, std::max(1.0f, column.y + bodyH - settingsTop)), ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_NoScrollWithMouse);
         ImGui::PopStyleVar();
-        const float barW = ImGui::GetCurrentWindow()->ScrollbarSizes.x;   // the banner ends where the cards do
+        const float barW = ImGui::GetCurrentWindow()->ScrollbarSizes.x;   // the banner and the search row end where the cards do
+        m_sidebarBarW = barW;
         ImGui::SetScrollX(0.0f);   // the sidebar only ever scrolls vertically
         SmoothScroll(false, ImGui::GetFontSize() * 3.6f);
         if (m_openAbout) {   // after the setup guide: the About section opens and the sidebar glides to it
@@ -1319,48 +1328,54 @@ void MainUI::DrawLockBanner(const UiFrameInfo& info, UiEvents& ev, float t, floa
     ImGui::EndChild();
 }
 
-void MainUI::DrawSidebar(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts) {
+// The search field, and the Advanced switch at the end of its row (on a row of its own when the sidebar is too narrow
+// for both), drawn above the scrolled settings so a scroll can neither cut nor carry them away: while the field holds
+// text only the matching controls show, in their sections (Theme's Search*); the switch decides how much of every
+// section is shown. rowW ends where the cards do; the result is the row's bottom edge.
+float MainUI::DrawSidebarSearch(Settings& s, UiEvents& ev, float rowW) {
     const Palette& p = Colors();
     const ImGuiStyle& style = ImGui::GetStyle();
-    const bool locked = SettingsLocked(info);   // the banner over the column says so (DrawLockBanner)
-    // The search field, and the Advanced switch at the end of its row (on a row of its own when the sidebar is too
-    // narrow for both): while the field holds text only the matching controls show, in their sections (Theme's
-    // Search*); the switch decides how much of every section is shown.
-    {
-        const float frameH = ImGui::GetFrameHeight();
-        const float iconS = IconSize();
-        const float iconW = iconS + style.ItemInnerSpacing.x;
-        const bool hasQuery = m_searchBuf[0] != 0;
-        const float clearW = hasQuery ? frameH : 0.0f;
-        const float toggleW = std::round(std::round(frameH * 0.72f) * 1.8f) + style.ItemInnerSpacing.x + ImGui::CalcTextSize(TR(Advanced)).x;
-        const float rowW = ImGui::GetContentRegionAvail().x;
-        const float fieldMin = ImGui::GetFontSize() * 9.0f;
-        const bool sameRow = rowW - toggleW - style.ItemSpacing.x * 1.5f >= fieldMin;
-        const float fieldW = sameRow ? rowW - toggleW - style.ItemSpacing.x * 1.5f : rowW;
-        const ImVec2 f0 = ImGui::GetCursorScreenPos();
-        ImGui::SetNextItemWidth(fieldW);
-        if (hasQuery) ImGui::SetNextItemAllowOverlap();   // the clear mark inside it takes the mouse
-        ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(style.FramePadding.x + iconW, style.FramePadding.y));
-        ImGui::InputTextWithHint("##search", TR(SearchHint), m_searchBuf, sizeof(m_searchBuf));
-        ImGui::PopStyleVar();
-        FocusRing();
-        if (ImGui::IsItemDeactivated() && ImGui::IsKeyDown(ImGuiKey_Escape)) m_searchBuf[0] = 0;
-        ImDrawList* dl = ImGui::GetWindowDrawList();
-        DrawIcon(dl, Icon::Search, ImVec2(f0.x + style.FramePadding.x + iconS * 0.5f, f0.y + frameH * 0.5f), iconS, p.textDim);
-        if (hasQuery) {
-            // The clear mark sits inside the field, at its right end.
-            const ImVec2 keep = ImGui::GetCursorScreenPos();
-            ImGui::SetCursorScreenPos(ImVec2(f0.x + fieldW - clearW, f0.y));
-            if (IconButton("##searchClear", Icon::Close, ImVec2(clearW, frameH), TR(SearchClear), ButtonKind::Plain)) m_searchBuf[0] = 0;
-            ImGui::SetCursorScreenPos(keep);
-        }
-        if (sameRow) {
-            ImGui::SetCursorScreenPos(ImVec2(f0.x + rowW - toggleW, f0.y));
-        }
-        if (Toggle(TR(Advanced), &s.showAdvanced)) ev.settingsChanged = true;
-        Tip(TR(TipAdvanced));
-        ImGui::Dummy(ImVec2(0.0f, Px(2.0f)));
+    ImGui::PushID("sidebarSearch");
+    const float frameH = ImGui::GetFrameHeight();
+    const float iconS = IconSize();
+    const float iconW = iconS + style.ItemInnerSpacing.x;
+    const bool hasQuery = m_searchBuf[0] != 0;
+    const float clearW = hasQuery ? frameH : 0.0f;
+    const float toggleW = std::round(std::round(frameH * 0.72f) * 1.8f) + style.ItemInnerSpacing.x + ImGui::CalcTextSize(TR(Advanced)).x;
+    const float fieldMin = ImGui::GetFontSize() * 9.0f;
+    const bool sameRow = rowW - toggleW - style.ItemSpacing.x * 1.5f >= fieldMin;
+    const float fieldW = sameRow ? rowW - toggleW - style.ItemSpacing.x * 1.5f : rowW;
+    const ImVec2 f0 = ImGui::GetCursorScreenPos();
+    ImGui::SetNextItemWidth(fieldW);
+    if (hasQuery) ImGui::SetNextItemAllowOverlap();   // the clear mark inside it takes the mouse
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(style.FramePadding.x + iconW, style.FramePadding.y));
+    ImGui::InputTextWithHint("##search", TR(SearchHint), m_searchBuf, sizeof(m_searchBuf));
+    ImGui::PopStyleVar();
+    FocusRing();
+    if (ImGui::IsItemDeactivated() && ImGui::IsKeyDown(ImGuiKey_Escape)) m_searchBuf[0] = 0;
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    DrawIcon(dl, Icon::Search, ImVec2(f0.x + style.FramePadding.x + iconS * 0.5f, f0.y + frameH * 0.5f), iconS, p.textDim);
+    if (hasQuery) {
+        // The clear mark sits inside the field, at its right end.
+        const ImVec2 keep = ImGui::GetCursorScreenPos();
+        ImGui::SetCursorScreenPos(ImVec2(f0.x + fieldW - clearW, f0.y));
+        if (IconButton("##searchClear", Icon::Close, ImVec2(clearW, frameH), TR(SearchClear), ButtonKind::Plain)) m_searchBuf[0] = 0;
+        ImGui::SetCursorScreenPos(keep);
     }
+    // The switch at the end of the field's row, or under the field. Placed by hand: the row is drawn in the host
+    // window, on the line the preview column started, so the line break after the field lands below the body.
+    ImGui::SetCursorScreenPos(sameRow ? ImVec2(f0.x + rowW - toggleW, f0.y) : ImVec2(f0.x, std::floor(f0.y + frameH + style.ItemSpacing.y)));
+    if (Toggle(TR(Advanced), &s.showAdvanced)) ev.settingsChanged = true;
+    const float bottom = std::max(f0.y + frameH, ImGui::GetItemRectMax().y);
+    Tip(TR(TipAdvanced));
+    ImGui::PopID();
+    return bottom;
+}
+
+void MainUI::DrawSidebar(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts) {
+    const Palette& p = Colors();
+    const bool locked = SettingsLocked(info);   // the banner over the column says so (DrawLockBanner)
+    ImGui::Dummy(ImVec2(0.0f, Px(2.0f)));   // under the search row (DrawSidebarSearch)
     SearchBegin(m_searchBuf);
     m_adv = Searching() ? 1.0f : m_advShown;   // a search looks through the expert controls too
     ImGui::BeginDisabled(locked);
