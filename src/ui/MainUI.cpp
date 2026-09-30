@@ -288,6 +288,12 @@ void MainUI::Draw(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Font
         else if (info.fullscreen && ImGui::IsKeyPressed(ImGuiKey_Escape, false) &&
                  !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel)) RequestFullscreen();
     }
+    // The arrow keys never move the keyboard highlight: Tab and Shift+Tab go from control to control, as in other
+    // programs. They are claimed every frame (a claim holds into the next frame, whose navigation runs before the UI);
+    // the claim keeps them from the navigation only, so text fields and a video's frame steps still read them.
+    static const ImGuiID arrowOwner = ImHashStr("##arrowKeys");
+    for (ImGuiKey key : { ImGuiKey_LeftArrow, ImGuiKey_RightArrow, ImGuiKey_UpArrow, ImGuiKey_DownArrow })
+        ImGui::SetKeyOwner(key, arrowOwner);
     ImGuiViewport* vp = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(vp->WorkPos);
     ImGui::SetNextWindowSize(vp->WorkSize);
@@ -3292,15 +3298,15 @@ void MainUI::DrawWelcome(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
 
 // Keyboard control of a video: space, arrows (shift: ten frames), I / O, Home / End. Not while typing or while a
 // popup is open. Shared by the transport bar and the fullscreen view, whose bar may have faded out.
-// The keys the keyboard navigation reads as well are claimed every frame (a claim holds into the next frame, whose
-// navigation runs before the UI), so an arrow steps the video without also moving the highlight between the
-// controls, and space, Home and End do not also press or scroll to one.
+// Space, Home and End, which the keyboard navigation reads as well, are claimed every frame (a claim holds into the
+// next frame, whose navigation runs before the UI), so they do not also press or scroll to the highlighted control.
+// The arrows are kept from the navigation for the whole window (see Draw).
 void MainUI::VideoKeys(const UiFrameInfo& info, UiEvents& ev) {
     ImGuiIO& io = ImGui::GetIO();
     const bool busy = info.videoProcessing || info.batchRunning;
     if (busy || io.WantTextInput || ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel)) return;
     static const ImGuiID owner = ImHashStr("##videoKeys");   // one owner for the bar and the fullscreen view, whose ID stacks differ
-    for (ImGuiKey key : { ImGuiKey_Space, ImGuiKey_LeftArrow, ImGuiKey_RightArrow, ImGuiKey_Home, ImGuiKey_End })
+    for (ImGuiKey key : { ImGuiKey_Space, ImGuiKey_Home, ImGuiKey_End })
         ImGui::SetKeyOwner(key, owner);
     const double frame = info.videoFps > 0.0 ? 1.0 / info.videoFps : 1.0 / 30.0;
     const double duration = std::max(info.videoDurationSeconds, frame);
