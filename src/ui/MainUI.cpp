@@ -3292,10 +3292,16 @@ void MainUI::DrawWelcome(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
 
 // Keyboard control of a video: space, arrows (shift: ten frames), I / O, Home / End. Not while typing or while a
 // popup is open. Shared by the transport bar and the fullscreen view, whose bar may have faded out.
+// The keys the keyboard navigation reads as well are claimed every frame (a claim holds into the next frame, whose
+// navigation runs before the UI), so an arrow steps the video without also moving the highlight between the
+// controls, and space, Home and End do not also press or scroll to one.
 void MainUI::VideoKeys(const UiFrameInfo& info, UiEvents& ev) {
     ImGuiIO& io = ImGui::GetIO();
     const bool busy = info.videoProcessing || info.batchRunning;
     if (busy || io.WantTextInput || ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel)) return;
+    static const ImGuiID owner = ImHashStr("##videoKeys");   // one owner for the bar and the fullscreen view, whose ID stacks differ
+    for (ImGuiKey key : { ImGuiKey_Space, ImGuiKey_LeftArrow, ImGuiKey_RightArrow, ImGuiKey_Home, ImGuiKey_End })
+        ImGui::SetKeyOwner(key, owner);
     const double frame = info.videoFps > 0.0 ? 1.0 / info.videoFps : 1.0 / 30.0;
     const double duration = std::max(info.videoDurationSeconds, frame);
     auto sendSeek = [&](double t) {
