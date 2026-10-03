@@ -377,13 +377,15 @@ def changelog_md(lang):
         out.append('')
         out.append(lead)
         out.append('')
-        for b in blocks[1:]:
+        for n, b in enumerate(blocks[1:], 1):
             head, _, body = b.partition('\n')
             title = head[3:].strip()
             items = re.findall(r'^- (.*)$', body, re.M)
             if not items:
                 continue   # a table (the files) or prose only
-            out.append('### %s' % title)
+            # The id counts the section within the version, so the anchor is the same in every language
+            # (the translated notes keep the English order of the sections).
+            out.append('### %s {#%s-%d}' % (title, v.replace('.', '-'), n))
             out.append('')
             for it in items:
                 m = re.match(r'\*\*(.+?)\*\*', it)
@@ -702,8 +704,11 @@ def not_found_page():
         href = (L['dir'] + '/' if L['dir'] else '') + 'index.html'
         links.append('<a class="btn btn-ghost" lang="%s" hreflang="%s" href="%s">%s</a>'
                      % (L['htmlLang'], L['htmlLang'], href, esc(S(c, 'langName'))))
+    homes = ' <span class="nf-dot" aria-hidden="true">·</span> '.join(
+        '<span lang="%s">%s</span>' % (L['htmlLang'], esc(S(L['code'], 'notFound.home')))
+        for L in LANGS if lang_ready(L['code']))
     langs = ('<nav class="nf-langs" aria-label="%s"><p class="nf-home">%s%s</p><div class="nf-links">%s</div></nav>'
-             % (esc(S('en', 'notFound.home')), icon('languages'), esc(S('en', 'notFound.home')), ''.join(links)))
+             % (esc(S('en', 'notFound.home')), icon('languages'), homes, ''.join(links)))
     base = CONFIG['basePath']
     return ('<!doctype html><html lang="en" class="no-js"><head><meta charset="utf-8">'
             '<meta name="viewport" content="width=device-width, initial-scale=1"><meta name="color-scheme" content="light dark">'

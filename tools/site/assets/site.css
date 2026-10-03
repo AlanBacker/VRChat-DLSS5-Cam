@@ -726,6 +726,6 @@ a.ext::after {
 .nf-block h2 { font-size: 20px; }
 .nf-block p { margin: 0; color: var(--dim); }
 .nf-langs { margin-top: 28px; padding-top: 20px; border-top: 1px solid var(--border); }
-.nf-home { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; color: var(--dim); font-size: 14px; }
+.nf-home { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 0 0 12px; color: var(--dim); font-size: 14px; }
 .nf-home .icon { width: 16px; height: 16px; }
 .nf-links { display: flex; flex-wrap: wrap; gap: 8px; }

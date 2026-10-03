@@ -246,7 +246,7 @@ struct UiEvents {
     SourceTransform cropPreview;     // its orientation while that lasts
     bool openDocs = false;           // the documentation in the browser (in the interface's language)
     bool mcpOpenPage = false;        // the server's information page in the browser
-    bool mcpOpenDocs = false;        // docs/MCP.md in the browser
+    bool mcpOpenDocs = false;        // the documentation site's MCP page in the browser
     bool mcpOpenJobs = false;        // the jobs folder in Explorer
     bool mcpFirewall = false;        // let the port through the Windows firewall (asks for elevation)
     bool mcpKeyAdd = false, mcpKeyRemove = false, mcpKeyCopy = false;   // on the key named mcpKeyName
