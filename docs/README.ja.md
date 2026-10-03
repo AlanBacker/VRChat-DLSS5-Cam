@@ -29,8 +29,9 @@ Mod も必要としません。
 - **一括処理。** 読み込んだファイルはプレビュー下部のライブラリに集約され、選択した分をまとめて処理できます。
   共通パラメーターに加えてファイル単位の個別パラメーターにも対応し、処理前の回転・反転・切り抜きも行えます。
 - **本物の DLSS 5 ガイダンス。** NVIDIA Optical Flow、またはどのカードでも動く本アプリの FSR オプティカルフローによる
-  モーションベクトルと Depth Anything V2 による深度マップをネットワークへ供給するため、動画とライブ映像はゲーム内と同等の時間的手掛かりを伴って処理されます。
-  前段には任意で DLAA パスを挿入し、先にエッジを整えることもできます。
+  モーションベクトルをネットワークへ供給するため、動画とライブ映像はゲーム内と同等の時間的手掛かりを伴って処理されます。
+  前段には任意で DLAA パスを挿入し、先にエッジを整えることもできます。DLAA と深度表示は Depth Anything V2 が推定した
+  深度マップを使います（DLSS 5 自体は画像とモーションベクトルだけを読みます）。
 - **比較と検証。** ワイプ、左右分割、オリジナル表示に加え、ホイールによるズーム、ドラッグによるパン、全画面表示に
   対応し、処理前後の差分を等倍で確認できます。
 - **実用面の作り込み。** 最初の手順を案内するスタートページ、Windows の設定に追従するダーク／ライトのフラットな
@@ -39,7 +40,7 @@ Mod も必要としません。
   更新の自動確認、4 言語（English、简体中文、日本語、한국어）の UI、UI 専用スレッドによる安定した操作感、
   スクリプト実行向けのコマンドラインを備えます。
 - **PC に軽い。** 画面に変化がない間、ウィンドウの再描画は毎秒数回だけです。ライブカメラは VRChat が新しいフレームを
-  送ったときだけ読み込み、深度ネットワークは DLSS 5、DLAA、または深度表示が必要とする間だけ読み込みます。
+  送ったときだけ読み込み、深度ネットワークは DLAA、超解像、または深度表示が必要とする間だけ読み込みます。
 
 ## 動作環境
 
@@ -345,7 +346,7 @@ Claude Code: プログラムがスイッチオンで動いているときに `cl
 | 撮影 | 保存先 / ファイル名 / 透明度（アルファ）を保持 / 元のフレームも保存 / グローバルホットキー / 自動撮影の間隔（秒） | 写真と動画をどこに、どのように保存するか。ファイル名はテンプレートから作られます: `{name}`（元ファイル名、ライブ撮影では *VRChat*）、`{date}`、`{time}`、`{size}`、`{width}`、`{height}`、`{insize}`、`{inwidth}`、`{inheight}`。その他の文字はそのまま使われ、同名がある場合は `_2`、`_3`… が付きます。既定はライブ撮影が `VRChat_DLSS5_{date}_{time}_{size}`、処理した画像と動画が `{name}_DLSS5_{size}` です。 |
 | 撮影 | 推定処理時間 | 現在の設定で開いている画像や動画にかかるおおよその処理時間。処理のたびに精度が上がります。 |
 | フレームガイダンス | モーションベクトル | NVIDIA Optical Flow（順方向 / 逆方向の一貫性チェック付き）、FSR オプティカルフロー（本アプリ独自のコンピュートパスのピラミッド。どのカードでも動作し、専用の探索半径と一貫性チェックを持ちます）、GPU ブロックマッチング、またはなし。 |
-| フレームガイダンス | 深度 | AI 推定（DirectML 上の Depth Anything V2 Small。更新間隔とネットワーク解像度を調整可能）、フラット、グラデーション、またはゼロ。ネットワークは DLSS 5、DLAA、または深度表示が必要とする間だけ読み込まれます。 |
+| フレームガイダンス | 深度 | AI 推定（DirectML 上の Depth Anything V2 Small。更新間隔とネットワーク解像度を調整可能）、フラット、グラデーション、またはゼロ。DLSS 5 自体は深度を読みません。ネットワークは DLAA、超解像、または深度表示が必要とする間だけ読み込まれます。 |
 | フレームガイダンス | シーン切替時に自動リセット | シーンカットで時間履歴をクリアします。既定ではオフ。 |
 | DLAA プリパス | ニューラルレンダリングの前に DLSS DLAA を実行 / DLSS プリセット | ニューラルレンダリングの前に行うネイティブ解像度の DLSS アンチエイリアスパス（任意）。DLSS 超解像が適用中はこのパスを含んでいます。プリセットは両方に適用されます。 |
 | 表示 | テーマ | *システム*（Windows に従う）、*ダーク*、または *ライト*。 |
@@ -415,7 +416,7 @@ NuGet から ONNX Runtime（DirectML ビルド）と DirectML を、Hugging Face
 ```
 VRChat Stream Camera ──Spout──▶ D3D11on12 receive ──▶ convert (sRGB / resize)
       ▶ NVIDIA Optical Flow (forward + backward) / FSR optical flow (pyramid, both directions) / block matching ──▶ motion vectors + confidence
-      ▶ Depth Anything V2 (ONNX Runtime DirectML, every N frames) ──▶ normalized depth, reprojected in between
+      ▶ Depth Anything V2 (ONNX Runtime DirectML, every N frames) ──▶ normalized depth, reprojected in between (for DLSS SR / DLAA and the depth view)
       ▶ [DLSS SR / DLAA] ──▶ DLSSNR (nvngx_dlssnr.dll) ──▶ composite / compare ──▶ preview + PNG capture
 Video file ──Media Foundation──▶ decode (GPU) ──▶ same pipeline, one frame at a time ──▶ MP4 (H.264 / HEVC + AAC) or PNG sequence
 Animated GIF / APNG / WebP ──WIC / libwebp──▶ decode ──▶ same pipeline, one frame at a time ──▶ GIF / APNG / WebP (frame timing kept), MP4 or PNG sequence

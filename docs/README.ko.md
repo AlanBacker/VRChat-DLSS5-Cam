@@ -27,10 +27,10 @@ VRChat DLSS5 Cam은 VRChat 카메라의 화면에 GeForce RTX에서 NVIDIA **DLS
   GIF, APNG, WebP 애니메이션은 동영상처럼 한 프레임씩 처리되어 각 프레임의 표시 시간을 유지한 채 같은 형식으로 저장됩니다.
 - **일괄 처리.** 불러온 파일은 미리보기 아래 라이브러리에 모이며, 선택한 항목을 한 번에 처리할 수 있습니다.
   공통 파라미터 외에 파일별 개별 파라미터도 지원하고, 처리 전 회전·반전·잘라내기도 적용할 수 있습니다.
-- **진짜 DLSS 5 가이던스.** NVIDIA Optical Flow 또는 어떤 카드에서도 동작하는 이 앱의 FSR 옵티컬 플로우가 만든 모션 벡터와
-  Depth Anything V2의 깊이 맵이 네트워크에 전달되므로,
-  동영상과 실시간 화면이 게임과 동일한 시간적 단서를 갖고 처리됩니다. 앞단에는 DLAA 패스를 선택적으로 넣어
-  가장자리를 먼저 정리할 수도 있습니다.
+- **진짜 DLSS 5 가이던스.** NVIDIA Optical Flow 또는 어떤 카드에서도 동작하는 이 앱의 FSR 옵티컬 플로우가 만든 모션 벡터가
+  네트워크에 전달되므로, 동영상과 실시간 화면이 게임과 동일한 시간적 단서를 갖고 처리됩니다. 앞단에는 DLAA 패스를
+  선택적으로 넣어 가장자리를 먼저 정리할 수도 있습니다. DLAA와 깊이 보기는 Depth Anything V2가 추정한 깊이 맵을
+  사용합니다(DLSS 5 자체는 화면과 모션 벡터만 읽습니다).
 - **비교와 확인.** 와이프, 나란히 보기, 원본 보기에 더해 휠 확대, 드래그 이동, 전체 화면을 지원하여 처리 전후의
   차이를 1:1로 확인할 수 있습니다.
 - **일상적인 사용을 위한 구성.** 첫 단계를 안내하는 시작 페이지, Windows 설정을 따르는 다크·라이트 테마의 플랫한
@@ -39,7 +39,7 @@ VRChat DLSS5 Cam은 VRChat 카메라의 화면에 GeForce RTX에서 NVIDIA **DLS
   4개 언어(English, 简体中文, 日本語, 한국어) 인터페이스, 전용 스레드로 동작하는 안정적인 인터페이스,
   스크립트 실행용 명령줄을 제공합니다.
 - **컴퓨터에 가볍습니다.** 화면에 변화가 없는 동안 창은 초당 몇 번만 다시 그립니다. 실시간 카메라는 VRChat이 새
-  프레임을 보냈을 때만 읽고, 깊이 네트워크는 DLSS 5, DLAA 또는 깊이 보기가 필요로 하는 동안에만 불러옵니다.
+  프레임을 보냈을 때만 읽고, 깊이 네트워크는 DLAA, 초해상도 또는 깊이 보기가 필요로 하는 동안에만 불러옵니다.
 
 ## 동작 환경
 
@@ -339,7 +339,7 @@ Claude Code: 프로그램이 스위치를 켠 채 실행 중일 때 `claude mcp 
 | 촬영 | 저장 폴더 / 파일 이름 / 투명도(알파) 유지 / 원본 프레임도 저장 / 전역 단축키 / 자동 촬영 간격 | 사진과 동영상을 어디에 어떻게 저장할지. 파일 이름은 템플릿으로 만들어집니다: `{name}`(원본 파일 이름, 실시간 촬영에서는 *VRChat*), `{date}`, `{time}`, `{size}`, `{width}`, `{height}`, `{insize}`, `{inwidth}`, `{inheight}`. 나머지 글자는 그대로 쓰이고, 같은 이름이 있으면 `_2`, `_3`…이 붙습니다. 기본값은 실시간 촬영이 `VRChat_DLSS5_{date}_{time}_{size}`, 처리된 사진과 동영상이 `{name}_DLSS5_{size}`입니다. |
 | 촬영 | 예상 처리 시간 | 현재 설정으로 열린 이미지나 동영상을 처리하는 데 걸리는 대략적인 시간. 처리할 때마다 보정됩니다. |
 | 프레임 가이던스 | 모션 벡터 | NVIDIA Optical Flow(정방향/역방향 일관성 검사 포함), FSR 옵티컬 플로우(이 앱 자체의 컴퓨트 패스 피라미드. 어떤 카드에서도 동작하며 자체 검색 반경과 일관성 검사를 가집니다), GPU 블록 매칭, 또는 없음. |
-| 프레임 가이던스 | 깊이 | AI 추정(DirectML의 Depth Anything V2 Small, 갱신 간격과 네트워크 해상도 조정 가능), 평면, 그라데이션, 또는 0. 네트워크는 DLSS 5, DLAA 또는 깊이 보기가 필요로 하는 동안에만 불러옵니다. |
+| 프레임 가이던스 | 깊이 | AI 추정(DirectML의 Depth Anything V2 Small, 갱신 간격과 네트워크 해상도 조정 가능), 평면, 그라데이션, 또는 0. DLSS 5 자체는 깊이를 읽지 않습니다. 네트워크는 DLAA, 초해상도 또는 깊이 보기가 필요로 하는 동안에만 불러옵니다. |
 | 프레임 가이던스 | 장면 전환 시 자동 초기화 | 장면 전환 시 시간 이력을 지웁니다. 기본값은 꺼짐. |
 | DLAA 프리패스 | 사용 / 프리셋 | 뉴럴 렌더링 전 네이티브 해상도에서의 선택적 DLSS 안티앨리어싱 패스. DLSS 초해상도가 적용 중이면 이 패스를 이미 포함합니다. 프리셋은 둘 다에 적용됩니다. |
 | 표시 | 테마 | *시스템*(Windows를 따름), *다크* 또는 *라이트*. |
@@ -409,7 +409,7 @@ AMD의 GitHub 저장소에서 내려받습니다. `-DAPP_EDITION_AMD=ON`은 Rade
 ```
 VRChat Stream Camera ──Spout──▶ D3D11on12 receive ──▶ convert (sRGB / resize)
       ▶ NVIDIA Optical Flow (forward + backward) / FSR optical flow (pyramid, both directions) / block matching ──▶ motion vectors + confidence
-      ▶ Depth Anything V2 (ONNX Runtime DirectML, every N frames) ──▶ normalized depth, reprojected in between
+      ▶ Depth Anything V2 (ONNX Runtime DirectML, every N frames) ──▶ normalized depth, reprojected in between (for DLSS SR / DLAA and the depth view)
       ▶ [DLSS SR / DLAA] ──▶ DLSSNR (nvngx_dlssnr.dll) ──▶ composite / compare ──▶ preview + PNG capture
 Video file ──Media Foundation──▶ decode (GPU) ──▶ same pipeline, one frame at a time ──▶ MP4 (H.264 / HEVC + AAC) or PNG sequence
 Animated GIF / APNG / WebP ──WIC / libwebp──▶ decode ──▶ same pipeline, one frame at a time ──▶ GIF / APNG / WebP (frame timing kept), MP4 or PNG sequence

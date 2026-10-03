@@ -1611,15 +1611,17 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
     const bool nrRuns = nrWanted && !m_nrFailed && NeuralRouteReady(s);
     const bool guidanceIdle = !nrRuns && !dlssWanted && s.compareMode != CompareMotion && s.compareMode != CompareDepth;
     // The depth network (ONNX Runtime with DirectML, some 400 MB of memory) is kept only while something can use its
-    // estimate: DLSS 5 switched on (between the bursts of "only for captures" too), DLAA or super resolution, or the
-    // depth view. Otherwise it is stopped, and the usual deferred start (after any feature creation) brings it back
-    // once it is wanted again: the same stop and start as switching the depth source away and back.
-    const bool depthParked = !s.nrEnabled && !dlssWanted && s.compareMode != CompareDepth;
+    // estimate: DLAA or super resolution (the NGX DLSS feature takes the depth), or the depth view. DLSS 5 alone does
+    // not count: its runtime takes only the picture and the motion vectors, and the depth's content does not change
+    // its output (measured: flat, gradient and zero give byte-identical pictures). Otherwise the network is stopped,
+    // and the usual deferred start (after any feature creation) brings it back once it is wanted again: the same stop
+    // and start as switching the depth source away and back.
+    const bool depthParked = !dlssWanted && s.compareMode != CompareDepth;
     if (depthParked && m_depthInBuf && !m_depthRestart) {
         m_depthEst.Stop();
         m_depthRestart = true;
         m_depthHaveRaw = false; m_depthHistValid = false; m_depthStillCaptured = false;
-        Log::Info("Depth estimator stopped: DLSS 5, DLAA and the depth view are off");
+        Log::Info("Depth estimator stopped: DLAA, super resolution and the depth view are off");
     }
     m_depthParked = depthParked;
     // Neural pass size: the pass works on the output-sized picture (the DLSS result, or the input itself when both
@@ -1804,7 +1806,7 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
     } else {
         // No new source frame: keep the last results; re-run the neural pass only if its parameters changed.
         // A pending (re)start of the depth network worker goes ahead here too (no feature is created on such a
-        // frame): the depth view opened while DLSS 5 and DLAA are off takes the network out of its parking after a
+        // frame): the depth view opened while DLAA and super resolution are off takes the network out of its parking after a
         // still picture's passes have long run out, and the start would otherwise wait for a pass that never comes.
         // The picture is marked as waiting for the estimate, so it gets its passes again once the network is ready.
         if (m_depthRestart && m_depthInBuf && !m_depthParked && s.depthMode == DepthEstimated && gpu.IsFenceComplete(m_featureCreateFence)) {

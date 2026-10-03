@@ -29,9 +29,9 @@ as a batch. It is an ordinary Windows application: the VRChat process is never t
   be processed in a single run, either with the shared parameters or with per-file parameters, and each file can be
   turned, mirrored or cropped beforehand.
 - **Real DLSS 5 guidance.** Motion vectors from NVIDIA Optical Flow, or from the FSR optical flow of this program on any
-  card, and a depth map from Depth Anything V2 are
-  supplied to the network, so video and the live camera are processed with the same temporal cues a game would
-  provide. An optional DLAA pass can clean up edges first.
+  card, are supplied to the network, so video and the live camera are processed with the same temporal cues a game
+  would provide. An optional DLAA pass can clean up edges first; it and the depth view get a depth map from Depth
+  Anything V2 (DLSS 5 itself reads only the picture and the motion vectors).
 - **Comparison and inspection.** Wipe, side-by-side and original views, wheel zoom, drag panning and a fullscreen
   mode make the difference before and after processing verifiable at 1:1.
 - **Built for daily use.** A start page that leads through the first steps, a flat interface in dark and light
@@ -40,8 +40,8 @@ as a batch. It is an ordinary Windows application: the VRChat process is never t
   in a narrow sidebar, an automatic update check, four languages (English, 简体中文, 日本語, 한국어), a dedicated
   interface thread for a consistently responsive window, and a command line for scripted runs.
 - **Light on the computer.** While nothing changes, the window redraws only a few times a second; the live camera is
-  read only when VRChat has sent a new frame; and the depth network is loaded only while DLSS 5, DLAA or the depth
-  view needs it.
+  read only when VRChat has sent a new frame; and the depth network is loaded only while DLAA, super resolution or the
+  depth view needs it.
 
 ## Requirements
 
@@ -368,7 +368,7 @@ and a minimal bot are described in [docs/MCP.md](docs/MCP.md).
 | Capture | Folder / File name / Keep alpha / Also save the original / Hotkey / Time-lapse | Where and how photos and videos are saved. The file name comes from a template: `{name}` (the source file's name, *VRChat* for a live capture), `{date}`, `{time}`, `{size}`, `{width}`, `{height}`, `{insize}`, `{inwidth}`, `{inheight}`; anything else is kept as typed, and a name already taken gets `_2`, `_3`, … Live captures default to `VRChat_DLSS5_{date}_{time}_{size}`, processed pictures and videos to `{name}_DLSS5_{size}`. |
 | Capture | Estimated time | Rough processing time of the open image or video with the current settings, refined by every run. |
 | Frame guidance | Motion vectors | NVIDIA Optical Flow (with a forward/backward consistency check), the FSR optical flow (this program's own pyramid of compute passes, on any card, with its own search radius and consistency check), GPU block matching, or none. |
-| Frame guidance | Depth | AI estimated (Depth Anything V2 Small on DirectML; update interval and network resolution adjustable), flat, gradient, or zero. The network is loaded only while DLSS 5, DLAA or the depth view needs it. |
+| Frame guidance | Depth | AI estimated (Depth Anything V2 Small on DirectML; update interval and network resolution adjustable), flat, gradient, or zero. DLSS 5 itself does not read the depth; the network is loaded only while DLAA, super resolution or the depth view needs it. |
 | Frame guidance | Auto reset | Clears the temporal history on scene cuts. Off by default. |
 | DLAA pre-pass | Enable / Preset | Optional DLSS anti-aliasing pass at native resolution before neural rendering. While DLSS super resolution is in effect it already includes this pass; the preset applies to both. |
 | Display | Theme | *System* (follows Windows), *Dark* or *Light*. |
@@ -438,7 +438,7 @@ part of the build: the release workflow places its two builds into the archives 
 ```
 VRChat Stream Camera ──Spout──▶ D3D11on12 receive ──▶ convert (sRGB / resize)
       ▶ NVIDIA Optical Flow (forward + backward) / FSR optical flow (pyramid, both directions) / block matching ──▶ motion vectors + confidence
-      ▶ Depth Anything V2 (ONNX Runtime DirectML, every N frames) ──▶ normalized depth, reprojected in between
+      ▶ Depth Anything V2 (ONNX Runtime DirectML, every N frames) ──▶ normalized depth, reprojected in between (for DLSS SR / DLAA and the depth view)
       ▶ [DLSS SR / DLAA] ──▶ DLSSNR (nvngx_dlssnr.dll) ──▶ composite / compare ──▶ preview + PNG capture
 Video file ──Media Foundation──▶ decode (GPU) ──▶ same pipeline, one frame at a time ──▶ MP4 (H.264 / HEVC + AAC) or PNG sequence
 Animated GIF / APNG / WebP ──WIC / libwebp──▶ decode ──▶ same pipeline, one frame at a time ──▶ GIF / APNG / WebP (frame timing kept), MP4 or PNG sequence

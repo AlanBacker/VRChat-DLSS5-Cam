@@ -70,7 +70,7 @@ struct PipelineStatus {
     std::string nvofError;
     int         flowLevels = 0;                  // pyramid levels the FSR optical flow has for this picture size
     int         depthState = 0;                  // DepthEstimatorState
-    bool        depthParked = false;             // stopped while nothing uses its estimate (DLSS 5, DLAA and the depth view off)
+    bool        depthParked = false;             // stopped while nothing uses its estimate (DLAA, super resolution and the depth view off)
     std::string depthMessage;                    // failure reason or backend name
     std::string depthBackend;
     UINT        depthInferW = 0, depthInferH = 0;
