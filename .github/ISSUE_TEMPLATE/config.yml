@@ -1,0 +1,14 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Documentation (English)
+    url: https://github.com/AlanBacker/VRChat-DLSS5-Cam/blob/main/README.md
+    about: What the application does, every setting, and the problems the README already answers.
+  - name: 文档（中文）
+    url: https://github.com/AlanBacker/VRChat-DLSS5-Cam/blob/main/docs/README.zh-CN.md
+    about: 程序的用途、每个设置的说明，以及 README 中已经解答的问题。
+  - name: ドキュメント（日本語）
+    url: https://github.com/AlanBacker/VRChat-DLSS5-Cam/blob/main/docs/README.ja.md
+    about: アプリの働き、各設定の説明、README がすでに答えている問題。
+  - name: 문서（한국어）
+    url: https://github.com/AlanBacker/VRChat-DLSS5-Cam/blob/main/docs/README.ko.md
+    about: 앱이 하는 일, 각 설정의 설명, README가 이미 답하는 문제들.

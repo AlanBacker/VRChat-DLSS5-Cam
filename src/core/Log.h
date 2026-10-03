@@ -14,7 +14,8 @@ struct LogEntry {
 };
 
 namespace Log {
-void Init(const std::wstring& filePath);
+constexpr int kKeptLogs = 5;                                   // earlier sessions kept next to the current log: log-1.txt .. log-5.txt
+void Init(const std::wstring& filePath, bool append = false);  // append: continue the file as it is (no rotation, no new BOM)
 void Shutdown();
 void Write(LogLevel level, const char* fmt, ...);
 void Info(const char* fmt, ...);

@@ -1,0 +1,27 @@
+name: "功能建议（中文）"
+description: "对程序的想法"
+title: "[Idea] "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: "想法"
+      description: "希望程序做什么，在程序的哪个位置。"
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: "用途"
+      description: "你会在什么情况下用到它。"
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: "现在的做法"
+      description: "目前你是怎么达到这个目的的（如果可以的话）。"
+  - type: input
+    id: version
+    attributes:
+      label: "版本"
+      placeholder: "2.0.2"

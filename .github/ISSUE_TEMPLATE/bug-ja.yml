@@ -1,0 +1,57 @@
+name: "不具合の報告（日本語）"
+description: "説明どおりに動作しない"
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ご報告ありがとうございます。原因を調べるにはログファイルが必要です。`%LOCALAPPDATA%\VRChatDLSS5Cam\` に `log.txt`（今回のセッション）、`log-1.txt`〜`log-5.txt`（それ以前のセッション）、クラッシュ後は `log-crash.txt` と `crash.txt` があります。アプリ内では「情報」→「設定フォルダを開く」です。問題が起きたセッションのログを添付してください。
+  - type: input
+    id: version
+    attributes:
+      label: "バージョン"
+      description: "「情報」セクションの先頭とウィンドウタイトルに表示されます。"
+      placeholder: "2.0.2"
+    validations:
+      required: true
+  - type: input
+    id: edition
+    attributes:
+      label: "エディション"
+      description: "GeForce 版（`VRChatDLSS5Cam-win64.zip`）、Radeon 版（`VRChatDLSS5Cam-win64-amd.zip`）、または Linux パッケージ。"
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: "グラフィックカード、ドライバー、システム"
+      placeholder: "NVIDIA GeForce RTX 5090, driver 616.92; Windows 10.0 build 26200"
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: "何が起きたか"
+      description: "何をして、何が表示され、代わりに何を期待していたか。"
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: "再現手順"
+      placeholder: |
+        1. 画像を開く
+        2. … を … に切り替える
+        3. …
+  - type: textarea
+    id: crash
+    attributes:
+      label: "クラッシュの記録"
+      description: "クラッシュ後: `crash.txt` の数行（アプリの通知から来た場合は入力済みです）。"
+      render: text
+  - type: textarea
+    id: logs
+    attributes:
+      label: "ログファイル、スクリーンショット"
+      description: "`log.txt`（または `log-crash.txt` と `crash.txt`）をこの欄にドラッグすると GitHub が添付します。問題のスクリーンショットや短い動画も役立ちます。"

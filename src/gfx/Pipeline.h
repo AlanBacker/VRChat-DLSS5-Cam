@@ -78,6 +78,7 @@ struct PipelineStatus {
     double      depthWarmupMs = 0.0;
     double      depthAgeMs = 0.0;                // time since the last network result was applied
     UINT64      depthInferences = 0;
+    unsigned    depthStarts = 0;         // starts of the estimator's worker: a new worker counts from 0, and a still picture needs an estimate from it again
     bool        depthPending = false;   // estimated depth wanted, none applied yet, the estimator is starting or ready (a still picture waits)
     std::wstring depthModelPath;                 // effective model path
     bool        depthModelExists = false;
@@ -340,6 +341,7 @@ private:
     bool   m_depthHaveRaw = false;
     bool   m_depthHistValid = false;
     bool   m_depthStillCaptured = false;                      // still image: the single estimate has been requested
+    unsigned m_depthStarts = 0;                               // see PipelineStatus::depthStarts
     bool   m_depthRestart = false;
     bool   m_depthParked = false;   // the depth network is stopped while nothing uses its estimate
     bool   m_depthModelExists = false;

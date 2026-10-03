@@ -1,0 +1,57 @@
+name: "问题反馈（中文）"
+description: "程序的表现与说明不符"
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈。日志文件是查明问题的关键：`%LOCALAPPDATA%\VRChatDLSS5Cam\` 中有 `log.txt`（本次运行）、`log-1.txt` 至 `log-5.txt`（之前几次运行），崩溃后还有 `log-crash.txt` 和 `crash.txt`。在程序中：「关于」→「打开设置文件夹」。请附上出问题那次运行的日志。
+  - type: input
+    id: version
+    attributes:
+      label: "版本"
+      description: "显示在「关于」部分顶部和窗口标题中。"
+      placeholder: "2.0.2"
+    validations:
+      required: true
+  - type: input
+    id: edition
+    attributes:
+      label: "版本类型"
+      description: "GeForce 版（`VRChatDLSS5Cam-win64.zip`）、Radeon 版（`VRChatDLSS5Cam-win64-amd.zip`）或 Linux 包。"
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: "显卡、驱动和系统"
+      placeholder: "NVIDIA GeForce RTX 5090, driver 616.92; Windows 10.0 build 26200"
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: "发生了什么"
+      description: "你做了什么，看到了什么，以及你期望的结果。"
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: "复现步骤"
+      placeholder: |
+        1. 打开一张图片
+        2. 把 … 切换到 …
+        3. …
+  - type: textarea
+    id: crash
+    attributes:
+      label: "崩溃记录"
+      description: "崩溃后：`crash.txt` 中的几行（从程序的提示进入时会自动填好）。"
+      render: text
+  - type: textarea
+    id: logs
+    attributes:
+      label: "日志文件、截图"
+      description: "把 `log.txt`（或 `log-crash.txt` 和 `crash.txt`）拖进这个输入框，GitHub 会作为附件上传。问题的截图或短视频也很有帮助。"

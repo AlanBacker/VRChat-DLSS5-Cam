@@ -1,0 +1,57 @@
+name: "버그 신고（한국어）"
+description: "설명과 다르게 동작합니다"
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        신고해 주셔서 감사합니다. 원인을 찾으려면 로그 파일이 필요합니다. `%LOCALAPPDATA%\VRChatDLSS5Cam\`에 `log.txt`(이번 세션), `log-1.txt`~`log-5.txt`(이전 세션들), 충돌 후에는 `log-crash.txt`와 `crash.txt`가 있습니다. 앱에서는 "정보" → "설정 폴더 열기"입니다. 문제가 생긴 세션의 로그를 첨부해 주세요.
+  - type: input
+    id: version
+    attributes:
+      label: "버전"
+      description: "\"정보\" 섹션 맨 위와 창 제목에 표시됩니다."
+      placeholder: "2.0.2"
+    validations:
+      required: true
+  - type: input
+    id: edition
+    attributes:
+      label: "에디션"
+      description: "GeForce 에디션(`VRChatDLSS5Cam-win64.zip`), Radeon 에디션(`VRChatDLSS5Cam-win64-amd.zip`) 또는 Linux 패키지."
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: "그래픽 카드, 드라이버, 시스템"
+      placeholder: "NVIDIA GeForce RTX 5090, driver 616.92; Windows 10.0 build 26200"
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: "무슨 일이 있었나요"
+      description: "무엇을 했고, 무엇이 보였으며, 대신 무엇을 기대했는지."
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: "재현 단계"
+      placeholder: |
+        1. 그림을 연다
+        2. …을 …으로 전환한다
+        3. …
+  - type: textarea
+    id: crash
+    attributes:
+      label: "충돌 기록"
+      description: "충돌 후: `crash.txt`의 몇 줄(앱의 알림에서 왔다면 미리 채워져 있습니다)."
+      render: text
+  - type: textarea
+    id: logs
+    attributes:
+      label: "로그 파일, 스크린샷"
+      description: "`log.txt`(또는 `log-crash.txt`와 `crash.txt`)를 이 칸에 끌어다 놓으면 GitHub가 첨부합니다. 문제의 스크린샷이나 짧은 영상도 도움이 됩니다."

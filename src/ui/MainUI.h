@@ -109,6 +109,9 @@ struct UiFrameInfo {
     bool                  windowShown = false;      // the main window is on screen (the start-up card has closed)
     std::string           appVersion;
     bool                  prerelease = false;       // the build is marked as a pre-release
+    bool                  previousAbnormal = false;  // the session before this one ended without an orderly shutdown
+    bool                  previousCrashed = false;   // ... and left a record in crash.txt
+    std::string           previousDetails;           // that record's first lines
     // The MCP server (the clients' way in): its state for the sidebar section.
     bool                  mcpRunning = false;
     bool                  mcpSession = false;         // started for this session by --mcp-port or a bridge (the switch does not stop it)
@@ -185,6 +188,8 @@ struct UiEvents {
     bool openLogFile = false;
     bool openSettingsFolder = false;
     bool openProjectPage = false;
+    bool openIssueReport = false;    // the issue form on GitHub, prefilled (openIssueCrash: with the crash record)
+    bool openIssueCrash = false;
     bool openLicenses = false;
     bool languageChanged = false;
     bool settingsChanged = false;
@@ -314,6 +319,7 @@ private:
     void MirrorControls(Settings& s, const UiFrameInfo& info, UiEvents& ev, float width, bool why);   // the GitHub access choice
     void DrawMirrorPopup(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts);   // no mirror site answered
     void DrawSetupGuide(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts);    // the first-start guide
+    void DrawCrashNotice(const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts);                 // the previous session ended badly
     void CloseGuide(Settings& s, UiEvents& ev, bool point);                                          // point = light up the places the guide named
     void Spotlight(bool foreground);                                                                 // a pulsing ring around the last item, after the guide
     static std::vector<LibrarySnapshotItem> LibrarySnapshot(const UiFrameInfo& info);
@@ -375,6 +381,7 @@ private:
     // The setup guide, and the places it points at once it closes.
     bool   m_guideOpen = false;      // open the guide on this frame
     bool   m_guideShowing = false;   // the guide is up
+    bool   m_crashNoticeDone = false;  // the previous session's end was reported (or there was nothing to report)
     bool   m_guideAutoDone = false;  // the first-start opening was decided
     int    m_guidePage = 0;
     double m_guidePageTime = -1.0;   // when the page changed (its content fades in)

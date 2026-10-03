@@ -1,0 +1,57 @@
+name: "Bug report (English)"
+description: "Something does not work as described"
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for the report. The log files are what makes a problem findable: `%LOCALAPPDATA%\VRChatDLSS5Cam\` holds `log.txt` (this session), `log-1.txt` to `log-5.txt` (the sessions before it) and, after a crash, `log-crash.txt` and `crash.txt`. In the application: *About* → *Open settings folder*. Please attach the log of the session the problem happened in.
+  - type: input
+    id: version
+    attributes:
+      label: "Version"
+      description: "Shown at the top of the About section and in the window title."
+      placeholder: "2.0.2"
+    validations:
+      required: true
+  - type: input
+    id: edition
+    attributes:
+      label: "Edition"
+      description: "GeForce edition (`VRChatDLSS5Cam-win64.zip`), Radeon edition (`VRChatDLSS5Cam-win64-amd.zip`) or the Linux package."
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: "Graphics card, driver and system"
+      placeholder: "NVIDIA GeForce RTX 5090, driver 616.92; Windows 10.0 build 26200"
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: "What happened"
+      description: "What you did, what you saw, and what you expected instead."
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: "Steps to reproduce"
+      placeholder: |
+        1. Open a picture
+        2. Switch ... to ...
+        3. ...
+  - type: textarea
+    id: crash
+    attributes:
+      label: "Crash record"
+      description: "After a crash: the lines of `crash.txt` (filled in when you come here from the application's notice)."
+      render: text
+  - type: textarea
+    id: logs
+    attributes:
+      label: "Log files, screenshots"
+      description: "Drag `log.txt` (or `log-crash.txt` and `crash.txt`) into this field; GitHub attaches them. A screenshot or a short video of the problem helps too."

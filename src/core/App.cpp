@@ -50,7 +50,7 @@ constexpr int kVideoHeldRetries = 10;   // passes a video frame gets to produce 
 // settles. Opening a picture (or loading the runtime) starts a longer run, a slider change a shorter one.
 constexpr int kImageConvergePasses = 32;
 constexpr int kImageSettingsPasses = 24;
-constexpr int    kImageDepthRearms = 2;          // times a still picture gets passes again once the depth estimator is ready
+constexpr int    kImageDepthRearms = 2;          // times a still picture gets passes again once the depth estimator is ready (per start of the estimator)
 constexpr double kImageDepthWaitSeconds = 20.0;  // longest a still picture's save waits for the depth estimator to start
 constexpr double kPerfLogInterval = 15.0;
 constexpr double kDeviceLossRestartGuard = 60.0;   // a device lost again this soon after an automatic restart ends the program
@@ -368,12 +368,19 @@ bool App::Init(HINSTANCE hInstance, int nCmdShow) {
     m_appDataDir = GetAppDataDir();
     m_settingsPath = JoinPath(m_appDataDir, L"settings.ini");
     m_presetsPath = JoinPath(m_appDataDir, L"presets.txt");
-    Log::Init(JoinPath(m_appDataDir, L"log.txt"));
+    // The Radeon edition's second start (below) continues the log of the first one, so one log.txt tells the whole run.
+    const bool continuedRun = GetEnvironmentVariableW(L"VDC_PORT_INI_ADJUSTED", nullptr, 0) != 0;
+    CheckPreviousSession(!continuedRun);
+    Log::Init(JoinPath(m_appDataDir, L"log.txt"), continuedRun);
     Log::Info("VRChat DLSS5 Cam %s%s starting%s", APP_VERSION_STRING, APP_EDITION_AMD ? " Radeon edition" : "", m_headless ? " (headless)" : "");
     Log::Info("Executable folder: %s", WideToUtf8(m_exeDir).c_str());
     Log::Info("Command line: %s", WideToUtf8(GetCommandLineW()).c_str());
     if (!m_cli.error.empty()) Log::Warn("Command line: %s", m_cli.error.c_str());
     if (m_cli.afterDeviceLoss) Log::Info("Started again after the graphics device was lost (the previous log is log-device-loss.txt)");
+    if (m_previous.abnormal) {
+        if (m_previous.crashed) Log::Warn("The previous session crashed (%s); its log is kept as log-crash.txt, the record is in crash.txt", m_previous.details.c_str());
+        else Log::Warn("The previous session did not end properly (no crash record: ended by the system or another program, or a power cut); its log is kept as log-crash.txt");
+    }
 
 #if APP_EDITION_AMD
     // DLSS-NR-on-AMD read its settings file when it loaded, before this code ran. If the file still carries the
@@ -400,6 +407,7 @@ bool App::Init(HINSTANCE hInstance, int nCmdShow) {
         }
     }
 #endif
+    WriteSessionMarker();
 
     Log::Info("Settings file: %s", WideToUtf8(m_settingsPath).c_str());
     m_settings.Load(m_settingsPath);
@@ -676,6 +684,7 @@ void App::Shutdown() {
     WriteSettingsFile();
     Log::Info("Shutdown complete (exit code %d)", m_exitCode);
     Log::Shutdown();
+    RemoveSessionMarker();
     if (m_wake) { CloseHandle(m_wake); m_wake = nullptr; }
     if (m_hwnd) { DestroyWindow(m_hwnd); m_hwnd = nullptr; }
     UnregisterClassW(kWindowClass, m_hInstance);
@@ -1150,7 +1159,7 @@ void App::WorkerMain() {
     std::string processingKey;               // Settings::ProcessingText() of the snapshot the still passes ran with
     int      activeMode = -1;
     int      passesLeft = 0;                 // image mode: passes still to run
-    int      depthRearms = 0;                // image mode: passes given again for the depth estimator (bounded per picture)
+    int      depthRearms = 0;                // image mode: passes given again for the depth estimator (bounded per start of the estimator)
     double   depthWaitStart = 0.0;           // image mode: when a save started waiting for the depth estimator (0: not waiting)
     bool     imageChanged = false;           // image texture recreated since the last processed frame
     bool     imageCapturePending = false;
@@ -1194,6 +1203,7 @@ void App::WorkerMain() {
     perf.Reset(NowSeconds());
     UINT64 depthInferencesSeen = 0;
     UINT64 imageDepthSeen = 0;
+    unsigned depthStartsSeen = 0;
 
     auto currentItem = [&]() -> const BatchItem* {
         return batch.active && batch.index < batch.items.size() ? &batch.items[batch.index] : nullptr;
@@ -1613,7 +1623,15 @@ void App::WorkerMain() {
             if (videoRun.active) videoRun.frameHeld = m_pipeline.FrameReadbackPending();
             // A still picture gets one depth estimate, which may land after the passes ran out: converge again with it.
             if (stillMode) {
-                const UINT64 inferences = m_pipeline.Status().depthInferences;
+                const PipelineStatus& st = m_pipeline.Status();
+                if (st.depthStarts != depthStartsSeen) {
+                    // The estimator's worker was started again (the depth source switched away and back, the depth
+                    // view opened, a reload): a new worker counts its estimates from 0, and the picture needs one from
+                    // it again, so the passes it may get once the worker is ready are granted afresh. Before, that
+                    // allowance was spent per picture, and the third start left the depth view without an estimate.
+                    depthStartsSeen = st.depthStarts; imageDepthSeen = 0; depthRearms = 0;
+                }
+                const UINT64 inferences = st.depthInferences;
                 if (inferences != imageDepthSeen) {
                     imageDepthSeen = inferences;
                     Log::Info("Still passes: %d more (depth estimate %llu landed, %d were left)", kImageSettingsPasses, (unsigned long long)inferences, passesLeft);
@@ -2034,6 +2052,9 @@ void App::Frame() {
     if (const LibraryItem* shown = ShownItem()) info.shownItem = shown->id;
     info.appVersion = APP_VERSION_STRING;
     info.prerelease = APP_PRERELEASE != 0;
+    info.previousAbnormal = m_previous.abnormal && !m_cli.process;   // a batch run has nobody to tell
+    info.previousCrashed = m_previous.crashed;
+    info.previousDetails = m_previous.details;
     SyncMcp();
     FillMcpInfo(info);
     info.windowShown = m_mainShown;
@@ -2347,6 +2368,7 @@ void App::HandleEvents(ui::UiEvents& ev) {
     if (ev.openLogFile) OpenPath(Log::FilePath());
     if (ev.openSettingsFolder) OpenPath(m_appDataDir);
     if (ev.openProjectPage) OpenPath(kProjectUrl);
+    if (ev.openIssueReport) OpenPath(IssueUrl(ev.openIssueCrash));
     if (ev.openBooth) OpenPath(kBoothUrl);
     if (ev.mirrorProbe) m_updater.Probe();
     if (ev.guideClosed && !m_headless && !m_cli.process && m_settings.updateCheck && !m_startCheckDone) {
@@ -2604,6 +2626,167 @@ void App::SavePresets() const {
     if (_wfopen_s(&f, m_presetsPath.c_str(), L"wb") != 0 || !f) { Log::Warn("Presets: cannot write %s", WideToUtf8(m_presetsPath).c_str()); return; }
     fwrite(out.data(), 1, out.size(), f);
     fclose(f);
+}
+
+// --- the previous session -------------------------------------------------------------------
+namespace {
+constexpr const wchar_t* kSessionMarker = L"session.txt";
+
+// The last "maxBytes" of a file (all of a small one).
+std::string ReadFileTail(const std::wstring& path, size_t maxBytes) {
+    HANDLE h = CreateFileW(path.c_str(), GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
+                           OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (h == INVALID_HANDLE_VALUE) return std::string();
+    LARGE_INTEGER size{};
+    GetFileSizeEx(h, &size);
+    const DWORD take = (DWORD)std::min<LONGLONG>(size.QuadPart, (LONGLONG)maxBytes);
+    if (take < (DWORD)size.QuadPart) {
+        LARGE_INTEGER pos{};
+        pos.QuadPart = size.QuadPart - take;
+        SetFilePointerEx(h, pos, nullptr, FILE_BEGIN);
+    }
+    std::string text((size_t)take, '\0');
+    DWORD got = 0;
+    if (take && !ReadFile(h, text.data(), take, &got, nullptr)) got = 0;
+    CloseHandle(h);
+    text.resize(got);
+    return text;
+}
+
+FILETIME LastWriteTime(const std::wstring& path) {
+    WIN32_FILE_ATTRIBUTE_DATA a{};
+    if (!GetFileAttributesExW(path.c_str(), GetFileExInfoStandard, &a)) return FILETIME{};
+    return a.ftLastWriteTime;
+}
+
+// The process with this id runs and is this executable (ids are given out again once a process is gone).
+bool InstanceAlive(DWORD pid) {
+    HANDLE h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+    if (!h) return false;
+    bool alive = false;
+    DWORD code = 0;
+    if (GetExitCodeProcess(h, &code) && code == STILL_ACTIVE) {
+        wchar_t path[MAX_PATH * 2] = {};
+        DWORD n = (DWORD)(sizeof(path) / sizeof(path[0]));
+        if (QueryFullProcessImageNameW(h, 0, path, &n)) {
+            wchar_t own[MAX_PATH * 2] = {};
+            GetModuleFileNameW(nullptr, own, (DWORD)(sizeof(own) / sizeof(own[0])));
+            const wchar_t* a = wcsrchr(path, L'\\'); a = a ? a + 1 : path;
+            const wchar_t* b = wcsrchr(own, L'\\'); b = b ? b + 1 : own;
+            alive = _wcsicmp(a, b) == 0;
+        }
+    }
+    CloseHandle(h);
+    return alive;
+}
+
+std::string UrlEncode(const std::string& s) {
+    static const char* const hex = "0123456789ABCDEF";
+    std::string out;
+    for (unsigned char c : s) {
+        if (isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') out += (char)c;
+        else { out += '%'; out += hex[c >> 4]; out += hex[c & 15]; }
+    }
+    return out;
+}
+
+std::string OsText() {
+    typedef LONG(WINAPI * PFN_RtlGetVersion)(PRTL_OSVERSIONINFOW);
+    RTL_OSVERSIONINFOW vi = {};
+    vi.dwOSVersionInfoSize = sizeof(vi);
+    if (HMODULE nt = GetModuleHandleW(L"ntdll.dll"))
+        if (auto fn = (PFN_RtlGetVersion)GetProcAddress(nt, "RtlGetVersion"))
+            if (fn(&vi) == 0) return StrPrintf("Windows %lu.%lu build %lu", vi.dwMajorVersion, vi.dwMinorVersion, vi.dwBuildNumber);
+    return std::string();
+}
+} // namespace
+
+// session.txt in the settings folder holds the id of the running instance from its start to its orderly shutdown.
+// Found at the next start with no such process alive, the session before ended without one: a crash (crash.txt then
+// holds a record newer than the marker), the process ended by the system or another program, a power cut. Its log is
+// kept as log-crash.txt (the rotation renames it a moment later) and the interface says so, with the log folder and
+// the issue form a click away. A marker owned by another running instance of this program (a second window on the
+// same settings folder) is left alone and nothing is reported.
+void App::CheckPreviousSession(bool keepLog) {
+    const std::wstring marker = JoinPath(m_appDataDir, kSessionMarker);
+    const std::string text = ReadFileTail(marker, 512);
+    if (text.empty()) return;
+    const size_t at = text.find("pid=");
+    const DWORD pid = at == std::string::npos ? 0 : (DWORD)strtoul(text.c_str() + at + 4, nullptr, 10);
+    if (pid && InstanceAlive(pid)) { m_previous.otherInstance = true; return; }
+    m_previous.abnormal = true;
+    const std::wstring crashFile = JoinPath(m_appDataDir, L"crash.txt");
+    const FILETIME markerTime = LastWriteTime(marker), crashTime = LastWriteTime(crashFile);
+    if (FileExists(crashFile) && CompareFileTime(&crashTime, &markerTime) >= 0) {
+        m_previous.crashed = true;
+        // The last record of crash.txt: a header line ("==== time  version  os ====") and the lines after it.
+        std::string tail = ReadFileTail(crashFile, 8192);
+        const size_t head = tail.rfind("==== ");
+        if (head != std::string::npos) tail.erase(0, head);
+        std::string details;
+        size_t pos = 0;
+        int lines = 0;
+        while (pos < tail.size() && lines < 4) {
+            const size_t nl = tail.find('\n', pos);
+            std::string line = tail.substr(pos, nl == std::string::npos ? std::string::npos : nl - pos);
+            pos = nl == std::string::npos ? tail.size() : nl + 1;
+            while (!line.empty() && (line.back() == '\r' || line.back() == ' ')) line.pop_back();
+            if (line.empty() || line.rfind("==== ", 0) == 0) continue;
+            details += (details.empty() ? "" : "\n") + line;
+            ++lines;
+        }
+        m_previous.details = details.empty() ? "see crash.txt" : details;
+    }
+    if (keepLog) CopyFileW(JoinPath(m_appDataDir, L"log.txt").c_str(), JoinPath(m_appDataDir, L"log-crash.txt").c_str(), FALSE);
+}
+
+void App::WriteSessionMarker() {
+    const std::wstring marker = JoinPath(m_appDataDir, kSessionMarker);
+    if (m_previous.otherInstance) return;   // the other window's marker stays its own
+    if (m_headless) {
+        // A scripted run is ended by its script and reports nothing; a marker it found is used up here, so the
+        // next window does not report the same session again (and does not copy this run's log over log-crash.txt).
+        if (m_previous.abnormal) DeleteFileW(marker.c_str());
+        return;
+    }
+    const std::string text = StrPrintf("pid=%lu\r\nversion=%s\r\n", (unsigned long)GetCurrentProcessId(), APP_VERSION_STRING);
+    m_sessionMarked = Settings::WriteText(marker, text);
+}
+
+void App::RemoveSessionMarker() {
+    if (!m_sessionMarked) return;
+    m_sessionMarked = false;
+    DeleteFileW(JoinPath(m_appDataDir, kSessionMarker).c_str());
+}
+
+// The issue form on GitHub (.github/ISSUE_TEMPLATE) in the interface's language. GitHub fills a form's fields from
+// query parameters named after their ids: the version, the edition, the graphics card, its driver and the system,
+// and after a crash the record's first lines.
+std::wstring App::IssueUrl(bool crash) const {
+    const char* lang = "en";
+    switch (I18n::Current()) {
+        case Lang::Chinese:  lang = "zh"; break;
+        case Lang::Japanese: lang = "ja"; break;
+        case Lang::Korean:   lang = "ko"; break;
+        default: break;
+    }
+    std::string url = WideToUtf8(kProjectUrl) + "/issues/new?template=bug-" + lang + ".yml";
+    url += "&version=" + UrlEncode(APP_VERSION_STRING);
+    const char* edition = RunningUnderWine() ? "Linux package (VRChatDLSS5Cam-linux-x86_64.tar.gz)"
+                        : APP_EDITION_AMD ? "Radeon edition (VRChatDLSS5Cam-win64-amd.zip)" : "GeForce edition (VRChatDLSS5Cam-win64.zip)";
+    url += "&edition=" + UrlEncode(edition);
+    std::string system;
+    if (m_deviceReady) {
+        const AdapterInfo& ai = m_device.Info();
+        system = WideToUtf8(ai.name);
+        const std::wstring& drv = ai.nvidiaDriverVersion.empty() ? ai.driverVersion : ai.nvidiaDriverVersion;
+        if (!drv.empty()) system += ", driver " + WideToUtf8(drv);
+    }
+    const std::string os = RunningUnderWine() ? WineHostText() : OsText();
+    if (!os.empty()) system += (system.empty() ? "" : "; ") + os;
+    if (!system.empty()) url += "&system=" + UrlEncode(system);
+    if (crash && !m_previous.details.empty()) url += "&crash=" + UrlEncode(m_previous.details);
+    return Utf8ToWide(url);
 }
 
 std::wstring App::DocsUrl() const {

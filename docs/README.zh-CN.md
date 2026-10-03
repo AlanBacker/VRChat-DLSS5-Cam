@@ -306,9 +306,9 @@ Claude Code：程序运行且开关打开时，执行 `claude mcp add --transpor
 | 显示 | 处理帧率上限 | 实时相机：每秒最多处理这么多帧，其余跳过。0 = 每一帧。 |
 | 关于 | 启动时检查更新 / 更新通道 / 检查更新 | 每次启动时查找更新的版本（默认开启），通道可选 *稳定版* 或 *预览版*，也可用按钮立即检查一次。最近一次检查的结果显示在下方。 |
 | 关于 | GitHub 访问方式 | *直连 GitHub*、自动选用 8 个已知镜像站中最快的一个（*测速* 会列出各站点的响应），或使用自定义镜像站。供访问 GitHub 不流畅或无法访问的地区使用。 |
-| 关于 | 打开日志文件 / 打开设置文件夹 / 文档 / 项目主页 / 设置向导 / 第三方声明 / 重置所有设置 | 版本、GPU 与驱动信息、这份指南、设置向导（首次启动时显示的几页：语言、GitHub 访问方式、程序的用途、各项设置的作用、在哪里找到它们），以及维护按钮。 |
+| 关于 | 打开日志文件 / 打开设置文件夹 / 反馈问题 / 文档 / 项目主页 / 设置向导 / 第三方声明 / 重置所有设置 | 版本、GPU 与驱动信息、GitHub 上的 issue 表单（已填好版本和显卡）、这份指南、设置向导（首次启动时显示的几页：语言、GitHub 访问方式、程序的用途、各项设置的作用、在哪里找到它们），以及维护按钮。 |
 
-设置保存在 `%LOCALAPPDATA%\VRChatDLSS5Cam\settings.ini`，日志是同一文件夹中的 `log.txt`。
+设置保存在 `%LOCALAPPDATA%\VRChatDLSS5Cam\settings.ini`，日志是同一文件夹中的 `log.txt`；之前五次运行的日志保留为 `log-1.txt` 至 `log-5.txt`（崩溃后还有 `log-crash.txt`）。
 
 </details>
 
@@ -322,7 +322,7 @@ Claude Code：程序运行且开关打开时，执行 `claude mcp add --transpor
 - **FSR 宿主在运行，但画面没有变化** – DLSS-NR-on-AMD 没有挂接到本进程：DLSS 5 分节显示 *DLSS-NR-on-AMD：未加载*。在那里安装它（**安装 DLSS-NR-on-AMD…**）；安装器结束后程序会自动重启。若已安装却未加载，再次运行它的安装器。若已加载却仍无变化，打开它的叠加层（**End** 键）确认它已启用，并试试另一种 *Mode*；它自己的日志（程序目录中的 `dlssnr_on_amd.log`，其最后几行也附在 `log.txt` 结尾）会说明它做了什么。该移植版是独立项目，有自己的要求。
 - **缺少 amd_fidelityfx_dx12.dll** – FSR 宿主方式需要该文件位于可执行文件旁；Radeon 版（`VRChatDLSS5Cam-win64-amd.zip`）自带它。
 - **神经渲染运行中，但画面全黑或没有变化** – 程序会将每一帧神经结果与输入对比，当运行库报告成功却输出黑屏或与输入相同的画面时发出警告（`log.txt`："DLSSNR output check"）。将 DLSS 5 关闭再打开即可重新开始。若问题依旧，说明该运行库版本在这块 GPU 上无法产生画面。（*强度* 为 0 时画面不变属于正常情况，不会显示警告。）
-- **程序无法启动 / 立即关闭** – `%LOCALAPPDATA%\VRChatDLSS5Cam\` 中保存有 `log.txt`（最后一行即失败的步骤）和 `crash.txt`，提交 issue 时请附上这两个文件。
+- **程序无法启动 / 立即关闭 / 崩溃了** – `%LOCALAPPDATA%\VRChatDLSS5Cam\` 中保存有 `log.txt`（最后一行即失败的步骤）、之前五次运行的日志（`log-1.txt` 至 `log-5.txt`）和 `crash.txt`。下次启动时程序会发现上次没有正常结束，把那次的日志保留为 `log-crash.txt`，并提供日志文件夹和已填好信息的 issue 表单（「到 GitHub 反馈」；「关于」部分随时有「反馈问题」）。提交 issue 时请附上 `log-crash.txt` 和 `crash.txt`。
 - **NGX 未初始化 / DLAA 不支持** – NGX 运行时需要 NVIDIA GPU 和较新的驱动。它只用于 DLAA 与 DLSS 超分辨率；DLSS 5 神经渲染不依赖它，仍可正常工作。
 - **深度估计器不可用** – `onnxruntime.dll`、`onnxruntime_providers_shared.dll`、`DirectML.dll` 和 `models\depth_anything_v2_small_fp16.onnx` 必须与可执行文件放在一起（发布包中均已包含）。估计器就绪之前程序使用零深度，其状态显示在 *帧引导* 下方。
 - **光流不可用** – Radeon 显卡上这是预期情况：光流引擎属于 GeForce 驱动，Radeon 上没有对应的引擎，因此改用 FSR 光流，*帧引导* 下方的状态点会说明这一点。GeForce 显卡上若 `log.txt` 中出现 "NVOF unavailable, falling back to the FSR optical flow"，说明需要更新 GeForce 驱动；在此之前使用 FSR 光流。

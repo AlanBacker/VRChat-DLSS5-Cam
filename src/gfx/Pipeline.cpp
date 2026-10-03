@@ -1679,6 +1679,7 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
             if (m_depthRestart && m_depthInBuf && !m_depthParked && gpu.IsFenceComplete(m_featureCreateFence)) {
                 m_depthRestart = false;
                 m_depthEst.Start(gpu.Dev(), m_exeDir, m_cfg.depthModel, m_depthInferW, m_depthInferH);
+                m_status.depthStarts = ++m_depthStarts;
                 m_depthModelExists = FileExists(m_cfg.depthModel);
                 m_depthStillCaptured = false;
             }
@@ -1735,6 +1736,7 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
             if (m_depthRestart && m_depthInBuf && !m_depthParked && !featureSettling) {
                 m_depthRestart = false;
                 m_depthEst.Start(gpu.Dev(), m_exeDir, m_cfg.depthModel, m_depthInferW, m_depthInferH);
+                m_status.depthStarts = ++m_depthStarts;
                 m_depthModelExists = FileExists(m_cfg.depthModel);
                 m_depthHaveRaw = false; m_depthHistValid = false; m_depthStillCaptured = false;
             }
@@ -1801,6 +1803,18 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
         }
     } else {
         // No new source frame: keep the last results; re-run the neural pass only if its parameters changed.
+        // A pending (re)start of the depth network worker goes ahead here too (no feature is created on such a
+        // frame): the depth view opened while DLSS 5 and DLAA are off takes the network out of its parking after a
+        // still picture's passes have long run out, and the start would otherwise wait for a pass that never comes.
+        // The picture is marked as waiting for the estimate, so it gets its passes again once the network is ready.
+        if (m_depthRestart && m_depthInBuf && !m_depthParked && s.depthMode == DepthEstimated && gpu.IsFenceComplete(m_featureCreateFence)) {
+            m_depthRestart = false;
+            m_depthEst.Start(gpu.Dev(), m_exeDir, m_cfg.depthModel, m_depthInferW, m_depthInferH);
+            m_status.depthStarts = ++m_depthStarts;
+            m_depthModelExists = FileExists(m_cfg.depthModel);
+            m_depthHaveRaw = false; m_depthHistValid = false; m_depthStillCaptured = false;
+            m_status.depthPending = true;
+        }
         dlssOk = dlssWanted && !m_dlssFailed && m_dlss.Created();
         if (dlssOk) processed = &m_dlssOut;
         if (nrWanted && !m_nrFailed && NeuralCreated() && (!m_cfg.sr || dlssOk) &&

@@ -449,6 +449,7 @@ void MainUI::Draw(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Font
     DrawUpdatePopup(s, info, ev, fonts);
     DrawMirrorPopup(s, info, ev, fonts);
     DrawSetupGuide(s, info, ev, fonts);
+    DrawCrashNotice(info, ev, fonts);
     ImGui::End();
 
     if (s.showLog) DrawLogWindow(s, ev, fonts);
@@ -735,6 +736,61 @@ void MainUI::DrawHistory(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
 }
 
 // The update popup: what is new, the notes, and the one button that downloads, swaps the files and restarts.
+// The session before this one ended without an orderly shutdown: said once, after the window is up and when no other
+// dialog is, with the log folder and the prefilled issue form a click away. Someone who looks for the log after a
+// restart would otherwise find the entries in the sidebar's last section, and a log that started over.
+void MainUI::DrawCrashNotice(const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts) {
+    const double now = ImGui::GetTime();
+    if (!m_crashNoticeDone && info.windowShown && m_startFade >= 0.0 && now - m_startFade > 0.7 && !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId)) {
+        m_crashNoticeDone = true;
+        if (info.previousAbnormal) ImGui::OpenPopup("##crash");
+    }
+    ImGuiViewport* vp = ImGui::GetMainViewport();
+    if (!BeginDialog("##crash", ImVec2(vp->WorkPos.x + vp->WorkSize.x * 0.5f, vp->WorkPos.y + vp->WorkSize.y * 0.45f))) return;
+    const Palette& p = Colors();
+    const float em = ImGui::GetFontSize();
+    const float w = std::max(em * 20.0f, std::min(em * 30.0f, vp->WorkSize.x - em * 4.0f));
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    const float iconSize = IconSize(1.2f);
+    const ImVec2 at = ImGui::GetCursorScreenPos();
+    DrawIcon(dl, Icon::Warning, ImVec2(at.x + iconSize * 0.5f, at.y + ImGui::GetTextLineHeight() * 0.5f), iconSize, p.warn);
+    ImGui::Dummy(ImVec2(iconSize, ImGui::GetTextLineHeight()));
+    ImGui::SameLine(0.0f, Px(8.0f));
+    ImGui::PushFont(fonts.Bold(), ImGui::GetStyle().FontSizeBase * 1.15f);
+    ImGui::TextUnformatted(TR(CrashTitle));
+    ImGui::PopFont();
+    ImGui::Spacing();
+    ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + w);
+    ImGui::TextUnformatted(info.previousCrashed ? TR(CrashBodyCrash) : TR(CrashBodyAbnormal));
+    ImGui::PopTextWrapPos();
+    if (info.previousCrashed && !info.previousDetails.empty()) {
+        ImGui::Spacing();
+        const float textH = ImGui::CalcTextSize(info.previousDetails.c_str(), nullptr, false, w - Px(20.0f)).y;
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, p.surface);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(Px(10.0f), Px(8.0f)));
+        ImGui::BeginChild("##crashRecord", ImVec2(w, std::min(em * 8.0f, textH + Px(20.0f))), ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_None);
+        ImGui::PopStyleVar();
+        ImGui::PopStyleColor();
+        ImGui::PushStyleColor(ImGuiCol_Text, p.textDim);
+        ImGui::PushTextWrapPos(w - Px(20.0f));
+        ImGui::TextUnformatted(info.previousDetails.c_str());
+        ImGui::PopTextWrapPos();
+        ImGui::PopStyleColor();
+        ImGui::EndChild();
+    }
+    ImGui::Spacing();
+    ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + w);
+    Hint(StrPrintf(TR(CrashHintFmt), TR(SecAbout)).c_str());
+    ImGui::PopTextWrapPos();
+    ImGui::Separator();
+    if (ActionButton(TR(CrashReport), Icon::OpenExternal, ImVec2(em * 10.0f, 0.0f), ButtonKind::Accent)) { ev.openIssueReport = true; ev.openIssueCrash = info.previousCrashed; }
+    ImGui::SameLine();
+    if (ActionButton(TR(CrashOpenFolder), Icon::Folder, ImVec2(em * 10.0f, 0.0f))) ev.openSettingsFolder = true;
+    ImGui::SameLine();
+    if (FlatButton(TR(Close), ImVec2(em * 6.0f, 0.0f))) ImGui::CloseCurrentPopup();
+    EndDialog();
+}
+
 void MainUI::DrawUpdatePopup(Settings& /*s*/, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts) {
     if (m_updateOpen) { ImGui::OpenPopup("##update"); m_updateOpen = false; }
     // Centred on every frame from its own size, so it stays put when the progress bar appears.
@@ -2675,6 +2731,10 @@ void MainUI::BlockAbout(Settings& s, const UiFrameInfo& info, UiEvents& ev, cons
     if (ActionButton(TR(OpenLogFile), Icon::Terminal, row1)) ev.openLogFile = true;
     if (row1.x < fullW) ImGui::SameLine(0.0f, style.ItemSpacing.x);
     if (ActionButton(TR(OpenSettingsFolder), Icon::Folder, row1)) ev.openSettingsFolder = true;
+    ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + fullW);
+    Hint(TR(LogsKeptHint));
+    ImGui::PopTextWrapPos();
+    if (ActionButton(TR(ReportIssue), Icon::Flag, ImVec2(fullW, 0.0f))) { ev.openIssueReport = true; ev.openIssueCrash = false; }
     const ImVec2 row2 = PairSize(TR(Documentation), TR(ProjectPage), fullW);
     if (ActionButton(TR(Documentation), Icon::Help, row2)) ev.openDocs = true;
     Spotlight(false);

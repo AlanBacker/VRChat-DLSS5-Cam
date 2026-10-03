@@ -1,0 +1,27 @@
+name: "Feature request (English)"
+description: "An idea for the application"
+title: "[Idea] "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: "The idea"
+      description: "What the application should do, and where in it."
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: "What it is for"
+      description: "The situation in which you would use it."
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: "What you do today"
+      description: "How you get there now, if at all."
+  - type: input
+    id: version
+    attributes:
+      label: "Version"
+      placeholder: "2.0.2"

@@ -449,6 +449,12 @@ private:
     // history should be dropped (a jump).
     bool WorkerPreviewStep(bool& fresh, bool& reset);
     void PostNotice(const std::string& text, bool error, bool success = false, const std::wstring& path = std::wstring());
+    // The session before this one (session.txt in the settings folder holds the PID of a running instance until its
+    // orderly shutdown): found at start with no such process alive, that session ended without one.
+    void CheckPreviousSession(bool keepLog);   // before the log opens: keepLog copies its log.txt to log-crash.txt
+    void WriteSessionMarker();
+    void RemoveSessionMarker();
+    std::wstring IssueUrl(bool crash) const;   // the issue form on GitHub in the interface's language, version and card filled in
     void PostBatchEvent(unsigned id, int state, const std::string& outName, const std::string& error);
 
     HINSTANCE     m_hInstance = nullptr;
@@ -466,6 +472,9 @@ private:
     bool          m_deviceLostReported = false;
     bool          m_relaunchAfterLoss = false;   // the device was lost in an interactive session: start again after Shutdown
     double        m_deviceLostTime = 0.0;
+    struct PreviousSession { bool abnormal = false; bool crashed = false; bool otherInstance = false; std::string details; };
+    PreviousSession m_previous;            // how the session before this one ended
+    bool          m_sessionMarked = false; // this instance wrote session.txt
     bool          m_fontsDirty = true;
     bool          m_pendingResize = false;
     UINT          m_pendingWidth = 0, m_pendingHeight = 0;

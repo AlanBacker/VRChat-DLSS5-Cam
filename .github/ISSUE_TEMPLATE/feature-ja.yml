@@ -1,0 +1,27 @@
+name: "機能の提案（日本語）"
+description: "アプリへのアイデア"
+title: "[Idea] "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: "アイデア"
+      description: "アプリに何をしてほしいか、アプリのどこで。"
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: "用途"
+      description: "どんな場面で使うか。"
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: "現在の方法"
+      description: "いま同じことをどうやっているか（できる場合）。"
+  - type: input
+    id: version
+    attributes:
+      label: "バージョン"
+      placeholder: "2.0.2"

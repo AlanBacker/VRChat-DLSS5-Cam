@@ -1,0 +1,27 @@
+name: "기능 제안（한국어）"
+description: "앱에 대한 아이디어"
+title: "[Idea] "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: "아이디어"
+      description: "앱이 무엇을 하면 좋을지, 앱의 어디에서."
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: "용도"
+      description: "어떤 상황에서 쓰게 될지."
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: "지금의 방법"
+      description: "지금은 같은 일을 어떻게 하고 있는지(가능하다면)."
+  - type: input
+    id: version
+    attributes:
+      label: "버전"
+      placeholder: "2.0.2"
