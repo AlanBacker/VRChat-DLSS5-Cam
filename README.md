@@ -34,8 +34,8 @@ as a batch. It is an ordinary Windows application: the VRChat process is never t
   card, are supplied to the network, so video and the live camera are processed with the same temporal cues a game
   would provide. An optional DLAA pass can clean up edges first; it and the depth view get a depth map from Depth
   Anything V2 (DLSS 5 itself reads only the picture and the motion vectors).
-- **Comparison and inspection.** Wipe, side-by-side and original views, wheel zoom, drag panning and a fullscreen
-  mode make the difference before and after processing verifiable at 1:1.
+- **Comparison and inspection.** Wipe, original, depth and motion-vector views, wheel zoom, drag panning and a
+  fullscreen mode make the difference before and after processing verifiable at 1:1.
 - **Built for daily use.** A start page that leads through the first steps, a flat interface in dark and light
   themes that follow the Windows setting, one *Advanced* switch for everything beyond the essentials, undo and redo
   with a full history, user-defined presets, a search across every setting, a resizable layout that stays readable
@@ -111,7 +111,7 @@ or modification, which is why its installer is never part of this archive.
    `amd_fidelityfx_dx12.dll` and the RTX 50 build of `nvngx_dlssnr.dll` next to the executable (the installer of step 2 converts that file into
    its own weights); the NVIDIA-only files (`nvngx_dlss.dll`, `runtimes\`) are not in it. The GeForce edition offers **Get the Radeon edition…**
    when it finds itself on a Radeon card (`--edition amd` on the command line does the same) and swaps its files the way an update does.
-2. Start `VRChatDLSS5Cam.exe`. The start-up card and the DLSS 5 section offer **Install DLSS-NR-on-AMD…**, with the licence linked next to it.
+2. Start `VRChatDLSS5Cam.exe`. The *Get started* page and the DLSS 5 section offer **Install DLSS-NR-on-AMD…**, with the licence linked next to it.
    One press downloads `dlssnr_on_amd_setup.exe` into the program folder and runs it in the background, taking the folder and the DLL name it
    proposes for the executable; no window and no key press are needed. When it has finished, the application restarts by itself, and the DLSS 5
    section reads *Runtime: Loaded FSR … · FSR host* and *DLSS-NR-on-AMD v…: loaded (version.dll) · up to date*, with the badge next to
@@ -123,7 +123,7 @@ reads **Update to …**; it and **Run the installer again…** fetch the install
 weights) and **R** removes it. An installation made before this version is recognised by the installer file next to the executable.
 
 On this route the strengths of the neural pass up to 1 belong to DLSS-NR-on-AMD and are set in its own overlay (**End** key; its *Mode* there
-stays at inline, which a saved frame needs, see below); this application's *Preset*, *Style* and strength values
+stays at inline, which a saved frame needs, see below); this application's *Style* and strength values
 are not passed to it. The controls that act after the pass (*Output blend*, strengths above 1, *Neural pass resolution*) work as usual.
 DLSS-NR-on-AMD needs Windows 11, a Radeon RX 7000 or RX 9000 card and Adrenalin 26.1.1 or newer; its release page states the current
 requirements. The Radeon edition always runs the FSR host; the GeForce edition hosts `nvngx_dlssnr.dll` itself. There is nothing to choose, and each
@@ -171,8 +171,9 @@ log (`dlssnr_on_amd.log` in the program folder); reports with it are welcome in 
 A file can be dropped onto the window or opened with *Open image…* / *Open video…* in the *Source* section. The
 picture appears in the preview and every slider takes effect on it immediately. The ✕ button beside *Open…* closes
 the file again: processing stops, the preview empties and the file stays in the library. **Process & save PNG**
-(images), **Process & save video** (videos) or the hotkey writes the result next to the source file as
-`<name>_DLSS5_<w>x<h>.png`, `.mp4`, `.gif` / `.png` (APNG) / `.webp` for an animation, or a folder of PNG frames.
+(images), **Process & save video** (videos) or the hotkey writes the result into the save folder of the *Capture*
+section (`Pictures\VRChat DLSS5 Cam` unless changed) as `<name>_DLSS5_<w>x<h>.png`, `.mp4`, `.gif` / `.png` (APNG) /
+`.webp` for an animation, or a folder of PNG frames.
 
 <p align="center">
   <img src="docs/images/video.png" width="900" alt="A video open in the preview with the wipe compare and the play, step and range controls under the picture">
@@ -225,8 +226,9 @@ is kept across sessions as well.
 - **Three sections cover the everyday work:** *Source* (what comes in), *DLSS 5 Neural Rendering* (how it looks) and
   *Capture* (where it goes), followed by *Display*, *MCP* and *About*; a click on a section's title folds it. The
   **Advanced** switch at the top of the sidebar, beside the search field, shows or hides everything beyond the
-  essentials: the tone and structure sliders, the neural pass resolution and the output blend, *Neural pass only for
-  captures*, the *Frame guidance* and *DLAA pre-pass* sections, *V-Sync* and the processing rate cap, *Internals* with
+  essentials: the tone and structure sliders, the neural pass resolution and the output blend, the neural pass
+  readouts, *Neural pass only for captures*, *Hardware decoding*, *Keep transparency (alpha)*, the *Frame guidance*
+  and *DLAA pre-pass* sections, *V-Sync* and the processing rate cap, the MCP section's queue limits, *Internals* with
   the timers, and the pass timings in the status bar. It is on by default; switched off, the sidebar keeps only what
   a first picture needs.
 - **The top bar** holds the source switch (*Live*, *Picture*, *Video*) with a badge for its state and a *DLSS 5*
@@ -237,7 +239,8 @@ is kept across sessions as well.
 - **Every label fits.** Long names wrap onto a second line instead of being cut, a value or badge with no room left
   moves to the next line, and a button pair that no longer fits side by side is stacked, in all four languages and
   down to the narrowest sidebar.
-- **Comparison** is done with the wipe (the handle in the preview is dragged), side by side or the original view.
+- **Comparison** is done with the wipe (the handle in the preview is dragged), the original view, or the depth and
+  motion-vector views.
   The wipe follows the mouse at the interface's own frame rate, even while a video plays slowly. The mouse wheel
   over the preview zooms around the cursor, dragging pans, and a double-click returns to the fitted view.
 - **Presets** are created in the DLSS 5 section: *+* saves the current values under a name, the list applies one
@@ -314,10 +317,11 @@ executable stays in place. **Release page** opens the release in the browser and
 not; the application says so, and the update can be applied by hand from the release page instead. A failed check or
 a failed update is shown as a notification.
 
-This request to `api.github.com` (and the download from `github.com` once an update is chosen), or the same through
-the chosen mirror site, is the only network
-access the application ever makes; nothing else is sent anywhere. Headless and `--process` runs never check on their
-own.
+Apart from the MCP server, which answers only the clients you allow (see *MCP*), the application's network access
+is limited to GitHub: `api.github.com` for the release list, `github.com` for the downloads and `raw.githubusercontent.com`
+for `updates.json`, `port.json` and the translated release notes, or the chosen mirror site in their place; the Radeon
+edition also asks DLSS-NR-on-AMD's release page. Nothing else is sent anywhere. Headless and `--process` runs never
+check on their own.
 
 ## MCP
 
@@ -349,7 +353,7 @@ and a minimal bot are described in [docs/MCP.md](docs/MCP.md).
 | Section | Setting | Meaning |
 |---|---|---|
 | Source | Input | *VRChat camera (Spout)*, *Image file* or *Video file*. |
-| Source | Sender | Which Spout sender to receive; VRChat's camera is `VRCSender1`. |
+| Source | Spout sender | Which Spout sender to receive; VRChat's camera is `VRCSender1`. |
 | Source | Custom output resolution | Output at a chosen size instead of the source size. Larger than the source = upscaling: *DLSS super resolution* (the official DLSS upscaler rebuilds the detail from the source at a render size chosen for the ratio, then the neural pass works on the large picture) or plain *Resampling*. Super resolution multiplies the pixels every later stage has to process: expect a large drop in speed and more video memory in use; for a live stream set a processing rate cap. Smaller = downscaling. DLSS works up to 8192 pixels a side and the neural pass up to about 45 megapixels: a larger output is finished within those limits and resampled to the requested size. |
 | Source | Match the source | Videos only, on by default: the output uses the codec (H.264 or HEVC), the frame rate and the average bitrate of the source file. An animated GIF, APNG or WebP comes back in the same format with its loop count. |
 | Source | Save as / Bitrate / Keep audio / WebP quality | With *Match the source* off: *MP4 (H.264)*, *MP4 (HEVC)*, *PNG sequence*, *GIF*, *APNG* or *WebP*; the encoder bitrate (5–200 Mbit/s) and whether the audio track is copied for MP4; the compression of an animated WebP (50–100, 100 = lossless). |
@@ -357,22 +361,22 @@ and a minimal bot are described in [docs/MCP.md](docs/MCP.md).
 | Source | Paper white / Highlight compression | Shown only for floating-point (HDR) Spout textures: exposure reference and soft highlight roll-off before the neural pass. |
 | DLSS 5 | Enable DLSS 5 (DLSSNR) | Switches the neural pass on or off. Off releases the runtime; on loads it again from the file. |
 | DLSS 5 | Runtime path / Reload | The runtime file in use; empty means the bundled build for the installed card. *Reload* starts that choice over and loads the file again. |
-| DLSS 5 | Presets | Named sets of the DLSS 5 values: *+* saves the current ones, the list applies one, each entry can be overwritten, renamed or deleted. Kept in `presets.txt` in the settings folder. |
+| DLSS 5 | Preset | Named sets of the DLSS 5 values: *+* saves the current ones, the list applies one, each entry can be overwritten, renamed or deleted. Kept in `presets.txt` in the settings folder. |
 | DLSS 5 | Style | Render style (default / natural / cinematic) passed to the runtime. |
 | DLSS 5 | Intensity | Overall strength of the neural pass, 0–2. Up to 1 it is the runtime's own strength; above 1 the application amplifies the difference between the neural result and the original (which can exaggerate artifacts). At 0 the picture is left untouched. |
-| DLSS 5 | Global tone / Local tone | Global and local tone strength, 0–2, with the same rule above 1 (the highest strength above 1 sets the gain). |
-| DLSS 5 | Local structure / Skin structure | Detail enhancement, 0–2, same rule above 1. Skin structure may be left at the runtime default. |
+| DLSS 5 | Global tone strength / Local tone strength | 0–2, with the same rule above 1 (the highest strength above 1 sets the gain). |
+| DLSS 5 | Local structure strength / Skin structure strength | Detail enhancement, 0–2, same rule above 1. Skin structure may be left at the runtime default. |
 | DLSS 5 | Auto mask / UI correction | Automatic subject mask, UI-safe processing. |
-| DLSS 5 | Neural pass only for captures | For cards too slow for live use: between captures the neural, motion and depth passes all rest and the GPU stays nearly idle; a capture first runs the neural pass for 16 fresh frames (after the first depth estimate, when depth guidance is on), then saves. Still images are not affected. |
-| DLSS 5 | Input exposure / Tone transfer / Colour strength | Output blend. Input exposure (0.25–4×) scales the picture the network sees and is undone afterwards. Tone transfer and colour strength (0–2) set how much of the neural pass's brightness and colour changes reach the output; 1 / 1 reproduces the neural result exactly, 0 keeps the original. |
+| DLSS 5 | Neural pass only for captures | For cards too slow for live use: between captures the neural, motion and depth passes all rest and the GPU stays nearly idle; a capture first runs the neural pass for 16 fresh frames (after the first depth estimate when the depth network is in use: DLAA, super resolution or the depth view), then saves. Still images are not affected. |
+| DLSS 5 | Input exposure (paper-white scale) / Tone transfer strength / Colour strength | Output blend. Input exposure (0.25–4×) scales the picture the network sees and is undone afterwards. Tone transfer and colour strength (0–2) set how much of the neural pass's brightness and colour changes reach the output; 1 / 1 reproduces the neural result exactly, 0 keeps the original. |
 | DLSS 5 | Shadow strength / Highlight & glow strength | Output blend, 0–2: how much of the neural pass's darkening and of its brightening reaches the output. 1 / 1 = as rendered. |
 | DLSS 5 | Neural pass resolution | Sizes the neural pass: the full picture, a cap on its long edge (a large source, for example 8K, is processed at a fixed, smaller size) or a percentage of the picture. A reduced pass has its change upsampled onto the full-resolution picture; lower values cut the GPU load at the cost of the finest detail. |
-| Capture | Folder / File name / Keep alpha / Also save the original / Hotkey / Time-lapse | Where and how photos and videos are saved. The file name comes from a template: `{name}` (the source file's name, *VRChat* for a live capture), `{date}`, `{time}`, `{size}`, `{width}`, `{height}`, `{insize}`, `{inwidth}`, `{inheight}`; anything else is kept as typed, and a name already taken gets `_2`, `_3`, … Live captures default to `VRChat_DLSS5_{date}_{time}_{size}`, processed pictures and videos to `{name}_DLSS5_{size}`. |
+| Capture | Folder / File name (Output file name with a file open) / Keep transparency (alpha) / Also save the original frame / Global hotkey / Auto capture every (seconds) | Where and how photos and videos are saved. The file name comes from a template: `{name}` (the source file's name, *VRChat* for a live capture), `{date}`, `{time}`, `{size}`, `{width}`, `{height}`, `{insize}`, `{inwidth}`, `{inheight}`; anything else is kept as typed, and a name already taken gets `_2`, `_3`, … Live captures default to `VRChat_DLSS5_{date}_{time}_{size}`, processed pictures and videos to `{name}_DLSS5_{size}`. |
 | Capture | Estimated time | Rough processing time of the open image or video with the current settings, refined by every run. |
 | Frame guidance | Motion vectors | NVIDIA Optical Flow (with a forward/backward consistency check), the FSR optical flow (this program's own pyramid of compute passes, on any card, with its own search radius and consistency check), GPU block matching, or none. |
 | Frame guidance | Depth | AI estimated (Depth Anything V2 Small on DirectML; update interval and network resolution adjustable), flat, gradient, or zero. DLSS 5 itself does not read the depth; the network is loaded only while DLAA, super resolution or the depth view needs it. |
-| Frame guidance | Auto reset | Clears the temporal history on scene cuts. Off by default. |
-| DLAA pre-pass | Enable / Preset | Optional DLSS anti-aliasing pass at native resolution before neural rendering. While DLSS super resolution is in effect it already includes this pass; the preset applies to both. |
+| Frame guidance | Auto reset on scene cut | Clears the temporal history on scene cuts. Off by default. |
+| DLAA pre-pass | Run DLSS DLAA before neural rendering / DLSS preset | Optional DLSS anti-aliasing pass at native resolution before neural rendering. While DLSS super resolution is in effect it already includes this pass; the preset applies to both. |
 | Display | Theme | *System* (follows Windows), *Dark* or *Light*. |
 | Display | Compare / Fit to window or 1:1 / Zoom / Checkerboard behind transparency / Show the library / Show overlay info / Show log / V-Sync | Preview options. |
 | Display | Reopen the last file at start | Open the file from the previous session again at the next start. Off by default. |
@@ -394,7 +398,7 @@ Command-line options (open files, process unattended, screenshots, headless runs
 - **"No Spout sender found" / "Waiting for VRChat Spout stream…"** – *Spout Stream* has to be enabled on VRChat's Stream camera, and the camera must be open. The first appears while no Spout sender runs at all, the second while senders run but the chosen one has not sent a picture yet. Other Spout senders are listed in the *Spout sender* box.
 - **"The runtime files are missing"** – the archive was not extracted completely: `runtimes\blackwell\nvngx_dlssnr.dll` and `runtimes\universal\nvngx_dlssnr.dll` belong next to `VRChatDLSS5Cam.exe`. Extract it again, or select a runtime file under *Runtime path*.
 - **Graphics driver too old** – the bundled DLSS 5 runtime needs GeForce driver 616.56 or newer; on an older one the neural pass does not start (`log.txt`: `PlatformError`). The application checks the driver at every start and, when it is older, says so in a notice with NVIDIA's download page; *Don't show again* turns the notice off and *Check the graphics driver at start* in *About* turns it back on. The DLSS 5 section keeps a warning line until the driver is updated; the viewer, captures and videos work on the old driver.
-- **Neural rendering failed** – the application switches to the other bundled build by itself and says so in a notice. When neither build starts, the message under the error says so; a newer graphics driver is the first thing to try, `log.txt` carries the NGX result code, and *Preset* 0 is worth trying. On a Radeon card the neural pass runs through the Radeon edition and DLSS-NR-on-AMD instead (see *AMD Radeon cards*).
+- **Neural rendering failed** – the application switches to the other bundled build by itself and says so in a notice. When neither build starts, the message under the error says so; a newer graphics driver is the first thing to try, and `log.txt` carries the NGX result code. On a Radeon card the neural pass runs through the Radeon edition and DLSS-NR-on-AMD instead (see *AMD Radeon cards*).
 - **FSR host runs, but the picture is unchanged** – DLSS-NR-on-AMD is not attached to the process: the DLSS 5 section reads *DLSS-NR-on-AMD: not loaded*. Install it there (**Install DLSS-NR-on-AMD…**); the application restarts by itself once the installer is through. When it is installed but not loaded, run its installer again. When it is loaded and nothing changes, open its overlay (**End** key) to see that it is enabled and try the other *Mode*; its own log (`dlssnr_on_amd.log` in the program folder; its last lines also end `log.txt`) says what it did. The port is a separate project with its own requirements.
 - **amd_fidelityfx_dx12.dll is missing** – the FSR host route needs that file next to the executable; the Radeon edition (`VRChatDLSS5Cam-win64-amd.zip`) carries it.
 - **Neural pass active, but the picture is black or unchanged** – every neural frame is compared with its input, and a warning appears when the runtime reports success but delivers a black or unchanged picture (`log.txt`: "DLSSNR output check"). Switching DLSS 5 off and on again starts it fresh. If it persists, that runtime build does not produce a picture on this GPU. (With *Intensity* at 0 an unchanged picture is normal and no warning is shown.)
@@ -402,7 +406,7 @@ Command-line options (open files, process unattended, screenshots, headless runs
 - **NGX not initialized / DLAA unsupported** – the NGX runtime needs an NVIDIA GPU and a current driver. It serves DLAA and DLSS super resolution only; the DLSS 5 neural pass does not depend on it and keeps working.
 - **Depth estimator unavailable** – `onnxruntime.dll`, `onnxruntime_providers_shared.dll`, `DirectML.dll` and `models\depth_anything_v2_small_fp16.onnx` must sit next to the executable (all are in the release package). Until the estimator is ready the application uses zero depth; its state is shown under *Frame guidance*.
 - **Optical flow unavailable** – on a Radeon card this is expected: the optical flow engine is part of the GeForce driver and has no counterpart on Radeon, so the FSR optical flow is used and the status dot under *Frame guidance* says so. On a GeForce card, when `log.txt` says "NVOF unavailable, falling back to the FSR optical flow", the GeForce driver needs an update; the FSR optical flow is used until then.
-- **The video preview is black** – many films start with a fade from black; the preview skips those frames and says so under the picture while the frame on show is still dark. Seeking forward with the bar or the arrow keys moves past them.
+- **The video preview is black** – many films start with a fade from black; while the frame on show is almost black, the preview says so over the picture. Seeking forward with the bar or the arrow keys moves past those frames.
 - **Video file does not open / no encoder available** – the formats depend on the codecs installed in Windows. HEVC files need the *HEVC Video Extensions* (Microsoft Store), and Windows N / KN needs the *Media Feature Pack*. When the H.264 encoder is missing, *PNG sequence* is the alternative output. Switching *Hardware decoding* off helps with files the GPU decoder rejects.
 - **Low frame rate** – switch DLAA off, raise the depth update interval or lower the depth network resolution, lower the neural pass resolution, or set a processing rate cap. The optical-flow grid is best left at 4 px (2 px and 1 px cost far more at 4K). The log prints a `Perf:` line every 15 s with the cost of each stage.
 - **The graphics device was lost** – the graphics driver reset the card. Windows gives a GPU job about two seconds, and a card that is fully loaded for a long time can miss that: typically a live stream with VRChat rendering on the same card while the neural pass upscales every frame (`log.txt`: "Device removed", `DXGI_ERROR_DEVICE_HUNG`). Every program on the card loses its picture at that moment. Since v1.5.1 the application starts again by itself once the driver is back, says so in a notice, and keeps the log of the lost session as `log-device-loss.txt` next to `log.txt`; its last `Perf:` line shows the load and the video memory in use. If it repeats, lower the load: a processing rate cap, a lower *Neural pass resolution* or a maximum-resolution cap, a smaller output resolution (super resolution off), or a frame rate limit in VRChat; a newer graphics driver is worth a try. Scripted runs (`--process`, `--headless`, `--exit-after`) exit with code 2 instead.
@@ -427,8 +431,8 @@ cmake --build build --config Release --parallel
 ```
 
 The configure step downloads the NVIDIA DLSS SDK (headers, `nvsdk_ngx_s.lib`, `nvngx_dlss.dll`) from NVIDIA's public
-GitHub repository, ONNX Runtime (DirectML build) and DirectML from NuGet, and the Depth Anything V2 Small FP16 model
-from Hugging Face (`-DVDC_FETCH_DEPTH_MODEL=OFF` skips the model). All downloads are hash-checked. Shaders are compiled
+GitHub repository, ONNX Runtime (DirectML build) and DirectML from NuGet, libwebp 1.6.0 from GitHub (built into the executable),
+and the Depth Anything V2 Small FP16 model from Hugging Face (`-DVDC_FETCH_DEPTH_MODEL=OFF` skips the model). All downloads are hash-checked. Shaders are compiled
 at run time, so no shader toolchain is needed. The FidelityFX SDK v1.1.4 headers and its signed `amd_fidelityfx_dx12.dll`
 (MIT) are downloaded from AMD's GitHub repository in the same way. `-DAPP_EDITION_AMD=ON` builds the Radeon edition
 (FSR host route, no NVIDIA-only files in the package); the default is the GeForce edition. The DLSS 5 runtime is not
@@ -493,5 +497,5 @@ cumulatively, so long files keep their timing (`src/core/AnimatedImage.cpp`).
 ## License
 
 MIT (see `LICENSE`). Third-party components and the NVIDIA notice are listed in `THIRD_PARTY_NOTICES.md`.
-This project is not affiliated with VRChat Inc. or NVIDIA Corporation. The DLSS 5 runtime is unreleased software;
-it is used at the user's own risk and must never be redistributed with this application.
+This project is not affiliated with VRChat Inc. or NVIDIA Corporation. The DLSS 5 runtime (`nvngx_dlssnr.dll`) is
+NVIDIA's software under NVIDIA's terms, not covered by this project's MIT licence; it is used at the user's own risk.

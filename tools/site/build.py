@@ -132,71 +132,90 @@ def load_page(lang, slug):
 
 
 # ------------------------------------------------------------------------------------------------ pictures
+SHOT_LANGS = ['en'] + [L['code'] for L in LANGS if L['code'] != 'en']
+
+
+def image_options(name, lang):
+    """The entry of images.json for a picture, with the language's own crop/cover/width when it has them."""
+    opt = dict(IMAGES[name])
+    over = (opt.pop('langs', None) or {}).get(lang) or {}
+    opt.update(over)
+    return opt
+
+
 def build_images():
-    """WebP copies of the screenshots (made when the source or images.json is newer). The PNG sources are read from
-    tools/site/shots/ when a picture is there, otherwise from site/assets/img/; only the latter are published as
-    they are, so sources with private pixels belong in tools/site/shots/, which is not committed (.gitignore). The
-    copies in site/assets/img/gen/ are committed; without a source they are kept as they are."""
+    """WebP copies of the screenshots (made when the source or images.json is newer). Each language can have its own
+    screenshots: the English sources are tools/site/shots/<name>.png, the others tools/site/shots/<lang>/<name>.png,
+    with their copies in site/assets/img/gen/ and gen/<lang>/. A language without its own source of a picture shows
+    the English one. The sources are read from tools/site/shots/ when a picture is there, otherwise (English only)
+    from site/assets/img/; only the latter are published as they are, so sources with private pixels belong in
+    tools/site/shots/, which is not committed (.gitignore). The copies in gen/ are committed; without a source they
+    are kept as they are. Returns {lang: {name: info}}."""
     shots_dir = os.path.join(HERE, 'shots')
     src_dir = os.path.join(OUT, 'assets', 'img')
-    gen_dir = os.path.join(src_dir, 'gen')
+    gen_root = os.path.join(src_dir, 'gen')
     published = sorted(f for f in os.listdir(src_dir) if f.endswith('.png')) if os.path.isdir(src_dir) else []
     if published:
         warn('%d PNG source(s) in site/assets/img/ are published unpainted; move them to tools/site/shots/ '
              'to publish only the painted WebP copies' % len(published))
-    os.makedirs(gen_dir, exist_ok=True)
     try:
         from PIL import Image
     except ImportError:
         Image = None
         warn('Pillow is not installed: the screenshots are not converted (pip install pillow)')
-    found = {}
     cfg_time = os.path.getmtime(os.path.join(HERE, 'images.json'))
-    keep = set()
-    for name, opt in IMAGES.items():
-        full = os.path.join(gen_dir, name + '.webp')
-        small = os.path.join(gen_dir, name + '-800.webp')
-        meta_path = os.path.join(gen_dir, name + '.json')
-        src = os.path.join(shots_dir, name + '.png')
-        if not os.path.exists(src):
-            src = os.path.join(src_dir, name + '.png')
-        if not os.path.exists(src):
-            # No source on this computer (the sources are not in the repository): a copy made by an earlier
-            # build is kept as it is, so a clone builds the same pages.
-            if os.path.exists(full) and os.path.exists(meta_path):
-                found[name] = json.loads(read(meta_path))
+    found = {}
+    for lang in SHOT_LANGS:
+        en = lang == 'en'
+        gen_dir = gen_root if en else os.path.join(gen_root, lang)
+        os.makedirs(gen_dir, exist_ok=True)
+        found[lang] = {}
+        keep = set()
+        for name in IMAGES:
+            opt = image_options(name, lang)
+            full = os.path.join(gen_dir, name + '.webp')
+            small = os.path.join(gen_dir, name + '-800.webp')
+            meta_path = os.path.join(gen_dir, name + '.json')
+            src = os.path.join(shots_dir if en else os.path.join(shots_dir, lang), name + '.png')
+            if en and not os.path.exists(src):
+                src = os.path.join(src_dir, name + '.png')
+            if not os.path.exists(src):
+                # No source on this computer (the sources are not in the repository): a copy made by an earlier
+                # build is kept as it is, so a clone builds the same pages.
+                if os.path.exists(full) and os.path.exists(meta_path):
+                    found[lang][name] = json.loads(read(meta_path))
+                    keep.update({name + '.webp', name + '.json'})
+                    if found[lang][name].get('small'):
+                        keep.add(name + '-800.webp')
+                continue
+            fresh = (os.path.exists(full) and os.path.exists(meta_path) and
+                     os.path.getmtime(full) >= max(os.path.getmtime(src), cfg_time))
+            if not fresh and Image is not None:
+                im = Image.open(src).convert('RGB')
+                for c in opt.get('cover', []):
+                    l, t, r, b = c[:4]
+                    at = (c[4], c[5]) if len(c) >= 6 else (min(r + 4, im.width - 1), (t + b) // 2)
+                    im.paste(im.getpixel(at), (l, t, r, b))
+                if opt.get('crop'):
+                    im = im.crop(tuple(opt['crop']))
+                cap = opt.get('width', 1600)
+                if im.width > cap:
+                    im = im.resize((cap, round(im.height * cap / im.width)), Image.LANCZOS)
+                im.save(full, 'WEBP', quality=86, method=6)
+                info = {'w': im.width, 'h': im.height, 'small': False}
+                if im.width > 1000:
+                    sm = im.resize((800, round(im.height * 800 / im.width)), Image.LANCZOS)
+                    sm.save(small, 'WEBP', quality=84, method=6)
+                    info['small'] = True
+                write(meta_path, json.dumps(info))
+            if os.path.exists(meta_path):
+                found[lang][name] = json.loads(read(meta_path))
                 keep.update({name + '.webp', name + '.json'})
-                if found[name].get('small'):
+                if found[lang][name].get('small'):
                     keep.add(name + '-800.webp')
-            continue
-        fresh = (os.path.exists(full) and os.path.exists(meta_path) and
-                 os.path.getmtime(full) >= max(os.path.getmtime(src), cfg_time))
-        if not fresh and Image is not None:
-            im = Image.open(src).convert('RGB')
-            for c in opt.get('cover', []):
-                l, t, r, b = c[:4]
-                at = (c[4], c[5]) if len(c) >= 6 else (min(r + 4, im.width - 1), (t + b) // 2)
-                im.paste(im.getpixel(at), (l, t, r, b))
-            if opt.get('crop'):
-                im = im.crop(tuple(opt['crop']))
-            cap = opt.get('width', 1600)
-            if im.width > cap:
-                im = im.resize((cap, round(im.height * cap / im.width)), Image.LANCZOS)
-            im.save(full, 'WEBP', quality=86, method=6)
-            info = {'w': im.width, 'h': im.height, 'small': False}
-            if im.width > 1000:
-                sm = im.resize((800, round(im.height * 800 / im.width)), Image.LANCZOS)
-                sm.save(small, 'WEBP', quality=84, method=6)
-                info['small'] = True
-            write(meta_path, json.dumps(info))
-        if os.path.exists(meta_path):
-            found[name] = json.loads(read(meta_path))
-            keep.update({name + '.webp', name + '.json'})
-            if found[name].get('small'):
-                keep.add(name + '-800.webp')
-    for f in os.listdir(gen_dir):
-        if f not in keep:
-            os.remove(os.path.join(gen_dir, f))
+        for f in os.listdir(gen_dir):
+            if f not in keep and os.path.isfile(os.path.join(gen_dir, f)):
+                os.remove(os.path.join(gen_dir, f))
     return found
 
 
@@ -419,13 +438,17 @@ class Ctx:
         if name not in IMAGES:
             warn('figure "%s" is not listed in images.json' % name)
             return ''
-        info = self.images.get(name)
+        sub = '' if self.lang == 'en' else self.lang + '/'
+        info = self.images.get(self.lang, {}).get(name)
+        if not info:
+            sub = ''
+            info = self.images.get('en', {}).get(name)
         if not info:
             warn('screenshot missing: %s.png in tools/site/shots/ or site/assets/img/ (left out of the pages)' % name)
             return ''
-        opt = IMAGES[name]
+        opt = image_options(name, self.lang if sub else 'en')
         alt = alt or S(self.lang, 'img.' + name)
-        base = '%sassets/img/gen/%s' % (self.root, name)
+        base = '%sassets/img/gen/%s%s' % (self.root, sub, name)
         srcset = ''
         if info.get('small'):
             srcset = ' srcset="%s-800.webp 800w, %s.webp %dw" sizes="(min-width: 900px) 800px, 100vw"' % (base, base, info['w'])
@@ -745,7 +768,7 @@ def build():
             if f.endswith('.html') and f[:-5] not in SLUGS and not (L['code'] == 'en' and f == '404.html'):
                 os.remove(os.path.join(ldir, f))
     write(os.path.join(OUT, '404.html'), not_found_page())
-    missing = [n for n in IMAGES if n not in images]
+    missing = [n for n in IMAGES if n not in images['en']]
     return images, missing
 
 
@@ -783,7 +806,8 @@ def main():
     images, missing = build()
     n = sum(1 for L in LANGS for _ in PAGES)
     print('built %d pages in %d languages into %s' % (n, len(LANGS), os.path.relpath(OUT, ROOT)))
-    print('screenshots: %d of %d present' % (len(images), len(IMAGES)))
+    print('screenshots: %d of %d present (English); own pictures: %s' % (len(images['en']), len(IMAGES),
+          ', '.join('%s %d' % (l, len(images[l])) for l in SHOT_LANGS if l != 'en')))
     for m in missing:
         print('  missing: %s.png (tools/site/shots/ or site/assets/img/)' % m)
     other = [w for w in WARNINGS if not w.startswith('screenshot missing')]

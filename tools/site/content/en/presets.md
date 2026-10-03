@@ -22,6 +22,8 @@ Saving under a name that already exists overwrites that preset.
 - Each row has three buttons: overwrite it with the current values, rename it, delete it.
 - When you change a value after applying a preset, the box says **Custom**.
 
+![](presets "The Preset list. Each row has overwrite, rename and delete.")
+
 Presets are kept in `presets.txt` in the settings folder. [Where that is](saving.html#folders)
 
 > [!TIP]
@@ -34,5 +36,7 @@ Every change to a setting, and every file added to or taken out of the library, 
 - ((Ctrl+Z)) undoes. ((Ctrl+Y)) or ((Ctrl+Shift+Z)) redoes.
 - The two arrows in the top bar do the same.
 - The clock button next to them opens the **History**: every change as a list, such as *Intensity: 1.2* or *Added photo.png*. Click an entry to go back to it. The later steps stay until you make a new change.
+
+![](history "The History panel. The step you are at is marked; the later steps stay until a new change.")
 
 The app keeps up to 100 steps.

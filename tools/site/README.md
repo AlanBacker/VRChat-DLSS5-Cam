@@ -61,7 +61,8 @@ status: to-be-translated
 heading and the search engines' summary.
 
 Write control names exactly as the app shows them in that language (the app's own strings are in `src/core/I18n.h`).
-The screenshots are the same English pictures in every language.
+Each language has its own screenshots where the interface's words show: `shots/<lang>/<name>.png` (see Screenshots). A
+picture a language does not have shows the English copy.
 
 ## The Markdown used here
 
@@ -85,12 +86,15 @@ app's interface), `((Ctrl+Alt+P))` (keys), `{adv}` (the Advanced badge for contr
 
 ## Screenshots
 
-The pictures are `<name>.png` files: the English interface in the dark theme, whole windows at 1600 x 1000 or
-sidebar sections at their own size. Keep them in `tools/site/shots/`, which is not committed (`.gitignore`): the
-sources carry private pixels. The build also reads them from `site/assets/img/`, but whatever lies there is
-published as it is. The build never changes the PNG files; it writes WebP copies (and smaller ones for phones) into
-`site/assets/img/gen/`, which the pages use and which are committed. A clone without the sources keeps those copies
-as they are, so it builds the same pages; a new or changed screenshot needs its source in `shots/`.
+The pictures are `<name>.png` files: the interface in the dark theme, whole windows at 1600 x 1000 or sidebar
+sections at their own size. The English sources are `tools/site/shots/<name>.png`, the Chinese, Japanese and Korean
+ones `tools/site/shots/<lang>/<name>.png` (`zh`, `ja`, `ko`), taken with the interface in that language (`--lang`)
+and the same window size, state and crop as the English picture. `shots/` is not committed (`.gitignore`): the
+sources carry private pixels. The build also reads English sources from `site/assets/img/`, but whatever lies there
+is published as it is. The build never changes the PNG files; it writes WebP copies (and smaller ones for phones)
+into `site/assets/img/gen/` and `gen/<lang>/`, which the pages use and which are committed. A clone without the
+sources keeps those copies as they are, so it builds the same pages; a new or changed screenshot needs its source in
+`shots/`. A language without its own copy of a picture shows the English one.
 In `images.json`:
 
 - `cover`: rectangles `[left, top, right, bottom]` in source pixels, painted with the colour just right of each
@@ -100,9 +104,11 @@ In `images.json`:
 - `width`: the largest width of the published copy.
 - `look`: `window` (a whole window, as wide as the text) or `panel` (part of a window, at most `show` CSS pixels
   wide).
+- `langs`: `{"zh": {...}}` with a language's own `cover`, `crop` or `width`, for a picture whose words sit at other
+  places in that language; the English values apply otherwise.
 
 A picture that is missing is left out of the pages and named in the build's warnings. Pictures in the pages: no
-name plates, user IDs, error messages or private paths, and the same pictures in all four languages.
+name plates, user IDs, error messages or private paths, and the same views in all four languages.
 
 ## Base path
 

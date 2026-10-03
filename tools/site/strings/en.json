@@ -174,6 +174,8 @@
     "sidebar-about": "The About section: the version, driver checks, Update channel, GitHub access, and the buttons Check for updates, Open log file, Open settings folder, Report a problem, Documentation and Setup guide",
     "driver-notice": "The notice A newer graphics driver is needed: the installed driver 536.99 on the left of a bar, the required 616.56 on the right, and the buttons Close and Download driver",
     "update-window": "The Update available window: the version, the release notes in a scrolling box, and the buttons Update now, Release page and Later",
-    "radeon-sidebar": "The DLSS 5 section of the Radeon edition: Install DLSS-NR-on-AMD, Licence, Release page and Reload, with the requirements under them"
+    "radeon-sidebar": "The DLSS 5 section of the Radeon edition: Install DLSS-NR-on-AMD, Licence, Release page and Reload, with the requirements under them",
+    "presets": "The Preset box opened: the three saved presets as a list, each with overwrite, rename and delete buttons, and the + button to save a new one",
+    "history": "The History panel under the top bar: the changes so far as a list, the current step marked, the undone steps shown after it"
   }
 }
