@@ -104,6 +104,7 @@ enum class ButtonKind { Flat, Accent, Ghost, Plain, Danger };
 // Widgets ----------------------------------------------------------------------------------
 bool Toggle(const char* label, bool* v);                                           // switch-style checkbox
 bool Checkbox(const char* label, bool* v);                                         // flat box with a drawn check mark
+float CheckboxLabelIndent();                                                       // from a checkbox's left edge to its label
 bool Radio(const char* label, bool active);                                        // round choice mark; true when clicked
 // A section of the sidebar: a card with an icon, a title and a fold chevron; true while its content shows (it is
 // drawn inside the card, inset from its edges). Pair a true return with SectionEnd().
@@ -130,6 +131,11 @@ void PillAfter(const char* text, ImU32 bg, ImU32 fg, float spacing);            
 // under 7.5 em and never more than half the row, so a long label (Japanese, English) is not cut at the edge.
 void  LabelSeen(const char* label);                                                // every trailing label reports itself
 void  TrailingLabel(const char* label);                                            // draws it and reports it
+// A label that will not fit its column on one line makes its row a band as tall as a frame around the wrapped
+// label: called before the row's controls (with the row's item width set), it moves the cursor down to the band's
+// middle, and the row's TrailingLabel(label) draws the label in even lines from the band's top. Rows whose label
+// fits are left as they are. The sliders, dropdowns, switches and InputIntLabel do this themselves.
+void  LabelRowBegin(const char* label);
 void  LabelAfterItem(const char* label);                                           // a trailing label that leaves the control the last item (its tip covers the label)
 float LabelColumn(float rowWidth);                                                 // PushItemWidth(-LabelColumn(avail))
 void  SameLineIfFits(const char* buttonLabel);                                     // SameLine() only when a button of this label has room left on the line

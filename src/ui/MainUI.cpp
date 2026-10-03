@@ -1862,6 +1862,7 @@ void MainUI::BlockSource(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         // Sender selection.
         {
             const std::string preview = s.senderName.empty() ? std::string(TR(SenderAuto)) : s.senderName;
+            LabelRowBegin(TR(Sender));
             ImGui::SetNextItemWidth(ImGui::CalcItemWidth() - ImGui::GetFrameHeight() - ImGui::GetStyle().ItemInnerSpacing.x);
             if (BeginDropdown("##sender", preview.c_str())) {
                 if (ImGui::Selectable(TR(SenderAuto), s.senderName.empty())) { s.senderName.clear(); ev.senderChanged = true; ev.settingsChanged = true; }
@@ -2038,9 +2039,12 @@ void MainUI::EffectControls(Settings& s, UiEvents& ev, float advanced, bool enab
             SearchHold(true);
             bool useDefault = s.nrSkinStructure < 0.0f;
             ImGui::PushID("skin");
+            const float boxX = ImGui::GetCursorPosX();
             if (Checkbox(TR(UseDefault), &useDefault)) { s.nrSkinStructure = useDefault ? -1.0f : 1.0f; ch = true; }
-            const std::string what = StrPrintf("(%s)", TR(SkinStructure));   // beside the box while it fits, else below it
+            // Beside the box while it fits, else below it, under the box's label.
+            const std::string what = StrPrintf("(%s)", TR(SkinStructure));
             SameLineIfRoom(ImGui::CalcTextSize(what.c_str()).x, ImGui::GetStyle().ItemSpacing.x);
+            if (ImGui::GetCursorPosX() < boxX + 0.5f) ImGui::SetCursorPosX(boxX + CheckboxLabelIndent());
             ImGui::PushTextWrapPos(0.0f);
             ImGui::TextDisabled("%s", what.c_str());
             ImGui::PopTextWrapPos();
@@ -2093,9 +2097,15 @@ void MainUI::EffectControls(Settings& s, UiEvents& ev, float advanced, bool enab
     if (blend) ev.settingsChanged = true;
     if (ch) { ev.nrChanged = true; ev.settingsChanged = true; }
     ImGui::Spacing();
-    if (GhostButton(TR(ResetHistory))) ev.resetHistory = true;
-    SameLineIfFits(TR(ResetDefaults));
-    if (GhostButton(TR(ResetDefaults))) {
+    // Side by side while both fit the row, else one above the other across the row, as every pair of buttons.
+    const ImGuiStyle& style = ImGui::GetStyle();
+    const float rowW = ImGui::GetContentRegionAvail().x;
+    const bool oneLine = ImGui::CalcTextSize(TR(ResetHistory)).x + ImGui::CalcTextSize(TR(ResetDefaults)).x +
+                         style.FramePadding.x * 4.0f + style.ItemSpacing.x <= rowW;
+    const ImVec2 resetSize(oneLine ? 0.0f : rowW, 0.0f);
+    if (GhostButton(TR(ResetHistory), resetSize)) ev.resetHistory = true;
+    if (oneLine) ImGui::SameLine();
+    if (GhostButton(TR(ResetDefaults), resetSize)) {
         s.nrPreset = 0; s.nrStyle = 0; s.nrIntensity = 1.0f; s.nrGlobalTone = 1.0f; s.nrLocalTone = 1.0f;
         s.nrLocalStructure = 1.0f; s.nrSkinStructure = -1.0f; s.nrAutoMask = false; s.nrUiCorrection = false;
         s.nrInputExposure = 1.0f; s.nrToneTransfer = 1.0f; s.nrColorStrength = 1.0f;
@@ -2121,6 +2131,7 @@ void MainUI::BlockSave(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
     if (SearchMatch(TR(CaptureFolder), TR(OpenFolder))) {
         SyncBuffer(m_folderBuf, sizeof(m_folderBuf), s.captureFolder, m_folderEditing);
         const float btnW = ImGui::GetFrameHeight();
+        LabelRowBegin(TR(CaptureFolder));
         ImGui::SetNextItemWidth(ImGui::CalcItemWidth() - btnW * 2.0f - ImGui::GetStyle().ItemInnerSpacing.x * 2.0f);
         const std::string hint = WideToUtf8(info.captureFolder);
         ImGui::InputTextWithHint("##folder", hint.c_str(), m_folderBuf, sizeof(m_folderBuf));
@@ -2141,12 +2152,14 @@ void MainUI::BlockSave(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         std::string& tmpl = live ? s.captureName : s.outputName;
         SyncBuffer(m_nameBuf, sizeof(m_nameBuf), tmpl, m_nameEditing);
         const std::string hint = WideToUtf8(live ? Capture::kDefaultCaptureName : Capture::kDefaultOutputName);
+        const char* nameLabel = live ? TR(CaptureName) : TR(OutputName);
+        LabelRowBegin(nameLabel);
         ImGui::InputTextWithHint("##filename", hint.c_str(), m_nameBuf, sizeof(m_nameBuf));
         FocusRing();
         m_nameEditing = ImGui::IsItemActive();
         if (ImGui::IsItemDeactivatedAfterEdit()) { tmpl = m_nameBuf; ev.settingsChanged = true; }
         ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
-        TrailingLabel(live ? TR(CaptureName) : TR(OutputName));
+        TrailingLabel(nameLabel);
         Help(TR(TipFileName));
     }
     if (Toggle(TR(SaveOriginal), &s.saveOriginal)) ev.settingsChanged = true;
@@ -2213,6 +2226,7 @@ void MainUI::BlockView(Settings& s, const UiFrameInfo& /*info*/, UiEvents& ev) {
         const float w = ImGui::CalcItemWidth();
         if (SegmentsFit(themes, 3, nullptr, w)) {
             const bool withIcons = SegmentsFit(themes, 3, themeIcons, w);
+            LabelRowBegin(TR(Theme));
             if (Segmented("##theme", themes, 3, &s.theme, w, withIcons ? themeIcons : nullptr)) ev.settingsChanged = true;
             Tip(TR(TipTheme));
             ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
@@ -2235,6 +2249,7 @@ void MainUI::BlockView(Settings& s, const UiFrameInfo& /*info*/, UiEvents& ev) {
         // does the same; the button returns to the fitted view.
         if (SearchMatch(TR(Zoom), TR(TipZoom))) {
             ImGui::PushID("zoom");
+            LabelRowBegin(TR(Zoom));
             const ImGuiStyle& style = ImGui::GetStyle();
             const float resetW = ImGui::GetFrameHeight();
             ImGui::SetNextItemWidth(ImGui::CalcItemWidth() - resetW - style.ItemInnerSpacing.x);
@@ -2419,6 +2434,7 @@ void MainUI::BlockMcp(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         Help(TR(TipMcpLocalNoKey));
         if (SearchMatch(TR(McpJobFolder), TR(TipMcpJobFolder))) {
             SyncBuffer(m_mcpJobFolderBuf, sizeof(m_mcpJobFolderBuf), s.mcpJobFolder, m_mcpJobFolderEditing);
+            LabelRowBegin(TR(McpJobFolder));
             ImGui::SetNextItemWidth(ImGui::CalcItemWidth());
             ImGui::InputTextWithHint("##mcpjobfolder", TR(TipMcpJobFolder), m_mcpJobFolderBuf, sizeof(m_mcpJobFolderBuf));
             FocusRing();
@@ -2523,6 +2539,7 @@ void MainUI::BlockGuidance(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         if (SearchMatch(TR(DepthModel), TR(Reload))) {
             // The model file: the field, then browse and reload as icon buttons on the same row.
             SyncBuffer(m_depthModelBuf, sizeof(m_depthModelBuf), s.depthModelPath, m_depthModelEditing);
+            LabelRowBegin(TR(DepthModel));
             const float btnW = ImGui::GetFrameHeight();
             const float gap = ImGui::GetStyle().ItemInnerSpacing.x;
             ImGui::SetNextItemWidth(ImGui::CalcItemWidth() - (btnW + gap) * 2.0f);
@@ -2616,6 +2633,7 @@ void MainUI::BlockNgxRuntime(Settings& s, const UiFrameInfo& info, UiEvents& ev)
     }
     if (SearchMatch(TR(RuntimePath), TR(Reload))) {
         SyncBuffer(m_runtimeBuf, sizeof(m_runtimeBuf), s.nrDllPath, m_runtimeEditing);
+        LabelRowBegin(TR(RuntimePath));
         const float btnW = ImGui::GetFrameHeight();
         const float gap = ImGui::GetStyle().ItemInnerSpacing.x;
         ImGui::SetNextItemWidth(ImGui::CalcItemWidth() - (btnW + gap) * 2.0f);
@@ -4486,6 +4504,7 @@ void MainUI::DrawPresetRow(Settings& s, UiEvents& ev) {
         ev.nrChanged = true; ev.settingsChanged = true;
     };
     ImGui::PushID("presets");
+    LabelRowBegin(TR(Preset));
     ImGui::SetNextItemWidth(ImGui::CalcItemWidth() - frameH - style.ItemInnerSpacing.x);
     const char* preview = match >= 0 ? presets[match].name.c_str() : presets.empty() ? TR(PresetNone) : TR(PresetCustom);
     if (BeginDropdown("##list", preview)) {

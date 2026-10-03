@@ -408,17 +408,184 @@ void MaskCorners(ImDrawList* dl, const ImVec2& a, const ImVec2& b, float r, ImU3
 }
 
 // A label drawn right of a control from "x": it wraps at the right edge of the row when it is longer than the room
-// there (a narrow sidebar, a long translation) instead of running past the card.
+// there (a narrow sidebar, a long translation) instead of running past the card. A label that wraps is set in even
+// lines: a bracketed tail that fits a line of its own goes there, under the words it explains ("Input exposure" /
+// "(paper-white scale)"); any other label breaks where a reader expects it (LabelBreaks) into no more lines than the
+// whole room needs, as evenly as it can, so it never leaves one word alone on its last line.
 namespace {
 float SideLabelRoom(float x) {
     return ImMax(ImGui::GetCurrentWindow()->WorkRect.Max.x - x, ImGui::GetFontSize() * 4.0f);
 }
-ImVec2 SideLabelSize(const char* label, float x) {
-    const char* end = ImGui::FindRenderedTextEnd(label);
-    return end == label ? ImVec2(0.0f, 0.0f) : ImGui::CalcTextSize(label, end, false, SideLabelRoom(x));
+struct LabelLines {
+    ImVec2 size;            // as it is drawn
+    float wrap = 0.0f;      // the width it wraps at
+    bool wrapped = false;   // more than one line
+    std::string split;      // the label with its line breaks, when LayOutLabel sets them itself
+};
+// The bracketed tail of a label that ends in one, in ASCII or full-width brackets ("(paper-white scale)"), or null.
+const char* BracketTail(const char* label, const char* end) {
+    const size_t n = (size_t)(end - label);
+    if (!(n > 0 && end[-1] == ')') && !(n >= 3 && std::memcmp(end - 3, "\xEF\xBC\x89", 3) == 0)) return nullptr;
+    const char* open = nullptr;
+    for (const char* c = label; c < end; ++c)
+        if (*c == '(' || (end - c >= 3 && std::memcmp(c, "\xEF\xBC\x88", 3) == 0)) open = c;
+    return open && open > label ? open : nullptr;
 }
-void SideLabel(const char* label, const ImVec2& pos) {
-    ImGui::RenderTextWrapped(pos, label, ImGui::FindRenderedTextEnd(label), SideLabelRoom(pos.x));
+// Where a wrapped label may break and what the break costs. 0, a natural joint: a space, and in Japanese the
+// places where kanji, kana and katakana runs meet, so a particle stays with its word and a katakana word stays whole;
+// in Chinese, between any two characters. 1: inside a run of one script (a kanji compound, a katakana word), or
+// before a number that belongs to the word before it ("DLSS 5"). 2: before a particle, which would leave its word.
+// Never inside a Latin or Hangul word, before a closing mark, a small kana or a long-vowel mark, or after an opening
+// mark. These are a subset of the breaks the text renderer itself may take, so a line it is given is never re-cut.
+enum CharKind { kSpace, kLatin, kHan, kHira, kKata, kHangul, kOpen, kClose };
+CharKind KindOf(unsigned c) {
+    switch (c) {
+    case ' ': case 0x3000: return kSpace;
+    case '(': case '[': case '{': case 0x2018: case 0x201C: case 0x3008: case 0x300A: case 0x300C: case 0x300E:
+    case 0x3010: case 0x3014: case 0x3016: case 0xFF08: case 0xFF3B: case 0xFF5B: return kOpen;
+    case ')': case ']': case '}': case ',': case '.': case ':': case ';': case '!': case '?': case '%': case 0x00B7:
+    case 0x2019: case 0x201D: case 0x2025: case 0x2026: case 0x3001: case 0x3002: case 0x3009: case 0x300B: case 0x300D:
+    case 0x300F: case 0x3011: case 0x3015: case 0x3017: case 0x30FB: case 0xFF01: case 0xFF09: case 0xFF0C: case 0xFF0E:
+    case 0xFF1A: case 0xFF1B: case 0xFF1F: case 0xFF3D: case 0xFF5D: return kClose;
+    default: break;
+    }
+    if (c >= 0x3041 && c <= 0x309F) return kHira;
+    if ((c >= 0x30A0 && c <= 0x30FF) || (c >= 0x31F0 && c <= 0x31FF) || (c >= 0xFF66 && c <= 0xFF9F)) return kKata;
+    if ((c >= 0x3400 && c <= 0x4DBF) || (c >= 0x4E00 && c <= 0x9FFF) || (c >= 0xF900 && c <= 0xFAFF) || c == 0x3005) return kHan;
+    if ((c >= 0xAC00 && c <= 0xD7AF) || (c >= 0x1100 && c <= 0x11FF) || (c >= 0x3130 && c <= 0x318F)) return kHangul;
+    return kLatin;
+}
+bool NoLineStart(unsigned c) {
+    switch (c) {
+    case 0x3005: case 0x3041: case 0x3043: case 0x3045: case 0x3047: case 0x3049: case 0x3063: case 0x3083: case 0x3085:
+    case 0x3087: case 0x308E: case 0x309D: case 0x309E: case 0x30A1: case 0x30A3: case 0x30A5: case 0x30A7: case 0x30A9:
+    case 0x30C3: case 0x30E3: case 0x30E5: case 0x30E7: case 0x30EE: case 0x30F5: case 0x30F6: case 0x30FC: case 0x30FD:
+    case 0x30FE: return true;
+    default: return false;
+    }
+}
+int JointCost(unsigned pc, CharKind pk, unsigned cc, CharKind ck, bool japanese) {
+    if (ck == kClose || pk == kOpen || NoLineStart(cc)) return -1;
+    if (pk == kHangul || ck == kHangul || (pk == kLatin && ck == kLatin)) return -1;
+    const bool pNarrowClose = pk == kClose && pc < 0x3000;
+    if (ck == kLatin && pNarrowClose) return -1;                                  // "0.35", "a,b"
+    if (ck == kOpen && cc < 0x3000 && (pk == kLatin || pNarrowClose)) return -1;  // "word(" stays together
+    if (!japanese) return 0;
+    if (ck == kHira) return pk == kHira ? 1 : 2;
+    return pk == ck ? 1 : 0;
+}
+struct LabelBreak { const char* end; const char* start; float endX, startX; int cost; };
+// The label's possible breaks, with the label's start and end as the first and last entries. A break inside a run of
+// one script that would leave a single character of it alone on a line ("ネットワー" / "ク") costs 3 more.
+void LabelBreaks(const char* label, const char* end, std::vector<LabelBreak>& out) {
+    struct Char { const char* at; unsigned c; CharKind kind; };
+    static std::vector<Char> chars;
+    chars.clear();
+    bool japanese = false;
+    for (const char* s = label; s < end;) {
+        unsigned c = 0;
+        const int n = ImTextCharFromUtf8(&c, s, end);
+        const CharKind kind = KindOf(c);
+        chars.push_back({s, c, kind});
+        japanese = japanese || kind == kHira || kind == kKata;
+        s += n;
+    }
+    auto x = [&](const char* p) { return ImGui::CalcTextSize(label, p).x; };
+    out.clear();
+    out.push_back({label, label, 0.0f, 0.0f, 0});
+    const int count = (int)chars.size();
+    for (int i = 1; i < count; ++i) {
+        const Char& c = chars[i];
+        const Char& p = chars[i - 1];
+        if (c.kind == kSpace) continue;
+        if (p.kind == kSpace) {   // a run of spaces: the line ends before it, the next one starts after it
+            int first = i - 1;
+            while (first > 0 && chars[first - 1].kind == kSpace) --first;
+            if (first > 0 && c.kind != kClose)
+                out.push_back({chars[first].at, c.at, x(chars[first].at), x(c.at), (c.c >= '0' && c.c <= '9') ? 1 : 0});
+            continue;
+        }
+        int cost = JointCost(p.c, p.kind, c.c, c.kind, japanese);
+        if (cost < 0) continue;
+        if (p.kind == c.kind && (i < 2 || chars[i - 2].kind != p.kind || i + 1 >= count || chars[i + 1].kind != c.kind)) cost += 3;
+        const float at = x(c.at);
+        out.push_back({c.at, c.at, at, at, cost});
+    }
+    const float w = x(end);
+    out.push_back({end, end, w, w, 0});
+}
+LabelLines LayOutLabel(const char* label, float room) {
+    LabelLines l;
+    const char* end = ImGui::FindRenderedTextEnd(label);
+    if (end == label) return l;
+    l.wrap = ImMax(room, 1.0f);
+    l.size = ImGui::CalcTextSize(label, end, false, l.wrap);
+    l.wrapped = l.size.y > ImGui::GetTextLineHeight() * 1.5f;
+    if (!l.wrapped) return l;
+    if (const char* tail = BracketTail(label, end)) {
+        const char* headEnd = tail;
+        while (headEnd > label && headEnd[-1] == ' ') --headEnd;
+        if (headEnd > label && ImGui::CalcTextSize(label, headEnd).x <= l.wrap && ImGui::CalcTextSize(tail, end).x <= l.wrap) {
+            l.split.assign(label, headEnd);
+            l.split += '\n';
+            l.split.append(tail, end);
+            l.size = ImGui::CalcTextSize(l.split.c_str(), nullptr, false, l.wrap);
+            return l;
+        }
+    }
+    // The fewest lines (never more than the renderer's own wrap takes), then the cheapest breaks, then the narrowest
+    // widest line. A label with a word longer than the room keeps the renderer's own wrap, which cuts that word.
+    static std::vector<LabelBreak> breaks;
+    LabelBreaks(label, end, breaks);
+    const int n = (int)breaks.size();
+    const int maxLines = ImMax(2, (int)(l.size.y / ImGui::GetTextLineHeight() + 0.5f));
+    struct Best { int cost = INT_MAX; float widest = FLT_MAX; int from = -1; };
+    static std::vector<Best> best;
+    best.assign((size_t)(maxLines + 1) * n, Best());
+    auto at = [&](int lines, int i) -> Best& { return best[(size_t)lines * n + i]; };
+    for (int i = 1; i < n; ++i)
+        if (breaks[i].endX <= room) at(1, i) = {breaks[i].cost, breaks[i].endX, 0};
+    int lines = 0;
+    for (int k = 2; k <= maxLines && !lines; ++k) {
+        for (int i = 1; i < n; ++i) {
+            Best& b = at(k, i);
+            for (int j = 1; j < i; ++j) {
+                const Best& prev = at(k - 1, j);
+                const float w = breaks[i].endX - breaks[j].startX;
+                if (prev.from < 0 || w > room) continue;
+                const int cost = prev.cost + breaks[i].cost;
+                const float widest = ImMax(prev.widest, w);
+                if (cost < b.cost || (cost == b.cost && widest <= b.widest)) b = {cost, widest, j};   // a tie: the longer first line
+            }
+        }
+        if (at(k, n - 1).from >= 0) lines = k;
+    }
+    if (!lines || lines > 64) return l;
+    int ends[64];
+    int count = 0;
+    for (int k = lines, i = n - 1; k >= 1; i = at(k, i).from, --k) ends[count++] = i;
+    std::string text;
+    for (int c = count - 1, from = 0; c >= 0; from = ends[c], --c) {
+        if (!text.empty()) text += '\n';
+        text.append(breaks[from].start, breaks[ends[c]].end);
+    }
+    l.split = std::move(text);
+    l.wrap = room + 1.0f;   // every line already fits; the renderer must not cut one again
+    l.size = ImGui::CalcTextSize(l.split.c_str(), nullptr, false, l.wrap);
+    return l;
+}
+// A labelled control stands in a band as tall as a frame around its label. A label of one line fits the control's
+// own height; a wrapped one makes the band taller, and the control moves down to the band's middle: a control and
+// its label always share one centre line. The label starts a frame's padding under the band's top.
+float BandHeight(const LabelLines& l) {
+    return ImMax(ImGui::GetFrameHeight(), l.size.y + ImGui::GetStyle().FramePadding.y * 2.0f);
+}
+float BandShift(const LabelLines& l, float controlH) {
+    return l.wrapped ? IM_ROUND((BandHeight(l) - controlH) * 0.5f) : 0.0f;
+}
+void SideLabel(const char* label, const LabelLines& l, const ImVec2& pos) {
+    if (l.split.empty()) ImGui::RenderTextWrapped(pos, label, ImGui::FindRenderedTextEnd(label), l.wrap);
+    else ImGui::RenderTextWrapped(pos, l.split.c_str(), l.split.c_str() + l.split.size(), l.wrap);
 }
 }
 
@@ -618,10 +785,14 @@ bool BeginDropdown(const char* label, const char* preview, Icon icon, ImGuiCombo
     LabelSeen(label);
     const float w = ImGui::CalcItemWidth();
     const ImVec2 pos = window->DC.CursorPos;
-    const ImRect bb(pos, ImVec2(pos.x + w, pos.y + ImGui::GetFrameHeight()));
-    const ImVec2 labelSize = SideLabelSize(label, bb.Max.x + style.ItemInnerSpacing.x);
-    const ImRect total(bb.Min, ImVec2(bb.Max.x + (labelSize.x > 0.0f ? style.ItemInnerSpacing.x + labelSize.x : 0.0f),
-                                      ImMax(bb.Max.y, bb.Min.y + style.FramePadding.y * 2.0f + labelSize.y)));
+    const float frameH = ImGui::GetFrameHeight();
+    const float labelX = pos.x + w + style.ItemInnerSpacing.x;
+    const LabelLines lines = LayOutLabel(label, SideLabelRoom(labelX));
+    const float labelW = lines.wrapped ? SideLabelRoom(labelX) : lines.size.x;   // a wrapped label takes the rest of the row
+    const float dy = BandShift(lines, frameH);
+    const ImRect bb(ImVec2(pos.x, pos.y + dy), ImVec2(pos.x + w, pos.y + dy + frameH));
+    const ImRect total(pos, ImVec2(bb.Max.x + (lines.size.x > 0.0f ? style.ItemInnerSpacing.x + labelW : 0.0f),
+                                   ImMax(pos.y + frameH, pos.y + style.FramePadding.y * 2.0f + lines.size.y)));
     ImGui::ItemSize(total, style.FramePadding.y);
     if (!ImGui::ItemAdd(total, id, &bb)) return false;
     bool hovered = false, held = false;
@@ -650,7 +821,7 @@ bool BeginDropdown(const char* label, const char* preview, Icon icon, ImGuiCombo
                                       textMax, preview, nullptr, nullptr);
         ImGui::PopStyleColor();
     }
-    if (labelSize.x > 0.0f) SideLabel(label, ImVec2(bb.Max.x + style.ItemInnerSpacing.x, bb.Min.y + style.FramePadding.y));
+    if (lines.size.x > 0.0f) SideLabel(label, lines, ImVec2(labelX, pos.y + style.FramePadding.y));
     const float t = PopupFade(id ^ kFadeKey, open);
     if (!open) return false;
     ImGui::PushStyleVar(ImGuiStyleVar_Alpha, style.Alpha * t);
@@ -1383,9 +1554,10 @@ bool Toggle(const char* label, bool* v) {
     const float width = IM_ROUND(height * 1.8f);
     const ImVec2 pos = window->DC.CursorPos;
     const ImVec2 labelPos(pos.x + width + style.ItemInnerSpacing.x, pos.y + style.FramePadding.y);
-    const ImVec2 labelSize = SideLabelSize(label, labelPos.x);
-    const ImRect total(pos, ImVec2(pos.x + width + (labelSize.x > 0 ? style.ItemInnerSpacing.x + labelSize.x : 0),
-                                   ImMax(pos.y + rowH, labelPos.y + labelSize.y + style.FramePadding.y)));
+    const LabelLines lines = LayOutLabel(label, SideLabelRoom(labelPos.x));
+    const float labelW = lines.wrapped ? SideLabelRoom(labelPos.x) : lines.size.x;   // a wrapped label takes the rest of the row
+    const ImRect total(pos, ImVec2(pos.x + width + (lines.size.x > 0 ? style.ItemInnerSpacing.x + labelW : 0),
+                                   ImMax(pos.y + rowH, labelPos.y + lines.size.y + style.FramePadding.y)));
     const ImGuiID id = window->GetID(label);
     ImGui::ItemSize(total, style.FramePadding.y);
     if (!ImGui::ItemAdd(total, id)) return false;
@@ -1400,15 +1572,19 @@ bool Toggle(const char* label, bool* v) {
     const ImU32 bg = Mix(offTrack, Mix(p.accent, p.accentHover, hov), on);
     ImDrawList* dl = window->DrawList;
     const float radius = height * 0.5f;
-    const float y0 = pos.y + IM_ROUND((rowH - height) * 0.5f);
+    const float y0 = pos.y + BandShift(lines, rowH) + IM_ROUND((rowH - height) * 0.5f);
     ImGui::RenderNavCursor(total, id);
     dl->AddRectFilled(ImVec2(pos.x, y0), ImVec2(pos.x + width, y0 + height), Col(bg), radius);
     const float knobR = radius - ImMax(2.0f, Px(2.5f));
     const ImVec2 knob(pos.x + radius + (width - height) * Ease(on), y0 + radius);
     dl->AddCircleFilled(ImVec2(knob.x, knob.y + ImMax(1.0f, Px(1.0f))), knobR, Col(WithAlpha(p.shadow, Alpha(p.shadow) * 0.8f)), 0);
     dl->AddCircleFilled(knob, knobR, Col(IM_COL32(255, 255, 255, 255)), 0);
-    if (labelSize.x > 0) SideLabel(label, labelPos);
+    if (lines.size.x > 0) SideLabel(label, lines, labelPos);
     return pressed;
+}
+
+float CheckboxLabelIndent() {
+    return IM_ROUND(ImGui::GetFrameHeight() * 0.66f) + ImGui::GetStyle().ItemInnerSpacing.x;
 }
 
 bool Checkbox(const char* label, bool* v) {
@@ -1421,9 +1597,10 @@ bool Checkbox(const char* label, bool* v) {
     const float box = IM_ROUND(rowH * 0.66f);
     const ImVec2 pos = window->DC.CursorPos;
     const ImVec2 labelPos(pos.x + box + style.ItemInnerSpacing.x, pos.y + style.FramePadding.y);
-    const ImVec2 labelSize = SideLabelSize(label, labelPos.x);
-    const ImRect total(pos, ImVec2(pos.x + box + (labelSize.x > 0.0f ? style.ItemInnerSpacing.x + labelSize.x : 0.0f),
-                                   ImMax(pos.y + rowH, labelPos.y + labelSize.y + style.FramePadding.y)));
+    const LabelLines lines = LayOutLabel(label, SideLabelRoom(labelPos.x));
+    const float labelW = lines.wrapped ? SideLabelRoom(labelPos.x) : lines.size.x;
+    const ImRect total(pos, ImVec2(pos.x + box + (lines.size.x > 0.0f ? style.ItemInnerSpacing.x + labelW : 0.0f),
+                                   ImMax(pos.y + rowH, labelPos.y + lines.size.y + style.FramePadding.y)));
     ImGui::ItemSize(total, style.FramePadding.y);
     if (!ImGui::ItemAdd(total, id)) return false;
     bool hovered = false, held = false;
@@ -1433,7 +1610,7 @@ bool Checkbox(const char* label, bool* v) {
     const float hov = Animate(id ^ kHoverKey, hovered ? 1.0f : 0.0f, 16.0f);
     const Palette& p = Colors();
     ImDrawList* dl = window->DrawList;
-    const ImVec2 b0(pos.x, pos.y + IM_ROUND((rowH - box) * 0.5f));
+    const ImVec2 b0(pos.x, pos.y + BandShift(lines, rowH) + IM_ROUND((rowH - box) * 0.5f));
     const ImVec2 b1(b0.x + box, b0.y + box);
     const float r = ImMax(2.0f, box * 0.24f);
     ImGui::RenderNavCursor(total, id);
@@ -1442,7 +1619,7 @@ bool Checkbox(const char* label, bool* v) {
     if (on < 0.999f)
         dl->AddRect(b0, b1, Col(WithAlpha(Mix(p.controlActive, p.textDim, 0.35f + 0.3f * hov), 1.0f - on)), r, ImMax(1.0f, Px(1.25f)));
     if (on > 0.001f) DrawGlyph(dl, lucide::check, ImVec2((b0.x + b1.x) * 0.5f, (b0.y + b1.y) * 0.5f), IconSize(), Col(WithAlpha(p.accentText, on)));
-    if (labelSize.x > 0.0f) SideLabel(label, labelPos);
+    if (lines.size.x > 0.0f) SideLabel(label, lines, labelPos);
     return pressed;
 }
 
@@ -1455,9 +1632,10 @@ bool Radio(const char* label, bool active) {
     const float d = IM_ROUND(rowH * 0.66f);
     const ImVec2 pos = window->DC.CursorPos;
     const ImVec2 labelPos(pos.x + d + style.ItemInnerSpacing.x, pos.y + style.FramePadding.y);
-    const ImVec2 labelSize = SideLabelSize(label, labelPos.x);
-    const ImRect total(pos, ImVec2(pos.x + d + (labelSize.x > 0.0f ? style.ItemInnerSpacing.x + labelSize.x : 0.0f),
-                                   ImMax(pos.y + rowH, labelPos.y + labelSize.y + style.FramePadding.y)));
+    const LabelLines lines = LayOutLabel(label, SideLabelRoom(labelPos.x));
+    const float labelW = lines.wrapped ? SideLabelRoom(labelPos.x) : lines.size.x;
+    const ImRect total(pos, ImVec2(pos.x + d + (lines.size.x > 0.0f ? style.ItemInnerSpacing.x + labelW : 0.0f),
+                                   ImMax(pos.y + rowH, labelPos.y + lines.size.y + style.FramePadding.y)));
     ImGui::ItemSize(total, style.FramePadding.y);
     if (!ImGui::ItemAdd(total, id)) return false;
     bool hovered = false, held = false;
@@ -1467,14 +1645,14 @@ bool Radio(const char* label, bool active) {
     const float hov = Animate(id ^ kHoverKey, hovered ? 1.0f : 0.0f, 16.0f);
     const Palette& p = Colors();
     ImDrawList* dl = window->DrawList;
-    const ImVec2 c(pos.x + d * 0.5f, pos.y + rowH * 0.5f);
+    const ImVec2 c(pos.x + d * 0.5f, pos.y + BandShift(lines, rowH) + rowH * 0.5f);
     const float r = d * 0.5f;
     ImGui::RenderNavCursor(total, id);
     const ImU32 off = Mix(p.control, p.controlHover, hov);
     dl->AddCircleFilled(c, r, Col(Mix(off, Mix(p.accent, p.accentHover, hov), on)), 0);
     if (on < 0.999f) dl->AddCircle(c, r, Col(WithAlpha(Mix(p.controlActive, p.textDim, 0.35f + 0.3f * hov), 1.0f - on)), 0, ImMax(1.0f, Px(1.25f)));
     if (on > 0.001f) dl->AddCircleFilled(c, r * 0.42f * on, Col(WithAlpha(p.accentText, on)), 0);
-    if (labelSize.x > 0.0f) SideLabel(label, labelPos);
+    if (lines.size.x > 0.0f) SideLabel(label, lines, labelPos);
     return pressed;
 }
 
@@ -1916,8 +2094,59 @@ void LabelSeen(const char* label) {
     s_labelEm = std::max(s_labelEm, ImGui::CalcTextSize(label, end).x / ImGui::GetFontSize());
 }
 
+// A row whose label comes last (TrailingLabel) is measured before its controls are drawn: when the label will not
+// fit its column on one line, the row becomes a band as tall as a frame around the wrapped label, the controls are
+// drawn at the band's middle and the label, set in even lines, fills the band from its top.
+namespace {
+struct LabelBand {
+    ImGuiWindow* window = nullptr;
+    const char* label = nullptr;
+    int frame = -1;
+    float top = 0.0f, height = 0.0f;
+    LabelLines lines;
+};
+LabelBand g_band;
+}
+
+void LabelRowBegin(const char* label) {
+    g_band = LabelBand();
+    ImGuiWindow* window = ImGui::GetCurrentWindow();
+    if (window->SkipItems || !label) return;
+    const float x = window->DC.CursorPos.x + ImGui::CalcItemWidth() + ImGui::GetStyle().ItemInnerSpacing.x;
+    const LabelLines lines = LayOutLabel(label, window->WorkRect.Max.x - x);
+    if (!lines.wrapped) return;
+    g_band.window = window;
+    g_band.label = label;
+    g_band.frame = ImGui::GetFrameCount();
+    g_band.top = window->DC.CursorPos.y;
+    g_band.height = BandHeight(lines);
+    g_band.lines = lines;
+    window->DC.CursorPos.y += BandShift(lines, ImGui::GetFrameHeight());
+}
+
 void TrailingLabel(const char* label) {
     LabelSeen(label);
+    ImGuiWindow* window = ImGui::GetCurrentWindow();
+    if (g_band.label == label && g_band.window == window && g_band.frame == ImGui::GetFrameCount()) {
+        LabelBand band = std::move(g_band);
+        g_band = LabelBand();
+        if (window->SkipItems) return;
+        // The label spans the band and the rest of the row (a "?" after it finds no room and its tip moves onto the
+        // label, as beside any wrapped label). The line began with the controls, lower in the band: it is laid out
+        // down to the band's bottom. Controls wider than the row's item width leave the label less room than it was
+        // measured for: it is set again in that room, and the band grows under it if it must.
+        const ImVec2 at = window->DC.CursorPos;
+        if (at.x + band.lines.size.x > window->WorkRect.Max.x + 0.5f) {
+            band.lines = LayOutLabel(label, window->WorkRect.Max.x - at.x);
+            band.height = ImMax(band.height, BandHeight(band.lines));
+        }
+        const float w = ImMax(window->WorkRect.Max.x - at.x, band.lines.size.x);
+        ImGui::ItemSize(ImVec2(w, band.top + band.height - at.y), -1.0f);
+        const ImRect bb(ImVec2(at.x, band.top), ImVec2(at.x + w, band.top + band.height));
+        if (!ImGui::ItemAdd(bb, 0)) return;
+        SideLabel(label, band.lines, ImVec2(at.x, band.top + ImGui::GetStyle().FramePadding.y));
+        return;
+    }
     ImGui::PushTextWrapPos(0.0f);   // a label longer than its column (the column is at most half the row) wraps under itself
     ImGui::TextUnformatted(label);
     ImGui::PopTextWrapPos();
@@ -2055,6 +2284,7 @@ bool SliderFloatFill(const char* label, float* v, float minV, float maxV, const 
     if (fmt) fmt = FitSliderFormat(fmt, (double)*v, fitted, sizeof(fitted));
     if (ImGui::FindRenderedTextEnd(label) == label)
         return FilledSlider(v, minV, maxV, false, log, [&] { return ImGui::SliderFloat(label, v, minV, maxV, fmt, flags); });
+    LabelRowBegin(label);
     ImGui::PushID(label);
     const bool changed = FilledSlider(v, minV, maxV, false, log, [&] { return ImGui::SliderFloat("##v", v, minV, maxV, fmt, flags); });
     ImGui::PopID();
@@ -2068,6 +2298,7 @@ bool SliderIntFill(const char* label, int* v, int minV, int maxV, const char* fm
     if (fmt) fmt = FitSliderFormat(fmt, *v, fitted, sizeof(fitted));
     if (ImGui::FindRenderedTextEnd(label) == label)
         return FilledSlider(v, minV, maxV, true, log, [&] { return ImGui::SliderInt(label, v, minV, maxV, fmt, flags); });
+    LabelRowBegin(label);
     ImGui::PushID(label);
     const bool changed = FilledSlider(v, minV, maxV, true, log, [&] { return ImGui::SliderInt("##v", v, minV, maxV, fmt, flags); });
     ImGui::PopID();
@@ -2080,6 +2311,7 @@ bool InputIntLabel(const char* label, int* v, int step, int stepFast) {
     const ImGuiStyle& style = ImGui::GetStyle();
     const float buttons = (ImGui::GetFrameHeight() + style.ItemInnerSpacing.x) * 2.0f;
     if (ImGui::CalcItemWidth() - buttons < ImGui::CalcTextSize("000000").x + style.FramePadding.x * 2.0f) step = stepFast = 0;
+    LabelRowBegin(label);
     ImGui::PushID(label);
     const bool changed = ImGui::InputInt("##v", v, step, stepFast);
     ImGui::PopID();
@@ -2089,6 +2321,7 @@ bool InputIntLabel(const char* label, int* v, int step, int stepFast) {
 
 bool SliderReset(const char* label, float* v, float minV, float maxV, float def, const char* fmt, const char* tooltip) {
     if (!SearchMatch(label, tooltip)) return false;
+    LabelRowBegin(label);
     ImGui::PushID(label);
     const float resetW = ImGui::GetFrameHeight();
     const ImGuiStyle& style = ImGui::GetStyle();
@@ -2101,6 +2334,7 @@ bool SliderReset(const char* label, float* v, float minV, float maxV, float def,
 
 bool SliderIntReset(const char* label, int* v, int minV, int maxV, int def, const char* fmt, const char* tooltip) {
     if (!SearchMatch(label, tooltip)) return false;
+    LabelRowBegin(label);
     ImGui::PushID(label);
     const float resetW = ImGui::GetFrameHeight();
     const ImGuiStyle& style = ImGui::GetStyle();
