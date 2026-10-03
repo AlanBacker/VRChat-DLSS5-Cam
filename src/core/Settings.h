@@ -141,6 +141,7 @@ struct Settings {
 
     // Updates
     bool updateCheck = true;           // look for a new version at every start
+    bool driverCheck = true;           // warn at start when the NVIDIA driver is older than DLSS 5 needs
     int  updateChannel = 0;            // 0 = stable releases only, 1 = pre-releases too
     // GitHub is slow or unreachable in some regions (mainland China among them): the update check and the download
     // can go through a public GitHub mirror site instead. 0 = GitHub directly, 1 = the fastest of the built-in

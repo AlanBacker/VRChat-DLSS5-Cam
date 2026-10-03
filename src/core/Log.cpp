@@ -58,7 +58,11 @@ void Init(const std::wstring& filePath, bool append) {
     std::lock_guard<std::mutex> lock(g_mutex);
     g_path = filePath;
     if (g_file) fclose(g_file);
-    if (!append) Rotate(filePath);
+    if (!append) {
+        Rotate(filePath);
+        // The move fails while another process holds the file (a second window on the same folder): continue it.
+        if (GetFileAttributesW(filePath.c_str()) != INVALID_FILE_ATTRIBUTES) append = true;
+    }
     // Binary mode on purpose: opening with "ccs=UTF-8" switches the stream to
     // the CRT's Unicode text mode, where narrow fprintf() is an invalid
     // parameter and the release runtime terminates the process silently.

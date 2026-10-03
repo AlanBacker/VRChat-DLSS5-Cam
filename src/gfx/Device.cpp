@@ -453,6 +453,7 @@ bool Device::Init(HWND hwnd, bool debugLayer, std::wstring& error, bool headless
         m_info.driverVersion = Utf8ToWide(StrPrintf("%u.%u.%u.%u", a, b, c, d));
         if (m_info.IsNvidia()) {
             const unsigned nv = ((c % 10u) * 10000u + d);
+            m_info.nvidiaDriverNumber = nv;
             m_info.nvidiaDriverVersion = Utf8ToWide(StrPrintf("%u.%02u", nv / 100u, nv % 100u));
         }
     }

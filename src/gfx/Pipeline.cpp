@@ -1682,6 +1682,7 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
                 m_depthRestart = false;
                 m_depthEst.Start(gpu.Dev(), m_exeDir, m_cfg.depthModel, m_depthInferW, m_depthInferH);
                 m_status.depthStarts = ++m_depthStarts;
+                m_status.depthInferences = m_depthEst.Inferences();   // the new worker's count (0), not the one published above
                 m_depthModelExists = FileExists(m_cfg.depthModel);
                 m_depthStillCaptured = false;
             }
@@ -1739,6 +1740,7 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
                 m_depthRestart = false;
                 m_depthEst.Start(gpu.Dev(), m_exeDir, m_cfg.depthModel, m_depthInferW, m_depthInferH);
                 m_status.depthStarts = ++m_depthStarts;
+                m_status.depthInferences = m_depthEst.Inferences();   // the new worker's count (0), not the one published above
                 m_depthModelExists = FileExists(m_cfg.depthModel);
                 m_depthHaveRaw = false; m_depthHistValid = false; m_depthStillCaptured = false;
             }
@@ -1813,6 +1815,7 @@ void Pipeline::Render(GpuContext& gpu, const SourceFrame& src, const Settings& s
             m_depthRestart = false;
             m_depthEst.Start(gpu.Dev(), m_exeDir, m_cfg.depthModel, m_depthInferW, m_depthInferH);
             m_status.depthStarts = ++m_depthStarts;
+            m_status.depthInferences = m_depthEst.Inferences();   // the new worker's count (0), not the one published above
             m_depthModelExists = FileExists(m_cfg.depthModel);
             m_depthHaveRaw = false; m_depthHistValid = false; m_depthStillCaptured = false;
             m_status.depthPending = true;

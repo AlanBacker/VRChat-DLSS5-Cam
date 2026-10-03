@@ -29,6 +29,12 @@ struct UserPreset {
 struct UiFrameInfo {
     const PipelineStatus* status = nullptr;
     const AdapterInfo*    adapter = nullptr;
+    bool                  driverKnown = false;      // the graphics device is up and its driver version was read
+    bool                  driverOutdated = false;   // NVIDIA driver older than the oldest known to run the DLSS 5 runtime
+    std::string           driverInstalled;          // "536.99" (NVIDIA numbering)
+    std::string           driverRequired;           // "616.56"
+    bool                  driverDialog = false;     // driverOutdated and this is a session with somebody to tell (not a --process run)
+    std::string           driverDownloadUrl;        // the page "Download driver" opens (NVIDIA, in the interface's language)
     double                fps = 0.0;               // interface thread
     double                cpuMs = 0.0;             // interface thread, per frame
     double                uiGpuMs = 0.0;           // present-queue time of the last interface frame
@@ -137,6 +143,7 @@ struct UiFrameInfo {
     // Updates (App copies the updater's state; the values follow Updater::State in order).
     int                   updateState = 0;          // UpdateState
     std::string           updateVersion, updateDate, updateNotes, updateError;
+    bool                  updateNotesEnglish = false;   // the interface is not in English and the release has no notes in its language
     bool                  updatePrerelease = false;
     bool                  updateEdition = false;    // the release found is the other edition of this program
     bool                  updateDowngrade = false;  // the release found is older: the stable channel's way back from a pre-release
@@ -190,6 +197,7 @@ struct UiEvents {
     bool openProjectPage = false;
     bool openIssueReport = false;    // the issue form on GitHub, prefilled (openIssueCrash: with the crash record)
     bool openIssueCrash = false;
+    bool openDriverDownload = false; // NVIDIA's driver download page in the browser
     bool openLicenses = false;
     bool languageChanged = false;
     bool settingsChanged = false;
@@ -320,6 +328,7 @@ private:
     void DrawMirrorPopup(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts);   // no mirror site answered
     void DrawSetupGuide(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts);    // the first-start guide
     void DrawCrashNotice(const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts);                 // the previous session ended badly
+    void DrawDriverNotice(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts);  // the NVIDIA driver is too old for DLSS 5
     void CloseGuide(Settings& s, UiEvents& ev, bool point);                                          // point = light up the places the guide named
     void Spotlight(bool foreground);                                                                 // a pulsing ring around the last item, after the guide
     static std::vector<LibrarySnapshotItem> LibrarySnapshot(const UiFrameInfo& info);
@@ -382,6 +391,11 @@ private:
     bool   m_guideOpen = false;      // open the guide on this frame
     bool   m_guideShowing = false;   // the guide is up
     bool   m_crashNoticeDone = false;  // the previous session's end was reported (or there was nothing to report)
+    bool   m_driverNoticeDone = false;   // the driver check had its one chance this session
+    bool   m_driverOpened = false;       // the driver notice was opened this session (nothing of it runs otherwise)
+    bool   m_driverShowing = false;      // the driver notice is up
+    bool   m_driverDontShow = false;     // its "Don't show again" box
+    double m_driverShownAt = -1.0;       // the first frame it was visible: its motion runs from there
     bool   m_guideAutoDone = false;  // the first-start opening was decided
     int    m_guidePage = 0;
     double m_guidePageTime = -1.0;   // when the page changed (its content fades in)

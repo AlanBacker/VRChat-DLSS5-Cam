@@ -172,6 +172,7 @@ bool Settings::ApplyText(const std::string& data, bool wholeFile) {
     r.Get("toolRowY", toolRowY);
     r.Get("toolRowDock", toolRowDock);
     r.Get("updateCheck", updateCheck);
+    r.Get("driverCheck", driverCheck);
     r.Get("updateChannel", updateChannel);
     r.Get("githubMirror", githubMirror);
     r.Get("githubMirrorCustom", githubMirrorCustom);
@@ -437,6 +438,7 @@ std::string Settings::Text() const {
     w.Put("toolRowY", toolRowY);
     w.Put("toolRowDock", toolRowDock);
     w.Put("updateCheck", updateCheck);
+    w.Put("driverCheck", driverCheck);
     w.Put("updateChannel", updateChannel);
     w.Put("githubMirror", githubMirror);
     w.Put("githubMirrorCustom", githubMirrorCustom);

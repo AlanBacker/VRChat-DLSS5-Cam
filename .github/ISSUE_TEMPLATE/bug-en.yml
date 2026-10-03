@@ -11,7 +11,7 @@ body:
     id: version
     attributes:
       label: "Version"
-      description: "Shown at the top of the About section and in the window title."
+      description: "Shown at the top of the About section."
       placeholder: "2.0.2"
     validations:
       required: true

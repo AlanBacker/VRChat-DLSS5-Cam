@@ -54,6 +54,10 @@ constexpr int    kImageDepthRearms = 2;          // times a still picture gets p
 constexpr double kImageDepthWaitSeconds = 20.0;  // longest a still picture's save waits for the depth estimator to start
 constexpr double kPerfLogInterval = 15.0;
 constexpr double kDeviceLossRestartGuard = 60.0;   // a device lost again this soon after an automatic restart ends the program
+// The oldest GeForce driver known to run the bundled DLSS 5 runtime (616.56: the floor the community tools agree on;
+// 536.99 fails with PlatformError on every size). An older driver is reported at start, see DrawDriverNotice.
+constexpr unsigned    kMinNvidiaDriver = 61656;
+constexpr const char* kMinNvidiaDriverText = "616.56";
 constexpr UINT WM_COPYGLOBALDATA = 0x0049;
 
 // Media library: thumbnails live in one atlas together with the seek-bar pictures of the opened video.
@@ -232,6 +236,8 @@ CommandLine CommandLine::Parse() {
         else if (a == L"--data-dir") { if (const wchar_t* v = next(i)) cl.dataDir = v; }
         else if (a == L"--after-device-loss") cl.afterDeviceLoss = true;
         else if (a == L"--lose-device") cl.loseDevice = ParseSeconds(next(i));
+        else if (a == L"--fake-driver") { if (const wchar_t* v = next(i)) cl.fakeDriver = v; }
+        else if (a == L"--fake-version") { if (const wchar_t* v = next(i)) cl.fakeVersion = WideToUtf8(v); }
         else if (a == L"--mcp") cl.mcp = true;
         else if (a == L"--mcp-port") { if (const wchar_t* v = next(i)) cl.mcpPort = std::clamp(_wtoi(v), 1024, 65535); }
         else if (a == L"--mcp-url") { if (const wchar_t* v = next(i)) cl.mcpUrl = WideToUtf8(v); }
@@ -288,7 +294,7 @@ int App::Run(HINSTANCE hInstance, int nCmdShow) {
 void App::FatalMessage(const std::wstring& text) {
     Log::Error("%s", WideToUtf8(text).c_str());
     // A scripted run reports through its exit code and the log: a box would keep it from exiting.
-    if (m_headless || m_cli.process || m_cli.exitAfter >= 0.0) return;
+    if (ScriptedRun()) return;
     MessageBoxW(m_hwnd, text.c_str(), L"VRChat DLSS5 Cam", MB_ICONERROR | MB_OK);
 }
 
@@ -445,6 +451,23 @@ bool App::Init(HINSTANCE hInstance, int nCmdShow) {
     Log::Info("Adapter: %s (vendor 0x%04X, %llu MB), driver %s", WideToUtf8(ai.name).c_str(), ai.vendorId,
               (unsigned long long)(ai.dedicatedVideoMemory >> 20),
               WideToUtf8(ai.nvidiaDriverVersion.empty() ? ai.driverVersion : ai.nvidiaDriverVersion).c_str());
+    {
+        // A GeForce driver older than the DLSS 5 runtime needs: the neural pass cannot start on it, so the user is
+        // told at start (log here, dialog and sidebar line in the interface) instead of reading a PlatformError.
+        unsigned drv = ai.IsNvidia() ? ai.nvidiaDriverNumber : 0;
+        m_driverInstalled = ai.IsNvidia() ? WideToUtf8(ai.nvidiaDriverVersion) : std::string();
+        if (!m_cli.fakeDriver.empty()) {   // development: pretend another version
+            drv = (unsigned)(atof(WideToUtf8(m_cli.fakeDriver).c_str()) * 100.0 + 0.5);
+            m_driverInstalled = StrPrintf("%u.%02u", drv / 100u, drv % 100u);
+        }
+        const bool outdated = drv > 0 && drv < kMinNvidiaDriver;
+        // The Radeon edition on a GeForce card offers the GeForce edition instead of a neural pass; that edition then
+        // says what the driver needs. So the notice (and the DLSS 5 section's line) are the GeForce edition's.
+        m_driverOutdated = outdated && !APP_EDITION_AMD;
+        if (outdated)
+            Log::Warn("NVIDIA driver %s is older than %s, the oldest known to run the bundled DLSS 5 runtime: update it (%s)",
+                      m_driverInstalled.c_str(), kMinNvidiaDriverText, WideToUtf8(DriverDownloadUrl()).c_str());
+    }
 
     Log::Info("Initialising render pipeline");
     m_splash.SetStatus(TR(SplashPipeline));
@@ -490,8 +513,8 @@ bool App::Init(HINSTANCE hInstance, int nCmdShow) {
     if (m_cli.edition && !otherEdition) Log::Info("--edition: this is the %s edition already", APP_EDITION_AMD ? "Radeon" : "GeForce");
     m_updater.SetAccess(m_settings.githubMirror, m_settings.githubMirrorCustom, m_settings.githubMirrorPick);
     // The automatic check of a first start waits for the setup guide, where the user chooses how GitHub is reached.
-    if (!m_headless && otherEdition) m_updater.Check(APP_VERSION_STRING, true, true, true);
-    else if (!m_headless && (m_cli.update || (!m_cli.process && m_settings.updateCheck && m_settings.setupGuideSeen))) { m_startCheckDone = true; m_updater.Check(APP_VERSION_STRING, m_settings.updateChannel == 1, false); }
+    if (!m_headless && otherEdition) m_updater.Check(UpdateVersion(), true, true, true);
+    else if (!m_headless && (m_cli.update || (!m_cli.process && m_settings.updateCheck && m_settings.setupGuideSeen))) { m_startCheckDone = true; m_updater.Check(UpdateVersion(), m_settings.updateChannel == 1, false); }
     // The previous session's file comes back only when the user asked for that.
     if (m_cli.open.empty() && m_settings.reopenLast) {
         if (m_settings.sourceMode == SourceImage && !m_settings.imagePath.empty()) {
@@ -1913,7 +1936,7 @@ void App::Frame() {
             // A driver reset under load (a live stream with VRChat on the same card, typically): an interactive
             // session starts again by itself once this instance has closed and the driver is back. A scripted run
             // exits, and so does a session that loses the device again soon after such a restart.
-            const bool scripted = m_headless || m_cli.process || m_cli.exitAfter >= 0.0;
+            const bool scripted = ScriptedRun();
             const bool soonAgain = m_cli.afterDeviceLoss && m_deviceLostTime - m_startTime < kDeviceLossRestartGuard;
             if (!scripted && !soonAgain) {
                 m_relaunchAfterLoss = true;
@@ -2052,9 +2075,15 @@ void App::Frame() {
     if (const LibraryItem* shown = ShownItem()) info.shownItem = shown->id;
     info.appVersion = APP_VERSION_STRING;
     info.prerelease = APP_PRERELEASE != 0;
-    info.previousAbnormal = m_previous.abnormal && !m_cli.process;   // a batch run has nobody to tell
+    info.previousAbnormal = m_previous.abnormal && !ScriptedRun();   // a scripted run has nobody to tell
     info.previousCrashed = m_previous.crashed;
     info.previousDetails = m_previous.details;
+    info.driverKnown = m_deviceReady;
+    info.driverOutdated = m_driverOutdated;
+    info.driverDialog = m_driverOutdated && !m_cli.process;   // a batch run has nobody to tell
+    info.driverInstalled = m_driverInstalled;
+    info.driverRequired = kMinNvidiaDriverText;
+    info.driverDownloadUrl = WideToUtf8(DriverDownloadUrl());
     SyncMcp();
     FillMcpInfo(info);
     info.windowShown = m_mainShown;
@@ -2064,7 +2093,8 @@ void App::Frame() {
         info.updateState = (int)us.state;
         info.updateVersion = us.release.version;
         info.updateDate = us.release.date;
-        info.updateNotes = us.release.notes;
+        info.updateNotes = us.release.NotesFor((int)I18n::Current());
+        info.updateNotesEnglish = !info.updateNotes.empty() && !us.release.HasNotesFor((int)I18n::Current());
         info.updatePrerelease = us.release.prerelease;
         info.updateEdition = us.release.edition;
         info.updateDowngrade = us.release.downgrade;
@@ -2369,13 +2399,14 @@ void App::HandleEvents(ui::UiEvents& ev) {
     if (ev.openSettingsFolder) OpenPath(m_appDataDir);
     if (ev.openProjectPage) OpenPath(kProjectUrl);
     if (ev.openIssueReport) OpenPath(IssueUrl(ev.openIssueCrash));
+    if (ev.openDriverDownload) OpenPath(DriverDownloadUrl());
     if (ev.openBooth) OpenPath(kBoothUrl);
     if (ev.mirrorProbe) m_updater.Probe();
     if (ev.guideClosed && !m_headless && !m_cli.process && m_settings.updateCheck && !m_startCheckDone) {
         m_startCheckDone = true;
         m_updater.SetAccess(m_settings.githubMirror, m_settings.githubMirrorCustom, m_settings.githubMirrorPick);
         m_portSetup.SetAccess(m_settings.githubMirror, m_settings.githubMirrorCustom, m_settings.githubMirrorPick);
-        m_updater.Check(APP_VERSION_STRING, m_settings.updateChannel == 1, false);
+        m_updater.Check(UpdateVersion(), m_settings.updateChannel == 1, false);
 #if APP_EDITION_AMD
         m_portSetup.Check();
 #endif
@@ -2414,7 +2445,7 @@ void App::HandleEvents(ui::UiEvents& ev) {
         m_presets.erase(m_presets.begin() + ev.presetDelete);
         SavePresets();
     }
-    if (ev.updateCheckNow) m_updater.Check(APP_VERSION_STRING, m_settings.updateChannel == 1, true);
+    if (ev.updateCheckNow) m_updater.Check(UpdateVersion(), m_settings.updateChannel == 1, true);
     if (ev.updateStart) m_updater.Download(m_exeDir, JoinPath(m_appDataDir, L"update"));
     if (ev.updateCancel) m_updater.Cancel();
     if (ev.updateOpenPage) {
@@ -2489,7 +2520,7 @@ void App::HandleEvents(ui::UiEvents& ev) {
     }
     if (ev.portOpenLicense) ShellExecuteW(nullptr, L"open", Utf8ToWide(PortSetup::kLicenseUrl).c_str(), nullptr, nullptr, SW_SHOWNORMAL);
     if (ev.portRestartCancel) m_portRestartAt = -1.0;
-    if (ev.editionSwitch) m_updater.Check(APP_VERSION_STRING, true, true, true);
+    if (ev.editionSwitch) m_updater.Check(UpdateVersion(), true, true, true);
     if (ev.portOpenPage) {
         const std::wstring url = Utf8ToWide(m_portStatus.pageUrl.empty() ? std::string(PortSetup::kPageUrl) : m_portStatus.pageUrl);
         ShellExecuteW(nullptr, L"open", url.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
@@ -2659,13 +2690,22 @@ FILETIME LastWriteTime(const std::wstring& path) {
     return a.ftLastWriteTime;
 }
 
-// The process with this id runs and is this executable (ids are given out again once a process is gone).
-bool InstanceAlive(DWORD pid) {
+// The process with this id runs, is this executable and is older than the marker it is named in. Ids are given out
+// again once a process is gone: one that started after the marker was written (this process included) is not its
+// owner, however it is called.
+bool InstanceAlive(DWORD pid, const FILETIME& markerTime) {
+    if (pid == GetCurrentProcessId()) return false;
     HANDLE h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
     if (!h) return false;
     bool alive = false;
     DWORD code = 0;
-    if (GetExitCodeProcess(h, &code) && code == STILL_ACTIVE) {
+    FILETIME created{}, exited{}, kernel{}, user{};
+    ULARGE_INTEGER limit{};
+    limit.LowPart = markerTime.dwLowDateTime; limit.HighPart = markerTime.dwHighDateTime;
+    limit.QuadPart += 20000000ull;   // 2 s of slack for a coarse file time
+    const FILETIME latest{ limit.LowPart, limit.HighPart };
+    if (GetExitCodeProcess(h, &code) && code == STILL_ACTIVE &&
+        GetProcessTimes(h, &created, &exited, &kernel, &user) && CompareFileTime(&created, &latest) <= 0) {
         wchar_t path[MAX_PATH * 2] = {};
         DWORD n = (DWORD)(sizeof(path) / sizeof(path[0]));
         if (QueryFullProcessImageNameW(h, 0, path, &n)) {
@@ -2706,17 +2746,19 @@ std::string OsText() {
 // holds a record newer than the marker), the process ended by the system or another program, a power cut. Its log is
 // kept as log-crash.txt (the rotation renames it a moment later) and the interface says so, with the log folder and
 // the issue form a click away. A marker owned by another running instance of this program (a second window on the
-// same settings folder) is left alone and nothing is reported.
+// same settings folder) is left alone and nothing is reported. Scripted runs (--headless, --process, --exit-after)
+// write no marker and show no dialog; a marker they find stays for the next window.
 void App::CheckPreviousSession(bool keepLog) {
     const std::wstring marker = JoinPath(m_appDataDir, kSessionMarker);
     const std::string text = ReadFileTail(marker, 512);
     if (text.empty()) return;
     const size_t at = text.find("pid=");
     const DWORD pid = at == std::string::npos ? 0 : (DWORD)strtoul(text.c_str() + at + 4, nullptr, 10);
-    if (pid && InstanceAlive(pid)) { m_previous.otherInstance = true; return; }
+    const FILETIME markerTime = LastWriteTime(marker);
+    if (pid && InstanceAlive(pid, markerTime)) { m_previous.otherInstance = true; return; }
     m_previous.abnormal = true;
     const std::wstring crashFile = JoinPath(m_appDataDir, L"crash.txt");
-    const FILETIME markerTime = LastWriteTime(marker), crashTime = LastWriteTime(crashFile);
+    const FILETIME crashTime = LastWriteTime(crashFile);
     if (FileExists(crashFile) && CompareFileTime(&crashTime, &markerTime) >= 0) {
         m_previous.crashed = true;
         // The last record of crash.txt: a header line ("==== time  version  os ====") and the lines after it.
@@ -2737,18 +2779,20 @@ void App::CheckPreviousSession(bool keepLog) {
         }
         m_previous.details = details.empty() ? "see crash.txt" : details;
     }
-    if (keepLog) CopyFileW(JoinPath(m_appDataDir, L"log.txt").c_str(), JoinPath(m_appDataDir, L"log-crash.txt").c_str(), FALSE);
+    // Once per marker: a scripted run that found it first has copied the log already and left the marker for a window
+    // to report (its own log.txt is not the one that matters).
+    const std::wstring kept = JoinPath(m_appDataDir, L"log-crash.txt");
+    const FILETIME keptTime = LastWriteTime(kept);
+    if (keepLog && !(FileExists(kept) && CompareFileTime(&keptTime, &markerTime) >= 0))
+        CopyFileW(JoinPath(m_appDataDir, L"log.txt").c_str(), kept.c_str(), FALSE);
 }
 
 void App::WriteSessionMarker() {
     const std::wstring marker = JoinPath(m_appDataDir, kSessionMarker);
     if (m_previous.otherInstance) return;   // the other window's marker stays its own
-    if (m_headless) {
-        // A scripted run is ended by its script and reports nothing; a marker it found is used up here, so the
-        // next window does not report the same session again (and does not copy this run's log over log-crash.txt).
-        if (m_previous.abnormal) DeleteFileW(marker.c_str());
-        return;
-    }
+    // A scripted run is ended by its script, which is no crash, so it leaves no marker; one it found stays for the
+    // next window to report (the log it concerns is log-crash.txt by now, copied above once).
+    if (ScriptedRun()) return;
     const std::string text = StrPrintf("pid=%lu\r\nversion=%s\r\n", (unsigned long)GetCurrentProcessId(), APP_VERSION_STRING);
     m_sessionMarked = Settings::WriteText(marker, text);
 }
@@ -2762,6 +2806,15 @@ void App::RemoveSessionMarker() {
 // The issue form on GitHub (.github/ISSUE_TEMPLATE) in the interface's language. GitHub fills a form's fields from
 // query parameters named after their ids: the version, the edition, the graphics card, its driver and the system,
 // and after a crash the record's first lines.
+std::wstring App::DriverDownloadUrl() const {
+    switch (I18n::Current()) {
+        case Lang::Chinese:  return L"https://www.nvidia.cn/drivers/";
+        case Lang::Japanese: return L"https://www.nvidia.com/ja-jp/drivers/";
+        case Lang::Korean:   return L"https://www.nvidia.com/ko-kr/drivers/";
+        default:             return L"https://www.nvidia.com/en-us/drivers/";
+    }
+}
+
 std::wstring App::IssueUrl(bool crash) const {
     const char* lang = "en";
     switch (I18n::Current()) {

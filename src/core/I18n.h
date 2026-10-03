@@ -198,6 +198,7 @@ enum class Lang { English = 0, Chinese = 1, Japanese = 2, Korean = 3, Count = 4 
     X(DepthFlat,          "Flat", "平面", "フラット", "평면") \
     X(DepthGradient,      "Gradient (placeholder)", "渐变（占位）", "グラデーション（代替）", "그라데이션(대체)") \
     X(DepthZero,          "Zero", "零", "ゼロ", "0") \
+    X(DepthNotUsed,       "Not used", "未使用", "未使用", "미사용") \
     X(DepthEstimated,     "AI estimated (Depth Anything V2)", "AI 估计（Depth Anything V2）", "AI 推定（Depth Anything V2）", "AI 추정(Depth Anything V2)") \
     X(DepthInterval,      "Depth update interval", "深度更新间隔", "深度更新間隔", "깊이 갱신 간격") \
     X(DepthResolution,    "Depth network resolution", "深度网络分辨率", "深度ネットワーク解像度", "깊이 네트워크 해상도") \
@@ -286,6 +287,19 @@ enum class Lang { English = 0, Chinese = 1, Japanese = 2, Korean = 3, Count = 4 
     X(CrashReport,        "Report on GitHub", "到 GitHub 反馈", "GitHub で報告", "GitHub에 신고") \
     X(ReportIssue,        "Report a problem", "反馈问题", "問題を報告", "문제 신고") \
     X(LogsKeptHint,       "The logs of the five sessions before this one are kept next to log.txt as log-1.txt to log-5.txt; after a crash, log-crash.txt.", "之前五次运行的日志保留在 log.txt 旁，名为 log-1.txt 至 log-5.txt；崩溃后还有 log-crash.txt。", "直前 5 回分のログは log.txt の隣に log-1.txt〜log-5.txt として残ります。クラッシュ後は log-crash.txt もあります。", "이전 5회 실행의 로그는 log.txt 옆에 log-1.txt~log-5.txt로 남고, 충돌 후에는 log-crash.txt도 있습니다.") \
+    X(DriverTitle,        "A newer graphics driver is needed", "需要更新显卡驱动", "グラフィックドライバーの更新が必要です", "그래픽 드라이버 업데이트가 필요합니다") \
+    X(DriverBodyFmt,      "DLSS 5 (the neural pass) cannot start on the installed driver %s; it needs %s or newer. Please update, then start the application again. The viewer, captures and videos keep working in the meantime.", "DLSS 5（神经渲染）无法在当前安装的驱动 %s 上启动，需要 %s 或更新的版本。请更新后重新启动应用。在此之前，预览、拍照和视频仍可照常使用。", "インストールされているドライバー %s では DLSS 5（ニューラルパス）を起動できません。%s 以降が必要です。更新後、アプリを起動し直してください。それまでの間も、プレビュー、撮影、動画はそのまま使えます。", "설치된 드라이버 %s 버전에서는 DLSS 5(뉴럴 패스)를 시작할 수 없습니다. %s 이상이 필요합니다. 업데이트한 뒤 앱을 다시 실행해 주세요. 그동안에도 미리보기, 촬영, 동영상은 그대로 사용할 수 있습니다.") \
+    X(DriverInstalled,    "Installed", "已安装", "インストール済み", "설치됨") \
+    X(DriverRequired,     "Required", "最低要求", "必要なバージョン", "필요 버전") \
+    X(DriverPage,         "Download page", "下载页面", "ダウンロードページ", "다운로드 페이지") \
+    X(DriverDownload,     "Download driver", "下载驱动", "ドライバーをダウンロード", "드라이버 다운로드") \
+    X(TipDriverDownload,  "Opens NVIDIA's driver download page in the browser.", "在浏览器中打开 NVIDIA 的驱动下载页面。", "ブラウザーで NVIDIA のドライバーダウンロードページを開きます。", "브라우저에서 NVIDIA 드라이버 다운로드 페이지를 엽니다.") \
+    X(DriverDontShow,     "Don't show again", "不再显示", "今後表示しない", "다시 표시하지 않음") \
+    X(DriverHintFmt,      "If you hide this notice, the driver check in \"%s\" brings it back. Until the update, the DLSS 5 section keeps a short note.", "隐藏后，可在“%s”中打开驱动检查让它重新出现。驱动更新之前，DLSS 5 分节会一直保留一条提示。", "非表示にしても、「%s」のドライバー確認をオンにすれば再び表示されます。更新するまで、DLSS 5 のセクションには短い注意書きが残ります。", "숨긴 뒤에도 \"%s\"의 드라이버 확인을 켜면 다시 표시됩니다. 업데이트 전까지 DLSS 5 섹션에 짧은 안내가 남습니다.") \
+    X(DriverSidebarFmt,   "DLSS 5 cannot start on graphics driver %s; it needs %s or newer. Update the driver, then start the application again.", "DLSS 5 无法在显卡驱动 %s 上启动，需要 %s 或更新的版本。请更新驱动后重新启动应用。", "グラフィックドライバー %s では DLSS 5 を起動できません（%s 以降が必要）。ドライバーを更新してから、アプリを起動し直してください。", "그래픽 드라이버 %s 버전에서는 DLSS 5를 시작할 수 없습니다(%s 이상 필요). 드라이버를 업데이트한 뒤 앱을 다시 실행해 주세요.") \
+    X(DriverCheckAuto,    "Check the graphics driver at start", "启动时检查显卡驱动", "起動時にドライバーを確認", "시작 시 드라이버 확인") \
+    X(TipDriverCheck,     "At start, compares the NVIDIA driver with the oldest version DLSS 5 runs on and shows a notice when it is older. The note in the DLSS 5 section stays either way.", "启动时将 NVIDIA 驱动与 DLSS 5 可运行的最低版本比较，版本过旧时显示提示。DLSS 5 分节的提示不受此开关影响。", "起動時に NVIDIA ドライバーを DLSS 5 が動作する最低バージョンと比べ、古い場合に通知を表示します。DLSS 5 セクションの注意書きはこの設定に関係なく表示されます。", "시작할 때 NVIDIA 드라이버를 DLSS 5가 동작하는 최소 버전과 비교해, 더 오래된 경우 알림을 표시합니다. DLSS 5 섹션의 안내는 이 설정과 관계없이 표시됩니다.") \
+    X(UpdateNotesEnglish, "This release has no notes in this language yet; the English text is shown.", "此版本的发布说明还没有中文译文，显示的是英文原文。", "このリリースノートはまだ日本語に訳されていないため、英語の原文を表示しています。", "이 릴리스 노트는 아직 한국어로 번역되지 않아 영어 원문을 표시합니다.") \
     X(DeviceRemoved,      "The graphics device was lost. Please restart the application.", "图形设备已丢失，请重新启动应用。", "グラフィックデバイスが失われました。アプリを再起動してください。", "그래픽 장치가 손실되었습니다. 앱을 다시 시작하세요.") \
     X(DeviceRestarted,    "The graphics device was lost (the driver reset) and the application has started again. If this repeats, lower the load: a processing rate cap or a lower neural pass resolution.", "图形设备已丢失（驱动已重置），应用已自动重新启动。若反复出现，请降低负载：设置处理帧率上限或调低神经渲染分辨率。", "グラフィックデバイスが失われ（ドライバーがリセット）、アプリを自動で再起動しました。繰り返す場合は、処理レート上限の設定やニューラルパス解像度の引き下げで負荷を下げてください。", "그래픽 장치가 손실되어(드라이버 재설정) 앱이 자동으로 다시 시작되었습니다. 반복되면 처리 속도 상한을 설정하거나 뉴럴 패스 해상도를 낮춰 부하를 줄이세요.") \
     X(ErrorTitle,         "Error", "错误", "エラー", "오류") \

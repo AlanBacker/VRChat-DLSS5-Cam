@@ -33,7 +33,12 @@ public:
     };
     static const std::vector<std::string>& BuiltInMirrors();
     struct Release {
-        std::string tag, version, date, notes, assetUrl, pageUrl;
+        std::string tag, version, date, notes, assetUrl, pageUrl;   // notes: the release page's text (English)
+        // The notes in the program's other languages: docs/releases/<tag>.<language>.md in the repository at the tag,
+        // fetched with the check (0 = English .. 3 = Korean as Lang; empty = no translation).
+        std::string translated[4];
+        const std::string& NotesFor(int lang) const { return lang >= 0 && lang < 4 && !translated[lang].empty() ? translated[lang] : notes; }
+        bool        HasNotesFor(int lang) const { return lang == 0 || (lang > 0 && lang < 4 && !translated[lang].empty()); }
         unsigned long long assetSize = 0;
         bool prerelease = false;
         std::string assetName;              // the archive the release was looked up for (this edition's, or the other one's)
@@ -72,6 +77,7 @@ private:
     bool RunCheck(const std::string& currentVersion, bool includePrerelease, bool otherEdition, Release& out, bool& newer, std::string& error);
     bool RunDownload(const std::wstring& exeDir, const std::wstring& stagingDir, std::string& error);
     bool FetchReleases(std::string& body, std::string& error);                 // the release list by the chosen access
+    void FetchTranslatedNotes(Release& rel);                                   // the repository's notes files in the other languages
     std::string ProbeMirrors(const std::string& manifestUrl, std::string* bestBody);   // the fastest site, or empty
     void SetMirrorInUse(const std::string& site);
 

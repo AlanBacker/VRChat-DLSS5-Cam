@@ -11,7 +11,7 @@ body:
     id: version
     attributes:
       label: "バージョン"
-      description: "「情報」セクションの先頭とウィンドウタイトルに表示されます。"
+      description: "「情報」セクションの先頭に表示されます。"
       placeholder: "2.0.2"
     validations:
       required: true

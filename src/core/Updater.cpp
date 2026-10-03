@@ -26,6 +26,10 @@ constexpr const wchar_t* kReleasesUrl = L"https://api.github.com/repos/AlanBacke
 // The same list as the repository keeps it (updates.json, rewritten by a workflow at every release): what the
 // mirror sites can relay, since they do not relay the API.
 constexpr const char*    kManifestUrl = "https://raw.githubusercontent.com/AlanBacker/VRChat-DLSS5-Cam/main/updates.json";
+// The release notes in the program's other languages, kept in the repository at each tag (the release page itself is
+// English): docs/releases/<tag>.<language>.md, read as a raw file directly or through the mirror site in use.
+constexpr const char*    kNotesUrlFmt = "https://raw.githubusercontent.com/AlanBacker/VRChat-DLSS5-Cam/%s/docs/releases/%s.%s.md";
+constexpr const char*    kNotesLanguages[4] = { "en", "zh-CN", "ja", "ko" };   // Lang order; English is the page itself
 // Public sites that relay GitHub as <site>/<full address>. Measured, fastest first, when the automatic choice runs.
 const std::vector<std::string> kMirrors = {
     "https://gh-proxy.com", "https://edgeone.gh-proxy.org", "https://hk.gh-proxy.org", "https://gh.dpik.top",
@@ -168,9 +172,10 @@ bool ValidReleaseList(const std::string& body) {
     return JsonReader(body).Parse(root) && root.type == Json::Array;
 }
 
-// The release notes are Markdown; the interface shows them as text, so the markers are taken off.
+// The release notes are Markdown; the interface shows them as text, so the markers are taken off. Tables (the page's
+// list of files) are left out, and with them a heading that has nothing else under it.
 std::string PlainNotes(const std::string& md) {
-    std::string out;
+    std::string out, heading;   // heading: a heading waiting for its first line of content
     size_t pos = 0;
     while (pos <= md.size()) {
         size_t eol = md.find('\n', pos);
@@ -178,16 +183,24 @@ std::string PlainNotes(const std::string& md) {
         std::string line = md.substr(pos, eol - pos);
         pos = eol + 1;
         if (!line.empty() && line.back() == '\r') line.pop_back();
+        if (!line.empty() && line.front() == '|') continue;   // a table row or its separator
         size_t k = 0;
         while (k < line.size() && line[k] == '#') ++k;
         if (k > 0) { line = line.substr(k); while (!line.empty() && line.front() == ' ') line.erase(line.begin()); }
+        const bool bullet = line.compare(0, 2, "- ") == 0 || line.compare(0, 2, "* ") == 0;
+        if (bullet) line.erase(0, 2);
         std::string clean;
-        for (size_t i = 0; i < line.size(); ++i) {
-            if (line[i] == '`') continue;
-            if (line[i] == '*' && i + 1 < line.size() && line[i + 1] == '*') { ++i; continue; }
-            clean += line[i];
+        for (char c : line) {
+            if (c == '`' || c == '*') continue;   // code and emphasis marks (bold and italic) read as plain text
+            clean += c;
         }
-        if (clean.compare(0, 2, "- ") == 0 || clean.compare(0, 2, "* ") == 0) clean = "\xE2\x80\xA2 " + clean.substr(2);
+        if (bullet) clean = "\xE2\x80\xA2 " + clean;
+        if (k > 0) { heading = clean + '\n'; continue; }
+        if (!heading.empty()) {
+            if (clean.empty()) continue;   // the blank line under a heading
+            out += heading;
+            heading.clear();
+        }
         out += clean;
         out += '\n';
     }
@@ -353,6 +366,7 @@ bool Updater::RunCheck(const std::string& currentVersion, bool includePrerelease
     newer = found && CompareVersion(best, cur) >= (otherEdition ? 0 : 1);
     // The stable channel while a newer pre-release is running: the newest full release is offered as the way back.
     if (found && !newer && !otherEdition && !includePrerelease && CompareVersion(best, cur) < 0) { newer = true; out.downgrade = true; }
+    if (newer) FetchTranslatedNotes(out);   // the release will be shown: its notes in the program's languages
     if (found) Log::Info("Update check: newest %s release%s is %s (this is %s)%s", includePrerelease ? "stable or pre-" : "stable",
                          otherEdition ? " of the other edition" : "", out.tag.c_str(), currentVersion.c_str(),
                          newer ? (otherEdition ? ": available" : out.downgrade ? ": older, offered as the way back to the stable channel" : ": newer") : "");
@@ -373,6 +387,26 @@ void Updater::SetMirrorInUse(const std::string& site) {
     std::lock_guard<std::mutex> lock(m_mutex);
     m_status.mirrorInUse = site;
     if (m_access == (int)Access::Mirror) m_pick = site;
+}
+
+// The notes of a release in the program's other languages, from the repository at the release's tag (a language
+// without a file keeps the English page text). Three small requests, through the mirror site the check went through.
+void Updater::FetchTranslatedNotes(Release& rel) {
+    std::string site;
+    { std::lock_guard<std::mutex> lock(m_mutex); site = m_status.mirrorInUse; }
+    for (int lang = 1; lang < 4; ++lang) {
+        rel.translated[lang].clear();
+        if (m_cancel) return;
+        const std::string url = StrPrintf(kNotesUrlFmt, rel.tag.c_str(), rel.tag.c_str(), kNotesLanguages[lang]);
+        std::string body, err;
+        const bool ok = HttpGet(Utf8ToWide(site.empty() ? url : MirrorUrl(site, url)), false, m_cancel, [&](const char* data, DWORD n, unsigned long long) {
+            if (body.size() + n > 256u * 1024u) return false;
+            body.append(data, n);
+            return true;
+        }, err, 15000);
+        if (ok && !body.empty()) rel.translated[lang] = PlainNotes(body);
+        else Log::Info("Update check: no %s notes for %s (%s)", kNotesLanguages[lang], rel.tag.c_str(), err.empty() ? "empty file" : err.c_str());
+    }
 }
 
 // The release list: from the GitHub API directly, or the repository's copy through a mirror site.

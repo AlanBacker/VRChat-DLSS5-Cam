@@ -270,11 +270,12 @@ void MainUI::Draw(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Font
     // The update popup waits while the setup guide is up; the guide shows the same access controls as the popup
     // that a failed mirror check would open, so that one is not opened over it. Both also wait until the window has
     // come up after the start-up card (when the guide would open): a check that answers at once finds its result
-    // within the first frames, and the window's own fade-in would cover the popup's rise.
+    // within the first frames, and the window's own fade-in would cover the popup's rise. They also wait while the
+    // driver notice is up, which would otherwise be replaced by them.
     if (info.updateShow) m_updateDeferred = true;
     if (info.mirrorPrompt && !m_guideShowing) m_mirrorDeferred = true;
     if (m_guideShowing) m_mirrorDeferred = false;
-    if (m_guideAutoDone && !m_guideShowing) {
+    if (m_guideAutoDone && !m_guideShowing && !m_driverShowing) {
         if (m_updateDeferred) { m_updateDeferred = false; m_updateOpen = true; }
         if (m_mirrorDeferred) { m_mirrorDeferred = false; m_mirrorOpen = true; }
     }
@@ -450,6 +451,7 @@ void MainUI::Draw(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Font
     DrawMirrorPopup(s, info, ev, fonts);
     DrawSetupGuide(s, info, ev, fonts);
     DrawCrashNotice(info, ev, fonts);
+    DrawDriverNotice(s, info, ev, fonts);
     ImGui::End();
 
     if (s.showLog) DrawLogWindow(s, ev, fonts);
@@ -791,6 +793,197 @@ void MainUI::DrawCrashNotice(const UiFrameInfo& info, UiEvents& ev, const Fonts&
     EndDialog();
 }
 
+// The NVIDIA driver is older than the bundled DLSS 5 runtime needs. Said once at start, after the other start-up
+// dialogs: the two versions, NVIDIA's download page, and a way to stop the notice (the driver check in About brings
+// it back). The DLSS 5 section keeps its own warning line either way, and the download leaves the notice open, so
+// the card's name and the version to look for stay in view on NVIDIA's page and "Don't show again" can still be set.
+//
+// Its one motion: once the dialog has risen, the splash screen's soft highlight leaves the installed version's mark
+// and travels the line to the required version's mark (the step to take), which comes on as the light sinks into
+// it and sends out one widening ring. About a second, eased at both ends, then it rests; nothing repeats.
+void MainUI::DrawDriverNotice(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts) {
+    const double now = ImGui::GetTime();
+    if (!m_driverNoticeDone && info.windowShown && info.driverKnown && m_startFade >= 0.0 && now - m_startFade > 0.7 &&
+        !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId)) {
+        m_driverNoticeDone = true;
+        if (info.driverDialog && s.driverCheck) {
+            ImGui::OpenPopup("##driver");
+            m_driverOpened = true;
+            m_driverDontShow = false;
+            m_driverShownAt = -1.0;
+        }
+    }
+    if (!m_driverOpened) return;   // a session without the notice runs nothing of it past the check above
+    // Closed by whatever means (Close, Escape, a click outside, another dialog taking its place). The box writes the
+    // setting as it changes, so quitting with the notice still up keeps the choice too; this only makes sure of it.
+    if (m_driverShowing && !ImGui::IsPopupOpen("##driver")) {
+        m_driverShowing = false;
+        if (m_driverDontShow && s.driverCheck) { s.driverCheck = false; ev.settingsChanged = true; }
+    }
+    ImGuiViewport* vp = ImGui::GetMainViewport();
+    if (!BeginDialog("##driver", ImVec2(vp->WorkPos.x + vp->WorkSize.x * 0.5f, vp->WorkPos.y + vp->WorkSize.y * 0.45f))) return;
+    m_driverShowing = true;
+    // ImGui keeps a popup hidden on the frame it opens: the motion counts from the first frame it is seen.
+    if (m_driverShownAt < 0.0 && !ImGui::GetCurrentWindow()->Hidden) m_driverShownAt = now;
+    const Palette& p = Colors();
+    const ImGuiStyle& style = ImGui::GetStyle();
+    const float em = ImGui::GetFontSize();
+    const float w = std::max(em * 20.0f, std::min(em * 34.0f, vp->WorkSize.x - em * 4.0f));
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    const ImU32 accentInk = Mix(p.accentHover, p.accent, p.light);   // the accent as text: the lighter one on the dark theme
+
+    // The header: a tinted chip with the graphics card's glyph, the title and the card's name beside it, centred on it.
+    {
+        const float chip = std::round(ImGui::GetFrameHeight() * 1.35f);
+        const ImVec2 h0 = ImGui::GetCursorScreenPos();
+        const std::string gpu = info.adapter ? WideToUtf8(info.adapter->name) : std::string();
+        ImGui::PushFont(fonts.Bold(), style.FontSizeBase * 1.15f);
+        const float titleH = ImGui::GetTextLineHeight();
+        ImGui::PopFont();
+        const float gapH = gpu.empty() ? 0.0f : Px(2.0f);
+        const float stackH = titleH + gapH + (gpu.empty() ? 0.0f : ImGui::GetTextLineHeight());
+        const float headH = std::max(chip, stackH);
+        const float cy = h0.y + std::round(headH * 0.5f);
+        dl->AddRectFilled(ImVec2(h0.x, cy - chip * 0.5f), ImVec2(h0.x + chip, cy + chip * 0.5f), WithAlpha(p.warn, 0.22f - 0.10f * p.light), Px(8.0f));
+        DrawIcon(dl, Icon::Cpu, ImVec2(h0.x + chip * 0.5f, cy), IconSize(1.2f), p.warn);
+        // Each line placed on its own (no SameLine), so the second one is not measured from the chip's top.
+        const float tx = h0.x + chip + Px(12.0f);
+        const float ty = std::round(cy - stackH * 0.5f);
+        ImGui::SetCursorScreenPos(ImVec2(tx, ty));
+        ImGui::PushFont(fonts.Bold(), style.FontSizeBase * 1.15f);
+        ImGui::TextUnformatted(TR(DriverTitle));
+        ImGui::PopFont();
+        if (!gpu.empty()) {
+            ImGui::SetCursorScreenPos(ImVec2(tx, ty + titleH + gapH));
+            ImGui::TextDisabled("%s", gpu.c_str());
+        }
+        ImGui::SetCursorScreenPos(h0);
+        ImGui::Dummy(ImVec2(w, headH));   // also fixes the width from the first frame, so the paragraphs wrap at it
+    }
+    ImGui::Spacing();
+    ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + w);
+    ImGui::TextUnformatted(StrPrintf(TR(DriverBodyFmt), info.driverInstalled.c_str(), info.driverRequired.c_str()).c_str());
+    ImGui::PopTextWrapPos();
+    ImGui::Spacing();
+
+    // The two versions on a line: the installed one (warm) at the left, the required one at the right.
+    {
+        constexpr float kDelay = 0.22f;    // the dialog's own rise (0.26 s) comes first
+        constexpr float kTravel = 0.75f;   // the light's way from one mark to the other
+        constexpr float kRing = 0.45f;     // the ring from the mark it lit
+        const float t = m_driverShownAt >= 0.0 ? (float)(now - m_driverShownAt) : 0.0f;
+        if (m_driverShownAt < 0.0 || t < kDelay + kTravel + kRing) MarkAnimating();   // frames while it moves, then rest
+        const float u = std::clamp((t - kDelay) / kTravel, 0.0f, 1.0f);              // how far along the light is
+        const float lit = Ease(std::clamp((u - 0.8f) / 0.2f, 0.0f, 1.0f));           // the required mark comes on as it arrives
+        const float ring = std::clamp((t - kDelay - kTravel) / kRing, 0.0f, 1.0f);
+
+        const ImVec2 g0 = ImGui::GetCursorScreenPos();
+        const char* have = info.driverInstalled.c_str();
+        const char* need = info.driverRequired.c_str();
+        ImGui::PushFont(fonts.Mono(), style.FontSizeBase * 1.1f);
+        const float numH = ImGui::GetTextLineHeight();
+        const float haveW = ImGui::CalcTextSize(have).x, needW = ImGui::CalcTextSize(need).x;
+        dl->AddText(g0, p.warn, have);
+        dl->AddText(ImVec2(g0.x + w - needW, g0.y), Mix(p.text, accentInk, lit), need);
+        ImGui::PopFont();
+        const float capY = g0.y + numH + Px(2.0f);
+        dl->AddText(ImVec2(g0.x, capY), p.textDim, TR(DriverInstalled));
+        dl->AddText(ImVec2(g0.x + w - ImGui::CalcTextSize(TR(DriverRequired)).x, capY), p.textDim, TR(DriverRequired));
+
+        const float r = std::round(em * 0.3f);                 // the marks
+        const float halo = std::max(1.0f, Px(2.5f));
+        const float y = std::round(g0.y + numH * 0.5f);
+        const float xL = g0.x + haveW + Px(12.0f) + r, xR = g0.x + w - needW - Px(12.0f) - r;
+        const float a = xL + r + halo + Px(4.0f), b = xR - r - halo - Px(4.0f);   // the track, clear of the marks
+        const float th = std::max(1.0f, Px(2.0f));             // half its thickness: 4 px, the splash screen's bar
+        if (b > a) {
+            dl->AddRectFilled(ImVec2(a, y - th), ImVec2(b, y + th), p.track, th);
+            if (u > 0.0f && u < 1.0f) {
+                // The splash screen's highlight (a squared-sine bump a third of the track long), once: it rises out
+                // of the installed mark, eases along and sinks into the required one.
+                const float seg = (b - a) * 0.34f;
+                const float c = a + (b - a) * Ease(u);
+                const float fade = Ease(u / 0.15f) * (1.0f - Ease((u - 0.85f) / 0.15f));
+                const float s0 = c - seg * 0.5f;
+                auto bump = [&](float x) { const float v = std::sin((x - s0) / seg * IM_PI); return v * v * fade; };
+                constexpr int kSlices = 24;
+                for (int i = 0; i < kSlices; ++i) {
+                    const float x0 = std::max(a, s0 + seg * (float)i / kSlices), x1 = std::min(b, s0 + seg * (float)(i + 1) / kSlices);
+                    if (x1 <= x0) continue;
+                    const ImU32 c0 = WithAlpha(p.accent, bump(x0)), c1 = WithAlpha(p.accent, bump(x1));
+                    dl->AddRectFilledMultiColor(ImVec2(x0, y - th), ImVec2(x1, y + th), c0, c1, c1, c0);
+                }
+                // A soft glow riding on its crest, so the light has some body on a thin line.
+                dl->AddCircleFilled(ImVec2(c, y), th * 3.2f, WithAlpha(p.accent, 0.14f * fade));
+                dl->AddCircleFilled(ImVec2(c, y), th * 1.9f, WithAlpha(p.accent, 0.26f * fade));
+            }
+        }
+        // The installed version's mark, with the status dots' halo.
+        dl->AddCircleFilled(ImVec2(xL, y), r + halo, WithAlpha(p.warn, 0.22f));
+        dl->AddCircleFilled(ImVec2(xL, y), r, p.warn);
+        // The required version's mark: an empty ring until the light reaches it, then filled, with the same halo,
+        // and one ring that widens from it and fades.
+        const float stroke = std::max(1.0f, Px(1.5f));
+        if (lit > 0.0f) {
+            dl->AddCircleFilled(ImVec2(xR, y), r + halo, WithAlpha(p.accent, 0.22f * lit));
+            dl->AddCircleFilled(ImVec2(xR, y), r, WithAlpha(p.accent, lit));
+        }
+        dl->AddCircle(ImVec2(xR, y), r - stroke * 0.5f, Mix(WithAlpha(p.textDim, 0.7f), p.accent, lit), 0, stroke);
+        if (ring > 0.0f && ring < 1.0f) {
+            const float grow = 1.0f - (1.0f - ring) * (1.0f - ring) * (1.0f - ring);   // ease-out: quick, then settling
+            dl->AddCircle(ImVec2(xR, y), r + halo + Px(10.0f) * grow, WithAlpha(p.accent, 0.45f * (1.0f - Ease(ring))), 0, stroke);
+        }
+        ImGui::Dummy(ImVec2(w, numH + Px(2.0f) + ImGui::GetTextLineHeight()));
+    }
+
+    // Where the driver comes from, written out (the button below opens the same page).
+    ImGui::Spacing();
+    {
+        ImGui::TextDisabled("%s:", TR(DriverPage));
+        ImGui::SameLine(0.0f, Px(6.0f));
+        // The address as App opens it, without the scheme.
+        const std::string shown = info.driverDownloadUrl.compare(0, 8, "https://") == 0 ? info.driverDownloadUrl.substr(8) : info.driverDownloadUrl;
+        const char* url = shown.c_str();
+        const ImVec2 at = ImGui::GetCursorScreenPos();
+        const ImVec2 size = ImGui::CalcTextSize(url);
+        const float is = IconSize();
+        if (ImGui::InvisibleButton("##driverPage", ImVec2(size.x + Px(5.0f) + is, size.y))) ev.openDriverDownload = true;
+        const bool hovered = ImGui::IsItemHovered();
+        if (hovered) ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+        const float under = Animate(ImGui::GetID("##driverPageHover"), hovered ? 1.0f : 0.0f, 16.0f);
+        dl->AddText(at, accentInk, url);
+        DrawIcon(dl, Icon::OpenExternal, ImVec2(at.x + size.x + Px(5.0f) + is * 0.5f, at.y + size.y * 0.5f), is, WithAlpha(accentInk, 0.75f + 0.25f * under));
+        if (under > 0.01f) {
+            const float uy = std::round(at.y + size.y - Px(1.0f));
+            dl->AddLine(ImVec2(at.x, uy), ImVec2(at.x + size.x * under, uy), WithAlpha(accentInk, under), std::max(1.0f, Px(1.0f)));
+        }
+        Tooltip(TR(TipDriverDownload));
+    }
+    ImGui::Spacing();
+    ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + w);
+    Hint(StrPrintf(TR(DriverHintFmt), TR(SecAbout)).c_str());
+    ImGui::PopTextWrapPos();
+    ImGui::Separator();
+
+    // "Don't show again" at the left, Close and the download at the right (the box goes above them when the row
+    // has no room for all three).
+    {
+        const float x0 = ImGui::GetCursorPosX();
+        const float closeW = std::max(em * 6.0f, ImGui::CalcTextSize(TR(Close)).x + style.FramePadding.x * 2.0f);
+        const float getW = std::max(em * 9.0f, IconTextButtonWidth(TR(DriverDownload)));
+        const float rightW = closeW + style.ItemSpacing.x + getW;
+        const float boxW = std::round(ImGui::GetFrameHeight() * 0.66f) + style.ItemInnerSpacing.x + ImGui::CalcTextSize(TR(DriverDontShow)).x;
+        if (Checkbox(TR(DriverDontShow), &m_driverDontShow)) { s.driverCheck = !m_driverDontShow; ev.settingsChanged = true; }
+        if (boxW + style.ItemSpacing.x * 2.0f + rightW <= w) ImGui::SameLine();
+        ImGui::SetCursorPosX(std::max(ImGui::GetCursorPosX(), x0 + w - rightW));
+        if (FlatButton(TR(Close), ImVec2(closeW, 0.0f))) ImGui::CloseCurrentPopup();
+        ImGui::SameLine();
+        if (ActionButton(TR(DriverDownload), Icon::Download, ImVec2(getW, 0.0f), ButtonKind::Accent)) ev.openDriverDownload = true;
+        Tooltip(TR(TipDriverDownload));
+    }
+    EndDialog();
+}
+
 void MainUI::DrawUpdatePopup(Settings& /*s*/, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts) {
     if (m_updateOpen) { ImGui::OpenPopup("##update"); m_updateOpen = false; }
     // Centred on every frame from its own size, so it stays put when the progress bar appears.
@@ -835,6 +1028,8 @@ void MainUI::DrawUpdatePopup(Settings& /*s*/, const UiFrameInfo& info, UiEvents&
         ImGui::TextUnformatted(info.updateNotes.c_str());
         ImGui::PopTextWrapPos();
         ImGui::EndChild();
+        // The notes come in the interface's language when the release has them; otherwise the page's English text.
+        if (info.updateNotesEnglish) { ImGui::PushTextWrapPos(w); Hint(TR(UpdateNotesEnglish)); ImGui::PopTextWrapPos(); }
     }
     ImGui::Spacing();
     if (st == UpDownloading) {
@@ -2384,6 +2579,15 @@ void MainUI::BlockNgxRuntime(Settings& s, const UiFrameInfo& info, UiEvents& ev)
             }
         }
     }
+    // A GeForce driver older than the runtime needs (the reason a load or a feature fails with PlatformError): said
+    // here for as long as it lasts, whether or not the start-up notice was hidden.
+    if (info.driverOutdated) {
+        ImGui::PushStyleColor(ImGuiCol_Text, p.warn);
+        ImGui::TextWrapped("%s", StrPrintf(TR(DriverSidebarFmt), info.driverInstalled.c_str(), info.driverRequired.c_str()).c_str());
+        ImGui::PopStyleColor();
+        if (ActionButton(TR(DriverDownload), Icon::Download, ImVec2(0.0f, 0.0f), ButtonKind::Flat)) ev.openDriverDownload = true;
+        Tip(TR(TipDriverDownload));
+    }
     // A failed feature, or a failed load (the runtime is neither loaded nor resting).
     if (st && !st->nrError.empty() && (st->nrFailed || (!st->nrRuntimeLoaded && !st->nrRuntimeIdle))) {
         ImGui::PushStyleColor(ImGuiCol_Text, p.bad);
@@ -2682,11 +2886,14 @@ void MainUI::BlockAbout(Settings& s, const UiFrameInfo& info, UiEvents& ev, cons
         ImGui::TextDisabled("%s:", TR(Nvof)); ImGui::SameLine();
         ImGui::TextUnformatted(info.status->nvofAvailable ? TR(Available) : (info.adapter && !info.adapter->IsNvidia()) ? TR(NvofNoEngine) : TR(NotAvailable));
     }
-    // Updates: whether to look at every start, which channel, a check by hand and the result of the last one.
+    // Updates: whether to look at every start (and, beside it, whether to check the graphics driver at start), which
+    // channel, a check by hand and the result of the last one.
     const ImGuiStyle& style = ImGui::GetStyle();
     const float fullW = ImGui::GetContentRegionAvail().x;
     ImGui::Spacing();
     if (Toggle(TR(UpdateAuto), &s.updateCheck)) ev.settingsChanged = true;
+    if (Toggle(TR(DriverCheckAuto), &s.driverCheck)) ev.settingsChanged = true;
+    Help(TR(TipDriverCheck));
     {
         const char* channels[] = { TR(ChannelStable), TR(ChannelPreview) };
         if (ComboIds("##updateChannel", &s.updateChannel, channels, 2)) { ev.settingsChanged = true; ev.updateCheckNow = true; }
@@ -3037,7 +3244,9 @@ void MainUI::DrawPicture(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
         const char* motion = st.motionModeActive == MotionNvOpticalFlow ? "NVOF"
                            : st.motionModeActive == MotionFsrFlow ? "FSR"
                            : st.motionModeActive == MotionCompute ? TR(MotionCompute) : TR(MotionZero);
-        const char* depth = st.depthModeActive == DepthEstimated ? "Depth Anything V2" : st.depthModeActive == DepthGradient ? TR(DepthGradient)
+        // While no pass takes the depth (DLSS 5 alone), the line says so instead of "Zero", which once meant a fault.
+        const char* depth = st.depthParked ? TR(DepthNotUsed)
+                          : st.depthModeActive == DepthEstimated ? "Depth Anything V2" : st.depthModeActive == DepthGradient ? TR(DepthGradient)
                           : st.depthModeActive == DepthZero ? TR(DepthZero) : TR(DepthFlat);
         parts[2] = { StrPrintf("%s: %s", TR(MotionSource), motion), StrPrintf("%s: %s", TR(DepthSource), depth) };
         if (st.upscaleMode == 1) parts[2].push_back("+DLSS SR");

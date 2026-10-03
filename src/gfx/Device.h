@@ -24,6 +24,7 @@ struct AdapterInfo {
     SIZE_T       dedicatedVideoMemory = 0;
     std::wstring driverVersion;      // "32.0.15.6614"
     std::wstring nvidiaDriverVersion; // "566.14" (NVIDIA only)
+    unsigned     nvidiaDriverNumber = 0; // 56614 for "566.14" (NVIDIA only, 0 = unknown)
     LUID         luid{};
     bool IsNvidia() const { return vendorId == 0x10DE; }
     bool IsAmd() const { return vendorId == 0x1002; }

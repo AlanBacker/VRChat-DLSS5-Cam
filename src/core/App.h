@@ -49,6 +49,8 @@ struct CommandLine {
     std::wstring dataDir;                 // --data-dir <folder>
     bool         afterDeviceLoss = false; // --after-device-loss: started by an instance that lost the graphics device
     double       loseDevice = -1.0;       // --lose-device <seconds> (development: report the device as lost after this long)
+    std::wstring fakeDriver;              // --fake-driver <version> (development: pretend this NVIDIA driver version, "536.99")
+    std::string  fakeVersion;             // --fake-version <x.y.z> (development: the update check takes the program for this version)
     bool         mcp = false;             // --mcp: the stdio bridge for MCP clients (no window; relays to the running program)
     int          mcpPort = 0;             // --mcp-port <port>: run the MCP server on this port for this session (the bridge starts the program so)
     std::string  mcpUrl;                  // --mcp-url <http://host:port/mcp>: the bridge talks to that server (another computer) and starts nothing
@@ -455,6 +457,9 @@ private:
     void WriteSessionMarker();
     void RemoveSessionMarker();
     std::wstring IssueUrl(bool crash) const;   // the issue form on GitHub in the interface's language, version and card filled in
+    std::wstring DriverDownloadUrl() const;    // NVIDIA's driver download page in the interface's language
+    bool         ScriptedRun() const { return m_headless || m_cli.process || m_cli.exitAfter >= 0.0; }   // ended by its script, nobody watching
+    const char*  UpdateVersion() const { return m_cli.fakeVersion.empty() ? APP_VERSION_STRING : m_cli.fakeVersion.c_str(); }   // what the update check compares
     void PostBatchEvent(unsigned id, int state, const std::string& outName, const std::string& error);
 
     HINSTANCE     m_hInstance = nullptr;
@@ -474,6 +479,8 @@ private:
     double        m_deviceLostTime = 0.0;
     struct PreviousSession { bool abnormal = false; bool crashed = false; bool otherInstance = false; std::string details; };
     PreviousSession m_previous;            // how the session before this one ended
+    bool          m_driverOutdated = false; // NVIDIA driver older than kMinNvidiaDriver
+    std::string   m_driverInstalled;        // its version as NVIDIA numbers it ("536.99"), empty = not NVIDIA
     bool          m_sessionMarked = false; // this instance wrote session.txt
     bool          m_fontsDirty = true;
     bool          m_pendingResize = false;

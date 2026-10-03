@@ -123,6 +123,38 @@ jobs:
             !dist-amd/VRChatDLSS5Cam/nvngx_dlssnr.dll
           retention-days: 7
 
+      # The release notes live in the repository: docs/releases/<tag>.md is the English text that becomes the release
+      # page, and docs/releases/<tag>.<language>.md (zh-CN, ja, ko) are the translations the program shows in its own
+      # language. A tag without the English file gets the generic text and GitHub's generated notes instead.
+      - name: Release notes
+        if: startsWith(github.ref, 'refs/tags/v')
+        id: notes
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $file = "docs/releases/$tag.md"
+          if (Test-Path $file) {
+            Copy-Item $file release-body.md
+            "generate=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            "Release notes: $file"
+          } else {
+            $generic = @'
+          ### Which file to download / 下载哪个文件
+
+          | Graphics card / 显卡 | File / 文件 |
+          |---|---|
+          | NVIDIA GeForce RTX 20 / 30 / 40 / 50 | `VRChatDLSS5Cam-win64.zip` |
+          | AMD Radeon RX 7000 / 9000 | `VRChatDLSS5Cam-win64-amd.zip` (Radeon edition / Radeon 版) |
+          | Linux with an NVIDIA card (runs under Proton) / Linux + NVIDIA 显卡（通过 Proton 运行） | `VRChatDLSS5Cam-linux-x86_64.tar.gz` (see `docs/LINUX.md` / 见 `docs/LINUX.md`) |
+
+          The Radeon edition fetches DLSS-NR-on-AMD's installer for you at the first start; what to expect on Radeon is listed in the README under *AMD Radeon cards*.
+          Radeon 版会在首次启动时为你下载 DLSS-NR-on-AMD 的安装器；Radeon 上的预期表现见 README 的 *AMD Radeon 显卡* 一节。
+          '@
+            $generic | Set-Content release-body.md
+            "generate=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            "Release notes: none in the repository for $tag, generic text + generated notes"
+          }
+
       - name: Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
@@ -130,19 +162,8 @@ jobs:
           # Every version is published as a pre-release; it is promoted to the stable (Latest) release by hand once
           # several machines have confirmed it.
           prerelease: true
-          body: |
-            ### Which file to download / 下载哪个文件
-
-            | Graphics card / 显卡 | File / 文件 |
-            |---|---|
-            | NVIDIA GeForce RTX 20 / 30 / 40 / 50 | `VRChatDLSS5Cam-win64.zip` |
-            | AMD Radeon RX 7000 / 9000 | `VRChatDLSS5Cam-win64-amd.zip` (Radeon edition / Radeon 版) |
-            | Linux with an NVIDIA card (runs under Proton) / Linux + NVIDIA 显卡（通过 Proton 运行） | `VRChatDLSS5Cam-linux-x86_64.tar.gz` (see `docs/LINUX.md` / 见 `docs/LINUX.md`) |
-
-            The Radeon edition fetches DLSS-NR-on-AMD's installer for you at the first start; what to expect on Radeon is listed in the README under *AMD Radeon cards*.
-            Radeon 版会在首次启动时为你下载 DLSS-NR-on-AMD 的安装器；Radeon 上的预期表现见 README 的 *AMD Radeon 显卡* 一节。
-
-          generate_release_notes: true
+          body_path: release-body.md
+          generate_release_notes: ${{ steps.notes.outputs.generate }}
 
       # The files go up with the GitHub CLI: the release action's own upload left large assets half-saved
       # ("Error saving asset") on a re-cut tag, and --clobber lets a re-run replace them.

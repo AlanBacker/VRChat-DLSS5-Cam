@@ -17,7 +17,7 @@ A bare `file` argument (what Windows passes for *Open with*) opens that picture 
 | `--play` | Video: start playback in the preview. |
 | `--in <seconds>` / `--out <seconds>` | Video: set the range that processing (and the audio) covers. |
 | `--process [folder]` | Process the library (or the opened file) with the current settings and exit. The files are written into `folder`, or into the capture folder when none is given. |
-| `--set <key>=<value>` | Override one setting for this run, using the key names of `settings.ini` (for example `--set nrIntensity=1.5`, `--set videoMatchSource=0 --set videoOutput=2`, `--set keepAudio=0`, `--set outputName={name}_{size}` (the file-name template of processed pictures and videos; `captureName` is the live captures'), `--set theme=2`, `--set customResolution=1 --set customWidth=3840 --set upscaleMode=0` for an upscale: 0 = DLSS super resolution, 1 = resampling). The value is not saved. `videoMatchSource` (1 by default) makes the output follow the codec, frame rate and bitrate of the source; set it to 0 for `videoOutput` (0 = MP4 H.264, 1 = MP4 HEVC, 2 = PNG sequence, 3 = GIF, 4 = APNG, 5 = WebP), `videoBitrate` and `webpQuality` (50–100, 100 = lossless) to apply. `theme` selects the look: 0 = follow Windows, 1 = dark, 2 = light. `updateCheck` (1 by default) is the check for a new version at every start and `updateChannel` picks its channel (0 = Stable, 1 = Pre-release); `sidebarWidth` and `libraryHeight` are the layout sizes in units of the font size (0 = the default size); `reopenLast` (0 by default) opens the file of the previous session again at start. |
+| `--set <key>=<value>` | Override one setting for this run, using the key names of `settings.ini` (for example `--set nrIntensity=1.5`, `--set videoMatchSource=0 --set videoOutput=2`, `--set keepAudio=0`, `--set outputName={name}_{size}` (the file-name template of processed pictures and videos; `captureName` is the live captures'), `--set theme=2`, `--set customResolution=1 --set customWidth=3840 --set upscaleMode=0` for an upscale: 0 = DLSS super resolution, 1 = resampling). The value is not saved. `videoMatchSource` (1 by default) makes the output follow the codec, frame rate and bitrate of the source; set it to 0 for `videoOutput` (0 = MP4 H.264, 1 = MP4 HEVC, 2 = PNG sequence, 3 = GIF, 4 = APNG, 5 = WebP), `videoBitrate` and `webpQuality` (50–100, 100 = lossless) to apply. `theme` selects the look: 0 = follow Windows, 1 = dark, 2 = light. `updateCheck` (1 by default) is the check for a new version at every start and `updateChannel` picks its channel (0 = Stable, 1 = Pre-release); `driverCheck` (1 by default) is the notice at start when the GeForce driver is older than the DLSS 5 runtime needs; `sidebarWidth` and `libraryHeight` are the layout sizes in units of the font size (0 = the default size); `reopenLast` (0 by default) opens the file of the previous session again at start. |
 | `--lang <en\|zh\|ja\|ko\|auto>` | Interface language for this run. |
 | `--window <W>x<H>` | Start with this client size instead of the saved one (320×240 up to 16384×16384). |
 | `--screenshot <seconds> <file.png>` | Save a picture of the whole window `seconds` after the start (repeatable). |
@@ -39,10 +39,18 @@ A windowed session writes `session.txt` (its process id) at start and removes it
 finds the file with no such process alive knows the previous session ended without one (a crash, a kill, a power cut):
 it keeps that session's `log.txt` as `log-crash.txt`, logs the finding and, in a windowed run, says so in a dialog with
 the log folder and the prefilled issue form. Scripted runs (`--headless`, `--process`, `--exit-after`) write no marker
-and show no dialog.
+and show no dialog; a marker they find stays for the next windowed session to report.
 
 Values given on the command line – `--set`, `--lang` and the folder of `--process` – hold for that run only and are not
 written into `settings.ini`; a value changed again during the run (in the sidebar or through MCP) is saved as usual.
+
+At start the application compares a GeForce driver with 616.56, the oldest known to run the bundled DLSS 5 runtime
+(older drivers fail with `PlatformError`, the rest of the program works). An older driver is logged as a warning in
+every run; a windowed session also shows a notice with NVIDIA's download page unless `driverCheck` is 0, and the
+DLSS 5 section keeps a warning line. `--fake-driver <version>` (development, for example `--fake-driver 536.99`)
+makes the check see that version instead of the installed one, and `--fake-version <x.y.z>` (development) makes the
+update check take the program for that version, so the update window and the release notes in the interface's language
+can be looked at on a current installation.
 
 ## Examples
 
