@@ -30,7 +30,8 @@ Sidebar, section **MCP**:
   disk for its client to download; **Open jobs folder** shows them.
 - **Copy client configuration** puts the JSON block below on the clipboard; **Copy URL** copies the address;
   **Open in the browser** shows the server's information page with every tool, every setting, the queue and a
-  ready-made bot script; **Documentation** opens this page.
+  ready-made bot script; **Documentation** opens the MCP page of the [documentation site](https://alanbacker.github.io/VRChat-DLSS5-Cam/mcp.html)
+  in the interface's language; this file is the full reference.
 - Behind the sidebar's **Advanced** switch: **Queue limit** (jobs that may wait at once, over all keys), **Per key**
   (jobs one key may have waiting or running), **Upload limit** (MB), **This computer needs no key** (off: local
   clients need a key too) and **Job folder** (where the clients' inputs and results are kept; empty = the settings

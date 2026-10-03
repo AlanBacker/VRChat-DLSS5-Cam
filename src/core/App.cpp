@@ -38,6 +38,7 @@ constexpr int      kHotkeyId = 1;
 constexpr UINT_PTR kSizeTimer = 1;
 constexpr const wchar_t* kWindowClass = L"VRChatDLSS5CamWindow";
 constexpr const wchar_t* kProjectUrl = L"https://github.com/AlanBacker/VRChat-DLSS5-Cam";
+constexpr const wchar_t* kDocsSiteUrl = L"https://alanbacker.github.io/VRChat-DLSS5-Cam/";   // the documentation site (site/ in the repository, GitHub Pages)
 constexpr const wchar_t* kBoothUrl = L"https://alanbacker.booth.pm/items/8821023";
 constexpr const wchar_t* kImagePatterns =
     L"*.png;*.apng;*.jpg;*.jpeg;*.jpe;*.jfif;*.bmp;*.dib;*.tif;*.tiff;*.gif;*.webp;*.heic;*.heif;*.avif;*.jxr;*.wdp;*.hdp;*.ico;*.dds";
@@ -2412,7 +2413,7 @@ void App::HandleEvents(ui::UiEvents& ev) {
 #endif
     }
     if (ev.openDocs) OpenPath(DocsUrl());
-    if (ev.mcpOpenDocs) OpenPath(std::wstring(kProjectUrl) + L"/blob/main/docs/MCP.md");
+    if (ev.mcpOpenDocs) OpenPath(DocsUrl(L"mcp.html"));
     if (ev.mcpOpenPage && m_mcp.Running()) OpenPath(Utf8ToWide("http://127.0.0.1:" + std::to_string(m_mcpRunningPort) + "/"));
     if (ev.mcpOpenJobs) { const std::wstring root = McpRoot(); CreateDirectories(root); OpenPath(root); }
     if (ev.mcpFirewall) McpAllowFirewall();
@@ -2842,13 +2843,17 @@ std::wstring App::IssueUrl(bool crash) const {
     return Utf8ToWide(url);
 }
 
-std::wstring App::DocsUrl() const {
+// The documentation site in the interface's language: English at the root, the other languages in their own
+// folders with the same page names, so a page name can be appended (DocsUrl(L"mcp.html")).
+std::wstring App::DocsUrl(const wchar_t* page) const {
+    std::wstring url = kDocsSiteUrl;
     switch (I18n::Current()) {
-        case Lang::Chinese:  return std::wstring(kProjectUrl) + L"/blob/main/docs/README.zh-CN.md";
-        case Lang::Japanese: return std::wstring(kProjectUrl) + L"/blob/main/docs/README.ja.md";
-        case Lang::Korean:   return std::wstring(kProjectUrl) + L"/blob/main/docs/README.ko.md";
-        default:             return std::wstring(kProjectUrl) + L"/blob/main/README.md";
+        case Lang::Chinese:  url += L"zh/"; break;
+        case Lang::Japanese: url += L"ja/"; break;
+        case Lang::Korean:   url += L"ko/"; break;
+        default: break;
     }
+    return url + page;
 }
 
 // The orientation and crop a file has in the library (as it comes, for a file that is not in it).
@@ -3710,6 +3715,7 @@ void App::BrowseLibraryFolder() {
 
 void App::OpenPath(const std::wstring& path) {
     if (path.empty()) return;
+    Log::Info("Open: %s", WideToUtf8(path).c_str());
     const HINSTANCE r = ShellExecuteW(m_hwnd, L"open", path.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
     if ((INT_PTR)r <= 32) Log::Warn("ShellExecute failed for %s (%d)", WideToUtf8(path).c_str(), (int)(INT_PTR)r);
 }

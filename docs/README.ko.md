@@ -6,6 +6,8 @@
 
 [English](../README.md) · [简体中文](README.zh-CN.md) · [日本語](README.ja.md) · **한국어**
 
+**처음이신가요?** [문서 사이트](https://alanbacker.github.io/VRChat-DLSS5-Cam/ko/)에서 내려받기부터 첫 이미지를 얻기까지 그림과 함께 한 단계씩 안내합니다. English, 简体中文, 日本語, 한국어 네 가지 언어로 읽을 수 있습니다. 앱의 *문서* 버튼을 누르면 인터페이스 언어로 열립니다. 이 페이지는 모든 내용을 담은 전체 레퍼런스입니다.
+
 VRChat DLSS5 Cam은 VRChat 카메라의 화면에 GeForce RTX에서 NVIDIA **DLSS 5 뉴럴 렌더링**을 적용하고, 그 결과를
 무손실 PNG로 기록하는 Windows 애플리케이션입니다. 디스크에 있는 이미지와 동영상도 동일한 파이프라인을 거치며,
 개별 처리와 일괄 처리를 모두 지원합니다. 일반적인 Windows 프로그램이므로 VRChat 프로세스에는 전혀 개입하지 않고

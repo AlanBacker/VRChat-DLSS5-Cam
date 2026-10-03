@@ -6,6 +6,8 @@
 
 [English](../README.md) · **简体中文** · [日本語](README.ja.md) · [한국어](README.ko.md)
 
+**初次使用？** [文档网站](https://alanbacker.github.io/VRChat-DLSS5-Cam/zh/)图文并茂，一步一步带你从下载走到第一张图片，提供 English、简体中文、日本語、한국어 四种语言。程序中的*文档*按钮会以界面语言打开它。本页是完整的参考资料。
+
 VRChat DLSS5 Cam 将 VRChat 相机的画面接入 GeForce RTX 显卡上的 NVIDIA **DLSS 5 神经渲染**，并以无损 PNG 记录处理结果。
 磁盘上的图片与视频同样经由这条管线处理，支持单个处理与批量处理。程序不对 VRChat 进程做任何干预，无需 Mod。
 

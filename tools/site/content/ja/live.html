@@ -1,0 +1,25 @@
+<p>VRChat は、カメラに映っているものを Spout という仕組みでほかのプログラムに送れます。アプリはその映像を受け取り、DLSS 5 をかけて表示します。キーを 1 回押せば、ロスレス PNG が保存されます。</p>
+<sc diagram live/>
+<h2 id="vrchat">VRChat でストリームをオンにす<span class="h-end">る<a class="anchor" href="#vrchat" aria-label="このセクションへのリンク"><i/></a></span></h2>
+<ol class="steps"><li><p>VRChat で <strong>カメラ</strong> を開きます。</p></li><li><p>カメラを <strong>Stream</strong> モードに切り替えます。</p></li><li><p>カメラの設定で <strong>Spout Stream</strong> をオンにします。</p></li></ol>
+<h2 id="receive">アプリで受け取<span class="h-end">る<a class="anchor" href="#receive" aria-label="このセクションへのリンク"><i/></a></span></h2>
+<ol class="steps"><li><p>トップバーの <strong>ライブ</strong>、または「はじめましょう」ページの <strong>VRChat からライブ</strong> をクリックします。</p>
+<p class="check"><i/><span>DLSS 5 をかけたカメラ映像が表示されます。</span></p></li></ol>
+<p>映像が来ないとき：</p>
+<ul><li><strong>Spout 送信元が見つかりません</strong>：Spout Stream がオフになっているか、カメラが閉じています。上の 3 つの手順を確認してください。</li><li><strong>VRChat の Spout ストリームを待機中…</strong>：送信元は見つかっていますが、まだ映像が届いていません。</li></ul>
+<p>使用中の送信元は <strong>ソース</strong> セクションに表示されます。<strong>Spout 送信元</strong> は最初 <strong>自動（VRChat）</strong> になっていて、VRChat のカメラを見つけます。Spout で映像を送るほかのプログラムも、ここに一覧表示されます。</p>
+<h2 id="capture">写真を撮<span class="h-end">る<a class="anchor" href="#capture" aria-label="このセクションへのリンク"><i/></a></span></h2>
+<ol class="steps"><li><p>VRChat で構図を決めます。</p></li><li><p><span class="keys"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>Alt</kbd><span class="plus">+</span><kbd>P</kbd></span> を押します。VRChat が前面にあってもキーは効きます。</p>
+<p class="check"><i/><span><code>Pictures\VRChat DLSS5 Cam</code> に PNG が保存されます。名前は <code>VRChat_DLSS5_2026-10-03_21-15-08.412_1920x1080.png</code> のようになります。</span></p></li></ol>
+<p>右上の <strong>撮影</strong> ボタンでも同じことができます。</p>
+<aside class="callout callout-tip"><p class="callout-title"><i/><span>ヒント</span></p><p><span class="keys"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>Alt</kbd><span class="plus">+</span><kbd>P</kbd></span> をほかのプログラムがすでに使っている場合は、<strong>撮影</strong> → <strong>グローバルホットキー</strong> で別のキーを選べます。</p></aside>
+<h2 id="timelapse">数秒ごとに撮影す<span class="h-end">る<a class="anchor" href="#timelapse" aria-label="このセクションへのリンク"><i/></a></span></h2>
+<p><strong>撮影</strong> → <strong>自動撮影の間隔（秒）</strong> を設定すると、カメラが映像を送っている間、その間隔で写真を保存します。<strong>0 = オフ</strong> です。タイムラプスを撮ったり、キーを押さずに一瞬をとらえたりするのに使えます。</p>
+<h2 id="turn">カメラ映像を回転・反転す<span class="h-end">る<a class="anchor" href="#turn" aria-label="このセクションへのリンク"><i/></a></span></h2>
+<p>画像の上の小さなツールバーで、カメラ映像を 90 度ずつ回転したり、反転したりできます。変更はプレビュー、写真、タイムラプスのすべてに同じように適用され、次回の起動時も保持されます。</p>
+<h2 id="resolution">もっと鮮明な映像にす<span class="h-end">る<a class="anchor" href="#resolution" aria-label="このセクションへのリンク"><i/></a></span></h2>
+<p>ストリームの大きさは VRChat が決めます。カメラの設定（720p〜2160p）か、VRChat の <code>config.json</code> の <code>camera_spout_res_width</code> と <code>camera_spout_res_height</code> で設定してください。アプリはどの大きさにも自動で合わせます。</p>
+<h2 id="slow">ライブ映像が重いと<span class="h-end">き<a class="anchor" href="#slow" aria-label="このセクションへのリンク"><i/></a></span></h2>
+<p>DLSS 5 は処理が重く、VRChat も同じグラフィックカードを使います。次の 2 つのコントロールが役に立ちます。どちらも <strong>詳細</strong> スイッチがオンのときに表示されます。</p>
+<ul><li><strong>DLSS 5 ニューラルレンダリング</strong> → <strong>撮影時のみニューラルパスを実行</strong>：プレビューには元の映像が表示され、カードは休みます。それでも写真にはすべて DLSS 5 がかかります。アプリはまず新しい 16 フレームで DLSS 5 を実行してから保存します。</li><li><strong>表示</strong> → <strong>処理レート上限</strong>：1 秒あたりに処理するフレーム数の上限です。それを超えた分のフレームはスキップします。</li></ul>
+<p>大きなストリームでは、<strong>ニューラルパス解像度</strong> を小さくする（たとえば <strong>長辺 1440 px まで</strong>）のも効果があります。<a href="troubleshooting.html#slow">詳しくはトラブルシューティングへ</a></p>

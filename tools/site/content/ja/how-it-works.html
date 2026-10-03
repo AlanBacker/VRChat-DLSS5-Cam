@@ -1,0 +1,22 @@
+<h2 id="dlss5">DLSS 5 ニューラルレンダリン<span class="h-end">グ<a class="anchor" href="#dlss5" aria-label="このセクションへのリンク"><i/></a></span></h2>
+<p>DLSS 5 ニューラルレンダリングは、NVIDIA のニューラルレンダラーです。ネットワークが完成した画像を見て、光、素材、細部を描き直します。ゲームでは、描画したすべてのフレームを DLSS 5 に渡します。このアプリが渡すのは、VRChat のカメラ映像、写真、または動画のフレームです。</p>
+<sc diagram pipeline/>
+<h2 id="inputs">DLSS 5 が受け取るも<span class="h-end">の<a class="anchor" href="#inputs" aria-label="このセクションへのリンク"><i/></a></span></h2>
+<p>DLSS 5 は、アプリから 2 つのものを受け取ります。</p>
+<ul><li><strong>画像。</strong></li><li><strong>モーションベクトル</strong>：ピクセルごとに、前のフレームからどれだけ動いたかを表します。これがあると、フレームが変わっても結果が安定します。VRChat はモーションベクトルを送らないため、アプリが連続する 2 つのフレームを比べて求めます。静止画には動きがありません。</li></ul>
+<p>DLSS 5 は深度を読みません。NVIDIA がそう説明しており、アプリ自身のテストでも、フラット、グラデーション、ゼロのどの深度でもまったく同じ出力になりました。</p>
+<h3 id="motion">動きの求め<span class="h-end">方<a class="anchor" href="#motion" aria-label="このセクションへのリンク"><i/></a></span></h3>
+<p><strong>フレームガイダンス</strong> → <strong>モーションベクトル</strong>（<strong>詳細</strong> がオンのときに表示）：</p>
+<div class="table-wrap" tabindex="0"><table><thead><tr><th>選択肢</th><th>内容</th></tr></thead><tbody><tr><td>NVIDIA Optical Flow（ハードウェア・推奨）</td><td>GeForce RTX カードに備わっている、この処理専用の部分です。速く正確です。GeForce 版はこれで始まります。</td></tr><tr><td>FSR オプティカルフロー（コンピュート・全カード）</td><td>アプリ独自のオプティカルフローです。どのカードでも動きます。Radeon 版はこれで始まり、GeForce 版でも代わりに使われることがあります。</td></tr><tr><td>GPU ブロックマッチング（内蔵）</td><td>単純な探索です。速いものの、速い動きでは精度が落ちます。</td></tr><tr><td>なし（ゼロ）</td><td>動きをまったく使いません。</td></tr></tbody></table></div>
+<h2 id="depth">深度：DLAA、超解像、深度表示だけで使いま<span class="h-end">す<a class="anchor" href="#depth" aria-label="このセクションへのリンク"><i/></a></span></h2>
+<p>アプリの中で深度マップを使うのは、<strong>DLAA プリパス</strong>、<strong>DLSS 超解像</strong>、<strong>表示</strong> → <strong>比較</strong> の <strong>深度</strong> 表示の 3 つです。VRChat のストリームには深度が含まれないため、アプリは小さなネットワーク Depth Anything V2 を使って、お使いのカード上で深度を推定します。</p>
+<p>このネットワークが読み込まれるのは、3 つのどれかがオンのときだけです。DLSS 5 だけなら読み込まれず、カードの負担が減ります。</p>
+<figure data-n="picture-depth-view" alt="">深度表示。近い部分は明るく、遠い部分は暗く表示されます。</figure>
+<h2 id="passes">追加のパ<span class="h-end">ス<a class="anchor" href="#passes" aria-label="このセクションへのリンク"><i/></a></span></h2>
+<ul><li><strong>DLAA プリパス</strong>：DLSS 5 の前に実行する NVIDIA のアンチエイリアスです。ギザギザの輪郭をなめらかにしますが、そのぶん速度が落ちます。最初はオフで、GeForce 専用です。</li><li><strong>DLSS 超解像</strong>：元より大きな結果を得るためのものです。<strong>ソース</strong> → <strong>出力解像度をカスタム指定</strong> をオンにし、<strong>アップスケール方式</strong> で <strong>DLSS 超解像</strong> を選びます。NVIDIA のアップスケーラーが大きなサイズで細部を作り直し、そのあと DLSS 5 が大きな画像を処理します。処理はかなり遅くなり、VRAM も多く使うと考えてください。</li><li><strong>合成</strong>：DLSS 5 のあと、アプリが結果と元の画像を混ぜます。<strong>出力ブレンド</strong> のスライダーと 1 を超える強度はここで効くため、動かすとすぐに反映されます。</li></ul>
+<h2 id="still">静止<span class="h-end">画<a class="anchor" href="#still" aria-label="このセクションへのリンク"><i/></a></span></h2>
+<p>写真には前のフレームがありません。アプリはネットワークが落ち着くまで写真を何回か DLSS 5 に通し、落ち着いた結果を表示して保存します。そのため、画像は動画の 1 フレームより少し時間がかかります。</p>
+<h2 id="editions">2 つの<span class="h-end">版<a class="anchor" href="#editions" aria-label="このセクションへのリンク"><i/></a></span></h2>
+<ul><li><strong>GeForce 版</strong> には DLSS 5 ランタイム自体が入っています。RTX 50 向けと RTX 40 / 30 / 20 向けの 2 つのビルドがあり、アプリがお使いのカードに合うビルドを選びます。失敗した場合はもう一方を試します。</li><li><strong>Radeon 版</strong> は、DLSS-NR-on-AMD を通して DLSS 5 を動かします。DLSS-NR-on-AMD は別のプロジェクトで、求めに応じてアプリがダウンロードしてインストールします。<a href="radeon.html">Radeon</a></li></ul>
+<h2 id="local">すべて PC の中で完結しま<span class="h-end">す<a class="anchor" href="#local" aria-label="このセクションへのリンク"><i/></a></span></h2>
+<p>これらの処理はすべて、お使いのグラフィックカード上で行われます。画像や動画がアップロードされることはありません。<a href="privacy.html">プライバシーとライセンス</a></p>

@@ -1,0 +1,110 @@
+# Documentation site
+
+The source of the documentation site at https://alanbacker.github.io/VRChat-DLSS5-Cam/. The build writes plain HTML,
+CSS and JavaScript into `site/` at the repository root; GitHub Pages publishes that folder
+(`.github/workflows/pages.yml`). The pages make no request outside the site and also work when opened straight from
+the disk (`site/index.html`).
+
+## Build
+
+```
+python3 tools/site/build.py            # build every language into site/
+python3 tools/site/build.py --check    # build, then check every internal link and picture
+```
+
+Python 3.8 or newer with Pillow (it makes the WebP copies of the screenshots). Nothing else, no npm. The build
+rewrites its files in `site/` each time and removes pages that are no longer listed, so edit `tools/site/`, never
+`site/`. It ends with a list of warnings: missing pages or strings, missing pictures, PNG sources that would be
+published unpainted, and with `--check` any link or picture that does not resolve.
+
+## Folders
+
+| Path | What it holds |
+|---|---|
+| `site.json` | Site name, address, base path, download file names, the four languages and the page list with its two sections (Guide, Reference) |
+| `content/<lang>/<page>.md` | The pages, one file per page and language (`en`, `zh`, `ja`, `ko`), same file names in every language |
+| `strings/<lang>.json` | Every word of the frame: navigation, buttons, callout titles, diagrams, search, the 404 page |
+| `images.json` | The screenshots and how each is cropped, painted over and shown |
+| `shots/` | The screenshots' PNG sources (not published; see Screenshots) |
+| `templates/layout.html` | The page frame |
+| `assets/` | `site.css`, `site.js`, the logo files; copied into `site/assets/` |
+| `icons/` | Lucide icons (ISC licence in `icons/LICENSE`), inlined into the pages as SVG |
+| `partials/` | The two sphere drawings used by the hero picture and the comparison illustration |
+| `logo.py` | Redraws `assets/logo.svg`, `assets/mark.svg`, the PNG icons and `partials/` from `tools/make_app_icon.py`; its output is committed, run it only when the program icon changes (needs pycairo) |
+
+The changelog page is built from `docs/releases/vX.Y.Z[.zh-CN|.ja|.ko].md`: each version's first paragraph and the
+bold first words of each item.
+
+## Translating
+
+1. Open `content/<lang>/<page>.md`. An untranslated page is a copy of the English one with `status: to-be-translated`
+   in its front matter; the build shows it with a note that it is in English.
+2. Translate the front matter values and the text. Keep the file name, the `{#id}` anchors, the shortcodes, the
+   picture names and the links as they are, so links between pages and languages keep working.
+3. When the page is done, write `status: translated` (a page without a `status:` line counts as untranslated).
+4. Translate `strings/<lang>.json` the same way and set `"_status": "translated"`. Only then does the one-time bar
+   at the top of the pages offer that language to readers whose browser prefers it, and the 404 page show its
+   message in that language.
+
+Front matter, at the top of each page:
+
+```
+---
+title: First picture
+nav: First picture
+description: Open a VRChat screenshot, look at the result and save it.
+status: to-be-translated
+---
+```
+
+`title` is the heading and the browser tab, `nav` the shorter name in the sidebar, `description` the line under the
+heading and the search engines' summary.
+
+Write control names exactly as the app shows them in that language (the app's own strings are in `src/core/I18n.h`).
+The screenshots are the same English pictures in every language.
+
+## The Markdown used here
+
+Blocks:
+
+- `## Heading`, `### Heading`, `#### Heading`, optionally ending in `{#anchor}`; headings get anchors and appear in
+  the page's contents list and in the search.
+- Paragraphs, `- ` lists, and `1. ` lists, which are drawn as numbered steps. Indent a line to continue an item.
+- `=> What you should see` after a step: drawn as a check line.
+- `> [!TIP]`, `> [!WARNING]`, `> [!NOTE]` callouts, followed by `> ` lines.
+- Tables. A row that ends in `{#anchor}` can be linked to and is found by the search (used for the settings).
+- ```` ``` ```` code blocks (` ```json ` for JSON); they get a copy button.
+- `![Alt text](picture-name "Caption")`: a screenshot from `images.json`. The alt text says what the picture shows.
+- Shortcodes, alone on a line: `{{diagram:live}}`, `{{diagram:pipeline}}`, `{{diagram:update}}`, `{{wipe}}` (the
+  before/after illustration), `{{downloads}}` (the three download cards), `{{tree}}` (the program folder),
+  `{{pagelist}}` and `{{changelog}}`. Their words come from `strings/<lang>.json`.
+- `<!-- comments -->` are dropped.
+
+Inline: `**bold**`, `*italic*`, `` `code` ``, `[text](page.html#anchor)`, `[[Control name]]` (a name from the
+app's interface), `((Ctrl+Alt+P))` (keys), `{adv}` (the Advanced badge for controls shown only with Advanced on).
+
+## Screenshots
+
+The pictures are `<name>.png` files: the English interface in the dark theme, whole windows at 1600 x 1000 or
+sidebar sections at their own size. Keep them in `tools/site/shots/`, which is not committed (`.gitignore`): the
+sources carry private pixels. The build also reads them from `site/assets/img/`, but whatever lies there is
+published as it is. The build never changes the PNG files; it writes WebP copies (and smaller ones for phones) into
+`site/assets/img/gen/`, which the pages use and which are committed. A clone without the sources keeps those copies
+as they are, so it builds the same pages; a new or changed screenshot needs its source in `shots/`.
+In `images.json`:
+
+- `cover`: rectangles `[left, top, right, bottom]` in source pixels, painted with the colour just right of each
+  one, or at `[.., x, y]` when two more numbers are given. Used to keep a graphics card's model, a user folder or a
+  test version out of the published copies.
+- `crop`: `[left, top, right, bottom]` cut out of the source after painting.
+- `width`: the largest width of the published copy.
+- `look`: `window` (a whole window, as wide as the text) or `panel` (part of a window, at most `show` CSS pixels
+  wide).
+
+A picture that is missing is left out of the pages and named in the build's warnings. Pictures in the pages: no
+name plates, user IDs, error messages or private paths, and the same pictures in all four languages.
+
+## Base path
+
+The site is served from `/VRChat-DLSS5-Cam/`. Every link in the pages is relative; only the 404 page, which GitHub
+Pages serves at any missing address, uses `basePath` from `site.json`. Change it there if the repository is renamed.

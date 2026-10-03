@@ -1,0 +1,60 @@
+---
+status: translated
+title: Linux
+nav: Linux
+description: NVIDIA カードを積んだ Linux で、Proton を通して GeForce 版を動かします。画像と動画に対応し、ライブカメラには対応していません。
+---
+Linux パッケージは、Steam でおなじみの互換レイヤー Proton の上で Windows 版のアプリを動かします。準備はランチャーがすべて自動で行います。DLSS 5 ランタイムが Windows 向けにしかないため、ネイティブの Linux 版はありません。
+
+## 必要なもの {#requirements}
+
+- デスクトップセッション（X11 または Wayland）のある 64 ビット Linux。
+- NVIDIA GeForce RTX カード（20、30、40、50 シリーズ）と、NVIDIA ドライバー 5xx 以降。Linux では Radeon カードに対応していません。
+- `python3`（3.10 以降）と、`curl` または `wget`。
+- 初回起動時に Proton を入れるための、約 3 GB の空き容量。Steam は必要ありません。
+
+## インストールと起動 {#install}
+
+1. [ダウンロード](index.html#download) から `VRChatDLSS5Cam-linux-x86_64.tar.gz` をダウンロードします。
+2. 展開して、ランチャーを起動します。
+   ```bash
+   tar xzf VRChatDLSS5Cam-linux-x86_64.tar.gz
+   cd VRChatDLSS5Cam
+   ./vrchat-dlss5-cam
+   ```
+   => 初回起動時は Proton をダウンロードするため、数分かかります。そのあとウィンドウが開きます。
+3. 任意：`./install-linux.sh` を実行すると、アプリがアプリケーションメニューに追加され、`vrchat-dlss5-cam` コマンドも使えるようになります。`./install-linux.sh --remove` で両方とも取り除けます。
+
+設定、プリセット、ログ、ライブラリは `~/.local/share/VRChatDLSS5Cam/data` に保存されます。アップデートは Windows と同じように動きます。
+
+## 使える機能 {#support}
+
+| | Proton 上での動作 |
+|---|---|
+| 画像：DLSS 5、深度、超解像、プリセット、元に戻す操作 | 使えます。 |
+| 動画とアニメーション画像の入力 | 使えます。 |
+| 動画の出力 | WebP、GIF、APNG、PNG 連番。Proton には H.264 と HEVC のエンコーダーがないため、MP4 と音声は使えません。MP4 で保存されるはずの動画は WebP で保存されます。 |
+| ライブカメラ（Spout） | 使えません。Spout は Windows にしかありません。 |
+| モーションベクトル | FSR オプティカルフローを使います。Proton では NVIDIA Optical Flow は使えません。 |
+| MCP、アップデート、ミラーサイト、言語 | 使えます。 |
+| Radeon 版 | 対応していません。 |
+
+## コマンドライン {#command-line}
+
+ランチャーはアプリのオプションを受け付け、Linux のパスをアプリが必要とする形に変換します。
+
+```bash
+./vrchat-dlss5-cam --headless --add ~/Pictures/shot.png --process ~/Pictures/out
+./vrchat-dlss5-cam --open ./clip.mp4 --lang zh
+```
+
+`--linux-info` は使用中のフォルダーとバージョンを表示し、`--linux-reset` は Proton の環境を作り直します（設定とライブラリは残ります）。[すべてのオプション](command-line.html)
+
+## うまくいかないとき {#troubleshooting}
+
+- **初回起動に数分かかる。** Proton とそのランタイム（約 2.5 GB）を最初の 1 回だけダウンロードしているためです。
+- **ウィンドウは開くが反応しない。** 画面のロックやスクリーンロッカーが画面を占有しています。セッションのロックを解除してください。
+- **画像の表示エリアに灰色のチェッカーボードしか出ない。** アプリが Proton 自身のシェーダーコンパイラーで動いています。Windows 版の zip ではなく、正しいコンパイラーが入っている Linux パッケージを使ってください。
+- **DLSS 5 が停止中のままになる。** Windows のプログラム向けの NVIDIA ドライバーのブリッジが見つかりません。`./vrchat-dlss5-cam --linux-info` で、`nvngx.dll` が見つかったかどうかを確認できます。NVIDIA ドライバー 5xx 以降をインストールしてください。
+
+Linux の詳しいガイドは、GitHub の [LINUX.md](https://github.com/AlanBacker/VRChat-DLSS5-Cam/blob/main/docs/LINUX.md) にあります。

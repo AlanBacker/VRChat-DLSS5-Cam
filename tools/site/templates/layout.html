@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="{{lang}}" class="no-js">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<script>(function(){var d=document.documentElement;d.className="js";try{var t=localStorage.getItem("vdc-theme");if(t==="dark"||t==="light")d.setAttribute("data-theme",t);}catch(e){}})();</script>
+<title>{{title}}</title>
+<meta name="description" content="{{description}}">
+{{alternates}}
+<link rel="icon" href="{root}assets/logo.svg" type="image/svg+xml">
+<link rel="icon" href="{root}assets/icon-32.png" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="{root}assets/icon-180.png">
+<link rel="stylesheet" href="{root}assets/site.css">
+<script defer src="{root}assets/site.js"></script>
+</head>
+<body class="{{body_class}}" data-site="{{site_data}}">
+<a class="skip" href="#content">{{skip}}</a>
+<header class="topbar">
+<div class="topbar-in">
+<a class="btn btn-icon menu-btn" href="#site-nav" aria-label="{{menu}}" aria-controls="site-nav">{{icon_menu}}</a>
+<a class="brand" href="index.html"><img src="{root}assets/mark.svg" alt="" width="28" height="28"><span class="brand-text"><span class="brand-name">{{site_name}}</span><span class="brand-docs">{{docs}}</span></span></a>
+<nav class="top-links" aria-label="{{contents}}"><a href="index.html"{{guide_current}}>{{guide}}</a><a href="{{first_reference}}.html"{{reference_current}}>{{reference}}</a></nav>
+<div class="search js-only" role="search">
+<button type="button" class="btn btn-icon search-open" aria-label="{{search_placeholder}}">{{icon_search}}</button>
+<div class="search-box">{{icon_search}}<input type="search" class="search-input" placeholder="{{search_placeholder}}" aria-label="{{search_placeholder}}" autocomplete="off" spellcheck="false" role="combobox" aria-expanded="false" aria-controls="search-list" aria-autocomplete="list"><kbd class="search-key" aria-hidden="true">/</kbd><button type="button" class="btn btn-icon search-close" aria-label="{{search_clear}}">{{icon_close}}</button></div>
+<div class="search-pop" hidden><ul id="search-list" role="listbox" aria-label="{{search_placeholder}}"></ul><p class="search-status" aria-live="polite"></p></div>
+</div>
+<div class="top-actions">{{lang_menu}}{{theme_menu}}<a class="btn btn-accent btn-sm top-dl" href="{{download_url}}" rel="noopener">{{icon_download}}<span>{{download}}</span></a></div>
+</div>
+</header>
+<div class="layout">
+<main id="content" class="doc" tabindex="-1"{{article_lang}}>
+<article>
+{{article}}
+</article>
+</main>
+<aside class="aside-toc">{{toc}}</aside>
+<nav id="site-nav" class="sidenav" aria-label="{{contents}}">
+<div class="sidenav-head"><span class="sidenav-title">{{contents}}</span><a class="btn btn-icon nav-close" href="#content" aria-label="{{close_menu}}">{{icon_close}}</a></div>
+<div class="sidenav-body">{{nav}}</div>
+</nav>
+</div>
+{{footer}}
+</body>
+</html>

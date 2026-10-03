@@ -22,3 +22,6 @@ DirectML*.dll
 *.log
 __pycache__/
 *.pyc
+
+# Screenshot sources of the documentation site (private pixels; only the painted copies in site/assets/img/gen/ are committed)
+tools/site/shots/

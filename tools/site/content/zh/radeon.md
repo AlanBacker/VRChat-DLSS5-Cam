@@ -1,0 +1,48 @@
+---
+status: translated
+title: Radeon 显卡
+nav: Radeon
+description: 借助 Radeon 版和 DLSS-NR-on-AMD，在 AMD Radeon RX 7000 或 9000 上运行 DLSS 5。
+---
+DLSS 5 是 NVIDIA 的技术，所以 Radeon 显卡需要借助 **DLSS-NR-on-AMD**：这是一个独立项目，能把 DLSS 5 神经渲染带到 AMD 显卡上。本程序的 **Radeon 版**就是为它打造的，会在你要求时下载并安装它。
+
+## 需要准备什么 {#requirements}
+
+- Windows 11。
+- 一块 AMD Radeon RX 7000 或 RX 9000 显卡。
+- AMD Software: Adrenalin Edition 26.1.1 或更新版本。
+
+以上是 DLSS-NR-on-AMD 的要求，最新的要求以它的发布页为准。在更早的 Radeon 显卡上，本程序仍可以作为查看器和录制工具运行，但画面会原样返回。
+
+## 安装 {#install}
+
+1. 从[下载区](index.html#download)下载 `VRChatDLSS5Cam-win64-amd.zip` 并解压，方法与[安装](install.html#package)相同。
+   已经装了 GeForce 版？在 Radeon 显卡上，它的**获取 Radeon 版…**按钮会替你换好文件。
+2. 启动 `VRChatDLSS5Cam.exe`。
+   => 启动卡片和 **DLSS 5 神经渲染**分节中会出现**安装 DLSS-NR-on-AMD…**按钮。
+3. 点击旁边的**许可**，读一读。DLSS-NR-on-AMD 可以免费用于个人非商业用途；不得再分发或修改。
+4. 点击**安装 DLSS-NR-on-AMD…**。
+   => 程序从那个项目自己的发布页下载安装器，并在后台运行。完成后，程序会自动重启。
+5. 查看 **DLSS 5 神经渲染**分节。
+   => 其中显示 DLSS-NR-on-AMD **已加载**，**启用 DLSS 5（DLSSNR）**旁边的标记显示**运行中**。
+
+如果文件夹需要管理员权限，或者显卡不受支持，安装器会打开自己的窗口，方便你阅读它的说明。
+
+![](radeon-sidebar "安装之前 Radeon 版的 DLSS 5 分节，带有安装按钮和运行要求。")
+
+## 有哪些不同 {#differences}
+
+- **效果在 DLSS-NR-on-AMD 的叠加层中设置。** 在程序中按 ((End)) 打开它。它的预设、风格和不超过 1 的强度都在那里设置；本程序自己的**预设**、**风格**和不超过 1 的强度不会传给它。请把它的 **Mode** 保持为 inline，保存图片需要这个设置。
+- **本程序的这些控件仍然有效：**输出混合、大于 1 的强度，以及**神经渲染分辨率**。
+- **速度更慢。** 网络运行时，每一帧都要等它完成，所以较大的实时画面每秒只有几帧。**长边不超过 1440 像素**这样的上限和**处理帧率上限**可以让实时画面保持流畅。保存的图片和视频结果不变，只是出来得晚一些。
+- **运动来自 FSR 光流。** 硬件光流是 GeForce 显卡才有的；本程序自带的 FSR 光流会代替它。
+- **会有一个 CPU 核心一直忙碌**，从第一帧 DLSS 5 开始，直到程序关闭。那是 DLSS-NR-on-AMD 的一个线程，本程序无法让它停下。
+
+## 更新与移除 {#updates}
+
+**DLSS 5 神经渲染**分节会把已安装的 DLSS-NR-on-AMD 和最新版本并列显示。有新版本时，按钮会变成**更新到 …**，后面是新版本号。**再次运行安装器…**会打开安装器的窗口：在那里按 **U** 更新，按 **R** 移除。
+
+本程序自身照常更新。[更新](updates.html)
+
+> [!NOTE]
+> DLSS-NR-on-AMD 是一个独立项目，有自己的条款；本程序不包含它的任何部分。Radeon 版的问题，请在本项目的 GitHub 页面反馈，并附上 `log.txt`：它的结尾附有 DLSS-NR-on-AMD 自己日志的最后几行。

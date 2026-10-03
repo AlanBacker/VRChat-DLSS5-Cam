@@ -297,7 +297,7 @@ private:
     // The user's presets: a file of named effect values in the data folder.
     void LoadPresets();
     void SavePresets() const;
-    std::wstring DocsUrl() const;                 // the README in the interface's language
+    std::wstring DocsUrl(const wchar_t* page = L"") const;   // the documentation site in the interface's language (+ a page name)
     const LibraryItem* OverrideItem() const;
     const LibraryItem* ShownItem() const;
     SourceTransform LibraryTransform(const std::wstring& path, bool video) const;

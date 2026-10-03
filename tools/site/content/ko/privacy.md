@@ -1,0 +1,62 @@
+---
+status: translated
+title: 개인정보와 라이선스
+nav: 개인정보와 라이선스
+description: 앱이 네트워크로 보내는 것(거의 없습니다)과, 앱과 구성 요소의 라이선스를 설명합니다.
+---
+## 아무것도 업로드되지 않습니다 {#nothing-uploaded}
+
+이미지, 동영상, 설정은 내 컴퓨터에 남습니다. 앱에는 계정도, 추적도, 사용 통계도 없습니다. 모든 처리는 내 그래픽 카드에서 실행됩니다.
+
+## 앱이 인터넷에 접속할 때 {#network}
+
+앱은 다음 경우에만 인터넷에 연결합니다.
+
+| 무엇 | 언제 | 어디로 |
+|---|---|---|
+| 업데이트 확인 {#update-check} | **시작 시 업데이트 확인**을 끄지 않았다면 시작할 때마다, 그리고 **업데이트 확인**을 클릭할 때. | GitHub, 또는 **GitHub 접속 방식**에서 고른 미러 사이트. |
+| 업데이트 다운로드 {#update-download} | **지금 업데이트**를 클릭하거나 `--update` 또는 `--edition`을 실행할 때만. | 위와 같습니다. |
+| 미러 사이트 측정 {#mirror-sites} | **미러 사이트(가장 빠른 곳 자동 선택)**를 골랐을 때, 또는 **사이트 속도 측정**을 클릭할 때. | 알려진 미러 사이트 여덟 곳. |
+| DLSS-NR-on-AMD {#port} | Radeon 에디션에서만: 최신 릴리스 조회, 그리고 버튼을 클릭했을 때의 설치 프로그램 다운로드. | GitHub에 있는 그 프로젝트의 릴리스 페이지, 또는 고른 미러 사이트. |
+
+명령줄에서 `--headless`나 `--process`로 실행할 때는 스스로 업데이트를 확인하지 않습니다.
+
+**문서**, **드라이버 다운로드**, **문제 신고** 같은 버튼은 브라우저에서 페이지를 엽니다. **문제 신고**는 GitHub 양식에 앱 버전과 그래픽 카드를 채워 넣으며, 제출하기 전까지는 아무것도 전송되지 않습니다.
+
+## MCP 서버 {#mcp}
+
+MCP 서버는 직접 켜기 전까지 꺼져 있습니다. 켜면 내 컴퓨터에서만 연결을 받으며, 스스로 어딘가에 접속하지 않습니다. 다른 컴퓨터는 **접근 범위**를 **로컬 네트워크**로 바꾸고 키를 준 다음에만 접속할 수 있습니다. [MCP](mcp.html)
+
+## 이 사이트 {#this-site}
+
+이 페이지는 다른 서버에서 아무것도 불러오지 않습니다. 글꼴도, 스크립트도, 추적도 없습니다. 고른 테마와 언어는 내 브라우저에만 저장됩니다.
+
+## 라이선스 {#licence}
+
+README에 적힌 앱의 라이선스 문구입니다.
+
+> MIT(`LICENSE` 참고). 서드파티 구성 요소와 NVIDIA 고지는 `THIRD_PARTY_NOTICES.md`에 있습니다. 이 프로젝트는 VRChat Inc. 또는 NVIDIA Corporation과 무관합니다.
+
+전문은 [LICENSE](https://github.com/AlanBacker/VRChat-DLSS5-Cam/blob/main/LICENSE)와 [THIRD_PARTY_NOTICES.md](https://github.com/AlanBacker/VRChat-DLSS5-Cam/blob/main/THIRD_PARTY_NOTICES.md)에 있습니다. 두 파일 모두 앱 폴더에도 들어 있으며, **정보** → **서드파티 고지**로 열 수 있습니다.
+
+## 앱이 쓰는 구성 요소 {#components}
+
+| 구성 요소 | 라이선스 |
+|---|---|
+| NVIDIA DLSS 5 런타임(`nvngx_dlssnr.dll`) | NVIDIA의 약관을 따르는 NVIDIA 소프트웨어로, 앱의 MIT 라이선스에 포함되지 않습니다. GeForce 에디션에는 빌드 두 개, Radeon 에디션에는 DLSS-NR-on-AMD 설치 프로그램용 빌드 하나가 들어 있습니다. |
+| NVIDIA DLSS SDK(NGX, `nvngx_dlss.dll`) | NVIDIA RTX SDKs License Agreement. |
+| NVIDIA Optical Flow SDK(인터페이스 헤더) | MIT. |
+| AMD FidelityFX SDK(`amd_fidelityfx_dx12.dll`, Radeon 에디션) | MIT. |
+| Spout2 | BSD 2-Clause. |
+| Dear ImGui | MIT. |
+| dlss5-bridge | MIT. |
+| ONNX Runtime | MIT. |
+| DirectML | Microsoft의 DirectML 라이선스. 앱과 함께 배포하는 것을 허용합니다. |
+| Depth Anything V2 Small | Apache License 2.0. |
+| libwebp | BSD 3-Clause. |
+| Lucide 아이콘 | ISC. Feather에서 파생된 아이콘에는 MIT도 적용됩니다. |
+| Direct3D 셰이더 컴파일러(`d3dcompiler_47.dll`, Linux 패키지) | Windows SDK의 Microsoft 소프트웨어 사용 조건. |
+
+**DLSS-NR-on-AMD**는 포함되어 있지 않습니다. 자체 약관을 따르는 별도 프로젝트로, 그 약관은 개인·비상업 용도의 사용을 허용하고 재배포를 금지합니다. Radeon 에디션은 요청할 때만 그 프로젝트의 릴리스 페이지에서 설치 프로그램을 내려받습니다.
+
+이 사이트는 ISC 라이선스에 따라 Lucide 아이콘을 사용합니다. 라이선스 전문은 [assets/licenses/lucide-LICENSE.txt]({root}assets/licenses/lucide-LICENSE.txt)에 있습니다.

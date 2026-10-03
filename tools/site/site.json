@@ -1,0 +1,43 @@
+{
+  "name": "VRChat DLSS5 Cam",
+  "siteUrl": "https://alanbacker.github.io/VRChat-DLSS5-Cam/",
+  "basePath": "/VRChat-DLSS5-Cam/",
+  "repo": "https://github.com/AlanBacker/VRChat-DLSS5-Cam",
+  "downloads": {
+    "geforce": "VRChatDLSS5Cam-win64.zip",
+    "radeon": "VRChatDLSS5Cam-win64-amd.zip",
+    "linux": "VRChatDLSS5Cam-linux-x86_64.tar.gz"
+  },
+  "languages": [
+    {"code": "en", "dir": "",   "htmlLang": "en",    "notes": ""},
+    {"code": "zh", "dir": "zh", "htmlLang": "zh-CN", "notes": ".zh-CN"},
+    {"code": "ja", "dir": "ja", "htmlLang": "ja",    "notes": ".ja"},
+    {"code": "ko", "dir": "ko", "htmlLang": "ko",    "notes": ".ko"}
+  ],
+  "sections": [
+    {"id": "guide", "icon": "book-open", "pages": [
+      {"slug": "index", "icon": "house", "layout": "home"},
+      {"slug": "install", "icon": "download", "step": true},
+      {"slug": "first-picture", "icon": "image", "step": true},
+      {"slug": "live", "icon": "radio", "step": true},
+      {"slug": "videos", "icon": "film", "step": true},
+      {"slug": "library", "icon": "images", "step": true},
+      {"slug": "presets", "icon": "sparkles", "step": true},
+      {"slug": "saving", "icon": "save", "step": true},
+      {"slug": "updates", "icon": "refresh-cw", "step": true}
+    ]},
+    {"id": "reference", "icon": "sliders-horizontal", "pages": [
+      {"slug": "how-it-works", "icon": "layers"},
+      {"slug": "settings", "icon": "sliders-horizontal", "indexRows": true},
+      {"slug": "shortcuts", "icon": "keyboard"},
+      {"slug": "command-line", "icon": "terminal"},
+      {"slug": "mcp", "icon": "plug"},
+      {"slug": "linux", "icon": "package"},
+      {"slug": "radeon", "icon": "gpu"},
+      {"slug": "troubleshooting", "icon": "life-buoy"},
+      {"slug": "faq", "icon": "circle-question-mark"},
+      {"slug": "privacy", "icon": "shield-check"},
+      {"slug": "changelog", "icon": "scroll-text"}
+    ]}
+  ]
+}

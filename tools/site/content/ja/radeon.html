@@ -1,0 +1,17 @@
+<p>DLSS 5 は NVIDIA の技術なので、Radeon カードで使うには助けが必要です。それが <strong>DLSS-NR-on-AMD</strong> で、DLSS 5 ニューラルレンダリングを AMD のカードで動かす別のプロジェクトです。このアプリの <strong>Radeon 版</strong> はそのために作られていて、求めに応じて DLSS-NR-on-AMD をダウンロードし、インストールします。</p>
+<h2 id="requirements">必要なも<span class="h-end">の<a class="anchor" href="#requirements" aria-label="このセクションへのリンク"><i/></a></span></h2>
+<ul><li>Windows 11。</li><li>AMD Radeon RX 7000 または RX 9000 のカード。</li><li>AMD Software: Adrenalin Edition 26.1.1 以降。</li></ul>
+<p>これは DLSS-NR-on-AMD の動作要件です。最新の要件はそのリリースページで確認できます。それより古い Radeon でも、アプリはビューアーと録画ツールとしては動きますが、画像は変化しないまま返ってきます。</p>
+<h2 id="install">インストー<span class="h-end">ル<a class="anchor" href="#install" aria-label="このセクションへのリンク"><i/></a></span></h2>
+<ol class="steps"><li><p><a href="index.html#download">ダウンロード</a> から <code>VRChatDLSS5Cam-win64-amd.zip</code> をダウンロードし、<a href="install.html#package">インストール</a> と同じように展開します。すでに GeForce 版をお持ちなら、Radeon カード上で <strong>Radeon 版を入手…</strong> ボタンを押すと、ファイルを入れ替えてくれます。</p></li><li><p><code>VRChatDLSS5Cam.exe</code> を起動します。</p>
+<p class="check"><i/><span>スタートカードと <strong>DLSS 5 ニューラルレンダリング</strong> セクションに、<strong>DLSS-NR-on-AMD をインストール…</strong> ボタンが表示されます。</span></p></li><li><p>隣の <strong>ライセンス</strong> をクリックして、内容を読みます。DLSS-NR-on-AMD は個人的・非商用の利用に限り無料で、再配布と改変は禁じられています。</p></li><li><p><strong>DLSS-NR-on-AMD をインストール…</strong> をクリックして始めます。</p>
+<p class="check"><i/><span>アプリがそのプロジェクト自身のリリースページからインストーラーをダウンロードし、バックグラウンドで実行します。終わるとアプリが自動で再起動します。</span></p></li><li><p><strong>DLSS 5 ニューラルレンダリング</strong> セクションを確認します。</p>
+<p class="check"><i/><span>DLSS-NR-on-AMD が <strong>読み込み済み</strong> と表示され、<strong>DLSS 5（DLSSNR）を有効化</strong> の隣のバッジに <strong>動作中</strong> と表示されます。</span></p></li></ol>
+<p>フォルダーに管理者権限が必要な場合や、カードが対応していない場合は、インストーラーが自分のウィンドウを開くので、そのメッセージを読めます。</p>
+<figure data-n="radeon-sidebar" alt="">インストール前の Radeon 版の DLSS 5 セクション。インストールボタンと動作要件が表示されています。</figure>
+<h2 id="differences">違うとこ<span class="h-end">ろ<a class="anchor" href="#differences" aria-label="このセクションへのリンク"><i/></a></span></h2>
+<ul><li><strong>見た目は DLSS-NR-on-AMD のオーバーレイで決めます。</strong> アプリで <span class="keys"><kbd>End</kbd></span> を押すとオーバーレイが開きます。そこでプリセット、スタイル、1 までの強度を設定します。アプリ側の <strong>プリセット</strong>、<strong>スタイル</strong>、1 までの強度は渡されません。オーバーレイの <strong>Mode</strong> は inline のままにしてください。保存する画像に必要です。</li><li><strong>アプリのこれらのコントロールは引き続き使えます：</strong> 出力ブレンド、1 を超える強度、<strong>ニューラルパス解像度</strong>。</li><li><strong>処理が遅くなります。</strong> 各フレームがネットワークの処理を待つため、大きなライブ映像では 1 秒あたり数フレームしか出ません。<strong>長辺 1440 px まで</strong> のような上限と <strong>処理レート上限</strong> を使うと、ライブ映像がなめらかになります。保存する画像や動画の仕上がりは同じで、時間がかかるだけです。</li><li><strong>動きは FSR オプティカルフローから求めます。</strong> ハードウェアのオプティカルフローは GeForce カードのものなので、アプリ独自の FSR オプティカルフローがその代わりを務めます。</li><li><strong>CPU コアが 1 つ使われ続けます。</strong> 最初の DLSS 5 フレームからアプリを閉じるまでです。これは DLSS-NR-on-AMD のスレッドで、アプリからは止められません。</li></ul>
+<h2 id="updates">アップデートと削<span class="h-end">除<a class="anchor" href="#updates" aria-label="このセクションへのリンク"><i/></a></span></h2>
+<p><strong>DLSS 5 ニューラルレンダリング</strong> セクションには、インストール済みの DLSS-NR-on-AMD と最新版が並んで表示されます。新しい版が出ると、ボタンがそのバージョン付きで <strong>… に更新</strong> に変わります。<strong>インストーラーを再実行…</strong> ボタンはインストーラーのウィンドウを開きます。そこで <strong>U</strong> を押すと更新、<strong>R</strong> を押すと削除できます。</p>
+<p>アプリ自体は通常どおり更新されます。<a href="updates.html">アップデート</a></p>
+<aside class="callout callout-note"><p class="callout-title"><i/><span>補足</span></p><p>DLSS-NR-on-AMD は独自の利用条件を持つ別のプロジェクトで、このアプリにはその内容は一切含まれていません。Radeon 版の問題は、<code>log.txt</code> を添えてこのプロジェクトの GitHub ページで報告してください。このログの末尾には、DLSS-NR-on-AMD 自身のログの最後の数行が入っています。</p></aside>

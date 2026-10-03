@@ -1,0 +1,179 @@
+{
+  "_status": "translated",
+  "langName": "日本語",
+  "site": {
+    "docs": "ドキュメント",
+    "titleSuffix": "VRChat DLSS5 Cam",
+    "homeTitle": "VRChat DLSS5 Cam ドキュメント"
+  },
+  "nav": {
+    "skip": "本文へスキップ",
+    "guide": "ガイド",
+    "reference": "リファレンス",
+    "menu": "メニュー",
+    "closeMenu": "メニューを閉じる",
+    "contents": "目次",
+    "onThisPage": "このページの内容",
+    "step": "ステップ {n} / {m}",
+    "prev": "前へ",
+    "next": "次へ",
+    "download": "ダウンロード",
+    "language": "言語",
+    "linkHere": "このセクションへのリンク",
+    "toTop": "ページの先頭へ",
+    "home": "はじめに"
+  },
+  "theme": {
+    "label": "テーマ",
+    "system": "システム",
+    "dark": "ダーク",
+    "light": "ライト"
+  },
+  "search": {
+    "placeholder": "ドキュメントを検索",
+    "clear": "検索をクリア",
+    "none": "見つかりませんでした。短い言葉で試してください。",
+    "results": "{n} 件の結果",
+    "result": "1 件の結果"
+  },
+  "callout": {
+    "tip": "ヒント",
+    "warning": "注意",
+    "note": "補足"
+  },
+  "code": {
+    "copy": "コピー",
+    "copied": "コピーしました"
+  },
+  "figure": {
+    "open": "画像を原寸で開く",
+    "close": "閉じる"
+  },
+  "pending": "このページはまだ翻訳されていないため、英語で表示しています。",
+  "suggest": {
+    "text": "このドキュメントは日本語でも読めます。",
+    "switch": "日本語で読む",
+    "dismiss": "このまま読む"
+  },
+  "footer": {
+    "license": "VRChat DLSS5 Cam は MIT ライセンスのフリーソフトウェアです。",
+    "notAffiliated": "VRChat Inc. および NVIDIA Corporation とは無関係です。",
+    "source": "GitHub のソースコード",
+    "releases": "リリース",
+    "report": "問題を報告",
+    "privacy": "プライバシーとライセンス",
+    "icons": "アイコン：Lucide（ISC ライセンス）"
+  },
+  "notFound": {
+    "title": "ページが見つかりません",
+    "text": "このページは存在しません。移動した可能性があります。",
+    "home": "トップページへ"
+  },
+  "home": {
+    "eyebrow": "ドキュメント",
+    "download": "ダウンロード",
+    "start": "ガイドを始める",
+    "allReleases": "すべてのリリースとリリースノート"
+  },
+  "downloads": {
+    "geforceTitle": "GeForce 版",
+    "geforceCards": "Windows · NVIDIA GeForce RTX 20 / 30 / 40 / 50",
+    "geforceNote": "ほとんどの方はこちらです。DLSS 5 が入っていて、ほかに何もインストールする必要はありません。",
+    "radeonTitle": "Radeon 版",
+    "radeonCards": "Windows 11 · AMD Radeon RX 7000 / 9000",
+    "radeonNote": "アプリがインストールする別のプログラムを通して DLSS 5 を動かします。",
+    "linuxTitle": "Linux パッケージ",
+    "linuxCards": "Linux · NVIDIA GeForce RTX 20 / 30 / 40 / 50",
+    "linuxNote": "Proton 上で画像と動画に対応。ライブカメラは使えません。",
+    "button": "ダウンロード",
+    "more": "詳細"
+  },
+  "wipe": {
+    "original": "オリジナル",
+    "output": "出力",
+    "label": "比較の境界線：ドラッグするか、矢印キーで動かせます"
+  },
+  "diagram": {
+    "liveLabel": "VRChat のカメラからファイルまで",
+    "liveCamera": "VRChat のカメラ",
+    "liveCameraSub": "Stream モード",
+    "liveSpout": "Spout Stream",
+    "liveSpoutSub": "映像を送る",
+    "liveApp": "VRChat DLSS5 Cam",
+    "liveAppSub": "DLSS 5 をかける",
+    "liveFile": "保存された PNG",
+    "liveFileSub": "Ctrl+Alt+P",
+    "pipeLabel": "画像に起きること",
+    "pipeInput": "元の画像",
+    "pipeInputSub": "カメラのフレーム、写真、動画",
+    "pipeDlaa": "DLAA または超解像",
+    "pipeDlaaSub": "オンにしたときだけ",
+    "pipeNeural": "DLSS 5 ニューラルパス",
+    "pipeNeuralSub": "光と細部を描き直す",
+    "pipeComposite": "合成",
+    "pipeCompositeSub": "出力ブレンド、1 を超える強度",
+    "pipeOutput": "保存されるファイル",
+    "pipeOutputSub": "PNG、MP4、GIF、APNG、WebP",
+    "pipeTakes": "入力",
+    "pipePicture": "画像",
+    "pipeMotion": "モーションベクトル",
+    "pipeDepth": "深度",
+    "pipeOptional": "任意",
+    "updateLabel": "アップデートが届くまで",
+    "updateCheck": "起動時に確認",
+    "updateCheckSub": "GitHub またはミラーサイト",
+    "updateWindow": "アップデートがあります",
+    "updateWindowSub": "お使いの言語のリリースノート",
+    "updateDownload": "今すぐ更新",
+    "updateDownloadSub": "ダウンロードして展開",
+    "updateRestart": "再起動",
+    "updateRestartSub": "設定とライブラリは残る"
+  },
+  "tree": {
+    "programTitle": "展開したフォルダー",
+    "programSub": "好きな場所に。たとえばドキュメント",
+    "exe": "プログラム本体。ダブルクリックで起動",
+    "runtimes": "DLSS 5 ランタイム。RTX 50 向けと RTX 40 / 30 / 20 向けのビルドが 1 つずつ",
+    "models": "深度ネットワーク",
+    "licenses": "ライセンス文",
+    "docs": "README ファイルとこのドキュメント",
+    "readme": "詳しいリファレンス",
+    "settingsTitle": "設定フォルダー",
+    "settingsSub": "プログラムがユーザープロファイル内に作成",
+    "settingsIni": "すべての設定",
+    "presetsTxt": "保存したプリセット",
+    "logTxt": "今回のセッションと、その前の 5 回分のログ",
+    "crashTxt": "クラッシュしたときだけ",
+    "picturesTitle": "保存した画像",
+    "picturesSub": "別のフォルダーを選ばない限り、ここに保存されます",
+    "pictures": "撮影した写真、画像、動画"
+  },
+  "settings": {
+    "advancedBadge": "詳細"
+  },
+  "changelog": {
+    "version": "バージョン {v}",
+    "full": "GitHub で詳しいリリースノートを見る",
+    "earlier": "それ以前のリリースは GitHub に掲載しています。"
+  },
+  "img": {
+    "start-page": "何も開いていないときの「はじめましょう」ページ。3 つのステップと、ライブカメラ、画像、動画のカードが 1 枚ずつあります。設定は右側にあります",
+    "setup-guide": "セットアップガイドの最初のページ。言語の一覧、「システム」「ダーク」「ライト」のテーマボタン、「スキップ」「戻る」「次へ」があります",
+    "picture-dlss5": "ウィンドウに開いた VRChat の写真。丸いハンドルの付いた白い線が画像を分けていて、左がオリジナル、右が DLSS 5 の出力です。画像の下にライブラリ、右に設定、右上に「処理して PNG を保存」があります",
+    "picture-output": "「比較」を出力のみにした同じ写真。画像全体が DLSS 5 の結果です",
+    "picture-depth-view": "深度表示にした同じ写真。近い部分は明るく、遠い部分は暗く表示されます",
+    "light-theme": "ライトテーマにした同じウィンドウ",
+    "video": "比較の境界線を表示して、ウィンドウに開いた動画。画像の下にシークバー、再生ボタンとコマ送りボタン、時刻、「ここを開始点に」「ここを終了点に」「動画全体」があります",
+    "library": "画像の下のライブラリ。5 つのファイルがそれぞれのサイズとともに並び、右側に「ファイルを追加」「フォルダーを追加」「選択項目を処理」「すべて処理」「削除」のボタンがあります",
+    "sidebar-source": "画像モードの「ソース」セクション。「画像を開く」、開いているファイルとそのサイズ、「出力解像度をカスタム指定」があります",
+    "sidebar-dlss5": "「詳細」がオンのときの「DLSS 5 ニューラルレンダリング」セクション。「動作中」バッジの付いた「DLSS 5（DLSSNR）を有効化」、「ランタイムのパス」、「プリセット」、「スタイル」、4 つの強度スライダー、「出力ブレンド」、計測値があります",
+    "sidebar-output": "「撮影」セクション。「処理して PNG を保存」ボタン、「保存先」、「出力ファイル名」、「元のフレームも保存」、「透明度（アルファ）を保持」があります",
+    "sidebar-depth-motion": "「フレームガイダンス（モーション・深度）」セクション。「モーションベクトル」、「フローグリッド」、「フロー品質」、「深度」、「深度ネットワーク解像度」、「深度モデル」があります",
+    "sidebar-display": "「表示」セクション。「テーマ」、「比較」、「ズーム」、「透明部分にチェッカーボード」、「ライブラリを表示」、「オーバーレイ情報を表示」、「ログを表示」、「起動時に前回のファイルを開く」、「垂直同期」、「処理レート上限」があります",
+    "sidebar-mcp": "「MCP」セクション。「MCP サーバーを実行」、「到達範囲」、「ポート」、「読み取り専用」、「クライアント設定をコピー」、鍵、ジョブの順番待ちの列があります",
+    "sidebar-about": "「情報」セクション。バージョン、ドライバーの確認、「更新チャネル」、「GitHub へのアクセス」と、「更新を確認」「ログファイルを開く」「設定フォルダを開く」「問題を報告」「ドキュメント」「セットアップガイド」のボタンがあります",
+    "driver-notice": "「グラフィックドライバーの更新が必要です」の通知。バーの左にインストール済みのドライバー 536.99、右に必要な 616.56 が表示され、「閉じる」と「ドライバーをダウンロード」のボタンがあります",
+    "update-window": "「アップデートがあります」ウィンドウ。バージョン、スクロールできる欄に入ったリリースノート、「今すぐ更新」「リリースページ」「あとで」のボタンがあります",
+    "radeon-sidebar": "Radeon 版の DLSS 5 セクション。「DLSS-NR-on-AMD をインストール…」、「ライセンス」、「リリースページ」、「再読み込み」があり、その下に動作要件が表示されています"
+  }
+}

@@ -1,0 +1,179 @@
+{
+  "_status": "translated",
+  "langName": "한국어",
+  "site": {
+    "docs": "문서",
+    "titleSuffix": "VRChat DLSS5 Cam",
+    "homeTitle": "VRChat DLSS5 Cam 문서"
+  },
+  "nav": {
+    "skip": "본문으로 건너뛰기",
+    "guide": "가이드",
+    "reference": "레퍼런스",
+    "menu": "메뉴",
+    "closeMenu": "메뉴 닫기",
+    "contents": "목차",
+    "onThisPage": "이 페이지의 내용",
+    "step": "{n} / {m} 단계",
+    "prev": "이전",
+    "next": "다음",
+    "download": "다운로드",
+    "language": "언어",
+    "linkHere": "이 섹션으로 연결되는 링크",
+    "toTop": "맨 위로",
+    "home": "시작하기"
+  },
+  "theme": {
+    "label": "테마",
+    "system": "시스템",
+    "dark": "다크",
+    "light": "라이트"
+  },
+  "search": {
+    "placeholder": "문서 검색",
+    "clear": "검색어 지우기",
+    "none": "찾은 결과가 없습니다. 더 짧은 단어로 검색해 보세요.",
+    "results": "결과 {n}개",
+    "result": "결과 1개"
+  },
+  "callout": {
+    "tip": "팁",
+    "warning": "주의",
+    "note": "참고"
+  },
+  "code": {
+    "copy": "복사",
+    "copied": "복사됨"
+  },
+  "figure": {
+    "open": "이미지를 원래 크기로 열기",
+    "close": "닫기"
+  },
+  "pending": "이 페이지는 아직 번역되지 않아 영어로 표시합니다.",
+  "suggest": {
+    "text": "이 문서는 한국어로도 읽을 수 있습니다.",
+    "switch": "한국어로 읽기",
+    "dismiss": "괜찮습니다"
+  },
+  "footer": {
+    "license": "VRChat DLSS5 Cam은 MIT 라이선스를 따르는 무료 소프트웨어입니다.",
+    "notAffiliated": "VRChat Inc. 또는 NVIDIA Corporation과 무관합니다.",
+    "source": "GitHub의 소스 코드",
+    "releases": "릴리스",
+    "report": "문제 신고",
+    "privacy": "개인정보와 라이선스",
+    "icons": "아이콘: Lucide(ISC 라이선스)"
+  },
+  "notFound": {
+    "title": "페이지를 찾을 수 없습니다",
+    "text": "이 페이지는 존재하지 않습니다. 다른 곳으로 옮겨졌을 수 있습니다.",
+    "home": "시작 페이지로 가기"
+  },
+  "home": {
+    "eyebrow": "문서",
+    "download": "다운로드",
+    "start": "가이드 시작하기",
+    "allReleases": "모든 릴리스와 릴리스 노트"
+  },
+  "downloads": {
+    "geforceTitle": "GeForce 에디션",
+    "geforceCards": "Windows · NVIDIA GeForce RTX 20 / 30 / 40 / 50",
+    "geforceNote": "대부분은 이 파일을 받으면 됩니다. DLSS 5가 들어 있어 따로 설치할 것이 없습니다.",
+    "radeonTitle": "Radeon 에디션",
+    "radeonCards": "Windows 11 · AMD Radeon RX 7000 / 9000",
+    "radeonNote": "앱이 대신 설치해 주는 별도 프로그램으로 DLSS 5를 실행합니다.",
+    "linuxTitle": "Linux 패키지",
+    "linuxCards": "Linux · NVIDIA GeForce RTX 20 / 30 / 40 / 50",
+    "linuxNote": "Proton에서 사진과 동영상을 처리합니다. 실시간 카메라는 없습니다.",
+    "button": "다운로드",
+    "more": "자세히"
+  },
+  "wipe": {
+    "original": "원본",
+    "output": "출력",
+    "label": "비교선: 드래그하거나 화살표 키로 옮기세요"
+  },
+  "diagram": {
+    "liveLabel": "VRChat 카메라에서 내 파일까지",
+    "liveCamera": "VRChat 카메라",
+    "liveCameraSub": "Stream 모드",
+    "liveSpout": "Spout Stream",
+    "liveSpoutSub": "화면을 보냄",
+    "liveApp": "VRChat DLSS5 Cam",
+    "liveAppSub": "DLSS 5 적용",
+    "liveFile": "내 PNG",
+    "liveFileSub": "Ctrl+Alt+P",
+    "pipeLabel": "이미지가 거치는 과정",
+    "pipeInput": "내 이미지",
+    "pipeInputSub": "카메라 프레임, 사진 또는 동영상",
+    "pipeDlaa": "DLAA 또는 초해상도",
+    "pipeDlaaSub": "켰을 때만",
+    "pipeNeural": "DLSS 5 뉴럴 패스",
+    "pipeNeuralSub": "빛과 디테일을 다시 렌더링",
+    "pipeComposite": "합성",
+    "pipeCompositeSub": "출력 블렌드, 1을 넘는 강도",
+    "pipeOutput": "내 파일",
+    "pipeOutputSub": "PNG, MP4, GIF, APNG, WebP",
+    "pipeTakes": "입력",
+    "pipePicture": "이미지",
+    "pipeMotion": "모션 벡터",
+    "pipeDepth": "깊이",
+    "pipeOptional": "선택",
+    "updateLabel": "업데이트가 도착하는 과정",
+    "updateCheck": "시작 시 확인",
+    "updateCheckSub": "GitHub 또는 미러 사이트",
+    "updateWindow": "업데이트가 있습니다",
+    "updateWindowSub": "내 언어로 된 릴리스 노트",
+    "updateDownload": "지금 업데이트",
+    "updateDownloadSub": "내려받아 압축 풀기",
+    "updateRestart": "다시 시작",
+    "updateRestartSub": "설정과 라이브러리는 그대로"
+  },
+  "tree": {
+    "programTitle": "압축을 푼 폴더",
+    "programSub": "원하는 위치 어디든(예: 문서)",
+    "exe": "프로그램: 더블클릭해 실행",
+    "runtimes": "DLSS 5 런타임. RTX 50용 빌드와 RTX 40 / 30 / 20용 빌드",
+    "models": "깊이 네트워크",
+    "licenses": "라이선스 전문",
+    "docs": "README 파일과 이 문서",
+    "readme": "전체 레퍼런스",
+    "settingsTitle": "설정 폴더",
+    "settingsSub": "프로그램이 사용자 프로필 안에 만듭니다",
+    "settingsIni": "모든 설정",
+    "presetsTxt": "내 프리셋",
+    "logTxt": "이번 세션과 그 전 다섯 세션의 로그",
+    "crashTxt": "충돌한 뒤에만 생깁니다",
+    "picturesTitle": "내 이미지",
+    "picturesSub": "다른 폴더를 고르지 않으면 저장한 파일이 들어가는 곳",
+    "pictures": "촬영한 사진, 이미지, 동영상"
+  },
+  "settings": {
+    "advancedBadge": "고급"
+  },
+  "changelog": {
+    "version": "버전 {v}",
+    "full": "GitHub에서 전체 노트 보기",
+    "earlier": "이전 릴리스는 GitHub에서 볼 수 있습니다."
+  },
+  "img": {
+    "start-page": "아무것도 열려 있지 않을 때 표시되는 시작하기 페이지: 세 단계와 실시간 카메라, 사진, 동영상 카드가 하나씩 있습니다. 오른쪽에는 설정이 있습니다",
+    "setup-guide": "설정 가이드의 첫 페이지: 언어 목록, 시스템·다크·라이트 테마 버튼, 건너뛰기·이전·다음 버튼",
+    "picture-dlss5": "창에 연 VRChat 사진. 둥근 손잡이가 달린 흰 선이 사진을 나눕니다. 왼쪽은 원본, 오른쪽은 DLSS 5 출력입니다. 이미지 아래에 라이브러리, 오른쪽에 설정, 오른쪽 위에 처리 후 PNG 저장 버튼이 있습니다",
+    "picture-output": "비교를 출력만 보도록 설정한 같은 사진: 이미지 전체가 DLSS 5 결과입니다",
+    "picture-depth-view": "깊이 보기로 본 같은 사진: 가까운 부분은 밝고 먼 부분은 어둡습니다",
+    "light-theme": "라이트 테마로 본 같은 창",
+    "video": "비교선과 함께 창에 연 동영상. 이미지 아래에 타임라인, 재생·프레임 이동 버튼, 시간, 여기를 시작점으로·여기를 끝점으로·전체 동영상 버튼이 있습니다",
+    "library": "이미지 아래의 라이브러리에 크기가 표시된 파일 다섯 개가 있고, 오른쪽에 파일 추가, 폴더 추가, 선택 항목 처리, 모두 처리, 삭제 버튼이 있습니다",
+    "sidebar-source": "이미지 모드의 소스 섹션: 이미지 열기, 열린 파일과 그 크기, 사용자 지정 출력 해상도",
+    "sidebar-dlss5": "고급을 켠 상태의 DLSS 5 뉴럴 렌더링 섹션: 동작 중 배지가 붙은 DLSS 5(DLSSNR) 사용, 런타임 경로, 프리셋, 스타일, 강도 슬라이더 네 개, 출력 블렌드, 측정값",
+    "sidebar-output": "촬영 섹션: 처리 후 PNG 저장 버튼, 저장 폴더, 출력 파일 이름, 원본 프레임도 저장, 투명도(알파) 유지",
+    "sidebar-depth-motion": "프레임 가이던스(모션·깊이) 섹션: 모션 벡터, 플로우 그리드, 플로우 품질, 깊이, 깊이 네트워크 해상도, 깊이 모델",
+    "sidebar-display": "표시 섹션: 테마, 비교, 확대, 투명 영역에 체커보드, 라이브러리 표시, 오버레이 정보 표시, 로그 표시, 시작할 때 마지막 파일 다시 열기, 수직 동기화, 처리 속도 상한",
+    "sidebar-mcp": "MCP 섹션: MCP 서버 실행, 접근 범위, 포트, 읽기 전용, 클라이언트 설정 복사, 키와 작업 대기열",
+    "sidebar-about": "정보 섹션: 버전, 드라이버 확인, 업데이트 채널, GitHub 접속 방식, 그리고 업데이트 확인, 로그 파일 열기, 설정 폴더 열기, 문제 신고, 문서, 설정 가이드 버튼",
+    "driver-notice": "‘그래픽 드라이버 업데이트가 필요합니다’ 알림: 막대 왼쪽에 설치된 드라이버 536.99, 오른쪽에 필요한 616.56, 그리고 닫기와 드라이버 다운로드 버튼",
+    "update-window": "‘업데이트가 있습니다’ 창: 버전, 스크롤되는 상자 안의 릴리스 노트, 지금 업데이트·릴리스 페이지·나중에 버튼",
+    "radeon-sidebar": "Radeon 에디션의 DLSS 5 섹션: DLSS-NR-on-AMD 설치, 라이선스, 릴리스 페이지, 다시 불러오기 버튼과 그 아래의 요구 사항"
+  }
+}

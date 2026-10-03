@@ -1,0 +1,17 @@
+<p>動画は、写真と同じ DLSS 5 のパスを 1 フレームずつ通ります。アニメーション GIF、APNG、WebP のファイルも動画として扱います。</p>
+<h2 id="open">動画を開<span class="h-end">く<a class="anchor" href="#open" aria-label="このセクションへのリンク"><i/></a></span></h2>
+<ol class="steps"><li><p>「はじめましょう」ページの <strong>動画を開く</strong>、または <strong>ソース</strong> セクションの <strong>動画を開く…</strong> をクリックします。ファイルをウィンドウにドラッグしても開けます。</p>
+<p class="check"><i/><span>最初のフレームが表示され、その下に動画のコントロールが現れます。</span></p></li></ol>
+<p>Windows で再生できるものであれば、MP4、MOV、MKV、WebM、AVI が開けます。アニメーション GIF、APNG、WebP も開けます。</p>
+<figure data-n="video" alt="">比較の境界線を表示した動画。画像の下にコントロールがあります。</figure>
+<h2 id="range">再生して範囲を選<span class="h-end">ぶ<a class="anchor" href="#range" aria-label="このセクションへのリンク"><i/></a></span></h2>
+<ul><li><span class="keys"><kbd>Space</kbd></span> で再生と一時停止を切り替えます。プレビューは全フレームを DLSS 5 に通すため、実際の速さより遅く再生されることがあります。保存される動画は通常の速さのままです。</li><li><span class="keys"><kbd>←</kbd></span> と <span class="keys"><kbd>→</kbd></span> で 1 フレームずつ、<span class="keys"><kbd>Shift</kbd></span> を押しながらなら 10 フレームずつ移動します。<span class="keys"><kbd>Home</kbd></span> と <span class="keys"><kbd>End</kbd></span> で先頭と末尾に移動します。</li><li>シークバーにマウスを合わせると、その位置の小さな画像が表示されます。</li><li><strong>ここを開始点に</strong>（キー <span class="keys"><kbd>I</kbd></span>）と <strong>ここを終了点に</strong>（キー <span class="keys"><kbd>O</kbd></span>）で、保存する範囲を決めます。<strong>動画全体</strong> で範囲の指定を解除します。音声も同じ範囲になります。</li></ul>
+<h2 id="save">保存す<span class="h-end">る<a class="anchor" href="#save" aria-label="このセクションへのリンク"><i/></a></span></h2>
+<ol class="steps"><li><p><strong>撮影</strong> → <strong>推定処理時間</strong> を確認します。お使いのカードでその動画にかかるおおよその時間がわかります。</p></li><li><p>右上の <strong>処理して動画を保存</strong> をクリックします。</p>
+<p class="check"><i/><span>バーに進み具合と残り時間が表示されます。その間は設定がロックされ、<strong>キャンセル</strong> で処理を止められます。</span></p></li></ol>
+<p>最初は、結果が元の動画に合わせられます。形式、フレームレート、ビットレートが同じになります。GIF は GIF のままループ回数も引き継がれ、各フレームはそれぞれの表示時間を保ちます。</p>
+<h2 id="format">別の形式で保存す<span class="h-end">る<a class="anchor" href="#format" aria-label="このセクションへのリンク"><i/></a></span></h2>
+<p><strong>ソース</strong> → <strong>元動画の仕様に合わせる</strong> をオフにすると、<strong>保存形式</strong> で形式を選べます。</p>
+<div class="table-wrap" tabindex="0"><table><thead><tr><th>保存形式</th><th>向いている用途</th></tr></thead><tbody><tr><td>MP4 (H.264)</td><td>どこでも共有できます。音声も残ります。</td></tr><tr><td>MP4 (HEVC)</td><td>同じ画質でファイルが小さくなります。音声も残ります。</td></tr><tr><td>PNG 連番</td><td>すべてのフレームをロスレス PNG として、専用のフォルダーに保存します。容量は大きくなります。</td></tr><tr><td>GIF</td><td>短いループ向け。1 フレームあたり 256 色、1 秒あたり最大 50 フレームです。</td></tr><tr><td>APNG</td><td>ロスレスのアニメーション。</td></tr><tr><td>WebP</td><td>非可逆またはロスレスのアニメーション（<strong>WebP 品質</strong> 100 でロスレス）。</td></tr></tbody></table></div>
+<p>MP4 では、<strong>ビットレート</strong>（40 Mbit/s なら 4K でも圧縮ノイズはほとんど目立ちません）と <strong>音声を保持</strong> も設定します。</p>
+<aside class="callout callout-note"><p class="callout-title"><i/><span>補足</span></p><p>HEVC ファイルには Microsoft Store の <strong>HEVC ビデオ拡張機能</strong> が、Windows の N エディションには <strong>Media Feature Pack</strong> が必要です。動画が開けない、または色がおかしい場合は、<strong>ソース</strong> → <strong>ハードウェアデコード</strong> をオフにしてください。</p></aside>

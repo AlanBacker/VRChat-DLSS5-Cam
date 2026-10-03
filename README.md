@@ -6,6 +6,8 @@
 
 **English** · [简体中文](docs/README.zh-CN.md) · [日本語](docs/README.ja.md) · [한국어](docs/README.ko.md)
 
+**New here?** The [documentation site](https://alanbacker.github.io/VRChat-DLSS5-Cam/) walks you from the download to your first picture step by step, with pictures, in English, 简体中文, 日本語 and 한국어. The *Documentation* button in the application opens it in the interface's language. This page is the full reference.
+
 VRChat DLSS5 Cam applies NVIDIA **DLSS 5 Neural Rendering** to the output of VRChat's camera on a GeForce RTX card
 and records the result as a lossless PNG. Images and videos on disk pass through the same pipeline, individually or
 as a batch. It is an ordinary Windows application: the VRChat process is never touched, and no mod is required.
@@ -259,8 +261,8 @@ is kept across sessions as well.
   gap's edge** — the one that turns blue under the mouse, where the pointer becomes a resize arrow — is the drag
   target for the sidebar's width or the library's height, and the thumbnails grow or shrink with it. Both sizes are
   remembered for the next start. While a file is being processed the sidebar is locked and offers *Cancel*.
-- **Help** is one click away: the *?* button in the top bar (or *Documentation* in *About*) opens this guide in the
-  interface's language.
+- **Help** is one click away: the *?* button in the top bar (or *Documentation* in *About*) opens the
+  [documentation site](https://alanbacker.github.io/VRChat-DLSS5-Cam/) in the interface's language.
 - **At start** a small card with the icon, the name, the version (marked *Pre-release* on pre-release builds), a
   status line and a moving bar shows what the application is doing; the window itself fades in only once its first
   frame is ready, so no blank window appears at the start. The file from the last session is opened again only if

@@ -1,0 +1,179 @@
+{
+  "_status": "source",
+  "langName": "English",
+  "site": {
+    "docs": "Documentation",
+    "titleSuffix": "VRChat DLSS5 Cam",
+    "homeTitle": "VRChat DLSS5 Cam documentation"
+  },
+  "nav": {
+    "skip": "Skip to the content",
+    "guide": "Guide",
+    "reference": "Reference",
+    "menu": "Menu",
+    "closeMenu": "Close the menu",
+    "contents": "Contents",
+    "onThisPage": "On this page",
+    "step": "Step {n} of {m}",
+    "prev": "Previous",
+    "next": "Next",
+    "download": "Download",
+    "language": "Language",
+    "linkHere": "Link to this section",
+    "toTop": "Back to the top",
+    "home": "Start here"
+  },
+  "theme": {
+    "label": "Theme",
+    "system": "System",
+    "dark": "Dark",
+    "light": "Light"
+  },
+  "search": {
+    "placeholder": "Search the documentation",
+    "clear": "Clear the search",
+    "none": "Nothing found. Try a shorter word.",
+    "results": "{n} results",
+    "result": "1 result"
+  },
+  "callout": {
+    "tip": "Tip",
+    "warning": "Careful",
+    "note": "Note"
+  },
+  "code": {
+    "copy": "Copy",
+    "copied": "Copied"
+  },
+  "figure": {
+    "open": "Open the picture at full size",
+    "close": "Close"
+  },
+  "pending": "This page has not been translated yet, so it is shown in English.",
+  "suggest": {
+    "text": "This documentation is also available in English.",
+    "switch": "Read in English",
+    "dismiss": "No, thanks"
+  },
+  "footer": {
+    "license": "VRChat DLSS5 Cam is free software under the MIT licence.",
+    "notAffiliated": "Not affiliated with VRChat Inc. or NVIDIA Corporation.",
+    "source": "Source code on GitHub",
+    "releases": "Releases",
+    "report": "Report a problem",
+    "privacy": "Privacy and licences",
+    "icons": "Icons: Lucide (ISC licence)"
+  },
+  "notFound": {
+    "title": "Page not found",
+    "text": "This page does not exist. It may have moved.",
+    "home": "Go to the start page"
+  },
+  "home": {
+    "eyebrow": "Documentation",
+    "download": "Download",
+    "start": "Start the guide",
+    "allReleases": "All releases and release notes"
+  },
+  "downloads": {
+    "geforceTitle": "GeForce edition",
+    "geforceCards": "Windows · NVIDIA GeForce RTX 20 / 30 / 40 / 50",
+    "geforceNote": "Most people want this one. DLSS 5 is included, nothing else to install.",
+    "radeonTitle": "Radeon edition",
+    "radeonCards": "Windows 11 · AMD Radeon RX 7000 / 9000",
+    "radeonNote": "Runs DLSS 5 through a separate program that the app installs for you.",
+    "linuxTitle": "Linux package",
+    "linuxCards": "Linux · NVIDIA GeForce RTX 20 / 30 / 40 / 50",
+    "linuxNote": "Pictures and videos under Proton. No live camera.",
+    "button": "Download",
+    "more": "Details"
+  },
+  "wipe": {
+    "original": "Original",
+    "output": "Output",
+    "label": "Comparison line: drag it, or use the arrow keys"
+  },
+  "diagram": {
+    "liveLabel": "From the VRChat camera to your file",
+    "liveCamera": "VRChat camera",
+    "liveCameraSub": "Stream mode",
+    "liveSpout": "Spout Stream",
+    "liveSpoutSub": "sends the picture",
+    "liveApp": "VRChat DLSS5 Cam",
+    "liveAppSub": "applies DLSS 5",
+    "liveFile": "Your PNG",
+    "liveFileSub": "Ctrl+Alt+P",
+    "pipeLabel": "What happens to a picture",
+    "pipeInput": "Your picture",
+    "pipeInputSub": "a frame of the camera, a photo or a video",
+    "pipeDlaa": "DLAA or super resolution",
+    "pipeDlaaSub": "only when you turn it on",
+    "pipeNeural": "DLSS 5 neural pass",
+    "pipeNeuralSub": "re-renders the light and detail",
+    "pipeComposite": "Composite",
+    "pipeCompositeSub": "output blend, strengths above 1",
+    "pipeOutput": "Your file",
+    "pipeOutputSub": "PNG, MP4, GIF, APNG, WebP",
+    "pipeTakes": "takes",
+    "pipePicture": "picture",
+    "pipeMotion": "motion vectors",
+    "pipeDepth": "depth",
+    "pipeOptional": "optional",
+    "updateLabel": "How an update arrives",
+    "updateCheck": "Check at start",
+    "updateCheckSub": "GitHub or a mirror site",
+    "updateWindow": "Update available",
+    "updateWindowSub": "notes in your language",
+    "updateDownload": "Update now",
+    "updateDownloadSub": "downloads and unpacks",
+    "updateRestart": "Restart",
+    "updateRestartSub": "settings and library stay"
+  },
+  "tree": {
+    "programTitle": "The folder you unzipped",
+    "programSub": "anywhere you like, for example Documents",
+    "exe": "the program: double-click to start",
+    "runtimes": "DLSS 5 runtime, one build for RTX 50, one for RTX 40 / 30 / 20",
+    "models": "the depth network",
+    "licenses": "licence texts",
+    "docs": "the README files and these documents",
+    "readme": "the full reference",
+    "settingsTitle": "Settings folder",
+    "settingsSub": "made by the program, in your user profile",
+    "settingsIni": "every setting",
+    "presetsTxt": "your presets",
+    "logTxt": "the log of this session, and of the five before it",
+    "crashTxt": "only after a crash",
+    "picturesTitle": "Your pictures",
+    "picturesSub": "where saved files go, unless you choose another folder",
+    "pictures": "captures, pictures, videos"
+  },
+  "settings": {
+    "advancedBadge": "Advanced"
+  },
+  "changelog": {
+    "version": "Version {v}",
+    "full": "Full notes on GitHub",
+    "earlier": "Earlier releases are listed on GitHub."
+  },
+  "img": {
+    "start-page": "The Get started page shown while nothing is open: three steps, and a card each for the live camera, a picture and a video. The settings are on the right",
+    "setup-guide": "The first page of the setup guide, with the language list, the System, Dark and Light theme buttons, and Skip, Back and Next",
+    "picture-dlss5": "A VRChat photo open in the window. A white line with a round handle splits it: the original on the left, the DLSS 5 output on the right. The library is below the picture, the settings on the right, and Process & save PNG at the top right",
+    "picture-output": "The same photo with Compare set to the output only: the whole picture is the DLSS 5 result",
+    "picture-depth-view": "The same photo in the depth view: near parts are bright, far parts are dark",
+    "light-theme": "The same window in the light theme",
+    "video": "A video open in the window with the comparison line. Under the picture are the timeline, the play and step buttons, the time, and Start here, End here and Whole video",
+    "library": "The library under the picture with five files, each with its size; the buttons Add files, Add folder, Process selected, Process all and Delete are on the right",
+    "sidebar-source": "The Source section in picture mode: Open image, the open file with its size, and Custom output resolution",
+    "sidebar-dlss5": "The DLSS 5 Neural Rendering section with Advanced on: Enable DLSS 5 (DLSSNR) with the Active badge, Runtime path, Preset, Style, the four strength sliders, Output blend and the readouts",
+    "sidebar-output": "The Capture section: the Process & save PNG button, Folder, Output file name, Also save the original frame and Keep transparency (alpha)",
+    "sidebar-depth-motion": "The Frame guidance (motion & depth) section: Motion vectors, Flow grid, Flow quality, Depth, Depth network resolution and Depth model",
+    "sidebar-display": "The Display section: Theme, Compare, Zoom, Checkerboard behind transparency, Show the library, Show overlay info, Show log, Reopen the last file at start, V-Sync and Processing rate cap",
+    "sidebar-mcp": "The MCP section: Run the MCP server, Reach, Port, Read only, Copy client configuration, the keys and the job queue",
+    "sidebar-about": "The About section: the version, driver checks, Update channel, GitHub access, and the buttons Check for updates, Open log file, Open settings folder, Report a problem, Documentation and Setup guide",
+    "driver-notice": "The notice A newer graphics driver is needed: the installed driver 536.99 on the left of a bar, the required 616.56 on the right, and the buttons Close and Download driver",
+    "update-window": "The Update available window: the version, the release notes in a scrolling box, and the buttons Update now, Release page and Later",
+    "radeon-sidebar": "The DLSS 5 section of the Radeon edition: Install DLSS-NR-on-AMD, Licence, Release page and Reload, with the requirements under them"
+  }
+}

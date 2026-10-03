@@ -1,0 +1,37 @@
+<h2 id="live">ライブカメ<span class="h-end">ラ<a class="anchor" href="#live" aria-label="このセクションへのリンク"><i/></a></span></h2>
+<h3 id="no-sender">「Spout 送信元が見つかりません<span class="h-end">」<a class="anchor" href="#no-sender" aria-label="このセクションへのリンク"><i/></a></span></h3>
+<p>映像を送っているプログラムがありません。VRChat で <strong>カメラ</strong> を開き、<strong>Stream</strong> モードに切り替えて <strong>Spout Stream</strong> をオンにしてください。カメラは開いたままにしておく必要があります。</p>
+<h3 id="waiting">「VRChat の Spout ストリームを待機中…<span class="h-end">」<a class="anchor" href="#waiting" aria-label="このセクションへのリンク"><i/></a></span></h3>
+<p>送信元は動いていますが、選んでいる送信元からまだ映像が届いていません。VRChat のカメラが開いているか確認するか、<strong>ソース</strong> → <strong>Spout 送信元</strong> で別の送信元を選んでください。</p>
+<h2 id="dlss5">DLSS <span class="h-end">5<a class="anchor" href="#dlss5" aria-label="このセクションへのリンク"><i/></a></span></h2>
+<h3 id="driver">「グラフィックドライバーの更新が必要です<span class="h-end">」<a class="anchor" href="#driver" aria-label="このセクションへのリンク"><i/></a></span></h3>
+<p>DLSS 5 には GeForce ドライバー 616.56 以降が必要です。通知の <strong>ドライバーをダウンロード</strong> をクリックし、最新のドライバーをインストールしてから、アプリを起動し直してください。<a href="install.html#driver">グラフィックドライバー</a></p>
+<h3 id="runtime-missing">「ランタイムのファイルがありません<span class="h-end">」<a class="anchor" href="#runtime-missing" aria-label="このセクションへのリンク"><i/></a></span></h3>
+<p>zip が最後まで展開されていません。<strong>すべて展開</strong> を使って、新しいフォルダーにもう一度展開してください。<code>runtimes\blackwell\nvngx_dlssnr.dll</code> と <code>runtimes\universal\nvngx_dlssnr.dll</code> のファイルが、<code>VRChatDLSS5Cam.exe</code> と同じ場所にあるはずです。</p>
+<h3 id="failed">DLSS 5 が起動しな<span class="h-end">い<a class="anchor" href="#failed" aria-label="このセクションへのリンク"><i/></a></span></h3>
+<p>アプリはもう一方の同梱ビルドを自動で試し、そのことを知らせます。どちらも起動しない場合は、次の手順を試してください。</p>
+<ol class="steps"><li><p>最新のグラフィックドライバーをインストールします。</p></li><li><p>アプリを起動し直します。</p></li><li><p>それでも失敗する場合は、<strong>情報</strong> → <strong>問題を報告</strong> から、<code>log.txt</code> を添えて報告してください。</p></li></ol>
+<h3 id="unchanged">動作中なのに画像が黒い、または変わらな<span class="h-end">い<a class="anchor" href="#unchanged" aria-label="このセクションへのリンク"><i/></a></span></h3>
+<p>アプリは DLSS 5 のフレームを毎回入力と比べ、ランタイムが黒い画像や変化のない画像を返すと警告します。<strong>DLSS 5（DLSSNR）を有効化</strong> を一度オフにして、もう一度オンにしてください。<strong>強度</strong> が 0 のときは画像が変わらないのが正常で、警告も出ません。</p>
+<h2 id="slow">速<span class="h-end">度<a class="anchor" href="#slow" aria-label="このセクションへのリンク"><i/></a></span></h2>
+<h3 id="live-slow">ライブ映像が重<span class="h-end">い<a class="anchor" href="#live-slow" aria-label="このセクションへのリンク"><i/></a></span></h3>
+<p>次のことを 1 つずつ試してください。</p>
+<ol class="steps"><li><p><strong>DLAA プリパス</strong> と <strong>DLSS 超解像</strong> をオンにしている場合は、オフにします。</p></li><li><p><strong>ニューラルパス解像度</strong> を小さくします。たとえば <strong>長辺 1440 px まで</strong> を選びます。</p></li><li><p><strong>処理レート上限</strong> を設定します。</p></li><li><p><strong>撮影時のみニューラルパスを実行</strong> をオンにします。プレビューは休みますが、写真には DLSS 5 がかかります。</p></li></ol>
+<p>これらのコントロールは、<strong>詳細</strong> がオンのときに表示されます。<strong>フローグリッド</strong> は 4 px のままにしてください。2 px と 1 px は、4K では負担がずっと大きくなります。</p>
+<h3 id="device-lost">「グラフィックデバイスが失われました<span class="h-end">」<a class="anchor" href="#device-lost" aria-label="このセクションへのリンク"><i/></a></span></h3>
+<p>グラフィックドライバーがカードをリセットしました。Windows は 1 つの処理につき約 2 秒をカードに与えますが、長い間フル稼働しているカードは、それに間に合わないことがあります。たとえば、VRChat と DLSS 5 が同じカードで大きなサイズで動いているときです。アプリは自動で再起動し、そのことを知らせます。</p>
+<p>繰り返し起きる場合は、負担を減らしてください。処理レート上限、ニューラルパス解像度を小さくする、出力サイズを小さくする、VRChat でフレームレートを制限する、といった方法があります。新しいグラフィックドライバーを試す価値もあります。</p>
+<h2 id="videos">動<span class="h-end">画<a class="anchor" href="#videos" aria-label="このセクションへのリンク"><i/></a></span></h2>
+<h3 id="video-black">動画のプレビューが黒<span class="h-end">い<a class="anchor" href="#video-black" aria-label="このセクションへのリンク"><i/></a></span></h3>
+<p>多くの動画は、黒からのフェードで始まります。プレビューはそうしたフレームを飛ばし、画像の下でそのことを知らせます。シークバーか矢印キーで先に進んでください。</p>
+<h3 id="video-codecs">動画が開けない、または MP4 で保存できな<span class="h-end">い<a class="anchor" href="#video-codecs" aria-label="このセクションへのリンク"><i/></a></span></h3>
+<p>どの形式が使えるかは Windows が決めます。HEVC ファイルには Microsoft Store の <strong>HEVC ビデオ拡張機能</strong> が、Windows の N エディションには <strong>Media Feature Pack</strong> が必要です。グラフィックカードが受け付けないファイルは、<strong>ソース</strong> → <strong>ハードウェアデコード</strong> をオフにすると開けることがあります。出力形式を <strong>PNG 連番</strong> にすれば、必ず保存できます。</p>
+<h2 id="updates">アップデー<span class="h-end">ト<a class="anchor" href="#updates" aria-label="このセクションへのリンク"><i/></a></span></h2>
+<h3 id="update-folder">アップデートをインストールできな<span class="h-end">い<a class="anchor" href="#update-folder" aria-label="このセクションへのリンク"><i/></a></span></h3>
+<p>アプリのフォルダーには書き込める必要がありますが、<code>Program Files</code> の下のフォルダーは通常書き込めません。アプリを自分のフォルダーに移すか、リリースページから新しい zip をダウンロードして、手動でファイルを置き換えてください。設定とライブラリは残ります。</p>
+<h3 id="update-check">更新の確認に失敗す<span class="h-end">る<a class="anchor" href="#update-check" aria-label="このセクションへのリンク"><i/></a></span></h3>
+<p>GitHub が遅い、またはつながらない場合は、<strong>情報</strong> → <strong>GitHub へのアクセス</strong> → <strong>ミラーサイト（最速を自動選択）</strong> を選んでください。<a href="updates.html#mirror">アップデート</a></p>
+<h2 id="crash">アプリが閉じた・クラッシュし<span class="h-end">た<a class="anchor" href="#crash" aria-label="このセクションへのリンク"><i/></a></span></h2>
+<p>次に起動したとき、アプリは前回のセッションが正常に終了しなかったことに気づきます。ウィンドウが開き、記入済みの Issue フォームを開く <strong>GitHub で報告</strong> と、<strong>ログフォルダを開く</strong> が表示されます。</p>
+<p>ログフォルダーは <code>%LOCALAPPDATA%\VRChatDLSS5Cam</code> です。報告には <code>log-crash.txt</code> と <code>crash.txt</code> を添えてください。<strong>情報</strong> → <strong>問題を報告</strong> もいつでも使えます。</p>
+<aside class="callout callout-tip"><p class="callout-title"><i/><span>ヒント</span></p><p>報告する前に、報告フォームに一度目を通してください。アプリのバージョンとお使いのグラフィックカードが記入されています。送信するまで、何も送られることはありません。</p></aside>

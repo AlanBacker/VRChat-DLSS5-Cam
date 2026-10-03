@@ -1,0 +1,61 @@
+---
+title: Privacy and licences
+nav: Privacy and licences
+description: What the app sends over the network (almost nothing), and the licences of the app and its parts.
+---
+## Nothing is uploaded {#nothing-uploaded}
+
+Your pictures, videos and settings stay on your computer. The app has no account, no tracking and no usage statistics. All processing runs on your own graphics card.
+
+## When the app goes online {#network}
+
+The app connects to the internet only for these things:
+
+| What | When | Where to |
+|---|---|---|
+| Update check {#update-check} | At every start, unless **Check for updates at start** is off; and when you click **Check for updates**. | GitHub, or the mirror site you chose under **GitHub access**. |
+| Update download {#update-download} | Only when you click **Update now**, or run `--update` or `--edition`. | The same. |
+| Measuring mirror sites {#mirror-sites} | When **Mirror sites, the fastest one** is chosen, or you click **Measure the sites**. | The eight known mirror sites. |
+| DLSS-NR-on-AMD {#port} | Radeon edition only: the look-up of its newest release, and the installer download when you click the button. | That project's release page on GitHub, or the chosen mirror site. |
+
+Runs from the command line with `--headless` or `--process` never check for updates on their own.
+
+Buttons such as **Documentation**, **Download driver** and **Report a problem** open a page in your browser. **Report a problem** fills in the app version and your graphics card in GitHub's form; nothing is sent until you submit it.
+
+## The MCP server {#mcp}
+
+The MCP server is off until you turn it on. When on, it listens on your computer only and never connects anywhere by itself. Other computers can reach it only after you set **Reach** to **Local network** and give them a key. [MCP](mcp.html)
+
+## This site {#this-site}
+
+These pages load nothing from other servers: no fonts, no scripts, no tracking. The theme and language you choose are kept in your browser only.
+
+## Licence {#licence}
+
+The app's licence statement, as it stands in the README:
+
+> MIT (see `LICENSE`). Third-party components and the NVIDIA notice are listed in `THIRD_PARTY_NOTICES.md`. This project is not affiliated with VRChat Inc. or NVIDIA Corporation.
+
+The full texts: [LICENSE](https://github.com/AlanBacker/VRChat-DLSS5-Cam/blob/main/LICENSE) and [THIRD_PARTY_NOTICES.md](https://github.com/AlanBacker/VRChat-DLSS5-Cam/blob/main/THIRD_PARTY_NOTICES.md). Both are also in the app's folder, and **About** → **Third-party notices** opens them.
+
+## Parts the app uses {#components}
+
+| Part | Licence |
+|---|---|
+| NVIDIA DLSS 5 runtime (`nvngx_dlssnr.dll`) | NVIDIA's software under NVIDIA's terms, not covered by the app's MIT licence. GeForce edition: two builds; Radeon edition: one, for DLSS-NR-on-AMD's installer. |
+| NVIDIA DLSS SDK (NGX, `nvngx_dlss.dll`) | NVIDIA RTX SDKs License Agreement. |
+| NVIDIA Optical Flow SDK (interface headers) | MIT. |
+| AMD FidelityFX SDK (`amd_fidelityfx_dx12.dll`, Radeon edition) | MIT. |
+| Spout2 | BSD 2-Clause. |
+| Dear ImGui | MIT. |
+| dlss5-bridge | MIT. |
+| ONNX Runtime | MIT. |
+| DirectML | Microsoft's DirectML licence, which allows shipping it with apps. |
+| Depth Anything V2 Small | Apache License 2.0. |
+| libwebp | BSD 3-Clause. |
+| Lucide icons | ISC; the icons derived from Feather also MIT. |
+| Direct3D shader compiler (`d3dcompiler_47.dll`, Linux package) | Microsoft Software License Terms for the Windows SDK. |
+
+**DLSS-NR-on-AMD** is not included. It is a separate project under its own terms, which allow personal, non-commercial use and no redistribution. The Radeon edition downloads its installer from that project's release page only when you ask.
+
+This site uses Lucide icons under the ISC licence; the licence text is in [assets/licenses/lucide-LICENSE.txt]({root}assets/licenses/lucide-LICENSE.txt).

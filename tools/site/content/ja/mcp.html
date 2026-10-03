@@ -1,0 +1,27 @@
+<p>MCP（Model Context Protocol）は、あるプログラムが別のプログラムを使うためのオープンな標準です。MCP を使うと、Claude Desktop、Claude Code、Cursor などの <strong>MCP クライアント</strong> が、ウィンドウと同じ操作で画像や動画を開き、設定を変え、ライブラリを処理し、撮影した画像を保存し、プレビューを確認できます。</p>
+<p>クライアントが行った操作はウィンドウに表示され、<span class="keys"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>Z</kbd></span> で元に戻せ、手で行った変更と同じように保存されます。</p>
+<p>このページでは基本を説明します。すべてのツールと決まりは、GitHub の <a class="ext" href="https://github.com/AlanBacker/VRChat-DLSS5-Cam/blob/main/docs/MCP.md" rel="noopener">docs/MCP.md</a> にあります。</p>
+<h2 id="default">最初から安全で<span class="h-end">す<a class="anchor" href="#default" aria-label="このセクションへのリンク"><i/></a></span></h2>
+<ul><li>サーバーは、オンにするまで動きません。</li><li>オンにしても、待ち受けるのはこの PC（<code>127.0.0.1</code>）だけで、自分からどこかに接続することはありません。</li><li>Web ページからのリクエストは拒否します。</li><li><strong>読み取り専用</strong> にすると、クライアントは閲覧だけができ、何も変更できません。</li></ul>
+<h2 id="local">この PC のクライアントを接続す<span class="h-end">る<a class="anchor" href="#local" aria-label="このセクションへのリンク"><i/></a></span></h2>
+<ol class="steps"><li><p>サイドバーで <strong>MCP</strong> を開き、<strong>MCP サーバーを実行</strong> をオンにします。</p>
+<p class="check"><i/><span>状態の行にアドレスが表示されます。最初は <code>http://127.0.0.1:51550/mcp</code> です。</span></p></li><li><p><strong>クライアント設定をコピー</strong> をクリックします。</p></li><li><p>MCP クライアントの設定に貼り付け、クライアントを再起動します。設定の場所は、Claude Desktop では Settings → Developer → Edit Config、Cursor では Settings → MCP → Add new server です。</p></li></ol>
+<p>この設定は <code>--mcp</code> を付けてアプリを起動します。これはクライアントのメッセージを中継するブリッジで、アプリが起動していなければアプリを起動します。</p>
+<div class="code" data-lang="json"><pre><code>{
+  "mcpServers": {
+    "vrchat-dlss5-cam": {
+      "command": "C:\\Path\\To\\VRChatDLSS5Cam.exe",
+      "args": ["--mcp"]
+    }
+  }
+}</code></pre></div>
+<p>URL を受け付けるクライアントは、起動中のアプリに直接接続します。Claude Code の場合：</p>
+<div class="code"><pre><code><span class="ln"><span class="w">claude</span> <span class="w">mcp</span> <span class="w">add</span> <span class="w">--transport</span> <span class="w">http</span> <span class="w">vrchat-dlss5-cam</span> <span class="w">http://127.0.0.1:51550/mcp</span></span></code></pre></div>
+<figure data-n="sidebar-mcp" alt="">「MCP」セクション。</figure>
+<h2 id="remote">別の PC から処理を送ってもら<span class="h-end">う<a class="anchor" href="#remote" aria-label="このセクションへのリンク"><i/></a></span></h2>
+<p>強力なカードを積んだ 1 台の PC で、ほかの何台もの処理を引き受けられます。チャットボット、スクリプト、別の PC のクライアントが画像や動画を送り、順番を待って、結果を受け取ります。</p>
+<ol class="steps"><li><p><strong>到達範囲</strong> を <strong>ローカルネットワーク</strong> にし、<strong>Windows ファイアウォールで許可</strong> をクリックして、管理者権限の確認を承認します。</p></li><li><p><strong>鍵</strong> でクライアントの名前を入力し、役割に <strong>ジョブ</strong> を選んで <strong>鍵を追加</strong> をクリックします。</p>
+<p class="check"><i/><span>鍵がクリップボードにコピーされます。その鍵は、そのクライアントだけに渡してください。</span></p></li><li><p>状態の行の下に表示されるアドレス（たとえば <code>http://192.168.1.20:51550/mcp</code>）をクライアントに伝えます。</p></li></ol>
+<div class="table-wrap" tabindex="0"><table><thead><tr><th>役割</th><th>できること</th></tr></thead><tbody><tr><td>閲覧</td><td>見るだけです。状態、設定、ログ、プレビュー、ライブラリ。</td></tr><tr><td>ジョブ</td><td>ファイルを送り、自分のジョブの進み具合を確認して結果を受け取ります。それ以外はできません。</td></tr><tr><td>管理者</td><td>ウィンドウでできることすべて。</td></tr></tbody></table></div>
+<aside class="callout callout-warning"><p class="callout-title"><i/><span>注意</span></p><p>ポートは家庭内のネットワークか VPN の中だけにとどめてください。サーバーは暗号化されていない HTTP で通信し、クライアントに必要なのは鍵だけです。ポートをインターネットに公開しないでください。</p></aside>
+<p>ジョブは、ウィンドウでのあなた自身の作業のあとに、1 つずつ実行されます。セクションの <strong>ジョブ</strong> には、待機中と実行中の数が表示されます。<strong>結果の保持（時間）</strong> では、完成したファイルをクライアントのために残しておく時間を設定します。</p>

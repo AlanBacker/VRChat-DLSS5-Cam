@@ -1,0 +1,21 @@
+<h2 id="requirements">必要なも<span class="h-end">の<a class="anchor" href="#requirements" aria-label="このセクションへのリンク"><i/></a></span></h2>
+<ul><li>Windows 10（21H2 以降）または Windows 11、64 ビット。</li><li>NVIDIA GeForce RTX カード（RTX 20、30、40、50 シリーズ）。なお、AMD Radeon RX 7000 / 9000 は <a href="radeon.html">Radeon 版</a> で使えます。</li><li>ライブカメラを使う場合：VRChat（デスクトップでも VR でも可）。</li></ul>
+<p>ほかには何も要りません。DLSS 5 ランタイムはダウンロードに含まれていて、RTX 50 向けと RTX 40 / 30 / 20 向けの 2 つのビルドがあります。合うほうをアプリが自動で選びます。</p>
+<h2 id="package">ダウンロードと展<span class="h-end">開<a class="anchor" href="#package" aria-label="このセクションへのリンク"><i/></a></span></h2>
+<ol class="steps"><li><p><a href="index.html#download">ダウンロード</a> を開き、お使いのカードに合うファイルを選びます。お使いのカードが GeForce なら <code>VRChatDLSS5Cam-win64.zip</code> です。</p></li><li><p>zip を右クリックして <strong>すべて展開</strong> を選びます。展開先には、自分のフォルダー（たとえば <strong>ドキュメント</strong>）を選びます。</p>
+<p class="check"><i/><span><code>VRChatDLSS5Cam.exe</code> の入った新しいフォルダーができます。</span></p></li><li><p><code>VRChatDLSS5Cam.exe</code> をダブルクリックします。</p>
+<p class="check"><i/><span>アプリのアイコンが入った小さなカードが表示され、続いてウィンドウが開きます。</span></p></li></ol>
+<aside class="callout callout-warning"><p class="callout-title"><i/><span>注意</span></p><p>zip の中から直接起動したり、<code>Program Files</code> の下に置いたりしないでください。アプリは自分のファイルを置き換えて更新するため、管理者権限が必要なフォルダーでは更新できません。</p></aside>
+<aside class="callout callout-note"><p class="callout-title"><i/><span>補足</span></p><p>アプリは有料の証明書で署名されていないため、Windows が「Windows によって PC が保護されました」という青い画面を出すことがあります。<strong>詳細情報</strong> をクリックし、<strong>実行</strong> を押してください。ソースコードは GitHub で公開されています。</p></aside>
+<h2 id="setup-guide">セットアップガイ<span class="h-end">ド<a class="anchor" href="#setup-guide" aria-label="このセクションへのリンク"><i/></a></span></h2>
+<p>初めて起動すると、5 ページの短いセットアップガイドが開きます。</p>
+<ol class="steps"><li><p><strong>ようこそ</strong>：言語と見た目（<strong>システム</strong>、<strong>ダーク</strong>、<strong>ライト</strong>）。</p></li><li><p><strong>GitHub へのアクセス</strong>：更新のためにアプリが GitHub に接続する方法。<strong>GitHub に直接接続</strong> のままで構いません。GitHub が遅い、またはつながらない地域では <strong>ミラーサイト（最速を自動選択）</strong> を選びます。</p></li><li><p><strong>プログラムの仕組み</strong></p></li><li><p><strong>各設定の役割</strong></p></li><li><p><strong>どこに何があるか</strong></p></li></ol>
+<p><strong>次へ</strong> で先に進み、<strong>スキップ</strong> で閉じます。あとでもう一度見るには、<strong>情報</strong> → <strong>セットアップガイド</strong> を押します。</p>
+<figure data-n="setup-guide" alt="">セットアップガイドの最初のページ。</figure>
+<h2 id="driver">グラフィックドライバ<span class="h-end">ー<a class="anchor" href="#driver" aria-label="このセクションへのリンク"><i/></a></span></h2>
+<p>DLSS 5 には GeForce ドライバー <strong>616.56</strong> 以降が必要です。アプリは起動のたびにドライバーを確認し、古い場合は次のように知らせます。</p>
+<figure data-n="driver-notice" alt=""></figure>
+<ol class="steps"><li><p><strong>ドライバーをダウンロード</strong> をクリックします。ブラウザーで NVIDIA のダウンロードページが開きます。</p></li><li><p>お使いのカード向けの最新ドライバーをインストールします。</p></li><li><p>アプリを起動し直します。</p>
+<p class="check"><i/><span>通知が出なくなり、<strong>DLSS 5 ニューラルレンダリング</strong> に <strong>動作中</strong> と表示されます。</span></p></li></ol>
+<p>ドライバーが古くても、ほかの機能（表示、撮影、動画）はすべて使えます。起動しないのは DLSS 5 だけです。</p>
+<aside class="callout callout-tip"><p class="callout-title"><i/><span>ヒント</span></p><p>通知の <strong>今後表示しない</strong> にチェックすると、この確認はオフになります。<strong>情報</strong> → <strong>起動時にドライバーを確認</strong> で元に戻せます。</p></aside>

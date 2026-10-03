@@ -1,0 +1,16 @@
+<p>アプリが保存するものは、ライブカメラの写真も、処理した画像や動画も、すべて 1 つのフォルダーに入ります。最初はユーザーフォルダーの <code>Pictures\VRChat DLSS5 Cam</code> です。</p>
+<figure data-n="sidebar-output" alt="">「撮影」セクション。</figure>
+<h2 id="folder">別のフォルダーを選<span class="h-end">ぶ<a class="anchor" href="#folder" aria-label="このセクションへのリンク"><i/></a></span></h2>
+<ol class="steps"><li><p><strong>撮影</strong> を開きます。<strong>保存先</strong> の隣のフォルダーボタン（<strong>参照…</strong>）をクリックし、フォルダーを選びます。</p>
+<p class="check"><i/><span>欄に新しいフォルダーが表示されます。次のファイルからそこに保存されます。</span></p></li></ol>
+<p>その隣のボタン（<strong>開く</strong>）は、エクスプローラーでフォルダーを表示します。欄を空にすると <code>Pictures\VRChat DLSS5 Cam</code> に戻ります。</p>
+<h2 id="names">ファイル<span class="h-end">名<a class="anchor" href="#names" aria-label="このセクションへのリンク"><i/></a></span></h2>
+<p>ファイル名はテンプレートから作られます。画像モードと動画モードでは欄の名前が <strong>出力ファイル名</strong>、ライブモードでは <strong>ファイル名</strong> です。アプリは次の言葉を置き換えます。</p>
+<div class="table-wrap" tabindex="0"><table><thead><tr><th>言葉</th><th>置き換わる内容</th></tr></thead><tbody><tr><td><code>{name}</code></td><td>元ファイルの名前。ライブの写真では <code>VRChat</code>。</td></tr><tr><td><code>{date}</code></td><td>日付。<code>2026-09-14</code> のような形です。</td></tr><tr><td><code>{time}</code></td><td>時刻。<code>12-34-56.123</code> のような形です。</td></tr><tr><td><code>{size}</code></td><td>保存するサイズ。<code>1920x1080</code> のような形です。</td></tr><tr><td><code>{width}</code>、<code>{height}</code></td><td>保存する幅と高さ。</td></tr><tr><td><code>{insize}</code>、<code>{inwidth}</code>、<code>{inheight}</code></td><td>元の画像のサイズ、幅、高さ。</td></tr></tbody></table></div>
+<p>それ以外の部分は入力したとおりに残ります。同じ名前がすでにある場合は <code>_2</code>、<code>_3</code> のように番号を付けるので、上書きされることはありません。欄が空なら既定のテンプレートを使います。</p>
+<div class="table-wrap" tabindex="0"><table><thead><tr><th>保存元</th><th>既定のテンプレート</th></tr></thead><tbody><tr><td>ライブカメラ</td><td><code>VRChat_DLSS5_{date}_{time}_{size}</code></td></tr><tr><td>画像と動画</td><td><code>{name}_DLSS5_{size}</code></td></tr></tbody></table></div>
+<h2 id="options">その他のオプショ<span class="h-end">ン<a class="anchor" href="#options" aria-label="このセクションへのリンク"><i/></a></span></h2>
+<ul><li><strong>元のフレームも保存</strong>：DLSS 5 をかける前の、届いたままの画像も保存します。</li><li><strong>透明度（アルファ）を保持</strong>：透明な背景を残します。たとえば VRChat が透明度付きでストリームする場合に使います。最初はオンです。<strong>詳細</strong> がオンのときに表示されます。</li><li><strong>グローバルホットキー</strong>（ライブモード）：VRChat が前面にあるときに写真を保存するキーです。最初は <span class="keys"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>Alt</kbd><span class="plus">+</span><kbd>P</kbd></span> です。</li><li><strong>自動撮影の間隔（秒）</strong>（ライブモード）：この間隔で写真を撮ります。<strong>0 = オフ</strong> です。</li></ul>
+<h2 id="folders">アプリ自身のフォルダ<span class="h-end">ー<a class="anchor" href="#folders" aria-label="このセクションへのリンク"><i/></a></span></h2>
+<sc tree None/>
+<p><strong>情報</strong> → <strong>設定フォルダを開く</strong> で設定フォルダーが、<strong>ログファイルを開く</strong> でログが開きます。</p>
