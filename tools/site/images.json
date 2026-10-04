@@ -19,5 +19,6 @@
   "update-window":        {"look": "panel", "show": 480, "cover": [[705, 279, 800, 297]], "crop": [560, 234, 1040, 665], "langs": {"zh": {"cover": [[668, 278, 754, 296]]}, "ja": {"cover": [[786, 266, 878, 288]]}, "ko": {"cover": [[766, 276, 834, 297]]}}},
   "radeon-sidebar":       {"look": "panel", "show": 364, "crop": [1210, 676, 1574, 896], "langs": {"zh": {"crop": [1210, 612, 1574, 834]}, "ja": {"crop": [1210, 694, 1574, 962]}, "ko": {"crop": [1210, 644, 1574, 872]}}},
   "presets":              {"look": "panel", "show": 396, "crop": [1204, 114, 1600, 374], "langs": {"ja": {"crop": [1204, 114, 1600, 390]}}},
-  "history":              {"look": "panel", "crop": [852, 0, 1600, 352]}
+  "history":              {"look": "panel", "crop": [852, 0, 1600, 352]},
+  "compare-menu":         {"look": "panel", "show": 396, "crop": [1204, 108, 1600, 330], "langs": {"zh": {"crop": [1204, 250, 1600, 472]}}}
 }

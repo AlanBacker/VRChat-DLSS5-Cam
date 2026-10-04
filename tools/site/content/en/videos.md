@@ -12,7 +12,7 @@ A video goes through the same DLSS 5 pass as a photo, one frame after another. A
 
 MP4, MOV, MKV, WebM and AVI open, as far as Windows can play them, and so do animated GIF, APNG and WebP.
 
-![](video "A video with the comparison line. The controls are under the picture.")
+![](video "A video in the wipe view (Display → Compare). The controls are under the picture.")
 
 ## Play and choose a part {#range}
 

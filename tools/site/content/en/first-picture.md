@@ -19,20 +19,32 @@ A still picture runs through DLSS 5 several times until the result settles. That
 
 ## Compare {#compare}
 
-A white line with a round handle splits the picture: the original on the left, the DLSS 5 output on the right. Drag the handle to move the line. You can try it here:
+At first the picture area shows only the DLSS 5 output, the photo as DLSS 5 renders it again:
+
+![](picture-output "What the app shows at first: the DLSS 5 output alone.")
+
+To see the original next to it, switch to the wipe view:
+
+1. In the sidebar, find the section **Display**. The quickest way is to type `Compare` into **Search the settings** at the top of the sidebar.
+2. Open the **Compare** list and choose **Wipe (drag the divider)**.
+   => A white line with a round handle splits the picture: the original on the left, the DLSS 5 output on the right.
+
+![](compare-menu "The Compare list in the Display section. DLSS 5 output is the starting choice.")
+
+Drag the handle to move the line. The slider that appears under **Compare** moves it too. You can try it here:
 
 {{wipe}}
 
-![](picture-dlss5 "The photo with the comparison line. The library is below, the settings are on the right.")
+![](picture-dlss5 "The photo in the wipe view. The library is below, the settings are on the right.")
+
+The app remembers the view for the next start. To see only the result again, choose **DLSS 5 output** in the same list. **Original** shows only the photo as it was.
+
+These work in every view:
 
 - **Zoom**: turn the mouse wheel over the picture. It zooms around the pointer.
 - **Move around**: drag the picture.
 - **Whole picture again**: double-click.
 - **Fullscreen**: ((F11)). ((Esc)) or ((F11)) leaves.
-
-To see only the result, set **Display** → **Compare** to **DLSS 5 output**.
-
-![](picture-output)
 
 ## Adjust the look {#adjust}
 

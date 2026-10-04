@@ -13,7 +13,7 @@ description: 打开视频或 GIF 动图，选出想要的片段，应用 DLSS 5 
 
 能打开 MP4、MOV、MKV、WebM 和 AVI（以 Windows 能播放为准），也能打开 GIF、APNG 和 WebP 动图。
 
-![](video "带分隔线的视频。控件在画面下方。")
+![](video "分割对比视图中的视频（显示 → 对比）。控件在画面下方。")
 
 ## 播放并选择片段 {#range}
 
