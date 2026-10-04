@@ -159,6 +159,10 @@ struct UiFrameInfo {
     bool                  mirrorPrompt = false;     // open the "no site answered" popup (set for one frame)
     float                 updateProgress = 0.0f;
     double                updateDownloadedMb = 0.0, updateTotalMb = 0.0;
+    // The Ask AI panel (App's AskPanel): docked at the window's right edge while open.
+    bool                  askOpen = false;          // the panel is open (or opening); false while it slides away
+    bool                  askWebShown = false;      // the page is on screen over the panel's card
+    int                   askState = 0;             // 0 nothing yet, 1 loading, 2 ready, 3 failed
 };
 
 enum UpdateState { UpIdle, UpChecking, UpUpToDate, UpAvailable, UpDownloading, UpExtracting, UpRestarting, UpFailed };
@@ -245,7 +249,9 @@ struct UiEvents {
     bool cropEditing = false;        // the crop of the shown file is being drawn: show the whole turned picture
     SourceTransform cropPreview;     // its orientation while that lasts
     bool openDocs = false;           // the documentation in the browser (in the interface's language)
-    bool mcpOpenPage = false;        // the server's information page in the browser
+    bool askToggle = false;          // the Ask AI button: open or close the panel
+    bool askRetry = false;           // Try again in the panel after a failed start
+    bool mcpOpenPage = false;       // the server's information page in the browser
     bool mcpOpenDocs = false;        // the documentation site's MCP page in the browser
     bool mcpOpenJobs = false;        // the jobs folder in Explorer
     bool mcpFirewall = false;        // let the port through the Windows firewall (asks for elevation)
@@ -269,6 +275,10 @@ public:
     void ExternalGoToHistory(Settings& s, const UiFrameInfo& info, UiEvents& ev, int index) { GoToHistory(s, info, ev, index); }
     std::vector<std::string> HistoryLabels(int& current) const;
     bool WantsFrames() const;   // something moves or waits: keep drawing at full rate
+    // Where the Ask AI page goes (window client pixels): true once the panel has landed and nothing covers it.
+    bool AskPanelRect(ImVec2& min, ImVec2& max) const;
+    bool FullscreenSwitching() const { return m_fsPending || m_fsRise; }   // the dip to black and the rise after it
+    void ToggleFullscreen() { RequestFullscreen(); }   // F11 pressed in the Ask AI page
 
 private:
     struct ToastItem { std::string text; double time; bool error; bool success; };
@@ -448,6 +458,16 @@ private:
     double m_undoCheckTime = -1.0;   // when TrackUndo last compared the state
     double m_loadingSince = -1.0;    // since when an open source has had no picture (-1: not waiting)
     float  m_toastBottom = 0.0f;     // the notices stack up from here (just above the status bar or the video controls)
+    // The Ask AI panel: its card at the window's right edge, under the page.
+    float  m_askT = 0.0f;            // how far it has slid in (0..1, eased)
+    ImVec2 m_askMin, m_askMax;       // the card's rectangle this frame
+    bool   m_askLanded = false;      // fully in, and its own content (the arc, a failure) faded out: the page may show
+    double m_askLoadingSince = -1.0; // the page began to load (the arc waits a moment before it shows)
+    float  m_askCut = 0.0f;          // the main viewport ends here while the panel is in (0: it is not)
+    bool   m_askTrimmed = false;     // the viewport is cut at m_askCut now
+    float  m_vpW = 0.0f, m_vpWorkW = 0.0f;   // its widths before the cut
+    void   AskTrim(bool on);         // the main viewport ends at the panel's left edge (on) or at the window's (off)
+    void   DrawAskCard(const UiFrameInfo& info, UiEvents& ev);   // the card, and what it shows while the page is not there
     // Presets.
     const std::vector<UserPreset>* m_presetList = nullptr;
     char   m_presetBuf[96] = {};

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(VRChatDLSS5Cam VERSION 2.0.3 LANGUAGES CXX)
+project(VRChatDLSS5Cam VERSION 2.1.0 LANGUAGES CXX)
 
 if(NOT WIN32)
   message(FATAL_ERROR "VRChat DLSS5 Cam targets Windows only.")
@@ -31,6 +31,8 @@ include(cmake/FetchFidelityFX.cmake)
 # wants a depth buffer, a Spout stream has none). Downloaded from NuGet / Hugging Face.
 include(cmake/FetchOnnxRuntime.cmake)
 include(cmake/FetchLibWebP.cmake)
+# The Edge WebView2 SDK (static loader) for the Ask AI panel.
+include(cmake/FetchWebView2.cmake)
 
 # --- Third party (vendored) ----------------------------------------------------
 add_library(imgui STATIC
@@ -88,12 +90,13 @@ set(APP_SOURCES
   src/ui/MainUI.cpp
   src/core/McpServer.cpp
   src/core/AppMcp.cpp
-  src/core/AppMcpJobs.cpp)
+  src/core/AppMcpJobs.cpp
+  src/core/AskPanel.cpp)
 
 # The .manifest source is merged by CMake into the linker-generated manifest (per-monitor DPI, UTF-8 code page).
 add_executable(VRChatDLSS5Cam WIN32 ${APP_SOURCES} resources/app.rc resources/app.manifest)
 target_include_directories(VRChatDLSS5Cam PRIVATE src third_party/nvof ${NGX_INCLUDE_DIR} ${FFX_INCLUDE_DIR} ${ORT_INCLUDE_DIR} ${DML_INCLUDE_DIR}
-  ${LIBWEBP_INCLUDE_DIR})
+  ${LIBWEBP_INCLUDE_DIR} ${WEBVIEW2_INCLUDE_DIR})
 target_compile_definitions(VRChatDLSS5Cam PRIVATE
   UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX _CRT_SECURE_NO_WARNINGS
   APP_VERSION_STRING="${PROJECT_VERSION}"
@@ -104,7 +107,7 @@ target_compile_definitions(VRChatDLSS5Cam PRIVATE
   APP_EDITION_AMD=$<BOOL:${APP_EDITION_AMD}>)
 target_compile_options(VRChatDLSS5Cam PRIVATE /W4 /MP /utf-8 /permissive- /EHsc /wd4100 /wd4201 /wd4324)
 target_link_libraries(VRChatDLSS5Cam PRIVATE
-  imgui spout ${NGX_STATIC_LIB} ${LIBWEBP_LIBRARIES}
+  imgui spout ${NGX_STATIC_LIB} ${LIBWEBP_LIBRARIES} ${WEBVIEW2_STATIC_LIB}
   d3d12 d3d11 dxgi d3dcompiler dxguid windowscodecs mfuuid
   ole32 shell32 shlwapi user32 gdi32 dwmapi comctl32 advapi32 psapi version winmm winhttp ws2_32)
 set_target_properties(VRChatDLSS5Cam PROPERTIES OUTPUT_NAME "VRChatDLSS5Cam")

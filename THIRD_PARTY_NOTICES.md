@@ -104,6 +104,18 @@ SHA-256) and linked statically into the application: it decodes and writes anima
 files, and decodes still WebP pictures on systems without the Windows WebP codec. The
 license text is shipped in `licenses/libwebp-COPYING.txt`.
 
+## Microsoft Edge WebView2 SDK
+
+Microsoft Edge WebView2 SDK, Copyright (C) Microsoft Corporation. All rights reserved.
+BSD 3-Clause License. https://www.nuget.org/packages/Microsoft.Web.WebView2
+Downloaded from NuGet at configure time (version 1.0.4258.31, verified by its SHA-256). Its headers
+and the static loader library (`WebView2LoaderStatic.lib`) are compiled into the application, which
+uses them to host the documentation's AI Q&A in the Ask AI panel. The WebView2 Runtime itself is
+part of Windows and is not shipped. The license text is shipped in `licenses/WebView2-LICENSE.txt`.
+
+The AI Q&A in that panel is Mintlify's assistant widget. It is not included: the panel loads it
+from Mintlify's servers (`widget.mintlify.com`) when it is first opened, and only then.
+
 ## Depth Anything V2 Small
 
 Depth Anything V2 Small, Copyright (c) the Depth Anything V2 authors, Apache License 2.0.

@@ -23,6 +23,7 @@ GLYPHS = [
     "upload", "copy", "images", "video", "cpu", "loader-circle", "import", "minus", "ellipsis", "list-checks",
     "square-check", "arrow-right", "sun", "moon", "bell", "scissors", "flag", "repeat", "file-image", "file-video",
     "mouse", "hand", "move", "focus", "aperture", "shield-check", "wifi", "hard-drive", "panel-left", "panel-right",
+    "message-circle-question-mark",
 ]
 
 

@@ -530,6 +530,19 @@ enum class Lang { English = 0, Chinese = 1, Japanese = 2, Korean = 3, Count = 4 
     X(Save,               "Save", "保存", "保存", "저장") \
     X(TipDocs,            "Documentation: the guide opens in your browser", "文档：在浏览器中打开使用指南", "ドキュメント: ガイドをブラウザで開きます", "문서: 안내를 브라우저에서 엽니다") \
     X(Documentation,      "Documentation", "文档", "ドキュメント", "문서") \
+    X(TipAskAi,          "Ask AI: questions about the app, answered from the documentation", "问 AI：关于本程序的问题，由 AI 根据文档回答", "AI に質問: アプリについての質問に、AI がドキュメントをもとに答えます", "AI에게 묻기: 앱에 대한 질문에 AI가 문서를 바탕으로 답합니다") \
+    X(AskTitle,          "AI Q&A", "AI 问答", "AI Q&A", "AI Q&A") \
+    X(AskTrigger,        "Ask AI", "问 AI", "AI に質問", "AI에게 묻기") \
+    X(AskPlaceholder,    "Ask a question about the app", "问一个关于本程序的问题", "アプリについて質問を入力", "앱에 대해 질문해 보세요") \
+    X(AskDisclaimer,     "AI writes these answers from the documentation. They can be wrong, so check the page an answer links to.", "这些回答由 AI 根据文档写出，可能有误。请打开回答所链接的页面核对。", "回答は、ドキュメントをもとに AI が書いています。間違っていることもあるので、回答のリンク先のページで確かめてください。", "답변은 AI가 문서를 바탕으로 작성합니다. 틀릴 수 있으니 답변에 연결된 페이지에서 확인하세요.") \
+    X(AskSuggestions,    "Try asking", "试试这样问", "質問の例", "이렇게 물어보세요") \
+    X(AskQuestion1,      "Which download is right for my graphics card?", "我的显卡该下载哪一版？", "自分のグラフィックカードには、どれをダウンロードすればいいですか？", "내 그래픽 카드에는 어떤 파일을 내려받아야 하나요?") \
+    X(AskQuestion2,      "How do I send the VRChat camera to the app?", "怎样把 VRChat 的相机画面发送给这个程序？", "VRChat のカメラ映像をアプリに送るにはどうすればいいですか？", "VRChat 카메라 화면을 앱으로 보내려면 어떻게 하나요?") \
+    X(AskQuestion3,      "Why is the live picture slow?", "实时画面为什么很慢？", "ライブ映像が重いのはなぜですか？", "실시간 화면이 왜 느린가요?") \
+    X(AskLoading,        "Loading AI Q&A…", "正在加载 AI 问答…", "AI Q&A を読み込んでいます…", "AI Q&A 불러오는 중…") \
+    X(AskFailed,         "AI Q&A could not be loaded. Check your connection, then try again.", "无法加载 AI 问答。请检查网络连接，然后再试一次。", "AI Q&A を読み込めませんでした。インターネット接続を確認して、もう一度試してください。", "AI Q&A를 불러오지 못했습니다. 인터넷 연결을 확인한 뒤 다시 시도하세요.") \
+    X(AskRetry,          "Try again", "重试", "再試行", "다시 시도") \
+    X(AskOpenedInBrowser, "AI Q&A opened in your browser", "已在浏览器中打开 AI 问答", "AI Q&A をブラウザで開きました", "AI Q&A를 브라우저에서 열었습니다") \
     X(Prerelease,         "Pre-release", "预发布", "プレリリース", "프리릴리스") \
     X(ReopenLast,         "Reopen the last file at start", "启动时重新打开上次的文件", "起動時に前回のファイルを開く", "시작할 때 마지막 파일 다시 열기") \
     X(TipReopenLast,      "The picture or video that was open when the app was closed comes back at the next start.", "关闭时打开着的图片或视频，下次启动时自动重新打开。", "終了時に開いていた画像や動画を、次回の起動時にもう一度開きます。", "종료할 때 열려 있던 사진이나 동영상을 다음 시작 때 다시 엽니다.") \

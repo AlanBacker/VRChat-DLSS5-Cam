@@ -309,7 +309,9 @@ void MainUI::Draw(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Font
     ImGui::PopStyleVar(3);
 
     if (info.fullscreen) {
-        // The picture alone, over the whole screen; no bars, sidebar or library.
+        // The picture alone, over the whole screen; no bars, sidebar or library (nor the Ask AI panel).
+        m_askLanded = false;
+        m_askCut = 0.0f;
         DrawFullscreen(s, info, ev, fonts);
         ImGui::End();
         m_previewMin = vp->WorkPos;
@@ -320,22 +322,49 @@ void MainUI::Draw(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Font
         return;
     }
 
+    // The Ask AI panel docks at the right edge, under the top bar, as tall as the picture and the sidebar, which make
+    // room for it while it slides in from beyond the edge. The page is a window of its own over the interface, so
+    // whatever is drawn under it would be hidden: from the moment it starts to come in, the main viewport ends at its
+    // left edge (AskTrim), and the popups, tooltips, dialogs and notices keep to the rest of the window. That edge is
+    // known before the top bar is drawn, so the bar's own popups (the language list) keep clear of it too.
+    const float em = ImGui::GetFontSize();
+    const float handleW = Px(16.0f);
+    const float askGap = Px(8.0f);      // from the body, as the body keeps from the top bar; its right edge is the top bar's
+    const float fullW = ImGui::GetContentRegionAvail().x;
+    const float contentX = ImGui::GetCursorScreenPos().x;
+    m_askT = Ease(AnimateLinear(ImGui::GetID("##askSlide"), info.askOpen ? 1.0f : 0.0f, 0.22f));
+    float askW = 0.0f, askShown = 0.0f, askLeft = 0.0f;
+    if (m_askT > 0.0f) {
+        // About a third of the window, kept between a comfortable reading width and a narrower one that still leaves
+        // the picture some room beside the sidebar.
+        const float sideNow = s.sidebarVisible ? std::max(em * 16.0f, (s.sidebarWidth > 0.0f ? s.sidebarWidth : 24.0f) * em) : 0.0f;
+        const float want = std::clamp(fullW * 0.3f, em * 20.0f, em * 28.0f);
+        const float room = fullW - sideNow - handleW - em * 14.0f - askGap;
+        askW = std::floor(std::max(em * 16.0f, std::min(want, room)));
+        askShown = (askW + askGap) * m_askT;
+        // Its left edge keeps the gap from the shrinking body; before it has come in it waits beyond the window's
+        // edge, its shadow too.
+        const float beyond = (1.0f - m_askT) * (Px(12.0f) + Px(10.0f));   // the window's padding and the shadow
+        askLeft = std::round(contentX + fullW - askShown + askGap + beyond);
+    }
+    m_askCut = m_askT > 0.0f ? askLeft : 0.0f;
+    AskTrim(true);
+
     DrawTopBar(s, info, ev, fonts);
 
     const ImGuiStyle& style = ImGui::GetStyle();
     const float statusH = ImGui::GetFrameHeight() + style.ItemSpacing.y * 2.0f;
     const ImVec2 avail = ImGui::GetContentRegionAvail();
+    const float bodyW = std::max(50.0f, avail.x - askShown);   // the picture, the gutter and the sidebar
     const float bodyH = std::max(50.0f, avail.y - statusH - style.ItemSpacing.y);
     // The sidebar's width is the user's (dragged at the handle), kept within what the window can give.
-    const float em = ImGui::GetFontSize();
-    const float sidebarMin = em * 16.0f, sidebarMax = std::max(sidebarMin, avail.x * 0.6f);
-    const float sidebarW = std::max(50.0f, std::min(std::clamp((s.sidebarWidth > 0.0f ? s.sidebarWidth : 24.0f) * em, sidebarMin, sidebarMax), avail.x * 0.6f));
+    const float sidebarMin = em * 16.0f, sidebarMax = std::max(sidebarMin, bodyW * 0.6f);
+    const float sidebarW = std::max(50.0f, std::min(std::clamp((s.sidebarWidth > 0.0f ? s.sidebarWidth : 24.0f) * em, sidebarMin, sidebarMax), bodyW * 0.6f));
     // The sidebar slides in and out behind the gutter at the edge of the preview; the preview takes the room it
     // frees while it moves.
-    const float handleW = Px(16.0f);
     const float sideT = Ease(AnimateLinear(ImGui::GetID("##sidebarSlide"), s.sidebarVisible ? 1.0f : 0.0f, 0.22f));
     const float shownW = sidebarW * sideT;
-    const float previewW = std::max(50.0f, avail.x - shownW - handleW);
+    const float previewW = std::max(50.0f, bodyW - shownW - handleW);
     const ImVec2 bodyOrigin = ImGui::GetCursorScreenPos();
     m_previewMin = bodyOrigin;   // the fade's rectangle, narrowed to the picture in DrawPreview
     m_previewMax = ImVec2(bodyOrigin.x + previewW, bodyOrigin.y + bodyH);
@@ -395,7 +424,7 @@ void MainUI::Draw(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Font
         ImGui::SameLine(0.0f, 0.0f);
         // The clip reaches a little above the body, into the gap under the top bar, so the search field's focus ring
         // shows whole.
-        ImGui::PushClipRect(ImVec2(bodyOrigin.x, bodyOrigin.y - Px(4.0f)), ImVec2(bodyOrigin.x + avail.x, bodyOrigin.y + bodyH), true);
+        ImGui::PushClipRect(ImVec2(bodyOrigin.x, bodyOrigin.y - Px(4.0f)), ImVec2(bodyOrigin.x + bodyW, bodyOrigin.y + bodyH), true);
         // While the settings are locked their banner holds the top of the column, outside the scrolled settings, so a
         // scrolled sidebar can neither cut it nor carry it away; the settings make room for it as it comes in. The
         // search row stays above the scrolled settings for the same reason, under the banner while there is one.
@@ -446,6 +475,11 @@ void MainUI::Draw(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Font
         ImGui::PopClipRect();
     }
 
+    // The Ask AI panel's card, under the page.
+    m_askMin = ImVec2(askLeft, bodyOrigin.y);
+    m_askMax = ImVec2(askLeft + askW, std::round(bodyOrigin.y + bodyH));
+    DrawAskCard(info, ev);
+
     DrawStatusBar(s, info, ev, fonts);
     DrawUpdatePopup(s, info, ev, fonts);
     DrawMirrorPopup(s, info, ev, fonts);
@@ -456,9 +490,89 @@ void MainUI::Draw(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Font
 
     if (s.showLog) DrawLogWindow(s, ev, fonts);
     DrawItemParams(s, info, ev, fonts);
+    AskTrim(false);   // the fades cover the whole window (the page steps aside for them)
     DrawFades(s, info, ev);
+    AskTrim(true);
     DrawToasts(fonts);
+    AskTrim(false);   // ImGui lays the frame out on the viewport's real size
     TrackUndo(s, info);
+}
+
+// The main viewport ends at the Ask AI panel's left edge while the panel is in (on), or at the window's (off). ImGui
+// keeps popups and tooltips within the viewport, and the dialogs and notices are placed on it, so none of them goes
+// under the page, which is a window of its own over the interface.
+void MainUI::AskTrim(bool on) {
+    ImGuiViewport* vp = ImGui::GetMainViewport();
+    if (on && !m_askTrimmed && m_askCut > vp->Pos.x) {
+        m_vpW = vp->Size.x;
+        m_vpWorkW = vp->WorkSize.x;
+        vp->Size.x = std::max(1.0f, std::min(m_vpW, m_askCut - vp->Pos.x));
+        vp->WorkSize.x = std::max(1.0f, std::min(m_vpWorkW, m_askCut - vp->WorkPos.x));
+        m_askTrimmed = true;
+    } else if (!on && m_askTrimmed) {
+        vp->Size.x = m_vpW;
+        vp->WorkSize.x = m_vpWorkW;
+        m_askTrimmed = false;
+    }
+}
+
+// The Ask AI panel's card. The page covers it once it is shown and paints the same card itself (the same colour,
+// corners and hairline), so the hand-over does not show. Until then the card shows the turning arc while the page
+// loads, or why it could not load and a button to try again.
+void MainUI::DrawAskCard(const UiFrameInfo& info, UiEvents& ev) {
+    m_askLanded = false;
+    const double now = ImGui::GetTime();
+    const bool loading = info.askOpen && !info.askWebShown && (info.askState == 0 || info.askState == 1);
+    if (!loading) m_askLoadingSince = -1.0;
+    else if (m_askLoadingSince < 0.0) m_askLoadingSince = now;
+    // The arc waits a moment before it shows, so a page that is ready at once never flashes it.
+    const bool arcOn = loading && now - m_askLoadingSince >= 0.15;
+    if (loading && !arcOn) MarkAnimating();
+    const float arcA = AnimateLinear(ImGui::GetID("##askArc"), arcOn ? 1.0f : 0.0f, 0.12f);
+    const float failA = AnimateLinear(ImGui::GetID("##askFail"), info.askOpen && info.askState == 3 ? 1.0f : 0.0f, 0.15f);
+    if (m_askT <= 0.0f || m_askMax.x <= m_askMin.x) return;
+    const Palette& p = Colors();
+    const ImGuiStyle& style = ImGui::GetStyle();
+    ImGuiWindow* host = ImGui::GetCurrentWindow();
+    ImDrawList* dl = host->DrawList;
+    // It comes in from beyond the window's edge: drawn over the host's padding, cut at the window's edge only.
+    dl->PushClipRect(host->Pos, ImVec2(host->Pos.x + host->Size.x, host->Pos.y + host->Size.y), false);
+    DrawCard(dl, m_askMin, m_askMax);
+    const ImVec2 c(std::round((m_askMin.x + m_askMax.x) * 0.5f), std::round((m_askMin.y + m_askMax.y) * 0.5f));
+    const float wrap = std::max(Px(80.0f), m_askMax.x - m_askMin.x - CardInset() * 4.0f);
+    if (arcA > 0.0f) {   // the preview's own waiting look: the arc over a line of dim text
+        const char* text = TR(AskLoading);
+        const ImVec2 ts = ImGui::CalcTextSize(text, nullptr, false, wrap);
+        const float spin = IconSize(1.6f), spinGap = Px(10.0f);
+        const float top = std::floor(c.y - (spin + spinGap + ts.y) * 0.5f);
+        DrawSpinner(dl, ImVec2(c.x, top + spin * 0.5f), spin, ImGui::GetColorU32(p.accent, arcA));
+        dl->AddText(nullptr, 0.0f, ImVec2(std::floor(c.x - ts.x * 0.5f), top + spin + spinGap), ImGui::GetColorU32(p.textDim, arcA), text, nullptr, wrap);
+    }
+    if (failA > 0.0f) {   // why, and the way out
+        const char* text = TR(AskFailed);
+        const ImVec2 ts = ImGui::CalcTextSize(text, nullptr, false, wrap);
+        const float iconS = IconSize(1.6f), gap = Px(10.0f), frameH = ImGui::GetFrameHeight();
+        const float btnW = ImGui::CalcTextSize(TR(AskRetry)).x + style.FramePadding.x * 2.0f;
+        const float top = std::floor(c.y - (iconS + gap + ts.y + gap * 1.6f + frameH) * 0.5f);
+        DrawIcon(dl, Icon::Wifi, ImVec2(c.x, top + iconS * 0.5f), iconS, ImGui::GetColorU32(p.textDim, failA));
+        dl->AddText(nullptr, 0.0f, ImVec2(std::floor(c.x - ts.x * 0.5f), top + iconS + gap), ImGui::GetColorU32(p.text, failA), text, nullptr, wrap);
+        const ImVec2 back = ImGui::GetCursorScreenPos();
+        ImGui::SetCursorScreenPos(ImVec2(std::floor(c.x - btnW * 0.5f), std::floor(top + iconS + gap + ts.y + gap * 1.6f)));
+        ImGui::PushStyleVar(ImGuiStyleVar_Alpha, style.Alpha * failA);
+        if (FlatButton(TR(AskRetry), ImVec2(btnW, frameH)) && failA >= 1.0f) ev.askRetry = true;
+        ImGui::PopStyleVar();
+        ImGui::SetCursorScreenPos(back);
+    }
+    dl->PopClipRect();
+    // The page may come once the card is in place, nothing else is on it and nothing covers the window.
+    m_askLanded = info.askOpen && m_askT >= 1.0f && info.askState == 2 && arcA <= 0.0f && failA <= 0.0f && !FullscreenSwitching();
+}
+
+bool MainUI::AskPanelRect(ImVec2& min, ImVec2& max) const {
+    if (!m_askLanded) return false;
+    min = m_askMin;
+    max = m_askMax;
+    return true;
 }
 
 // Fullscreen: the picture over the whole screen. The transport bar of a video and the exit button show while the
@@ -1438,7 +1552,7 @@ void MainUI::DrawTopBar(Settings& s, const UiFrameInfo& info, UiEvents& ev, cons
     const float badgesW = (badge ? ImGui::CalcTextSize(badge).x + pillPad : 0.0f)
                         + (nrBadge ? ImGui::CalcTextSize("DLSS 5").x + pillPad + (badge ? Px(6.0f) : 0.0f) : 0.0f);
 
-    // Right part: undo, redo and the history, the documentation, the language, the main action.
+    // Right part: undo, redo and the history, the documentation and Ask AI, the language, the main action.
     const char* actionText = busy ? TR(Cancel) : videoMode ? TR(ProcessVideo) : imageMode ? TR(ProcessAndSave) : TR(Capture);
     const Icon actionIcon = busy ? Icon::Stop : videoMode ? Icon::Film : imageMode ? Icon::Sparkle : Icon::Camera;
     const float actionW = IconTextButtonWidth(actionText) + Px(10.0f);
@@ -1453,7 +1567,7 @@ void MainUI::DrawTopBar(Settings& s, const UiFrameInfo& info, UiEvents& ev, cons
     bool langCompact = false;
     const float undoW = frameH * 3.0f + style.ItemInnerSpacing.x * 2.0f;   // undo, redo, history
     bool showBadges = true, showTitle = true, showUndo = true, showLogo = true;
-    auto rightW = [&]() { return actionW + langW + style.ItemSpacing.x + frameH + style.ItemSpacing.x + (showUndo ? undoW + style.ItemSpacing.x : 0.0f); };
+    auto rightW = [&]() { return actionW + langW + style.ItemSpacing.x + frameH * 2.0f + style.ItemInnerSpacing.x + style.ItemSpacing.x + (showUndo ? undoW + style.ItemSpacing.x : 0.0f); };
     auto leftW = [&]() {
         return (showLogo ? logoS + (showTitle ? Px(10.0f) + titleSize.x + Px(20.0f) : Px(14.0f)) : 0.0f) + switchW
              + (showBadges && badgesW > 0.0f ? Px(12.0f) + badgesW : 0.0f);
@@ -1525,6 +1639,20 @@ void MainUI::DrawTopBar(Settings& s, const UiFrameInfo& info, UiEvents& ev, cons
     ImGui::SetCursorPosY(centred(frameH));
     if (IconButton("##docs", Icon::Help, ImVec2(frameH, frameH), TR(TipDocs), ButtonKind::Plain)) ev.openDocs = true;
     Spotlight(true);
+    ImGui::SameLine(0.0f, style.ItemInnerSpacing.x);
+    ImGui::SetCursorPosY(centred(frameH));
+    {
+        // Ask AI opens and closes its panel. While the panel is open the button is lit in the accent, the way the
+        // DLSS 5 badge is, and the light comes and goes with the panel.
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        const ImVec2 at = ImGui::GetCursorScreenPos();
+        const float onT = Animate(ImGui::GetID("##askOn"), info.askOpen ? 1.0f : 0.0f, 16.0f);
+        if (onT > 0.0f) dl->AddRectFilled(at, ImVec2(at.x + frameH, at.y + frameH), WithAlpha(p.accent, 0.18f * onT), style.FrameRounding);
+        if (IconButton("##ask", Icon::None, ImVec2(frameH, frameH), TR(TipAskAi), ButtonKind::Plain)) ev.askToggle = true;
+        const ImVec2 bmin = ImGui::GetItemRectMin(), bmax = ImGui::GetItemRectMax();
+        DrawIcon(dl, Icon::AskAi, ImVec2((bmin.x + bmax.x) * 0.5f, (bmin.y + bmax.y) * 0.5f), IconSize(),
+                 Mix(p.text, Mix(p.accentHover, p.accent, p.light), onT));
+    }
     ImGui::SameLine();
     ImGui::SetCursorPosY(centred(frameH));
     ImGui::SetNextItemWidth(langW);

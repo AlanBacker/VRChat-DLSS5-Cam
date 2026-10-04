@@ -960,6 +960,7 @@ ImWchar Glyph(Icon icon) {
     case Icon::HardDrive:      return lucide::hard_drive;
     case Icon::PanelLeft:      return lucide::panel_left;
     case Icon::PanelRight:     return lucide::panel_right;
+    case Icon::AskAi:          return lucide::message_circle_question_mark;
     default:                   return 0;
     }
 }

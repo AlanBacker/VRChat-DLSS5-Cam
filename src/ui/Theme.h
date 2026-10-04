@@ -77,7 +77,7 @@ enum class Icon { Play, Pause, StepBack, StepForward, ChevronDown, ChevronUp, Ch
                   Wand, Settings, Compare, ZoomIn, ZoomOut, Terminal, Key, Upload, Copy, Images, Video, Cpu, Loader,
                   Import, Minus, Ellipsis, ListChecks, SquareCheck, ArrowRight, Sun, Moon, Bell, Scissors, Flag, Repeat,
                   FileImage, FileVideo, Mouse, Hand, Move, Focus, Aperture, Shield, Wifi, HardDrive, PanelLeft,
-                  PanelRight, None };
+                  PanelRight, AskAi, None };
 void DrawIcon(ImDrawList* dl, Icon icon, const ImVec2& center, float size, ImU32 color);          // size: side of the icon's box
 float IconSize(float scale = 1.0f);                                                              // a whole-pixel icon size that suits the current font
 void DrawChevron(ImDrawList* dl, const ImVec2& center, float size, float angle, ImU32 color);    // 0 points down, turns clockwise

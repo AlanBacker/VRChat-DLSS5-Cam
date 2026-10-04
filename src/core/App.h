@@ -17,10 +17,12 @@
 #include "ui/Fonts.h"
 #include "ui/MainUI.h"
 #include "core/McpServer.h"
+#include "core/AskPanel.h"
 #include <atomic>
 #include <deque>
 #include <map>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 #include <utility>
@@ -55,6 +57,9 @@ struct CommandLine {
     int          mcpPort = 0;             // --mcp-port <port>: run the MCP server on this port for this session (the bridge starts the program so)
     std::string  mcpUrl;                  // --mcp-url <http://host:port/mcp>: the bridge talks to that server (another computer) and starts nothing
     std::string  mcpKey;                  // --mcp-key <key>: the key the bridge presents
+    std::vector<std::pair<double, std::string>> askAt;   // --ask-at <seconds> <action> / --ask <seconds> (development: drives the Ask AI panel)
+    bool         askNoRuntime = false;    // --ask-no-runtime (development: as if the WebView2 Runtime were missing)
+    bool         dryOpen = false;         // --dry-open (development: pages and links are logged, not opened)
     std::string  error;                   // the first unknown option
 
     static CommandLine Parse();
@@ -286,6 +291,18 @@ private:
     void BrowseLibraryFiles();
     void BrowseLibraryFolder();
     void OpenPath(const std::wstring& path);
+
+    // The Ask AI panel (interface thread): the documentation's AI Q&A beside the interface, or in the browser where
+    // the WebView2 control cannot run.
+    void OpenAsk(bool byUser);
+    void CloseAsk();
+    void AskInBrowser(const std::string& why);
+    void TickAsk();                        // once a frame after the interface: the page's events, its place, its look
+    void RunAskAction(const std::string& action);   // --ask-at
+    AskPageConfig AskConfig() const;
+    bool AskLight() const;                 // the interface's theme is (or is becoming) the light one
+    void AskShotBegin();                   // a screenshot is recorded: the page's own picture is taken too
+    void AskShotFinish(bool force);        // the held screenshot with the page copied in, to the writer
 
     // Media library (interface thread).
     void AddLibraryFiles(const std::vector<std::wstring>& paths, bool announce);
@@ -542,6 +559,20 @@ private:
     bool          m_portWeightsExist = false;  // its weights file lies next to the executable (looked at now and then)
     double        m_portWeightsTime = -1.0;
     Splash        m_splash;                // the start-up card
+    AskPanel      m_ask;                   // the Ask AI page (its control is created at the first opening)
+    bool          m_askOpen = false;       // the panel is open: the button lit, the card in (until the page has faded out)
+    double        m_askClosing = -1.0;     // the page fades out before the card slides away: since when (-1: not closing)
+    bool          m_askBroken = false;     // the control could not be created in this session: the browser serves instead
+    bool          m_askFocusNext = false;  // the next showing gives the page the keyboard (opened by the user)
+    bool          m_askInstant = false;    // the next showing skips the fade (the window was minimised)
+    std::string   m_askLook;               // the language and theme the page was last given
+    RECT          m_askRect{};             // where the page is (client pixels)
+    size_t        m_nextAskAction = 0;
+    std::optional<CaptureJob> m_heldShot;  // a screenshot waiting for the page's picture
+    double        m_heldShotSince = 0.0;
+    RECT          m_heldShotRect{};
+    bool          m_askShotWaiting = false;
+    std::vector<uint8_t> m_askShotPng;
     bool          m_mainShown = false;     // the main window has been shown (after its first frame)
     int           m_nCmdShow = SW_SHOWNORMAL;
     unsigned      m_frameCount = 0;

@@ -36,6 +36,7 @@ std::string Trim(const std::string& s) {
 }
 constexpr int      kHotkeyId = 1;
 constexpr UINT_PTR kSizeTimer = 1;
+constexpr UINT_PTR kAskRestoreTimer = 2;   // --ask-at min:<seconds>: the window comes back by itself (a minimised window runs no steps)
 constexpr const wchar_t* kWindowClass = L"VRChatDLSS5CamWindow";
 constexpr const wchar_t* kProjectUrl = L"https://github.com/AlanBacker/VRChat-DLSS5-Cam";
 constexpr const wchar_t* kDocsSiteUrl = L"https://alanbacker.github.io/VRChat-DLSS5-Cam/";   // the documentation site (site/ in the repository, GitHub Pages)
@@ -243,6 +244,19 @@ CommandLine CommandLine::Parse() {
         else if (a == L"--mcp-port") { if (const wchar_t* v = next(i)) cl.mcpPort = std::clamp(_wtoi(v), 1024, 65535); }
         else if (a == L"--mcp-url") { if (const wchar_t* v = next(i)) cl.mcpUrl = WideToUtf8(v); }
         else if (a == L"--mcp-key") { if (const wchar_t* v = next(i)) cl.mcpKey = WideToUtf8(v); }
+        else if (a == L"--ask-at") {
+            const double t = ParseSeconds(next(i));
+            const wchar_t* v = next(i);
+            if (t >= 0.0 && v) cl.askAt.emplace_back(t, WideToUtf8(v));
+            else if (cl.error.empty()) cl.error = "--ask-at expects <seconds> <action>";
+        }
+        else if (a == L"--ask") {
+            const double t = ParseSeconds(next(i));
+            if (t >= 0.0) cl.askAt.emplace_back(t, "open");
+            else if (cl.error.empty()) cl.error = "--ask expects <seconds>";
+        }
+        else if (a == L"--ask-no-runtime") cl.askNoRuntime = true;
+        else if (a == L"--dry-open") cl.dryOpen = true;
         else if (!a.empty() && a[0] != L'-' && cl.open.empty() && FileExists(a)) cl.open = a;   // "Open with"
         else if (cl.error.empty()) cl.error = "unknown option " + WideToUtf8(a);
     }
@@ -624,6 +638,7 @@ bool App::CreateMainWindow(HINSTANCE hInstance, int nCmdShow) {
         ShowWindow(m_hwnd, SW_HIDE);
     } else {
         m_nCmdShow = nCmdShow;   // shown once its first frame is drawn (App::Frame), while the start-up card still covers the wait
+        if (!m_cli.askAt.empty()) m_nCmdShow = SW_SHOWNOACTIVATE;   // a scripted Ask AI run never takes the keyboard from whoever works there
     }
     return true;
 }
@@ -680,6 +695,8 @@ void App::ApplyDpi(float scale) {
 }
 
 void App::Shutdown() {
+    AskShotFinish(true);
+    m_ask.Destroy();   // its browser processes end with it
     StopMcp();
     McpJobsShutdown();
     if (m_deviceReady && EffectiveRoute() == RouteFsrHost) LogPortState(true);
@@ -1918,12 +1935,16 @@ void App::Frame() {
             job.width = w; job.height = h; job.rowPitch = w * 4; job.keepAlpha = false; job.quiet = true;
             job.path = m_screenshotPath;
             job.pixels = std::move(rgba);
-            m_capture.Enqueue(std::move(job));
             Log::Info("Screenshot: %s (%ux%u)", WideToUtf8(m_screenshotPath).c_str(), w, h);
+            // The Ask AI page is a window of its own, not in the frame: the screenshot waits for its picture.
+            if (m_askShotWaiting || !m_askShotPng.empty()) { m_heldShot = std::move(job); m_heldShotSince = NowSeconds(); }
+            else m_capture.Enqueue(std::move(job));
         } else {
             Log::Warn("Screenshot failed: %s", WideToUtf8(m_screenshotPath).c_str());
         }
     }
+
+    AskShotFinish(false);
 
     if (m_cli.loseDevice >= 0.0 && !m_device.DeviceRemoved() && NowSeconds() - m_startTime >= m_cli.loseDevice) {
         m_cli.loseDevice = -1.0;
@@ -2069,6 +2090,14 @@ void App::Frame() {
     info.hotkeyText = HotkeyText(m_settings);
     info.hasDisplay = display.valid;
     info.fullscreen = m_fullscreen;
+    info.askOpen = m_askOpen;
+    info.askWebShown = m_ask.Visible();
+    switch (m_ask.GetState()) {
+        case AskPanel::State::Creating: case AskPanel::State::Loading: info.askState = 1; break;
+        case AskPanel::State::Ready:  info.askState = 2; break;
+        case AskPanel::State::Failed: info.askState = 3; break;
+        default: info.askState = 0; break;
+    }
     info.displayTexture = display.valid ? (ImTextureID)display.srv.ptr : (ImTextureID)0;
     info.displayWidth = display.width;
     info.displayHeight = display.height;
@@ -2148,6 +2177,7 @@ void App::Frame() {
     DrainMcp(info, ev);
     McpJobsTick();
     HandleEvents(ev);
+    TickAsk();
     UpdateTitleBar();
     ImGui::Render();
 
@@ -2161,7 +2191,7 @@ void App::Frame() {
     cmd->OMSetRenderTargets(1, &rtv, FALSE, nullptr);
     ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), cmd);
     if (!m_pendingScreenshot.empty()) {
-        if (m_device.BeginScreenshot(cmd)) m_screenshotPath = m_pendingScreenshot;
+        if (m_device.BeginScreenshot(cmd)) { m_screenshotPath = m_pendingScreenshot; AskShotBegin(); }
         else Log::Warn("Screenshot could not be recorded: %s", WideToUtf8(m_pendingScreenshot).c_str());
         m_pendingScreenshot.clear();
     }
@@ -2210,7 +2240,7 @@ void App::Frame() {
 // cost of drawing every frame. A headless run (an MCP server waiting for jobs) rests the same way.
 void App::RestIfIdle(double frameStart) {
     if (m_quit || m_sizing || m_minimized || (!m_headless && !m_mainShown)) return;
-    if (m_ui.WantsFrames() || NowSeconds() - m_lastInputTime < 0.3) return;
+    if (m_ui.WantsFrames() || NowSeconds() - m_lastInputTime < 0.3 || m_askClosing >= 0.0 || m_heldShot) return;
     while (!m_quit) {
         const double left = frameStart + 0.1 - NowSeconds();
         if (left <= 0.0) break;
@@ -2227,6 +2257,8 @@ void App::RunCommandLineActions() {
         m_cliActionsDone = true;
         std::stable_sort(m_cli.screenshots.begin(), m_cli.screenshots.end(),
                          [](const std::pair<double, std::wstring>& a, const std::pair<double, std::wstring>& b) { return a.first < b.first; });
+        std::stable_sort(m_cli.askAt.begin(), m_cli.askAt.end(),
+                         [](const std::pair<double, std::string>& a, const std::pair<double, std::string>& b) { return a.first < b.first; });
         if (!m_cli.open.empty()) {
             bool isVideo = false;
             if (IsLibraryFile(m_cli.open, isVideo)) {
@@ -2261,14 +2293,17 @@ void App::RunCommandLineActions() {
             if (m_cli.play) { Command c; c.type = Command::VideoPlay; PostCommand(std::move(c)); }
         }
     }
+    // The Ask AI panel's test steps at their times.
+    while (m_nextAskAction < m_cli.askAt.size() && elapsed >= m_cli.askAt[m_nextAskAction].first)
+        RunAskAction(m_cli.askAt[m_nextAskAction++].second);
     // Screenshots at their times, one at a time.
-    if (m_nextScreenshot < m_cli.screenshots.size() && m_pendingScreenshot.empty() && !m_device.ScreenshotPending() &&
+    if (m_nextScreenshot < m_cli.screenshots.size() && m_pendingScreenshot.empty() && !m_device.ScreenshotPending() && !m_heldShot &&
         elapsed >= m_cli.screenshots[m_nextScreenshot].first) {
         RequestScreenshot(m_cli.screenshots[m_nextScreenshot].second);
         ++m_nextScreenshot;
     }
     const bool screenshotsFlushed = m_nextScreenshot >= m_cli.screenshots.size() && m_pendingScreenshot.empty() &&
-                                    !m_device.ScreenshotPending() && m_capture.Pending() == 0;
+                                    !m_device.ScreenshotPending() && !m_heldShot && m_capture.Pending() == 0;
     // Processing: the opened file or the library, once everything is loaded.
     bool probesDone = true;
     for (const LibraryItem& item : m_library) if (item.probe == 0) { probesDone = false; break; }
@@ -2315,7 +2350,7 @@ void App::RunCommandLineActions() {
             Log::Warn("Command line: %zu screenshot(s) come after --exit-after and were skipped", m_cli.screenshots.size() - m_nextScreenshot);
             m_nextScreenshot = m_cli.screenshots.size();
         }
-        if (m_pendingScreenshot.empty() && !m_device.ScreenshotPending() && m_capture.Pending() == 0) quit("--exit-after reached");
+        if (m_pendingScreenshot.empty() && !m_device.ScreenshotPending() && !m_heldShot && m_capture.Pending() == 0) quit("--exit-after reached");
         return;
     }
     // A headless session a client asked for (--mcp-port), or one whose MCP server is switched on (a server for
@@ -2341,6 +2376,8 @@ void App::RequestScreenshot(const std::wstring& path) {
 
 void App::HandleEvents(ui::UiEvents& ev) {
     if (ev.captureNow) CaptureNow();
+    if (ev.askToggle) { if (m_askOpen && m_askClosing < 0.0) CloseAsk(); else OpenAsk(true); }
+    if (ev.askRetry) { Log::Info("Ask AI: Try again"); m_ask.Retry(); }
     if (ev.browseRuntime) m_pendingBrowseRuntime = true;
     if (ev.browseDepthModel) m_pendingBrowseDepthModel = true;
     if (ev.openImage) m_pendingBrowseImage = true;
@@ -3715,9 +3752,226 @@ void App::BrowseLibraryFolder() {
 
 void App::OpenPath(const std::wstring& path) {
     if (path.empty()) return;
+    if (m_cli.dryOpen) { Log::Info("Open (dry run): %s", WideToUtf8(path).c_str()); return; }
     Log::Info("Open: %s", WideToUtf8(path).c_str());
     const HINSTANCE r = ShellExecuteW(m_hwnd, L"open", path.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
     if ((INT_PTR)r <= 32) Log::Warn("ShellExecute failed for %s (%d)", WideToUtf8(path).c_str(), (int)(INT_PTR)r);
+}
+
+// ------------------------------------------------------------------------------------------
+
+// ------------------------------------------------------------------------------------------ Ask AI
+
+// The interface's theme as the page should show it: the one the interface is going to (it crossfades on its own).
+bool App::AskLight() const { return m_settings.theme == 2 || (m_settings.theme == 0 && m_systemLight); }
+
+// What the page shows: the interface's language, theme, fonts and corner radius, and its own words for the widget.
+AskPageConfig App::AskConfig() const {
+    AskPageConfig c;
+    switch (I18n::Current()) {
+        case Lang::Chinese:
+            c.mintLang = "cn"; c.dir = "zh/"; c.htmlLang = "zh-Hans";
+            c.font = "\"Segoe UI\",\"Microsoft YaHei UI\",\"Microsoft YaHei\",sans-serif";
+            break;
+        case Lang::Japanese:
+            c.mintLang = "jp"; c.dir = "ja/"; c.htmlLang = "ja";
+            c.font = "\"Segoe UI\",\"Yu Gothic UI\",\"Meiryo UI\",Meiryo,sans-serif";
+            break;
+        case Lang::Korean:
+            c.mintLang = "ko"; c.dir = "ko/"; c.htmlLang = "ko";
+            c.font = "\"Segoe UI\",\"Malgun Gothic\",sans-serif";
+            break;
+        default:
+            c.mintLang = "en"; c.dir = ""; c.htmlLang = "en";
+            c.font = "\"Segoe UI\",system-ui,sans-serif";
+            break;
+    }
+    c.light = AskLight();
+    c.radius = m_imguiReady ? ui::CardRounding() / ui::Dpi() : 10.0f;
+    c.title = TR(AskTitle);
+    c.trigger = TR(AskTrigger);
+    c.placeholder = TR(AskPlaceholder);
+    c.disclaimer = TR(AskDisclaimer);
+    c.suggestions = TR(AskSuggestions);
+    c.questions = { TR(AskQuestion1), TR(AskQuestion2), TR(AskQuestion3) };
+    c.test = !m_cli.askAt.empty();
+    return c;
+}
+
+namespace {
+// The panel's card behind the page while it loads (the interface's card colour of that theme, 0xRRGGBB).
+uint32_t AskBackground(bool light) { return light ? 0xFFFFFFu : 0x191C22u; }
+}
+
+// Opens the panel. The WebView2 control (and its browser processes) is created here, at the first opening, so
+// nothing runs and nothing is sent before the user asks for it. Where it cannot run, the browser serves instead.
+void App::OpenAsk(bool byUser) {
+    if (m_askOpen) {
+        if (m_askClosing >= 0.0) {   // opened again while its page was fading out
+            m_askClosing = -1.0;
+            if (m_ask.Visible()) m_ask.Show(byUser);
+        }
+        return;
+    }
+    std::string why, version;
+    if (m_headless) why = "a headless run has no window for it";
+    else if (RunningUnderWine()) why = "the WebView2 control does not run under Wine";
+    else if (m_cli.askNoRuntime) why = "--ask-no-runtime";
+    else if (m_askBroken) why = "the WebView2 control could not be created earlier in this session";
+    else if (!AskPanel::RuntimeVersion(version)) why = "there is no WebView2 Runtime on this computer";
+    if (!why.empty()) { AskInBrowser(why); return; }
+    if (m_ask.GetState() == AskPanel::State::Idle) {
+        Log::Info("Ask AI: creating the WebView2 control (Runtime %s)", version.c_str());
+        std::string error;
+        if (!m_ask.Start(m_hwnd, JoinPath(m_appDataDir, L"webview2"), AskConfig(), AskBackground(AskLight()), error)) {
+            m_askBroken = true;
+            Log::Warn("Ask AI: %s", error.c_str());
+            AskInBrowser("the WebView2 control could not be started");
+            return;
+        }
+        m_askLook = std::to_string((int)I18n::Current()) + (AskLight() ? "L" : "D");
+    } else if (m_ask.GetState() == AskPanel::State::Failed) {
+        Log::Info("Ask AI: the page again");
+        m_ask.Retry();
+    }
+    Log::Info("Ask AI: panel opened");
+    m_askOpen = true;
+    m_askFocusNext = byUser;
+}
+
+// Closes the panel: the page fades out, then the card slides away (TickAsk).
+void App::CloseAsk() {
+    if (!m_askOpen || m_askClosing >= 0.0) return;
+    m_askFocusNext = false;
+    Log::Info("Ask AI: panel closed");
+    if (m_ask.Visible()) { m_ask.BeginHide(); m_askClosing = NowSeconds(); }
+    else m_askOpen = false;
+}
+
+void App::AskInBrowser(const std::string& why) {
+    Log::Info("Ask AI: %s; the AI Q&A opens in the browser", why.c_str());
+    OpenPath(DocsUrl(L"?ask"));
+    m_ui.Toast(TR(AskOpenedInBrowser));
+}
+
+void App::TickAsk() {
+    const double now = NowSeconds();
+    if (m_askClosing >= 0.0 && now - m_askClosing >= AskPanel::kHideFade) {
+        m_askClosing = -1.0;
+        m_ask.Hide();
+        m_askOpen = false;
+    }
+    for (const AskPanel::Event& e : m_ask.Poll()) {
+        switch (e.type) {
+        case AskPanel::Event::Ready:      Log::Info("Ask AI: the page is ready (%s)", e.text.c_str()); break;
+        case AskPanel::Event::LoadFailed: Log::Warn("Ask AI: the page could not be loaded: %s", e.text.c_str()); break;
+        case AskPanel::Event::CreateFailed:
+            Log::Warn("Ask AI: the WebView2 control could not be created: %s", e.text.c_str());
+            m_askBroken = true;
+            if (m_askOpen) { m_askOpen = false; m_askClosing = -1.0; AskInBrowser("the WebView2 control could not be created"); }
+            break;
+        case AskPanel::Event::Close:      Log::Info("Ask AI: closed from the page"); CloseAsk(); break;
+        case AskPanel::Event::Escape:     Log::Info("Ask AI: Esc in the page"); CloseAsk(); break;
+        case AskPanel::Event::Link:       OpenPath(Utf8ToWide(e.text)); break;
+        case AskPanel::Event::Fullscreen: Log::Info("Ask AI: F11 in the page"); m_ui.ToggleFullscreen(); break;
+        case AskPanel::Event::Answered:   Log::Info("Ask AI: answer (%s)", e.text.c_str()); break;
+        case AskPanel::Event::Log:        Log::Info("Ask AI: %s", e.text.c_str()); break;
+        }
+    }
+    if (!m_ask.Created()) return;
+    // The interface's language or theme changed: the page follows (a language opens it again, a theme crossfades).
+    const std::string look = std::to_string((int)I18n::Current()) + (AskLight() ? "L" : "D");
+    if (look != m_askLook) {
+        m_askLook = look;
+        m_ask.Configure(AskConfig(), AskBackground(AskLight()));
+    }
+    if (m_minimized) return;
+    // On screen once the card has landed and the page is ready, over the card exactly; off it whenever the card
+    // is covered or moving (the fullscreen switch, a page that loads again).
+    ImVec2 mn, mx;
+    if (m_askOpen && m_askClosing < 0.0 && m_ask.GetState() == AskPanel::State::Ready && m_ui.AskPanelRect(mn, mx)) {
+        const RECT r{ (LONG)std::lround(mn.x), (LONG)std::lround(mn.y), (LONG)std::lround(mx.x), (LONG)std::lround(mx.y) };
+        m_askRect = r;
+        m_ask.SetBounds(r);
+        if (!m_ask.Visible()) {
+            m_ask.Show(m_askFocusNext, m_askInstant);
+            m_askFocusNext = false;
+            m_askInstant = false;
+        }
+    } else if (m_ask.Visible() && m_askClosing < 0.0) {
+        m_ask.BeginHide();
+        m_ask.Hide();
+    }
+}
+
+// --ask-at: open, toggle, hide (the button's way), close (the page's own close control), esc (a key press in the
+// page), link (an answer's first link), q:<question>, theme:<0|1|2>, lang:<auto|en|zh|ja|ko>, min:<seconds> (the
+// window minimised that long, never activated), size:<W>x<H> (the window's client size).
+void App::RunAskAction(const std::string& action) {
+    Log::Info("Ask AI: test step %s", action.c_str());
+    if (action == "open") OpenAsk(true);
+    else if (action == "toggle") { if (m_askOpen && m_askClosing < 0.0) CloseAsk(); else OpenAsk(true); }
+    else if (action == "hide") CloseAsk();
+    else if (action == "close") m_ask.Test("close");
+    else if (action == "esc") { if (!m_ask.SendKey(VK_ESCAPE)) Log::Warn("Ask AI: no page window to send Esc to"); }
+    else if (action == "link") m_ask.Test("link");
+    else if (action.rfind("q:", 0) == 0) m_ask.Ask(action.substr(2));
+    else if (action.rfind("min:", 0) == 0) {   // minimised for that long, then restored by a timer
+        ShowWindow(m_hwnd, SW_SHOWMINNOACTIVE);
+        SetTimer(m_hwnd, kAskRestoreTimer, (UINT)std::clamp(atof(action.c_str() + 4) * 1000.0, 100.0, 60000.0), nullptr);
+    }
+    else if (action.rfind("size:", 0) == 0) {
+        UINT w = 0, h = 0;
+        if (!ParseSize(Utf8ToWide(action.substr(5)).c_str(), w, h)) { Log::Warn("Ask AI: bad size in %s", action.c_str()); return; }
+        RECT rc{ 0, 0, (LONG)w, (LONG)h };
+        AdjustWindowRectExForDpi(&rc, WS_OVERLAPPEDWINDOW, FALSE, 0, GetDpiForWindow(m_hwnd));
+        SetWindowPos(m_hwnd, nullptr, 0, 0, rc.right - rc.left, rc.bottom - rc.top, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
+    }
+    else if (action.rfind("theme:", 0) == 0) m_settings.theme = std::clamp(atoi(action.c_str() + 6), 0, 2);
+    else if (action.rfind("lang:", 0) == 0) {
+        const int l = LanguageCode(Utf8ToWide(action.substr(5)));
+        if (l < 0) { Log::Warn("Ask AI: unknown language in %s", action.c_str()); return; }
+        m_settings.language = l;
+        I18n::SetLanguage(I18n::FromSetting(m_settings.language));
+        m_fontsDirty = true;
+        Log::Info("Language switched to %s", I18n::LanguageName(I18n::Current()));
+    }
+    else Log::Warn("Ask AI: unknown test step %s", action.c_str());
+}
+
+// A screenshot is being recorded: the page is a window of its own, so its picture is asked for separately and
+// copied into the screenshot where the page is (AskShotFinish).
+void App::AskShotBegin() {
+    m_askShotPng.clear();
+    m_askShotWaiting = false;
+    if (!m_ask.Visible()) return;
+    m_heldShotRect = m_askRect;
+    m_askShotWaiting = true;
+    if (!m_ask.CapturePng([this](std::vector<uint8_t>&& png) { m_askShotPng = std::move(png); m_askShotWaiting = false; })) {
+        m_askShotWaiting = false;
+        Log::Warn("Ask AI: the page's picture could not be asked for");
+    }
+}
+
+void App::AskShotFinish(bool force) {
+    if (!m_heldShot) return;
+    if (m_askShotWaiting && !force && NowSeconds() - m_heldShotSince < 3.0) return;
+    CaptureJob job = std::move(*m_heldShot);
+    m_heldShot.reset();
+    std::vector<uint8_t> rgba;
+    int w = 0, h = 0;
+    if (!m_askShotPng.empty() && AskPanel::DecodePng(m_askShotPng, rgba, w, h)) {
+        const int x0 = std::max(0, (int)m_heldShotRect.left), y0 = std::max(0, (int)m_heldShotRect.top);
+        const int cw = std::min(w, (int)job.width - x0), ch = std::min(h, (int)job.height - y0);
+        for (int y = 0; y < ch; ++y)
+            memcpy(&job.pixels[(size_t)(y0 + y) * job.rowPitch + (size_t)x0 * 4], &rgba[(size_t)y * (size_t)w * 4], (size_t)std::max(0, cw) * 4);
+        Log::Info("Screenshot: the Ask AI page (%dx%d) copied in at %d,%d", w, h, x0, y0);
+    } else {
+        Log::Warn("Screenshot: without the Ask AI page (its picture did not come)");
+    }
+    m_askShotPng.clear();
+    m_askShotWaiting = false;
+    m_capture.Enqueue(std::move(job));
 }
 
 // ------------------------------------------------------------------------------------------
@@ -3740,10 +3994,15 @@ LRESULT App::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     if ((msg >= WM_MOUSEFIRST && msg <= WM_MOUSELAST) || (msg >= WM_KEYFIRST && msg <= WM_KEYLAST) || msg == WM_MOUSELEAVE
         || msg == WM_SETFOCUS || msg == WM_KILLFOCUS || msg == WM_SIZE || msg == WM_DROPFILES)
         m_lastInputTime = NowSeconds();   // the interface draws at full rate for a moment after the user's hand
+    // A click on the interface takes the keyboard back from the Ask AI page (Windows leaves it with the page).
+    if ((msg == WM_LBUTTONDOWN || msg == WM_RBUTTONDOWN || msg == WM_MBUTTONDOWN || msg == WM_XBUTTONDOWN) && m_ask.Created() && GetFocus() != hwnd)
+        SetFocus(hwnd);
     if (m_imguiReady && ImGui_ImplWin32_WndProcHandler(hwnd, msg, wParam, lParam)) return 1;
     switch (msg) {
     case WM_SIZE:
         if (wParam == SIZE_MINIMIZED) {
+            // The page rests while the window is down and comes back at once with it.
+            if (m_ask.Visible()) { m_ask.Hide(); m_askInstant = true; }
             m_minimized = true;
         } else {
             m_minimized = false;
@@ -3754,6 +4013,9 @@ LRESULT App::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             }
         }
         return 0;
+    case WM_MOVE:
+        m_ask.NotifyMoved();   // the page's own popups (an input method's candidates) follow the window
+        break;
     case WM_ENTERSIZEMOVE:
         m_sizing = true;
         SetTimer(hwnd, kSizeTimer, 16, nullptr);
@@ -3764,6 +4026,7 @@ LRESULT App::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         return 0;
     case WM_TIMER:
         if (wParam == kSizeTimer && m_sizing && !m_minimized) Frame();
+        if (wParam == kAskRestoreTimer) { KillTimer(hwnd, kAskRestoreTimer); Log::Info("Ask AI: test window restored"); ShowWindow(hwnd, SW_SHOWNOACTIVATE); }
         return 0;
     case WM_HOTKEY:
         if ((int)wParam == kHotkeyId) CaptureNow();
