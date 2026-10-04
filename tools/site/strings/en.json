@@ -36,6 +36,22 @@
     "results": "{n} results",
     "result": "1 result"
   },
+  "ask": {
+    "button": "Ask AI",
+    "title": "AI Q&A",
+    "trigger": "Ask AI",
+    "placeholder": "Ask a question about the app",
+    "disclaimer": "AI writes these answers from this documentation. They can be wrong, so check the page an answer links to.",
+    "suggestions": "Try asking",
+    "questions": [
+      "Which download is right for my graphics card?",
+      "How do I send the VRChat camera to the app?",
+      "Why is the live picture slow?"
+    ],
+    "search": "Ask AI about “{q}”",
+    "loading": "Loading AI Q&A…",
+    "failed": "AI Q&A could not be loaded. Check your connection, then try again."
+  },
   "callout": {
     "tip": "Tip",
     "warning": "Careful",

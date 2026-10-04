@@ -36,6 +36,22 @@
     "results": "결과 {n}개",
     "result": "결과 1개"
   },
+  "ask": {
+    "button": "AI에게 묻기",
+    "title": "AI Q&A",
+    "trigger": "AI에게 묻기",
+    "placeholder": "앱에 대해 질문해 보세요",
+    "disclaimer": "답변은 AI가 이 문서를 바탕으로 작성합니다. 틀릴 수 있으니 답변에 연결된 페이지에서 확인하세요.",
+    "suggestions": "이렇게 물어보세요",
+    "questions": [
+      "내 그래픽 카드에는 어떤 파일을 내려받아야 하나요?",
+      "VRChat 카메라 화면을 앱으로 보내려면 어떻게 하나요?",
+      "실시간 화면이 왜 느린가요?"
+    ],
+    "search": "‘{q}’에 대해 AI에게 묻기",
+    "loading": "AI Q&A 불러오는 중…",
+    "failed": "AI Q&A를 불러오지 못했습니다. 인터넷 연결을 확인한 뒤 다시 시도하세요."
+  },
   "callout": {
     "tip": "팁",
     "warning": "주의",

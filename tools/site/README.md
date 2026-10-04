@@ -2,8 +2,8 @@
 
 The source of the documentation site at https://alanbacker.github.io/VRChat-DLSS5-Cam/. The build writes plain HTML,
 CSS and JavaScript into `site/` at the repository root; GitHub Pages publishes that folder
-(`.github/workflows/pages.yml`). The pages make no request outside the site and also work when opened straight from
-the disk (`site/index.html`).
+(`.github/workflows/pages.yml`). The pages make no request outside the site (AI Q&A aside, when it is turned on) and
+also work when opened straight from the disk (`site/index.html`).
 
 ## Build
 
@@ -27,10 +27,10 @@ published unpainted, and with `--check` any link or picture that does not resolv
 | `images.json` | The screenshots and how each is cropped, painted over and shown |
 | `shots/` | The screenshots' PNG sources (not published; see Screenshots) |
 | `templates/layout.html` | The page frame |
-| `assets/` | `site.css`, `site.js`, the logo files; copied into `site/assets/` |
+| `assets/` | `site.css`, `site.js`, the logo files; copied into `site/assets/`. `ask.css` and `ask.js` are added to `site.css` and `site.js` only when AI Q&A is on |
 | `icons/` | Lucide icons (ISC licence in `icons/LICENSE`), inlined into the pages as SVG |
 | `partials/` | The two sphere drawings used by the hero picture and the comparison illustration |
-| `mintlify.py` | Writes `mintlify/`, the copy of the pages for Mintlify's assistant (see The Mintlify copy) |
+| `mintlify.py` | Writes `mintlify/`, the copy of the pages that Mintlify's AI Q&A answers from (see The Mintlify copy) |
 | `logo.py` | Redraws `assets/logo.svg`, `assets/mark.svg`, the PNG icons and `partials/` from `tools/make_app_icon.py`; its output is committed, run it only when the program icon changes (needs pycairo) |
 
 The changelog page is built from `docs/releases/vX.Y.Z[.zh-CN|.ja|.ko].md`: each version's first paragraph and the
@@ -114,7 +114,7 @@ name plates, user IDs, error messages or private paths, and the same views in al
 ## The Mintlify copy
 
 `mintlify/` at the repository root holds the same pages as `.mdx` files with a `docs.json`, written by
-`mintlify.py` on every build. Mintlify reads that folder from the default branch so that its assistant answers
+`mintlify.py` on every build. Mintlify reads that folder from the default branch so that its AI Q&A answers
 questions from these pages; the site in `site/` stays the documentation readers use (the copy tells search engines
 not to list it). Never edit `mintlify/` by hand.
 
@@ -126,6 +126,56 @@ not to list it). Never edit `mintlify/` by hand.
   makes its own from the headings.
 - To check the copy: `npm install mint` in a scratch folder, then in `mintlify/` run `mint validate` and
   `mint broken-links` (or `mint dev` for a preview).
+
+## AI Q&A
+
+`askWidget` in `site.json` holds the public ID of a Mintlify widget. It is empty by default, and then the pages carry
+no trace of the feature: the build output is the same as without it. With an ID, the build:
+
+- adds an **Ask AI** button beside the search box, and an "Ask AI about …" row at the end of the search results;
+- adds `assets/ask.css` and `assets/ask.js` to the end of `site.css` and `site.js` (no extra file to fetch);
+- writes the ID, Mintlify's language code, the labels and the starter questions (`ask` in `strings/<lang>.json`, at
+  most three questions) into each page's `data-site`;
+- keeps what stands between `<!-- if askWidget -->` and `<!-- else -->` in a page, and drops the `else` part.
+  Without the ID it is the other way round. Each line stands alone, and `<!-- else -->` may be left out:
+
+  ```
+  <!-- if askWidget -->
+  Text for pages with AI Q&A.
+  <!-- else -->
+  Text for pages without it.
+  <!-- endif -->
+  ```
+
+How it behaves:
+
+- Nothing from Mintlify loads with a page. Pointing at an entry point, or moving to it with the keyboard, fetches the
+  widget's script once the page has finished opening. That draws nothing and sends nothing. A click starts the
+  widget and opens its panel.
+- The widget takes the site's accent colour, card radius, font, mark and theme, and follows a theme change.
+- Mintlify draws its own button in the corner whenever the panel is closed, and its stylesheet resets its element
+  with `all: initial !important`, which no page style can override. `ask.js` moves that element into a layer of
+  the page (`.ask-layer`) that is there only while the panel is open: it fades in as the panel opens, fades out in
+  0.08 s as the panel starts to slide away (the panel covers the corner button for its first 0.1 s), then leaves
+  the page. The button is never seen; **Ask AI** in the top bar is the way back to the conversation. The widget is
+  started open, so it is drawn open from the start. Mintlify's own controls in the panel (**Clear chat**, its error
+  messages) stay in English: the widget has no labels for them.
+- An answer's link to another page of the site opens in a new tab, so the conversation stays in this one. A link to
+  a heading on the same page scrolls there.
+
+To turn it on:
+
+1. Mintlify needs a Pro or Enterprise plan for the widget (its OSS program gives eligible open-source projects
+   Pro for free: https://mintlify.typeform.com/oss-program). Connect the project to `mintlify/` first (see The
+   Mintlify copy), because the widget answers from that content.
+2. In the dashboard, open the **Widget** page and turn the widget on.
+3. Add `https://alanbacker.github.io` as an allowed origin. To try it locally, serve `site/` (for example
+   `python3 -m http.server` in that folder, which gives `http://localhost:8000`) and add that address too. Pages
+   opened straight from the disk have no origin the widget can allow.
+4. Copy the widget ID into `"askWidget"` in `site.json`, then run the build.
+
+The `ask` strings in `strings/<lang>.json` and the privacy page's `<!-- if askWidget -->` block exist in all four
+languages; a new language needs both.
 
 ## Base path
 

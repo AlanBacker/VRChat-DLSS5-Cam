@@ -62,6 +62,8 @@ PAGES = [dict(p, section=s['id']) for s in CONFIG['sections'] for p in s['pages'
 SLUGS = [p['slug'] for p in PAGES]
 STEP_PAGES = [p['slug'] for p in PAGES if p.get('step')]
 REPO = CONFIG['repo']
+# AI Q&A: the public ID of a Mintlify widget. Empty: the pages carry no trace of the feature (see README).
+ASK_ID = CONFIG.get('askWidget', '').strip()
 
 # ------------------------------------------------------------------------------------------------ icons
 _ICONS = {}
@@ -108,6 +110,21 @@ def S(lang, key, **fmt):
 
 
 FRONT = re.compile(r'^---\s*\n(.*?)\n---\s*\n', re.S)
+# A passage that holds only while a feature is on:  <!-- if askWidget --> … [<!-- else --> …] <!-- endif -->,
+# each marker on a line of its own. With the feature off the page reads exactly as the else part (or without it).
+IF_BLOCK = re.compile(r'^<!-- if (\w+) -->\n(.*?)^(?:<!-- else -->\n(.*?))?^<!-- endif -->\n', re.S | re.M)
+FEATURES = {'askWidget': bool(ASK_ID)}
+
+
+def features(text, where):
+    def rep(m):
+        if m.group(1) not in FEATURES:
+            warn('%s: unknown feature in <!-- if %s -->' % (where, m.group(1)))
+        return m.group(2) if FEATURES.get(m.group(1)) else (m.group(3) or '')
+    text = IF_BLOCK.sub(rep, text)
+    if re.search(r'^<!-- (if \w+|else|endif) -->$', text, re.M):
+        warn('%s: an <!-- if --> block is not closed' % where)
+    return text
 
 
 def load_page(lang, slug):
@@ -126,6 +143,7 @@ def load_page(lang, slug):
                 k, v = line.split(':', 1)
                 meta[k.strip()] = v.strip()
         text = text[m.end():]
+    text = features(text, os.path.relpath(path, HERE))
     if fallback:
         meta['status'] = 'to-be-translated'
     meta.setdefault('status', 'translated' if lang == 'en' else 'to-be-translated')
@@ -529,6 +547,29 @@ def theme_menu(lang):
             % (esc(S(lang, 'theme.label')), esc(S(lang, 'theme.label')), icon('monitor'), icon('moon'), icon('sun'), esc(S(lang, 'theme.label')), btns))
 
 
+def ask_button(lang):
+    """The AI Q&A button beside the search box (only with a widget ID; ask.js runs it)."""
+    if not ASK_ID:
+        return ''
+    return ('<button type="button" class="btn btn-flat ask-btn js-only" aria-expanded="false">%s'
+            '<svg class="ask-spin" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="9"/></svg>'
+            '<span class="ask-label">%s</span></button>' % (icon('message-circle-question-mark', 'ask-ic'), esc(S(lang, 'ask.button'))))
+
+
+def ask_data(lang):
+    """What ask.js needs: the widget ID, Mintlify's code for the language, the panel's words and the page names."""
+    import mintlify
+    return {
+        'id': ASK_ID,
+        'language': mintlify.MINT_LANG[lang],
+        'labels': {k: S(lang, 'ask.' + k) for k in ('title', 'trigger', 'placeholder', 'disclaimer', 'suggestions')},
+        'questions': list(S(lang, 'ask.questions'))[:3],
+        'text': {k: S(lang, 'ask.' + k) for k in ('search', 'loading', 'failed')},
+        'pages': SLUGS,
+        'icon': icon('message-circle-question-mark'),
+    }
+
+
 def toc_html(lang, headings):
     h2 = [(hid, text) for level, hid, text in headings if level == 2]
     if len(h2) < 2:
@@ -679,6 +720,7 @@ def render_page(L, page, metas, images, search):
         'search_clear': esc(S(lang, 'search.clear')),
         'lang_menu': lang_menu(lang, slug),
         'theme_menu': theme_menu(lang),
+        'ask_button': ask_button(lang),
         'nav': nav_html(lang, slug, metas),
         'article': article,
         'article_lang': ' lang="en"' if pending else '',
@@ -693,6 +735,7 @@ def render_page(L, page, metas, images, search):
             'code': {'copy': S(lang, 'code.copy'), 'copied': S(lang, 'code.copied')},
             'figure': {'close': S(lang, 'figure.close')},
             'icons': {'copy': icon('copy'), 'check': icon('check'), 'x': icon('x'), 'page': icon('file-text'), 'hash': icon('hash')},
+            **({'ask': ask_data(lang)} if ASK_ID else {}),
         }, ensure_ascii=False)),
     }
     out = fill(LAYOUT, values).replace('{root}', root)
@@ -753,6 +796,9 @@ def build():
     adir = os.path.join(OUT, 'assets')
     for f in ('site.css', 'site.js', 'logo.svg', 'mark.svg', 'icon-32.png', 'icon-180.png'):
         shutil.copyfile(os.path.join(HERE, 'assets', f), os.path.join(adir, f))
+    if ASK_ID:   # the AI Q&A rides in site.css and site.js: no request of its own, nothing at all without an ID
+        for f, extra in (('site.css', 'ask.css'), ('site.js', 'ask.js')):
+            write(os.path.join(adir, f), read(os.path.join(adir, f)) + read(os.path.join(HERE, 'assets', extra)))
     os.makedirs(os.path.join(adir, 'licenses'), exist_ok=True)
     shutil.copyfile(os.path.join(HERE, 'icons', 'LICENSE'), os.path.join(adir, 'licenses', 'lucide-LICENSE.txt'))
     write(os.path.join(OUT, '.nojekyll'), '')

@@ -36,6 +36,22 @@
     "results": "{n} 个结果",
     "result": "1 个结果"
   },
+  "ask": {
+    "button": "问 AI",
+    "title": "AI 问答",
+    "trigger": "问 AI",
+    "placeholder": "问一个关于本程序的问题",
+    "disclaimer": "这些回答由 AI 根据本文档写出，可能有误。请打开回答所链接的页面核对。",
+    "suggestions": "试试这样问",
+    "questions": [
+      "我的显卡该下载哪一版？",
+      "怎样把 VRChat 的相机画面发送给这个程序？",
+      "实时画面为什么很慢？"
+    ],
+    "search": "向 AI 提问“{q}”",
+    "loading": "正在加载 AI 问答…",
+    "failed": "无法加载 AI 问答。请检查网络连接，然后再试一次。"
+  },
   "callout": {
     "tip": "提示",
     "warning": "注意",
