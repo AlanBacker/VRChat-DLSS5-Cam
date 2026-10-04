@@ -12,7 +12,7 @@
      to the conversation. The click starts the widget with defaultOpen, so it is drawn open from the start.
    - An answer's link to another page of the site puts that page in place of this one without a page load, so the
      panel and the conversation stay (a page load would start the widget with an empty panel); a link into this page
-     glides there. */
+     glides there. Every form Mintlify writes such a link in counts, a whole address too. */
 (function () {
   'use strict';
   var doc = document.documentElement, body = document.body, site = {};
@@ -76,11 +76,13 @@
     if (started) return started;
     var l0 = look();
     adopt();
+    var unkeep = keepRoot();
     started = load().then(function () { return api.init(config()); }).then(function () {
       mounted = true;
       var l1 = look();   // the theme was changed while it started
       if (l1.theme !== l0.theme || l1.accent !== l0.accent) api.update({ appearance: l1 }).catch(noop);
     });
+    started.then(unkeep, unkeep);
     started.catch(function () { started = null; mounted = false; });
     return started;
   }
@@ -223,14 +225,25 @@
     for (var i = 0; i < hs.length; i++) if (slugText(hs[i].textContent) === want) return hs[i];
     return null;
   }
-  function ours(path) {   // /en/install#x, /cn/live, /jp, … → this site's page, as an address
-    var u;
-    try { u = new URL(path, 'https://docs.invalid/'); } catch (e) { return null; }
-    var m = /^\/([a-z]{2})(?:\/([^\/]+))?\/?$/.exec(u.pathname.replace(/\.(mdx?|html)$/, ''));
-    var code = m && MINT[m[1]], dirs = site.dirs || {};
-    if (!code || !(code in dirs)) return null;
-    var slug = m[2] || 'index';
-    if ((cfg.pages || []).indexOf(slug) < 0) slug = 'index';
+  // An answer's link → this site's page, as an address. Mintlify writes its own form (/en/install#x, /cn/live, /jp),
+  // often with this site's base path before it (/VRChat-DLSS5-Cam/zh/install); a whole address of a page here
+  // (…/zh/install.html, or …/install.html for English, whose pages have no folder) counts too.
+  function ours(path) {
+    var u, home = new URL(site.root || './', location.href);
+    try { u = new URL(path, location.href); } catch (e) { return null; }
+    if (u.origin !== location.origin) return null;   // another site: the widget opens it
+    var mine = u.pathname.indexOf(home.pathname) === 0, pages = cfg.pages || [], dirs = site.dirs || {};
+    var seg = (mine ? u.pathname.slice(home.pathname.length) : u.pathname).replace(/\.(mdx?|html)$/, '').split('/').filter(Boolean);
+    var code = MINT[seg[0]];
+    if (code) seg.shift();
+    else if (mine || (seg.length === 1 && pages.indexOf(seg[0]) >= 0)) code = 'en';
+    else return null;
+    if (seg.length > 1 || !(code in dirs)) return null;
+    var slug = seg[0] || 'index';
+    if (pages.indexOf(slug) < 0) {
+      if (slug.indexOf('.') >= 0) return null;   // a file of the site (a picture, a licence), not a page
+      slug = 'index';
+    }
     return new URL((site.root || '') + (dirs[code] ? dirs[code] + '/' : '') + slug + '.html' + u.hash, location.href);
   }
   function click(href) {   // a real link, clicked: the site's own handlers glide within the page or to the next one
@@ -347,6 +360,32 @@
     var d = e.detail || {}, to = ours(d.path || d.url || '');
     if (!to) return;   // not one of these pages: the widget handles it
     e.preventDefault();
+    place(to);
+  });
+  // The widget's links with a whole address (https://…) are plain new-tab links that send no event, and its panel is
+  // a closed shadow root that hides from the page which link was clicked. The root is kept as the widget makes it
+  // (for its own element, only while it starts), and a click on a link to a page here is answered in it first.
+  function keepRoot() {
+    var proto = Element.prototype, attach = proto.attachShadow;
+    if (!attach) return noop;
+    proto.attachShadow = function (init) {
+      var r = attach.apply(this, arguments);
+      if (this.localName === 'mintlify-assistant') r.addEventListener('click', onLink, true);
+      return r;
+    };
+    return function () { proto.attachShadow = attach; };
+  }
+  function onLink(e) {
+    if (e.defaultPrevented || e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;   // a new tab asked for
+    var a = e.target.closest ? e.target.closest('a[href]') : null;
+    if (!a || a.getAttribute('href').charAt(0) === '#') return;   // a footnote: the widget scrolls its own panel
+    var to = ours(a.href);
+    if (!to) return;
+    e.preventDefault();
+    e.stopPropagation();   // the widget's own handler would send the event and open the page a second time
+    place(to);
+  }
+  function place(to) {
     var dir = (site.dirs || {})[site.lang], folder = new URL(((site.root || '') + (dir ? dir + '/' : '')) || './', location.href).pathname;
     var here = bare(to.pathname) === shownPath;
     var near = !here && to.pathname.indexOf(folder) === 0 && to.pathname.slice(folder.length).indexOf('/') < 0 && !!window.fetch && !!window.DOMParser;
@@ -359,7 +398,7 @@
     if (near) { show(to, true); return; }
     var h = to.hash && heading(to.hash);
     if (to.hash) click(h ? '#' + h.id : to.hash);
-  });
+  }
   (function arrive() {   // an anchor in Mintlify's form: go to our heading of that name at once (no history entry)
     if (location.hash.length < 2) return;
     var h = heading(location.hash);

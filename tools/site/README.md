@@ -168,6 +168,13 @@ How it behaves:
   a page in another language opens in a new tab. `ask.js` does the swap; `site.js` sets up the new page's parts
   (copy buttons, contents, figures, pictures) on its `vdc:swap` event, and the layout's sidebar script glides the
   highlight on `vdc:moved`.
+- Mintlify writes those links in its own form (`/zh/install`), usually with the site's base path before it
+  (`/VRChat-DLSS5-Cam/zh/install`), and sometimes as a whole address (`https://alanbacker.github.io/…/install.html`);
+  all of them count. The widget announces a click on its own-form links with an event, but a whole address is a
+  plain new-tab link there, and its panel is a closed shadow root that hides the clicked link from the page. So
+  `ask.js` keeps a reference to that root as the widget makes it (`attachShadow` is wrapped only while the widget
+  starts, and only for its element) and answers a click on a link to a page here before the widget does. Links to
+  other sites, and clicks that ask for a new tab (Ctrl, Shift, the middle button), open as usual.
 - Mintlify checks each question with hCaptcha (its bot protection, set in the dashboard). A browser hCaptcha
   trusts passes unseen; others, such as a headless browser on a server, first get a picture puzzle above the page.
 
