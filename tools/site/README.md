@@ -160,8 +160,14 @@ How it behaves:
   the page. The button is never seen; **Ask AI** in the top bar is the way back to the conversation. The widget is
   started open, so it is drawn open from the start. Mintlify's own controls in the panel (**Clear chat**, its error
   messages) stay in English: the widget has no labels for them.
-- An answer's link to another page of the site opens in a new tab, so the conversation stays in this one. A link to
-  a heading on the same page scrolls there.
+- An answer's link to another page of the site puts that page in place of this one without a page load, so the
+  panel and the conversation stay: the page's text fades out, the sidebar's highlight and the top bar's tab glide
+  to the new page as after a followed link, and its text rises in. The address and the history follow, and the back
+  and forward buttons swap the pages back to where the reader was. On a phone, where the panel covers the page, the
+  panel closes first and **Ask AI** brings the conversation back. A link to a heading on the same page glides there;
+  a page in another language opens in a new tab. `ask.js` does the swap; `site.js` sets up the new page's parts
+  (copy buttons, contents, figures, pictures) on its `vdc:swap` event, and the layout's sidebar script glides the
+  highlight on `vdc:moved`.
 - Mintlify checks each question with hCaptcha (its bot protection, set in the dashboard). A browser hCaptcha
   trusts passes unseen; others, such as a headless browser on a server, first get a picture puzzle above the page.
 

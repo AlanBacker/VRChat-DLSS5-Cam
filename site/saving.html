@@ -60,40 +60,31 @@
 /* Before the first paint (the head asks the browser to wait for this script): the sidebar comes back as the reader
    left it on the page before, its folded cards and its scroll position, and the highlight glides from the page they
    came from to this one, like the program's segmented selection. A reload, a link from elsewhere, the back button,
-   the sheet on a narrow screen or a request for less motion get no glide; without the script the sidebar just shows. */
+   the sheet on a narrow screen or a request for less motion get no glide; without the script the sidebar just shows.
+   A script that puts another page in place without a page load asks for the same glide with a vdc:moved event. */
 (function () {
   var d = document.documentElement, nav = document.getElementById('site-nav');
   if (!nav || !d.classList.contains('js') || !window.JSON) return;
   function get(k) { try { return sessionStorage.getItem(k) || ''; } catch (e) { return ''; } }
   function path(u) { try { return new URL(u, location.href).pathname.replace(/index\.html$/, ''); } catch (e) { return ''; } }
-  var cards = nav.querySelectorAll('.nav-card'), cur = nav.querySelector('.nav-card a[aria-current]'), i;
-  var folds = get('vdc-folds');
-  if (folds.length === cards.length) {
-    for (i = 0; i < cards.length; i++) if (folds.charAt(i) === '0' && !(cur && cards[i].contains(cur))) cards[i].open = false;
+  var EASE = 'cubic-bezier(.18,1,.56,1)', T = 280;
+  function still() {   // no glide: less motion asked for, a hidden tab, an old browser, or the sidebar as a sheet
+    return (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) || document.visibilityState !== 'visible' ||
+      !nav.animate || getComputedStyle(nav).position !== 'sticky';
   }
-  var rec = null;
-  try { rec = JSON.parse(get('vdc-nav') || 'null'); } catch (e) { rec = null; }
-  if (!rec || !(Date.now() - rec.t < 30000)) return;
-  var act = window.navigation && window.navigation.activation, ok = false;
-  if (act) ok = (act.navigationType === 'push' || act.navigationType === 'replace') && !!act.from && path(act.from.url) === rec.from;
-  else {
-    var pn = performance.getEntriesByType ? performance.getEntriesByType('navigation')[0] : null;
-    ok = !!pn && pn.type === 'navigate' && !!document.referrer && path(document.referrer) === rec.from;
+  function reveal(cur, smooth) {   // a link in the page may lead to an item the kept scroll hides: bring it just into view
+    var nr = nav.getBoundingClientRect(), cr = cur.getBoundingClientRect(), low = Math.min(nr.bottom, innerHeight) - 8, by = 0;
+    if (cr.top < nr.top + 8) by = cr.top - nr.top - 8;
+    else if (cr.bottom > low) by = cr.bottom - low;
+    if (!by) return;
+    if (smooth && nav.scrollBy) nav.scrollBy({ top: by, behavior: 'smooth' }); else nav.scrollTop += by;
   }
-  if (!ok || (rec.to && path(rec.to) !== path(location.href))) return;
-  if (getComputedStyle(nav).position !== 'sticky') return;
-  nav.scrollTop = rec.scroll || 0;
-  if (cur) {   // a link in the page may lead to an item the kept scroll hides: bring it just into view
-    var nr = nav.getBoundingClientRect(), cr = cur.getBoundingClientRect(), low = Math.min(nr.bottom, innerHeight) - 8;
-    if (cr.top < nr.top + 8) nav.scrollTop -= nr.top + 8 - cr.top;
-    else if (cr.bottom > low) nav.scrollTop += cr.bottom - low;
-  }
-  if ((window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) || document.visibilityState !== 'visible' || !nav.animate) return;
-  var EASE = 'cubic-bezier(.18,1,.56,1)', T = 280, starts = [];
+  function links() { return nav.querySelectorAll('.nav-card li a'); }
+  function item(p) { var ls = links(); for (var i = 0; i < ls.length; i++) if (path(ls[i].href) === p) return ls[i]; return null; }
   // Everything is laid out at its starting point here and set going together in the first frame: the curve puts most
   // of the travel in its first tenth of a second, and a clock started now would spend that part while the page is still
   // being painted (site.js runs before the first paint too, the head asks for it).
-  function glide(box, root, a, b, shown, cls) {
+  function glide(box, root, a, b, shown, cls, starts) {
     // The plate and both labels run on one clock: the labels' colours are animated from the look of the page left to
     // the look of this one, while their own hover fades rest (hl-setup) until the plate has landed. The weight changes
     // once, when the plate is half-way: a weight in between makes the browser look up a font face in every frame.
@@ -139,24 +130,72 @@
       for (var p in k1) ps[p] = k1[p];
     });
   }
-  var links = nav.querySelectorAll('.nav-card li a'), from = null;
-  for (i = 0; i < links.length; i++) if (path(links[i].href) === rec.from) from = links[i];
+  function go(starts) { if (starts.length) requestAnimationFrame(function () { for (var s = 0; s < starts.length; s++) starts[s](); }); }
+  function tabGlide(from, starts) {   // the top bar's Guide / Reference tabs, from the tab marked before
+    var bar = document.querySelector('.top-links');
+    if (!bar || !(from >= 0) || getComputedStyle(bar).display === 'none') return;
+    var tabs = bar.querySelectorAll('a'), now = -1;
+    for (var i = 0; i < tabs.length; i++) if (tabs[i].hasAttribute('aria-current')) now = i;
+    if (now >= 0 && now !== from && tabs[from]) glide(bar, bar, tabs[from], tabs[now], true, 'tab-hl', starts);
+  }
+
+  // detail: url, the page now shown; tab, its tab in the top bar. The marks move at once, the glide follows.
+  document.addEventListener('vdc:moved', function (e) {
+    var det = e.detail || {}, from = nav.querySelector('.nav-card a[aria-current]'), to = item(path(det.url || ''));
+    var bar = document.querySelector('.top-links'), tabs = bar ? bar.querySelectorAll('a') : [], tab = -1, j;
+    for (j = 0; j < tabs.length; j++) if (tabs[j].hasAttribute('aria-current')) tab = j;
+    var calm = still(), shown = !!from && (!from.closest('details') || from.closest('details').open);
+    if (to !== from) {
+      if (from) from.removeAttribute('aria-current');
+      if (to) {
+        to.setAttribute('aria-current', 'page');
+        var card = to.closest('details');
+        if (card && !card.open) card.open = true;   // it unfolds as the plate glides in
+      }
+    }
+    if (det.tab >= 0 && det.tab !== tab && tabs[det.tab]) {
+      if (tab >= 0) tabs[tab].removeAttribute('aria-current');
+      tabs[det.tab].setAttribute('aria-current', 'true');
+    }
+    if (to) reveal(to, !calm);
+    if (calm) return;
+    var starts = [];
+    if (from && to && from !== to) glide(nav.querySelector('.sidenav-body'), nav, from, to, shown, 'nav-hl', starts);
+    tabGlide(tab, starts);
+    go(starts);
+  });
+
+  var cards = nav.querySelectorAll('.nav-card'), cur = nav.querySelector('.nav-card a[aria-current]'), i;
+  var folds = get('vdc-folds');
+  if (folds.length === cards.length) {
+    for (i = 0; i < cards.length; i++) if (folds.charAt(i) === '0' && !(cur && cards[i].contains(cur))) cards[i].open = false;
+  }
+  var rec = null;
+  try { rec = JSON.parse(get('vdc-nav') || 'null'); } catch (e) { rec = null; }
+  if (!rec || !(Date.now() - rec.t < 30000)) return;
+  var act = window.navigation && window.navigation.activation, ok = false;
+  if (act) ok = (act.navigationType === 'push' || act.navigationType === 'replace') && !!act.from && path(act.from.url) === rec.from;
+  else {
+    var pn = performance.getEntriesByType ? performance.getEntriesByType('navigation')[0] : null;
+    ok = !!pn && pn.type === 'navigate' && !!document.referrer && path(document.referrer) === rec.from;
+  }
+  if (!ok || (rec.to && path(rec.to) !== path(location.href))) return;
+  if (getComputedStyle(nav).position !== 'sticky') return;
+  nav.scrollTop = rec.scroll || 0;
+  if (cur) reveal(cur, false);
+  if (still()) return;
+  var starts = [], from = item(rec.from);
   if (cur && from && from !== cur) {
     var card = from.closest('details');
-    glide(nav.querySelector('.sidenav-body'), nav, from, cur, !card || card.open, 'nav-hl');
+    glide(nav.querySelector('.sidenav-body'), nav, from, cur, !card || card.open, 'nav-hl', starts);
   }
   var dy = (rec.navTop || 0) - nav.getBoundingClientRect().top;
   if (Math.abs(dy) > 1 && !location.hash) {
     nav.style.transform = 'translateY(' + dy + 'px)';
     starts.push(function () { nav.style.transform = ''; nav.animate([{ transform: 'translateY(' + dy + 'px)' }, { transform: 'none' }], { duration: T, easing: EASE }); });
   }
-  var bar = document.querySelector('.top-links');
-  if (bar && rec.tab >= 0 && getComputedStyle(bar).display !== 'none') {
-    var tabs = bar.querySelectorAll('a'), now = -1;
-    for (i = 0; i < tabs.length; i++) if (tabs[i].hasAttribute('aria-current')) now = i;
-    if (now >= 0 && now !== rec.tab && tabs[rec.tab]) glide(bar, bar, tabs[rec.tab], tabs[now], true, 'tab-hl');
-  }
-  if (starts.length) requestAnimationFrame(function () { for (var s = 0; s < starts.length; s++) starts[s](); });
+  tabGlide(rec.tab, starts);
+  go(starts);
 })();
 </script>
 </div>

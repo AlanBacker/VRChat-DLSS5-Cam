@@ -10,8 +10,9 @@
      layer of this page that is there only while the panel is open: the layer fades in as the panel opens and out as
      it slides away, then leaves the page, so the widget's button never shows. Ask AI in the top bar is the way back
      to the conversation. The click starts the widget with defaultOpen, so it is drawn open from the start.
-   - An answer's link to another page opens it in a new tab, so the answer stays where the reader left it (after a
-     page load the widget starts with an empty panel); a link into this page glides there. */
+   - An answer's link to another page of the site puts that page in place of this one without a page load, so the
+     panel and the conversation stay (a page load would start the widget with an empty panel); a link into this page
+     glides there. */
 (function () {
   'use strict';
   var doc = document.documentElement, body = document.body, site = {};
@@ -240,18 +241,124 @@
     a.click();
     a.remove();
   }
+  function bare(p) { return p.replace(/index\.html$/, ''); }
+  function still() { return !!window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches; }
+
+  // Another page of this language is put in place of this one: its text fades out (0.12 s), the sidebar's highlight
+  // and the top bar's tab glide to the new page as they do after a followed link (vdc:moved, the layout's nav-early
+  // script) while its text rises in (0.28 s, the program's curve), and the address and the history follow. The
+  // browser's back and forward buttons swap the pages back, to the place the reader left (kept in the history entry
+  // as they scroll). site.js sets up the new page's parts on vdc:swap. A page that cannot be fetched opens the
+  // ordinary way.
+  var shownPath = bare(location.pathname), moving = 0, keeping = false, keepTimer = 0;
+  function fetchPage(url) {
+    return fetch(url, { credentials: 'same-origin' }).then(function (r) {
+      if (!r.ok) throw new Error('http ' + r.status);
+      return r.text();
+    }).then(function (html) {
+      var d = new DOMParser().parseFromString(html, 'text/html'), s = null;
+      try { s = JSON.parse(d.body.getAttribute('data-site') || 'null'); } catch (e) { s = null; }
+      if (!s || s.lang !== site.lang || s.root !== site.root || !d.getElementById('content') || !d.querySelector('.aside-toc')) throw new Error('page');
+      return d;
+    });
+  }
+  function parts() { return [document.getElementById('content'), document.querySelector('.aside-toc')]; }
+  function leave(els) {   // resolves once the page's text has faded out
+    if (still()) return Promise.resolve();
+    return Promise.all(els.map(function (el) {
+      if (!el || !el.animate) return null;
+      var a = el.animate([{ opacity: getComputedStyle(el).opacity }, { opacity: 0 }], { duration: 120, easing: 'cubic-bezier(.32,0,.67,0)', fill: 'forwards' });
+      return a.finished ? a.finished.catch(noop) : new Promise(function (r) { setTimeout(r, 120); });
+    }));
+  }
+  function keep() {   // the place read, in this history entry, for the back and forward buttons
+    clearTimeout(keepTimer);
+    keepTimer = setTimeout(function () { try { history.replaceState({ vdc: 1, y: Math.round(window.scrollY) }, ''); } catch (e) { /* not kept */ } }, 200);
+  }
+  // push: a link was followed. Otherwise the back or forward button has already changed the address (and the browser
+  // has scrolled the page shown to the place it kept): the text is hidden in the same frame and the page put in.
+  function show(target, push, y) {
+    var id = ++moving, page = new URL(target.href), els = parts();
+    page.hash = '';
+    if (!push) els.forEach(function (el) { if (el) el.style.opacity = '0'; });
+    Promise.all([fetchPage(page.href), push ? leave(els) : null]).then(function (r) {
+      if (id === moving) swap(r[0], target, push, y);
+    }).catch(function () {
+      if (id !== moving) return;
+      if (push) location.assign(target.href); else location.reload();
+    });
+  }
+  function swap(d, target, push, y) {
+    var i, url = new URL(target.href);
+    url.hash = '';
+    if (push) {   // before the page changes, so that the entry left keeps its place
+      try {
+        clearTimeout(keepTimer);
+        history.replaceState({ vdc: 1, y: Math.round(window.scrollY) }, '');
+        history.pushState({ vdc: 1 }, '', url.href);
+      } catch (e) { location.assign(target.href); return; }
+    }
+    shownPath = bare(location.pathname);
+    if (!keeping) { keeping = true; window.addEventListener('scroll', keep, { passive: true }); }
+    // the head: the tab's title, the summary, the page's addresses in every language
+    document.title = d.title;
+    var desc = document.querySelector('meta[name="description"]'), desc2 = d.querySelector('meta[name="description"]');
+    if (desc && desc2) desc.setAttribute('content', desc2.getAttribute('content'));
+    var head = document.head, links = head.querySelectorAll('link[rel="canonical"], link[rel="alternate"]'), at = links.length ? links[0] : null;
+    d.head.querySelectorAll('link[rel="canonical"], link[rel="alternate"]').forEach(function (l) { head.insertBefore(document.importNode(l, true), at); });
+    for (i = 0; i < links.length; i++) links[i].remove();
+    body.className = d.body.className;
+    body.setAttribute('data-site', d.body.getAttribute('data-site'));
+    try { site = JSON.parse(body.getAttribute('data-site')); } catch (e) { /* the same folder: the same values */ }
+    // the page's text and its contents list
+    var main = document.adoptNode(d.getElementById('content')), aside = document.adoptNode(d.querySelector('.aside-toc')), old = parts();
+    old[0].replaceWith(main);
+    old[1].replaceWith(aside);
+    // the language menu and the footer lead to this page in the other languages
+    var la = document.querySelectorAll('a[data-lang]'), lb = d.querySelectorAll('a[data-lang]');
+    if (la.length === lb.length) for (i = 0; i < la.length; i++) la[i].setAttribute('href', lb[i].getAttribute('href'));
+    var tabs = d.querySelectorAll('.top-links a'), tab = -1;
+    for (i = 0; i < tabs.length; i++) if (tabs[i].hasAttribute('aria-current')) tab = i;
+    document.dispatchEvent(new CustomEvent('vdc:swap'));
+    document.dispatchEvent(new CustomEvent('vdc:moved', { detail: { url: location.href, tab: tab } }));
+    // where the reader lands: the heading asked for (its spotlight plays), the place left on the way back, or the top
+    var h = null;
+    if (target.hash.length > 1) {
+      try { h = document.getElementById(decodeURIComponent(target.hash.slice(1))); } catch (e) { h = null; }
+      h = h || heading(target.hash);
+    }
+    if (push && h) location.replace('#' + h.id);
+    else if (!push && y >= 0) window.scrollTo(0, y);
+    else if (h) h.scrollIntoView();
+    else window.scrollTo(0, 0);
+    say(document.title);
+    if (still()) return;
+    var opt = { duration: 280, easing: 'cubic-bezier(.18,1,.56,1)' };
+    main.animate([{ opacity: 0, transform: 'translateY(10px)' }, { opacity: 1, transform: 'none' }], opt);
+    aside.animate([{ opacity: 0 }, { opacity: 1 }], opt);
+  }
+  window.addEventListener('popstate', function (e) {
+    if (bare(location.pathname) === shownPath) return;   // a jump within the page shown: the browser's own
+    var st = e.state || {};
+    show(new URL(location.href), false, st.y >= 0 ? st.y : -1);
+  });
+
   document.addEventListener('mintlify-assistant:navigate', function (e) {
     var d = e.detail || {}, to = ours(d.path || d.url || '');
     if (!to) return;   // not one of these pages: the widget handles it
     e.preventDefault();
-    if (to.pathname === location.pathname) {
-      if (!side.matches && api) api.close();   // the sheet would cover the place it glides to
-      var h = to.hash && heading(to.hash);
-      if (to.hash) click(h ? '#' + h.id : to.hash);
+    var dir = (site.dirs || {})[site.lang], folder = new URL(((site.root || '') + (dir ? dir + '/' : '')) || './', location.href).pathname;
+    var here = bare(to.pathname) === shownPath;
+    var near = !here && to.pathname.indexOf(folder) === 0 && to.pathname.slice(folder.length).indexOf('/') < 0 && !!window.fetch && !!window.DOMParser;
+    if (!here && !near) {   // a page in another language: in a new tab, this one stays as it is
+      var w = window.open(to.href, '_blank');
+      if (w) w.opener = null; else click(to.href);   // a blocked new tab: this one goes instead
       return;
     }
-    var w = window.open(to.href, '_blank');
-    if (w) w.opener = null; else click(to.href);   // a blocked new tab: this one goes instead
+    if (!side.matches && api) api.close();   // the sheet covers the page: it makes way, Ask AI brings it back
+    if (near) { show(to, true); return; }
+    var h = to.hash && heading(to.hash);
+    if (to.hash) click(h ? '#' + h.id : to.hash);
   });
   (function arrive() {   // an anchor in Mintlify's form: go to our heading of that name at once (no history entry)
     if (location.hash.length < 2) return;

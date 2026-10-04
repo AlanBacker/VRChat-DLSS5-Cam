@@ -69,12 +69,12 @@
     var dir = (site.dirs || {})[code];
     return (site.root || '') + (dir ? dir + '/' : '') + (site.slug || 'index') + '.html' + location.hash;
   }
-  $$('a[data-lang]').forEach(function (a) {
-    a.addEventListener('click', function (e) {
-      var code = a.getAttribute('data-lang');
-      store('vdc-lang', code);
-      if (location.hash && !e.metaKey && !e.ctrlKey && !e.shiftKey) { e.preventDefault(); location.href = langUrl(code); }
-    });
+  document.addEventListener('click', function (e) {
+    var a = e.target.closest('a[data-lang]');
+    if (!a) return;
+    var code = a.getAttribute('data-lang');
+    store('vdc-lang', code);
+    if (location.hash && !e.metaKey && !e.ctrlKey && !e.shiftKey) { e.preventDefault(); location.href = langUrl(code); }
   });
   (function suggest() {
     if (store('vdc-lang') || store('vdc-suggest-done') || !site.suggest) return;
@@ -263,32 +263,34 @@
   })();
 
   /* ---------------------------------------------------------------------------------------------- copy buttons */
-  $$('.code').forEach(function (block) {
-    var b = el('button', 'btn copy-btn', site.icons.copy + '<span>' + esc(site.code.copy) + '</span>');
-    b.type = 'button';
-    b.addEventListener('click', function () {
-      var text = $('code', block).textContent;
-      function done() {
-        b.classList.add('is-done', 'is-swap');
-        b.innerHTML = site.icons.check + '<span>' + esc(site.code.copied) + '</span>';
-        clearTimeout(b._back);
-        b._back = setTimeout(function () { b.classList.remove('is-done'); b.innerHTML = site.icons.copy + '<span>' + esc(site.code.copy) + '</span>'; }, 1600);
-      }
-      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, function () {});
-      else {
-        var ta = el('textarea'); ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
-        body.appendChild(ta); ta.select();
-        try { document.execCommand('copy'); done(); } catch (e) { /* nothing to do */ }
-        ta.remove();
-      }
+  function copyButtons() {
+    $$('.code').forEach(function (block) {
+      var b = el('button', 'btn copy-btn', site.icons.copy + '<span>' + esc(site.code.copy) + '</span>');
+      b.type = 'button';
+      b.addEventListener('click', function () {
+        var text = $('code', block).textContent;
+        function done() {
+          b.classList.add('is-done', 'is-swap');
+          b.innerHTML = site.icons.check + '<span>' + esc(site.code.copied) + '</span>';
+          clearTimeout(b._back);
+          b._back = setTimeout(function () { b.classList.remove('is-done'); b.innerHTML = site.icons.copy + '<span>' + esc(site.code.copy) + '</span>'; }, 1600);
+        }
+        if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, function () {});
+        else {
+          var ta = el('textarea'); ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+          body.appendChild(ta); ta.select();
+          try { document.execCommand('copy'); done(); } catch (e) { /* nothing to do */ }
+          ta.remove();
+        }
+      });
+      block.appendChild(b);
     });
-    block.appendChild(b);
-  });
+  }
 
   /* ---------------------------------------------------------------------------------------------- contents: where the reader is */
-  (function spy() {
+  function spy() {
     var links = $$('.toc a');
-    if (!links.length || !('IntersectionObserver' in window)) return;
+    if (!links.length || !('IntersectionObserver' in window)) return null;
     var map = {};
     links.forEach(function (a) { map[a.getAttribute('href').slice(1)] = a; });
     var heads = $$('.doc-body h2[id]').filter(function (h) { return map[h.id]; });
@@ -315,20 +317,23 @@
       links.forEach(function (a) { if (a === map[cur]) a.setAttribute('aria-current', 'true'); else a.removeAttribute('aria-current'); });
       if (map[cur] !== shown || !toc.classList.contains('is-ready')) { shown = map[cur]; place(shown); }
     }
-    window.addEventListener('resize', function () { place(shown); });
+    function resized() { place(shown); }
+    function scrolled() { window.requestAnimationFrame(mark); }
+    window.addEventListener('resize', resized);
     var io = new IntersectionObserver(function (entries) {
       entries.forEach(function (en) { visible[en.target.id] = en.isIntersecting; });
       mark();
     }, { rootMargin: '0px 0px -55% 0px' });
     heads.forEach(function (h) { io.observe(h); });
-    window.addEventListener('scroll', function () { window.requestAnimationFrame(mark); }, { passive: true });
+    window.addEventListener('scroll', scrolled, { passive: true });
     mark();
-  })();
+    return function () { io.disconnect(); window.removeEventListener('resize', resized); window.removeEventListener('scroll', scrolled); };
+  }
 
   /* ---------------------------------------------------------------------------------------------- one motion per figure */
-  (function arm() {
+  function arm() {
     var figs = $$('[data-anim]');
-    if (calm || !figs.length) return;
+    if (calm || !figs.length) return null;
     figs.forEach(function (f) {
       if (f.getAttribute('data-anim') !== 'flow') return;
       $$('.flow-link', f).forEach(function (l, k) {
@@ -337,7 +342,7 @@
         if (next) next.style.setProperty('--d', (k * 0.45).toFixed(2));
       });
     });
-    if (!('IntersectionObserver' in window)) return;
+    if (!('IntersectionObserver' in window)) return null;
     var io = new IntersectionObserver(function (entries) {
       entries.forEach(function (en) {
         if (!en.isIntersecting) return;
@@ -347,53 +352,61 @@
       });
     }, { threshold: 0.45 });
     figs.forEach(function (f) { io.observe(f); });
-  })();
+    return function () { io.disconnect(); };
+  }
 
   /* ---------------------------------------------------------------------------------------------- the wipe you can drag */
-  $$('.wipe[data-drag]').forEach(function (w) {
-    var stage = $('.wipe-stage', w);
-    var dragging = false;
-    function set(p) {
-      p = Math.max(0, Math.min(100, p));
-      w.classList.remove('is-armed');
-      w.style.setProperty('--split', p.toFixed(1) + '%');
-      w.setAttribute('aria-valuenow', Math.round(p));
-    }
-    function at(e) {
-      var r = stage.getBoundingClientRect();
-      set((e.clientX - r.left) / r.width * 100);
-    }
-    w.addEventListener('pointerdown', function (e) {
-      dragging = true;
-      w.setPointerCapture(e.pointerId);
-      at(e);
+  function wipes() {
+    $$('.wipe[data-drag]').forEach(function (w) {
+      var stage = $('.wipe-stage', w);
+      var dragging = false;
+      function set(p) {
+        p = Math.max(0, Math.min(100, p));
+        w.classList.remove('is-armed');
+        w.style.setProperty('--split', p.toFixed(1) + '%');
+        w.setAttribute('aria-valuenow', Math.round(p));
+      }
+      function at(e) {
+        var r = stage.getBoundingClientRect();
+        set((e.clientX - r.left) / r.width * 100);
+      }
+      w.addEventListener('pointerdown', function (e) {
+        dragging = true;
+        w.setPointerCapture(e.pointerId);
+        at(e);
+      });
+      w.addEventListener('pointermove', function (e) { if (dragging) at(e); });
+      w.addEventListener('pointerup', function () { dragging = false; });
+      w.addEventListener('pointercancel', function () { dragging = false; });
+      w.addEventListener('keydown', function (e) {
+        var now = parseFloat(w.getAttribute('aria-valuenow')) || 50;
+        var step = { ArrowLeft: -5, ArrowDown: -5, ArrowRight: 5, ArrowUp: 5, PageDown: -20, PageUp: 20 }[e.key];
+        if (step) { e.preventDefault(); set(now + step); }
+        else if (e.key === 'Home') { e.preventDefault(); set(0); }
+        else if (e.key === 'End') { e.preventDefault(); set(100); }
+      });
     });
-    w.addEventListener('pointermove', function (e) { if (dragging) at(e); });
-    w.addEventListener('pointerup', function () { dragging = false; });
-    w.addEventListener('pointercancel', function () { dragging = false; });
-    w.addEventListener('keydown', function (e) {
-      var now = parseFloat(w.getAttribute('aria-valuenow')) || 50;
-      var step = { ArrowLeft: -5, ArrowDown: -5, ArrowRight: 5, ArrowUp: 5, PageDown: -20, PageUp: 20 }[e.key];
-      if (step) { e.preventDefault(); set(now + step); }
-      else if (e.key === 'Home') { e.preventDefault(); set(0); }
-      else if (e.key === 'End') { e.preventDefault(); set(100); }
-    });
-  });
+  }
 
   /* ---------------------------------------------------------------------------------------------- pictures at full size */
-  (function lightbox() {
+  var dlg = null, img = null, opener = null;   // one dialog for every page shown in this tab
+  function lightbox() {
     var links = $$('a[data-zoom]');
     if (!links.length || typeof HTMLDialogElement !== 'function') return;
-    var dlg = el('dialog', 'lightbox');
-    dlg.innerHTML = '<img alt=""><button type="button" class="btn btn-icon" aria-label="' + esc(site.figure.close) + '">' + site.icons.x + '</button>';
-    body.appendChild(dlg);
-    var img = $('img', dlg);
-    var opener = null;
-    function close() {
-      if (!dlg.open || dlg.classList.contains('is-closing')) return;
-      if (calm) { dlg.close(); return; }
-      dlg.classList.add('is-closing');
-      setTimeout(function () { dlg.classList.remove('is-closing'); dlg.close(); }, 160);
+    if (!dlg) {
+      dlg = el('dialog', 'lightbox');
+      dlg.innerHTML = '<img alt=""><button type="button" class="btn btn-icon" aria-label="' + esc(site.figure.close) + '">' + site.icons.x + '</button>';
+      body.appendChild(dlg);
+      img = $('img', dlg);
+      var close = function () {
+        if (!dlg.open || dlg.classList.contains('is-closing')) return;
+        if (calm) { dlg.close(); return; }
+        dlg.classList.add('is-closing');
+        setTimeout(function () { dlg.classList.remove('is-closing'); dlg.close(); }, 160);
+      };
+      dlg.addEventListener('click', close);
+      dlg.addEventListener('cancel', function (e) { e.preventDefault(); close(); });
+      dlg.addEventListener('close', function () { if (opener && opener.isConnected) opener.focus(); });
     }
     links.forEach(function (a) {
       a.addEventListener('click', function (e) {
@@ -406,10 +419,24 @@
         dlg.showModal();
       });
     });
-    dlg.addEventListener('click', close);
-    dlg.addEventListener('cancel', function (e) { e.preventDefault(); close(); });
-    dlg.addEventListener('close', function () { if (opener) opener.focus(); });
-  })();
+  }
+
+  /* ---------------------------------------------------------------------------------------------- the page's own parts */
+  // Run for the page as it loads, and again when a script puts another page of the site in its place without a page
+  // load: that script swaps the page's parts, then sends vdc:swap.
+  var undo = [];
+  function parts() {
+    copyButtons();
+    undo = [spy(), arm()];
+    wipes();
+    lightbox();
+  }
+  parts();
+  document.addEventListener('vdc:swap', function () {
+    undo.forEach(function (f) { if (f) f(); });
+    try { site = JSON.parse(body.getAttribute('data-site') || '{}'); } catch (e) { /* keep the page before's */ }
+    parts();
+  });
 
   /* ---------------------------------------------------------------------------------------------- the sidebar remembers itself */
   // For this tab only: which cards are folded, and, as the reader leaves for another page of the site, where the
@@ -494,8 +521,9 @@
      layer of this page that is there only while the panel is open: the layer fades in as the panel opens and out as
      it slides away, then leaves the page, so the widget's button never shows. Ask AI in the top bar is the way back
      to the conversation. The click starts the widget with defaultOpen, so it is drawn open from the start.
-   - An answer's link to another page opens it in a new tab, so the answer stays where the reader left it (after a
-     page load the widget starts with an empty panel); a link into this page glides there. */
+   - An answer's link to another page of the site puts that page in place of this one without a page load, so the
+     panel and the conversation stay (a page load would start the widget with an empty panel); a link into this page
+     glides there. */
 (function () {
   'use strict';
   var doc = document.documentElement, body = document.body, site = {};
@@ -724,18 +752,124 @@
     a.click();
     a.remove();
   }
+  function bare(p) { return p.replace(/index\.html$/, ''); }
+  function still() { return !!window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches; }
+
+  // Another page of this language is put in place of this one: its text fades out (0.12 s), the sidebar's highlight
+  // and the top bar's tab glide to the new page as they do after a followed link (vdc:moved, the layout's nav-early
+  // script) while its text rises in (0.28 s, the program's curve), and the address and the history follow. The
+  // browser's back and forward buttons swap the pages back, to the place the reader left (kept in the history entry
+  // as they scroll). site.js sets up the new page's parts on vdc:swap. A page that cannot be fetched opens the
+  // ordinary way.
+  var shownPath = bare(location.pathname), moving = 0, keeping = false, keepTimer = 0;
+  function fetchPage(url) {
+    return fetch(url, { credentials: 'same-origin' }).then(function (r) {
+      if (!r.ok) throw new Error('http ' + r.status);
+      return r.text();
+    }).then(function (html) {
+      var d = new DOMParser().parseFromString(html, 'text/html'), s = null;
+      try { s = JSON.parse(d.body.getAttribute('data-site') || 'null'); } catch (e) { s = null; }
+      if (!s || s.lang !== site.lang || s.root !== site.root || !d.getElementById('content') || !d.querySelector('.aside-toc')) throw new Error('page');
+      return d;
+    });
+  }
+  function parts() { return [document.getElementById('content'), document.querySelector('.aside-toc')]; }
+  function leave(els) {   // resolves once the page's text has faded out
+    if (still()) return Promise.resolve();
+    return Promise.all(els.map(function (el) {
+      if (!el || !el.animate) return null;
+      var a = el.animate([{ opacity: getComputedStyle(el).opacity }, { opacity: 0 }], { duration: 120, easing: 'cubic-bezier(.32,0,.67,0)', fill: 'forwards' });
+      return a.finished ? a.finished.catch(noop) : new Promise(function (r) { setTimeout(r, 120); });
+    }));
+  }
+  function keep() {   // the place read, in this history entry, for the back and forward buttons
+    clearTimeout(keepTimer);
+    keepTimer = setTimeout(function () { try { history.replaceState({ vdc: 1, y: Math.round(window.scrollY) }, ''); } catch (e) { /* not kept */ } }, 200);
+  }
+  // push: a link was followed. Otherwise the back or forward button has already changed the address (and the browser
+  // has scrolled the page shown to the place it kept): the text is hidden in the same frame and the page put in.
+  function show(target, push, y) {
+    var id = ++moving, page = new URL(target.href), els = parts();
+    page.hash = '';
+    if (!push) els.forEach(function (el) { if (el) el.style.opacity = '0'; });
+    Promise.all([fetchPage(page.href), push ? leave(els) : null]).then(function (r) {
+      if (id === moving) swap(r[0], target, push, y);
+    }).catch(function () {
+      if (id !== moving) return;
+      if (push) location.assign(target.href); else location.reload();
+    });
+  }
+  function swap(d, target, push, y) {
+    var i, url = new URL(target.href);
+    url.hash = '';
+    if (push) {   // before the page changes, so that the entry left keeps its place
+      try {
+        clearTimeout(keepTimer);
+        history.replaceState({ vdc: 1, y: Math.round(window.scrollY) }, '');
+        history.pushState({ vdc: 1 }, '', url.href);
+      } catch (e) { location.assign(target.href); return; }
+    }
+    shownPath = bare(location.pathname);
+    if (!keeping) { keeping = true; window.addEventListener('scroll', keep, { passive: true }); }
+    // the head: the tab's title, the summary, the page's addresses in every language
+    document.title = d.title;
+    var desc = document.querySelector('meta[name="description"]'), desc2 = d.querySelector('meta[name="description"]');
+    if (desc && desc2) desc.setAttribute('content', desc2.getAttribute('content'));
+    var head = document.head, links = head.querySelectorAll('link[rel="canonical"], link[rel="alternate"]'), at = links.length ? links[0] : null;
+    d.head.querySelectorAll('link[rel="canonical"], link[rel="alternate"]').forEach(function (l) { head.insertBefore(document.importNode(l, true), at); });
+    for (i = 0; i < links.length; i++) links[i].remove();
+    body.className = d.body.className;
+    body.setAttribute('data-site', d.body.getAttribute('data-site'));
+    try { site = JSON.parse(body.getAttribute('data-site')); } catch (e) { /* the same folder: the same values */ }
+    // the page's text and its contents list
+    var main = document.adoptNode(d.getElementById('content')), aside = document.adoptNode(d.querySelector('.aside-toc')), old = parts();
+    old[0].replaceWith(main);
+    old[1].replaceWith(aside);
+    // the language menu and the footer lead to this page in the other languages
+    var la = document.querySelectorAll('a[data-lang]'), lb = d.querySelectorAll('a[data-lang]');
+    if (la.length === lb.length) for (i = 0; i < la.length; i++) la[i].setAttribute('href', lb[i].getAttribute('href'));
+    var tabs = d.querySelectorAll('.top-links a'), tab = -1;
+    for (i = 0; i < tabs.length; i++) if (tabs[i].hasAttribute('aria-current')) tab = i;
+    document.dispatchEvent(new CustomEvent('vdc:swap'));
+    document.dispatchEvent(new CustomEvent('vdc:moved', { detail: { url: location.href, tab: tab } }));
+    // where the reader lands: the heading asked for (its spotlight plays), the place left on the way back, or the top
+    var h = null;
+    if (target.hash.length > 1) {
+      try { h = document.getElementById(decodeURIComponent(target.hash.slice(1))); } catch (e) { h = null; }
+      h = h || heading(target.hash);
+    }
+    if (push && h) location.replace('#' + h.id);
+    else if (!push && y >= 0) window.scrollTo(0, y);
+    else if (h) h.scrollIntoView();
+    else window.scrollTo(0, 0);
+    say(document.title);
+    if (still()) return;
+    var opt = { duration: 280, easing: 'cubic-bezier(.18,1,.56,1)' };
+    main.animate([{ opacity: 0, transform: 'translateY(10px)' }, { opacity: 1, transform: 'none' }], opt);
+    aside.animate([{ opacity: 0 }, { opacity: 1 }], opt);
+  }
+  window.addEventListener('popstate', function (e) {
+    if (bare(location.pathname) === shownPath) return;   // a jump within the page shown: the browser's own
+    var st = e.state || {};
+    show(new URL(location.href), false, st.y >= 0 ? st.y : -1);
+  });
+
   document.addEventListener('mintlify-assistant:navigate', function (e) {
     var d = e.detail || {}, to = ours(d.path || d.url || '');
     if (!to) return;   // not one of these pages: the widget handles it
     e.preventDefault();
-    if (to.pathname === location.pathname) {
-      if (!side.matches && api) api.close();   // the sheet would cover the place it glides to
-      var h = to.hash && heading(to.hash);
-      if (to.hash) click(h ? '#' + h.id : to.hash);
+    var dir = (site.dirs || {})[site.lang], folder = new URL(((site.root || '') + (dir ? dir + '/' : '')) || './', location.href).pathname;
+    var here = bare(to.pathname) === shownPath;
+    var near = !here && to.pathname.indexOf(folder) === 0 && to.pathname.slice(folder.length).indexOf('/') < 0 && !!window.fetch && !!window.DOMParser;
+    if (!here && !near) {   // a page in another language: in a new tab, this one stays as it is
+      var w = window.open(to.href, '_blank');
+      if (w) w.opener = null; else click(to.href);   // a blocked new tab: this one goes instead
       return;
     }
-    var w = window.open(to.href, '_blank');
-    if (w) w.opener = null; else click(to.href);   // a blocked new tab: this one goes instead
+    if (!side.matches && api) api.close();   // the sheet covers the page: it makes way, Ask AI brings it back
+    if (near) { show(to, true); return; }
+    var h = to.hash && heading(to.hash);
+    if (to.hash) click(h ? '#' + h.id : to.hash);
   });
   (function arrive() {   // an anchor in Mintlify's form: go to our heading of that name at once (no history entry)
     if (location.hash.length < 2) return;
