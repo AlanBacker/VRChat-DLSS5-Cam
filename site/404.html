@@ -14,6 +14,10 @@
   --tile: #121526; --corners: #7F8BFF;
   --r-card: 10px; --r-control: 6px; --r-code: 8px;
   --ease-out: cubic-bezier(.33, 1, .68, 1); --ease-in: cubic-bezier(.32, 0, .67, 0);
+  /* the program's three motions: Animate() closes the gap exponentially (speed 16 for hover, 18 for a moving
+     selection), Ease() is a smoothstep (folds, the sidebar sheet), and a popup's fade is Ease(Animate(24)) */
+  --ease-app: cubic-bezier(.18, 1, .56, 1); --ease-fold: cubic-bezier(.34, 0, .66, 1); --ease-pop: cubic-bezier(.22, .2, .18, 1);
+  --t-hover: .32s; --t-glide: .28s; --t-fold: .2s; --t-pop: .12s;
   --top: 56px;
   --font: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, "Microsoft YaHei UI",
           "Microsoft YaHei", "PingFang SC", "Hiragino Sans", "Yu Gothic UI", "Meiryo UI", "Malgun Gothic",
@@ -49,7 +53,7 @@
 
 /* ------------------------------------------------------------------------------------------------ base */
 *, *::before, *::after { box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; scroll-padding-top: calc(var(--top) + 20px); }
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; scroll-padding-top: calc(var(--top) + 20px); scrollbar-gutter: stable; }
 body {
   margin: 0; background: var(--window); color: var(--text); font: 16px/1.65 var(--font);
   -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; overflow-wrap: break-word;
@@ -59,9 +63,13 @@ body {
 :lang(ko) { word-break: keep-all; }
 img, svg { max-width: 100%; }
 a { color: var(--link); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px;
-    text-decoration-color: color-mix(in srgb, var(--link) 45%, transparent); transition: color .14s, text-decoration-color .14s; }
+    text-decoration-color: color-mix(in srgb, var(--link) 45%, transparent);
+    transition: color var(--t-hover) var(--ease-app), text-decoration-color var(--t-hover) var(--ease-app); }
 a:hover { text-decoration-color: currentColor; }
 :focus-visible { outline: 2px solid var(--accent-hover); outline-offset: 2px; border-radius: 4px; }
+/* the program's focus ring fades in rather than appearing (elements with a motion of their own keep it) */
+:where(:focus-visible):not(.wipe, :target) { animation: ring-in .14s var(--ease-pop); }
+@keyframes ring-in { from { outline-color: transparent; } }
 ::selection { background: var(--tint-strong); }
 .icon { width: 1.125em; height: 1.125em; flex: none; vertical-align: -0.2em; stroke-width: 2; }
 .js .no-js-only, .no-js .js-only { display: none !important; }
@@ -78,13 +86,12 @@ a:hover { text-decoration-color: currentColor; }
   display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 36px; padding: 6px 14px;
   border: 0; border-radius: var(--r-control); background: var(--control); color: var(--text); font: inherit;
   font-size: 15px; font-weight: 600; line-height: 1.2; text-decoration: none; cursor: pointer; white-space: nowrap;
-  transition: background-color .14s, color .14s, box-shadow .14s, transform .14s;
+  transition: background-color var(--t-hover) var(--ease-app), color var(--t-hover) var(--ease-app),
+              box-shadow var(--t-hover) var(--ease-app);
 }
 .btn:hover { background: var(--control-hover); }
-.btn:active { background: var(--control-active); }
 .btn-accent { background: var(--accent-btn); color: #fff; }
 .btn-accent:hover { background: var(--accent-hover); }
-.btn-accent:active { background: var(--accent-active); }
 .btn-ghost { background: transparent; box-shadow: inset 0 0 0 1px var(--border); }
 .btn-ghost:hover { background: var(--control); }
 .btn-quiet, .btn-flat { background: transparent; }
@@ -92,6 +99,9 @@ a:hover { text-decoration-color: currentColor; }
 .btn-quiet { color: var(--link); padding-inline: 10px; }
 .btn-icon { width: 36px; padding: 0; background: transparent; color: var(--dim); }
 .btn-icon:hover { color: var(--text); background: var(--control); }
+/* pressed: the program shows the pressed colour at once and lets go of it with the hover fade */
+.btn:active, .btn-ghost:active, .btn-quiet:active, .btn-flat:active, .btn-icon:active { background: var(--control-active); transition-duration: 0s; }
+.btn-accent:active { background: var(--accent-active); transition-duration: 0s; }
 .btn-sm { min-height: 34px; padding: 5px 12px; font-size: 14px; }
 .btn-lg { min-height: 44px; padding: 10px 20px; font-size: 16px; }
 .btn .icon { width: 18px; height: 18px; }
@@ -107,13 +117,20 @@ a:hover { text-decoration-color: currentColor; }
 .brand-text { display: flex; align-items: baseline; gap: 8px; min-width: 0; white-space: nowrap; }
 .brand-name { font-weight: 600; font-size: 15.5px; }
 .brand-docs { color: var(--dim); font-size: 14.5px; }
-.top-links { display: flex; gap: 2px; margin-left: 12px; }
+.top-links { position: relative; display: flex; gap: 2px; margin-left: 12px; }
 .top-links a {
-  padding: 6px 12px; border-radius: var(--r-control); color: var(--dim); font-size: 15px; font-weight: 600;
-  text-decoration: none; transition: background-color .14s, color .14s;
+  position: relative; z-index: 1; padding: 6px 12px; border-radius: var(--r-control); color: var(--dim); font-size: 15px;
+  font-weight: 600; text-decoration: none; transition: background-color var(--t-hover) var(--ease-app), color var(--t-hover) var(--ease-app);
 }
 .top-links a:hover { background: var(--control); color: var(--text); }
 .top-links a[aria-current] { color: var(--text); background: var(--control); }
+.top-links a:active { background: var(--control-active); transition-duration: 0s; }
+/* Guide / Reference work like the program's segmented control: between the two halves the plate glides */
+.tab-hl { position: absolute; left: 0; top: 0; z-index: 0; border-radius: var(--r-control); background: var(--control); pointer-events: none; }
+.top-links.is-gliding a[aria-current] { background: transparent; }
+.top-links a.hl-from { color: var(--dim); }
+.top-links a.hl-was { color: var(--text); }
+.top-links.hl-setup a { transition: none !important; }
 .top-actions { display: flex; align-items: center; gap: 6px; margin-left: auto; }
 .menu-btn { display: none; margin-left: -8px; }
 
@@ -121,7 +138,8 @@ a:hover { text-decoration-color: currentColor; }
 .search { position: relative; margin-left: 12px; flex: 0 1 300px; min-width: 0; }
 .search-box {
   display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 8px 0 11px; border-radius: var(--r-control);
-  background: var(--control); color: var(--dim); transition: background-color .14s, box-shadow .14s;
+  background: var(--control); color: var(--dim);
+  transition: background-color var(--t-hover) var(--ease-app), box-shadow var(--t-hover) var(--ease-app);
 }
 .search-box:hover { background: var(--control-hover); }
 .search-box:focus-within { background: var(--panel); box-shadow: inset 0 0 0 1px var(--accent); }
@@ -141,15 +159,14 @@ a:hover { text-decoration-color: currentColor; }
 .search-pop {
   position: absolute; top: calc(100% + 8px); left: 0; width: min(520px, calc(100vw - 32px)); max-height: min(70vh, 520px);
   overflow: auto; padding: 6px; border: 1px solid var(--border); border-radius: var(--r-card); background: var(--panel);
-  box-shadow: var(--shadow-pop); transform-origin: top left;
-  animation: pop-in .18s var(--ease-out);
+  box-shadow: var(--shadow-pop); animation: pop-fade var(--t-pop) var(--ease-pop);
 }
 .search-pop ul { list-style: none; margin: 0; padding: 0; }
 .search-pop li a {
   display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; border-radius: var(--r-control);
-  color: var(--text); text-decoration: none;
+  color: var(--text); text-decoration: none; transition: background-color var(--t-hover) var(--ease-app);
 }
-.search-pop li a .icon { margin-top: 3px; color: var(--muted); width: 16px; height: 16px; }
+.search-pop li a .icon { margin-top: 3px; color: var(--muted); width: 16px; height: 16px; transition: color var(--t-hover) var(--ease-app); }
 .search-pop li[aria-selected="true"] a, .search-pop li a:hover { background: var(--control); }
 .search-pop li[aria-selected="true"] a .icon { color: var(--icon-accent); }
 .search-pop .r-title { display: block; font-weight: 600; font-size: 15px; line-height: 1.35; }
@@ -162,7 +179,7 @@ a:hover { text-decoration-color: currentColor; }
 .menu { position: relative; }
 .menu > summary { list-style: none; }
 .menu > summary::-webkit-details-marker { display: none; }
-.menu > summary .caret { width: 14px; height: 14px; color: var(--dim); transition: transform .2s var(--ease-out); }
+.menu > summary .caret { width: 14px; height: 14px; color: var(--dim); transition: transform var(--t-glide) var(--ease-app); }
 .menu[open] > summary .caret { transform: rotate(180deg); }
 .menu[open] > summary { background: var(--control); color: var(--text); }
 .lang-menu > summary { gap: 7px; padding-inline: 10px; font-size: 14.5px; color: var(--dim); }
@@ -170,14 +187,15 @@ a:hover { text-decoration-color: currentColor; }
 .menu-pop {
   position: absolute; right: 0; top: calc(100% + 8px); z-index: 60; min-width: 180px; padding: 6px;
   border: 1px solid var(--border); border-radius: var(--r-card); background: var(--panel); box-shadow: var(--shadow-pop);
-  transform-origin: top right; animation: pop-in .18s var(--ease-out);
+  animation: pop-fade var(--t-pop) var(--ease-pop);
 }
 .menu-pop a, .menu-pop button {
   display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 10px; border: 0; border-radius: var(--r-control);
   background: transparent; color: var(--text); font: inherit; font-size: 15px; text-align: left; text-decoration: none;
-  cursor: pointer;
+  cursor: pointer; transition: background-color var(--t-hover) var(--ease-app);
 }
 .menu-pop a:hover, .menu-pop button:hover { background: var(--control); }
+.menu-pop a:active, .menu-pop button:active { background: var(--control-active); transition-duration: 0s; }
 .menu-pop .icon { width: 17px; height: 17px; color: var(--dim); }
 .menu-pop .mark { margin-left: auto; color: var(--icon-accent); visibility: hidden; }
 .lang-menu .menu-pop .mark { order: 2; }
@@ -187,14 +205,17 @@ a:hover { text-decoration-color: currentColor; }
 .menu-pop [aria-current], .menu-pop [aria-pressed="true"] { font-weight: 600; }
 .theme-ic { display: none; }
 :root:not([data-theme]) .theme-ic-system, :root[data-theme="dark"] .theme-ic-dark, :root[data-theme="light"] .theme-ic-light { display: inline-flex; }
-@keyframes pop-in { from { opacity: 0; transform: translateY(-4px) scale(.98); } }
+/* the program's popups fade in where they stand and close at once */
+@keyframes pop-fade { from { opacity: 0; } }
 
 /* ------------------------------------------------------------------------------------------------ layout */
 .layout {
   display: grid; grid-template-columns: 264px minmax(0, 800px) 216px; grid-template-areas: "nav main toc";
   justify-content: center; gap: 48px; max-width: 1480px; margin: 0 auto; padding: 0 24px;
 }
-.is-home .layout { grid-template-columns: 264px minmax(0, 1000px); grid-template-areas: "nav main"; }
+/* the start page has no contents column: its text takes that space too, so the sidebar keeps the same place on
+   every page (the columns themselves never change) */
+.is-home .doc { grid-column: 2 / -1; max-width: 1000px; }
 .is-home .aside-toc { display: none; }
 .doc { grid-area: main; min-width: 0; padding: 40px 0 72px; outline: 0; }
 .aside-toc { grid-area: toc; }
@@ -205,6 +226,7 @@ a:hover { text-decoration-color: currentColor; }
 }
 .sidenav { padding: 24px 0 32px; }
 .sidenav-head { display: none; }
+.sidenav-body { position: relative; }
 
 /* the sidebar: the program's section cards */
 .nav-card {
@@ -212,27 +234,44 @@ a:hover { text-decoration-color: currentColor; }
   box-shadow: var(--shadow-card); overflow: hidden;
 }
 .nav-card > summary {
-  display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 12px; list-style: none; cursor: pointer;
-  font-weight: 600; font-size: 15px; user-select: none; transition: background-color .14s;
+  position: relative; z-index: 2; display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 12px;
+  list-style: none; cursor: pointer; font-weight: 600; font-size: 15px; user-select: none;
+  transition: background-color var(--t-hover) var(--ease-app);
 }
 .nav-card > summary::-webkit-details-marker { display: none; }
 .nav-card > summary:hover { background: color-mix(in srgb, var(--control-hover) 55%, transparent); }
+.nav-card > summary:active { background: color-mix(in srgb, var(--control-hover) 90%, transparent); transition-duration: 0s; }
 .nav-card > summary .sec-icon { color: var(--icon-accent); width: 18px; height: 18px; }
-.nav-card > summary .fold { margin-left: auto; width: 15px; height: 15px; color: var(--dim); transition: transform .2s var(--ease-out), color .14s; }
+/* the program's section fold: 0.2 s smoothstep on the card and the chevron, which turns half a turn (up while open) */
+.nav-card > summary .fold {
+  margin-left: auto; width: 15px; height: 15px; color: var(--dim); transform: rotate(180deg);
+  transition: transform var(--t-fold) var(--ease-fold), color var(--t-hover) var(--ease-app);
+}
 .nav-card > summary:hover .fold { color: var(--text); }
-.nav-card:not([open]) > summary .fold { transform: rotate(-90deg); }
-.nav-card::details-content { height: 0; overflow: clip; transition: height .2s var(--ease-out), content-visibility .2s allow-discrete; }
+.nav-card:not([open]) > summary .fold { transform: none; }
+.nav-card::details-content { height: 0; overflow: clip; transition: height var(--t-fold) var(--ease-fold), content-visibility var(--t-fold) allow-discrete; }
 .nav-card[open]::details-content { height: auto; }
 .nav-card ul { list-style: none; margin: 0; padding: 2px 6px 8px; }
 .nav-card li a {
-  display: flex; align-items: center; gap: 10px; min-height: 36px; padding: 6px 8px; border-radius: var(--r-control);
-  color: var(--dim); font-size: 14.5px; line-height: 1.3; text-decoration: none; transition: background-color .14s, color .14s;
+  position: relative; z-index: 2; display: flex; align-items: center; gap: 10px; min-height: 36px; padding: 6px 8px;
+  border-radius: var(--r-control); color: var(--dim); font-size: 14.5px; line-height: 1.3; text-decoration: none;
+  transition: background-color var(--t-hover) var(--ease-app), color var(--t-hover) var(--ease-app);
 }
-.nav-card li a .icon { width: 17px; height: 17px; color: var(--muted); transition: color .14s; }
+.nav-card li a .icon { width: 17px; height: 17px; color: var(--muted); transition: color var(--t-hover) var(--ease-app); }
 .nav-card li a:hover { background: var(--control); color: var(--text); }
 .nav-card li a:hover .icon { color: var(--text); }
 .nav-card li a[aria-current] { background: var(--tint); color: var(--text); font-weight: 600; }
 .nav-card li a[aria-current] .icon { color: var(--icon-accent); }
+.nav-card li a:active { background: var(--control-active); transition-duration: 0s; }
+/* from one page to the next the highlight glides like the program's segmented selection: a plate under the links
+   moves from the page left to this one while the two labels trade their colours (nav-early in the layout) */
+.nav-hl { position: absolute; left: 0; top: 0; z-index: 1; border-radius: var(--r-control); background: var(--tint); pointer-events: none; }
+.sidenav.is-gliding li a[aria-current] { background: transparent; }
+.nav-card li a.hl-from { color: var(--dim); font-weight: 400; }
+.nav-card li a.hl-from .icon { color: var(--muted); }
+.nav-card li a.hl-was { color: var(--text); font-weight: 600; }
+.nav-card li a.hl-was .icon { color: var(--icon-accent); }
+.sidenav.hl-setup li a, .sidenav.hl-setup li a .icon { transition: none !important; }
 
 /* contents of the page */
 .toc { padding: 40px 0 32px; font-size: 14px; }
@@ -240,22 +279,36 @@ a:hover { text-decoration-color: currentColor; }
 .toc ul { list-style: none; margin: 0; padding: 0; border-left: 1px solid var(--border); }
 .toc li a {
   display: block; margin-left: -1px; padding: 5px 0 5px 14px; border-left: 2px solid transparent; color: var(--dim);
-  line-height: 1.4; text-decoration: none; transition: color .14s, border-color .2s var(--ease-out);
+  line-height: 1.4; text-decoration: none; transition: color var(--t-glide) var(--ease-app), border-color var(--t-glide) var(--ease-app);
 }
 .toc li a:hover { color: var(--text); }
 .toc li a[aria-current] { color: var(--text); border-left-color: var(--accent); }
+/* with the script, one bar marks the section and glides from heading to heading (the program's segmented thumb) */
+.toc-thumb { position: absolute; left: 0; top: 0; width: 2px; height: 0; background: var(--accent); pointer-events: none; visibility: hidden; }
+.toc.has-thumb li a[aria-current] { border-left-color: transparent; }
+.toc.has-thumb .toc-thumb { visibility: visible; }
+.toc.has-thumb:not(.is-ready) li a { transition: none; }   /* the first mark as the page opens is not a change */
+.toc.is-ready .toc-thumb { transition: transform var(--t-glide) var(--ease-app), height var(--t-glide) var(--ease-app); }
 .toc-inline {
   display: none; margin: 0 0 28px; border: 1px solid var(--border); border-radius: var(--r-card); background: var(--panel);
 }
 .toc-inline > summary {
   display: flex; align-items: center; gap: 10px; padding: 10px 14px; list-style: none; cursor: pointer; font-weight: 600;
-  font-size: 15px;
+  font-size: 15px; user-select: none; border-radius: calc(var(--r-card) - 1px);
+  transition: background-color var(--t-hover) var(--ease-app);
 }
+.toc-inline[open] > summary { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
 .toc-inline > summary::-webkit-details-marker { display: none; }
+.toc-inline > summary:hover { background: color-mix(in srgb, var(--control-hover) 55%, transparent); }
+.toc-inline > summary:active { background: color-mix(in srgb, var(--control-hover) 90%, transparent); transition-duration: 0s; }
 .toc-inline > summary .icon { color: var(--icon-accent); width: 18px; height: 18px; }
-.toc-inline > summary .fold { margin-left: auto; color: var(--dim); transition: transform .2s var(--ease-out); }
-.toc-inline:not([open]) > summary .fold { transform: rotate(-90deg); }
-.toc-inline::details-content { height: 0; overflow: clip; transition: height .2s var(--ease-out), content-visibility .2s allow-discrete; }
+.toc-inline > summary .fold {
+  margin-left: auto; color: var(--dim); transform: rotate(180deg);
+  transition: transform var(--t-fold) var(--ease-fold), color var(--t-hover) var(--ease-app);
+}
+.toc-inline > summary:hover .fold { color: var(--text); }
+.toc-inline:not([open]) > summary .fold { transform: none; }
+.toc-inline::details-content { height: 0; overflow: clip; transition: height var(--t-fold) var(--ease-fold), content-visibility var(--t-fold) allow-discrete; }
 .toc-inline[open]::details-content { height: auto; }
 .toc-inline ul { margin: 0; padding: 0 14px 12px 42px; font-size: 15px; }
 .toc-inline li { margin: 4px 0; }
@@ -277,18 +330,27 @@ h4 { margin: 28px 0 8px; font-size: 16px; }
 h2 + h3 { margin-top: 20px; }
 .anchor {
   display: inline-flex; margin-left: 8px; color: var(--muted); opacity: 0; vertical-align: middle;
-  text-decoration: none; transition: opacity .14s, color .14s;
+  text-decoration: none; transition: opacity var(--t-hover) var(--ease-app), color var(--t-hover) var(--ease-app);
 }
 .anchor .icon { width: .75em; height: .75em; }
 h2:hover .anchor, h3:hover .anchor, h4:hover .anchor, .anchor:focus-visible { opacity: 1; }
 .anchor:hover { color: var(--link); }
 .h-end { white-space: nowrap; }
+/* the program's spotlight: the ring rises in the first 15 % of its 1.4 s, then fades as it widens; it waits until a
+   gliding jump has arrived (is-scrolling, site.js) */
 :target { animation: spotlight 1.4s var(--ease-out); }
 h2:target, h3:target, h4:target { animation: spotlight-text 1.4s var(--ease-out); border-radius: 4px; }
 tr:target > * { animation: row-flash 1.6s var(--ease-out); }
-@keyframes spotlight-text { 0% { outline: 2px solid var(--accent); outline-offset: 3px; } 100% { outline: 2px solid transparent; outline-offset: 8px; } }
-@keyframes spotlight { 0% { outline: 2px solid var(--accent); outline-offset: 3px; } 100% { outline: 2px solid transparent; outline-offset: 6px; } }
-@keyframes row-flash { 0%, 30% { background: var(--tint-strong); } 100% { background: transparent; } }
+.is-scrolling :target, .is-scrolling tr:target > * { animation: none; }
+@keyframes spotlight-text {
+  0% { outline: 2px solid transparent; outline-offset: 3px; } 15% { outline: 2px solid var(--accent); outline-offset: 3px; }
+  100% { outline: 2px solid transparent; outline-offset: 8px; }
+}
+@keyframes spotlight {
+  0% { outline: 2px solid transparent; outline-offset: 3px; } 15% { outline: 2px solid var(--accent); outline-offset: 3px; }
+  100% { outline: 2px solid transparent; outline-offset: 6px; }
+}
+@keyframes row-flash { 0% { background: transparent; } 12%, 30% { background: var(--tint-strong); } 100% { background: transparent; } }
 p, ul, ol { margin: 0 0 16px; }
 ul, ol { padding-left: 24px; }
 li { margin: 6px 0; }
@@ -364,12 +426,14 @@ ol.steps .shot, ol.steps .callout, ol.steps .code, ol.steps .check { margin-top:
 .copy-btn {
   position: absolute; top: 6px; right: 6px; min-height: 30px; gap: 6px; padding: 4px 9px; font-size: 13px;
   background: var(--panel); color: var(--dim); box-shadow: inset 0 0 0 1px var(--border); opacity: 0;
-  transition: opacity .14s, background-color .14s, color .14s;
+  transition: opacity var(--t-hover) var(--ease-app), background-color var(--t-hover) var(--ease-app), color var(--t-hover) var(--ease-app);
 }
 .copy-btn .icon { width: 15px; height: 15px; }
 .code:hover .copy-btn, .copy-btn:focus-visible, .copy-btn.is-done { opacity: 1; }
 .copy-btn:hover { color: var(--text); }
 .copy-btn.is-done { color: var(--good); }
+/* "Copied" and back: the new label fades in while the colour turns */
+.copy-btn.is-swap > * { animation: fade var(--t-hover) var(--ease-app); }
 @media (hover: none) { .copy-btn { opacity: 1; } }
 
 /* tables */
@@ -394,7 +458,7 @@ td code, th code { font-size: .86em; }
   display: block; width: 100%; height: auto; border: 1px solid var(--border); border-radius: var(--r-card);
   background: var(--surface); box-shadow: var(--shadow-card);
 }
-.shot-link img { cursor: zoom-in; transition: box-shadow .2s var(--ease-out), transform .2s var(--ease-out); }
+.shot-link img { cursor: zoom-in; transition: box-shadow var(--t-hover) var(--ease-app); }
 .shot-link:hover img { box-shadow: var(--shadow-pop); }
 .shot figcaption { margin-top: 10px; color: var(--dim); font-size: 14px; line-height: 1.5; text-align: center; }
 
@@ -407,11 +471,14 @@ td code, th code { font-size: .86em; }
 /* previous / next */
 .prevnext { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 64px; }
 .card { border: 1px solid var(--border); border-radius: var(--r-card); background: var(--panel); box-shadow: var(--shadow-card); }
-a.card { color: var(--text); text-decoration: none; transition: border-color .14s, background-color .14s, box-shadow .2s var(--ease-out); }
+a.card {
+  color: var(--text); text-decoration: none;
+  transition: border-color var(--t-hover) var(--ease-app), background-color var(--t-hover) var(--ease-app), box-shadow var(--t-hover) var(--ease-app);
+}
 a.card:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); }
 .pn { display: flex; flex-direction: column; gap: 4px; padding: 14px 18px; }
 .pn-label { display: flex; align-items: center; gap: 6px; color: var(--dim); font-size: 13.5px; }
-.pn-label .icon { width: 15px; height: 15px; transition: transform .2s var(--ease-out); }
+.pn-label .icon { width: 15px; height: 15px; transition: transform var(--t-hover) var(--ease-app); }
 .pn-title { font-weight: 600; font-size: 16px; }
 .pn-next { text-align: right; align-items: flex-end; }
 .pn-next .pn-label { flex-direction: row-reverse; }
@@ -551,7 +618,7 @@ a.card:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)
 .path-text, .ref-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
 .path-title, .ref-title { font-weight: 600; line-height: 1.35; }
 .path-desc, .ref-desc { color: var(--dim); font-size: 14.5px; line-height: 1.5; }
-.path-arrow { color: var(--muted); transition: transform .2s var(--ease-out), color .14s; }
+.path-arrow { color: var(--muted); transition: transform var(--t-hover) var(--ease-app), color var(--t-hover) var(--ease-app); }
 .path-card:hover .path-arrow { transform: translateX(3px); color: var(--icon-accent); }
 .ref-grid { list-style: none; padding: 0; margin: 20px 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .ref-grid li { margin: 0; }
@@ -590,7 +657,7 @@ a.ext::after {
 .suggest-actions { display: flex; gap: 6px; flex: none; }
 .suggest.is-leaving { animation: sink .16s var(--ease-in) forwards; }
 @keyframes rise { from { opacity: 0; transform: translate(-50%, 12px) scale(.96); } }
-@keyframes sink { to { opacity: 0; transform: translate(-50%, 8px) scale(.97); } }
+@keyframes sink { to { opacity: 0; transform: translate(-50%, 12px) scale(.96); } }
 
 /* ------------------------------------------------------------------------------------------------ lightbox */
 .lightbox {
@@ -608,12 +675,13 @@ a.ext::after {
 .lightbox.is-closing img { animation: zoom-out .16s var(--ease-in) forwards; }
 .lightbox.is-closing::backdrop { animation: fade-out .16s var(--ease-in) forwards; }
 @keyframes zoom-in { from { opacity: 0; transform: translateY(12px) scale(.94); } }
-@keyframes zoom-out { to { opacity: 0; transform: translateY(8px) scale(.96); } }
+/* the program's dialog: in over 0.26 s and out over 0.16 s along the same path (12 px, 94 %) */
+@keyframes zoom-out { to { opacity: 0; transform: translateY(12px) scale(.94); } }
 @keyframes fade { from { opacity: 0; } }
 @keyframes fade-out { to { opacity: 0; } }
 .nav-scrim {
   position: fixed; inset: 0; z-index: 80; background: rgba(6, 7, 10, .5); opacity: 0; visibility: hidden;
-  transition: opacity .26s var(--ease-out), visibility 0s .26s;
+  transition: opacity .22s var(--ease-fold), visibility 0s .22s;
 }
 
 /* ------------------------------------------------------------------------------------------------ narrower screens */
@@ -632,21 +700,20 @@ a.ext::after {
   .no-js .sidenav { position: static; max-height: none; padding: 24px 0 40px; border-top: 1px solid var(--border); }
   .no-js .sidenav-head { display: block; margin-bottom: 12px; font-weight: 600; }
   .no-js .nav-close { display: none; }
-  /* with it, a sheet from the left */
+  /* with it, a sheet from the left that slides like the program's sidebar: 0.22 s smoothstep, both ways */
   .js .sidenav {
     position: fixed; top: 0; bottom: 0; left: 0; z-index: 90; width: min(340px, 88vw); max-height: none; padding: 0 14px 24px;
     background: var(--window); border-right: 1px solid var(--border); box-shadow: var(--shadow-pop);
     transform: translateX(-104%); visibility: hidden;
-    transition: transform .26s var(--ease-out), visibility 0s .26s;
+    transition: transform .22s var(--ease-fold), visibility 0s .22s;
   }
   .js .sidenav-head {
-    position: sticky; top: 0; z-index: 1; display: flex; align-items: center; justify-content: space-between;
+    position: sticky; top: 0; z-index: 3; display: flex; align-items: center; justify-content: space-between;
     height: var(--top); margin: 0 -14px 12px; padding: 0 10px 0 18px; background: var(--window); border-bottom: 1px solid var(--border);
     font-weight: 600;
   }
-  .js.nav-open .sidenav { transform: none; visibility: visible; transition: transform .26s var(--ease-out); }
-  .js.nav-open .nav-scrim { opacity: 1; visibility: visible; transition: opacity .26s var(--ease-out); }
-  .js.nav-closing .sidenav { transition: transform .16s var(--ease-in), visibility 0s .16s; }
+  .js.nav-open .sidenav { transform: none; visibility: visible; transition: transform .22s var(--ease-fold); }
+  .js.nav-open .nav-scrim { opacity: 1; visibility: visible; transition: opacity .22s var(--ease-fold); }
   .hero { grid-template-columns: minmax(0, 1fr) 220px; gap: 32px; }
 }
 @media (max-width: 759px) {
@@ -666,7 +733,10 @@ a.ext::after {
   .search { flex: 0 0 auto; margin-left: auto; }
   .search-box { display: none; }
   .search-open { display: inline-flex; }
-  .topbar.is-searching .search { position: absolute; inset: 0; z-index: 2; display: flex; align-items: center; margin: 0; padding: 0 12px; background: var(--panel); }
+  .topbar.is-searching .search {
+    position: absolute; inset: 0; z-index: 2; display: flex; align-items: center; margin: 0; padding: 0 12px; background: var(--panel);
+    animation: pop-fade var(--t-pop) var(--ease-pop);
+  }
   .topbar.is-searching .search-box { display: flex; flex: 1; }
   .topbar.is-searching .search-open { display: none; }
   .topbar.is-searching .search-close { display: inline-flex; width: 30px; min-height: 30px; }
@@ -707,9 +777,13 @@ a.ext::after {
   .top-actions .btn-icon, .search-open { width: 34px; }
 }
 
+/* a change of theme blends the whole page, like the program's palette (speed 9, site.js) */
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: .56s; animation-timing-function: var(--ease-app); }
+
 /* ------------------------------------------------------------------------------------------------ calm */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+  ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
 }
 @media print {
   .topbar, .sidenav, .aside-toc, .toc-inline, .prevnext, .site-footer, .copy-btn, .suggest { display: none !important; }
@@ -719,7 +793,8 @@ a.ext::after {
 
 /* ------------------------------------------------------------------------------------------------ 404 */
 .page-404 { min-height: 100vh; display: flex; align-items: center; justify-content: center; }
-.nf { width: min(560px, calc(100vw - 32px)); padding: 48px 0; }
+/* the page comes up from its background like the program's window at start (0.45 s smoothstep) */
+.nf { width: min(560px, calc(100vw - 32px)); padding: 48px 0; animation: fade .45s var(--ease-fold) both; }
 .nf-logo { display: block; margin: 0 0 28px; border-radius: 23%; }
 .nf-block { margin: 0 0 18px; }
 .nf-block h1, .nf-block h2 { margin: 0 0 6px; font-size: 26px; line-height: 1.3; }

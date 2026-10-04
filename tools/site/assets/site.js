@@ -48,13 +48,18 @@
     var t = currentTheme();
     $$('[data-theme-set]').forEach(function (b) { b.setAttribute('aria-pressed', b.getAttribute('data-theme-set') === t ? 'true' : 'false'); });
   }
+  function setTheme(t) {
+    if (t === 'system') { doc.removeAttribute('data-theme'); store('vdc-theme', null); }
+    else { doc.setAttribute('data-theme', t); store('vdc-theme', t); }
+    showTheme();
+  }
   $$('[data-theme-set]').forEach(function (b) {
     b.addEventListener('click', function () {
       var t = b.getAttribute('data-theme-set');
-      if (t === 'system') { doc.removeAttribute('data-theme'); store('vdc-theme', null); }
-      else { doc.setAttribute('data-theme', t); store('vdc-theme', t); }
-      showTheme();
-      closeMenus();
+      closeMenus();   // the menu closes at once, as the program's popups do; the page then blends to the new palette
+      if (t === currentTheme()) return;
+      if (calm || !document.startViewTransition) { setTheme(t); return; }
+      document.startViewTransition(function () { setTheme(t); });
     });
   });
   showTheme();
@@ -99,6 +104,55 @@
     $('a', bar).addEventListener('click', function () { store('vdc-lang', pref); });
     $('button', bar).addEventListener('click', leave);
     setTimeout(function () { body.appendChild(bar); }, 600);
+  })();
+
+  /* ---------------------------------------------------------------------------------------------- jumps on the page glide */
+  // The program's SmoothScrollTo: each frame closes the gap by 1 - e^(-18 dt), and a scroll by the reader takes over.
+  // The browser makes the jump first (the address, the history and :target stay its own), the view is put back
+  // before anything is painted, and then it glides there; the spotlight waits for the arrival.
+  var glideTo = null, remember = null;   // remember: the sidebar memory's save(), set further down
+  (function jumps() {
+    if (calm || !window.requestAnimationFrame) return;
+    var raf = 0, last = 0;
+    function stop() {
+      if (raf) cancelAnimationFrame(raf);
+      raf = 0;
+      doc.classList.remove('is-scrolling');
+    }
+    glideTo = function (hash) {
+      var id = decodeURIComponent(hash.slice(1)), target = id && document.getElementById(id);
+      if (!target) return false;
+      var y0 = window.scrollY;
+      stop();
+      doc.classList.add('is-scrolling');
+      if (location.hash === hash) target.scrollIntoView(); else location.hash = hash;
+      var y1 = window.scrollY;
+      window.scrollTo(0, y0);
+      if (Math.abs(y1 - y0) < 1) { window.scrollTo(0, y1); stop(); return true; }
+      var y = y0, then = performance.now();
+      last = y0;
+      function step(now) {
+        if (Math.abs(window.scrollY - last) > 1.5) { stop(); return; }   // the reader scrolled: theirs now
+        var dt = Math.min(Math.max((now - then) / 1000, 0), 0.05);
+        then = now;
+        y += (y1 - y) * (1 - Math.exp(-18 * dt));
+        if (Math.abs(y1 - y) <= 0.5) { window.scrollTo(0, y1); stop(); return; }
+        window.scrollTo(0, y);
+        last = window.scrollY;
+        raf = requestAnimationFrame(step);
+      }
+      raf = requestAnimationFrame(step);
+      return true;
+    };
+    document.addEventListener('click', function (e) {
+      if (e.defaultPrevented || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      var a = e.target.closest('a[href*="#"]');
+      if (!a || a.matches('.skip, .menu-btn, .nav-close') || (a.target && a.target !== '_self')) return;
+      var url = new URL(a.href, location.href);
+      if (!url.hash || url.origin !== location.origin || url.pathname !== location.pathname || url.search !== location.search) return;
+      if (glideTo(url.hash)) e.preventDefault();
+    });
+    ['wheel', 'touchstart', 'keydown'].forEach(function (type) { window.addEventListener(type, function () { if (raf) stop(); }, { passive: true }); });
   })();
 
   /* ---------------------------------------------------------------------------------------------- search */
@@ -182,7 +236,14 @@
       else if (e.key === 'ArrowUp') { e.preventDefault(); select(sel - 1); }
       else if (e.key === 'Enter') {
         var a = sel >= 0 ? $('#sr-' + sel + ' a', list) : null;
-        if (a) { e.preventDefault(); hide(); location.href = a.getAttribute('href'); if (topbar.classList.contains('is-searching')) closeMobile(); }
+        if (a) {
+          e.preventDefault();
+          hide();
+          var url = new URL(a.href, location.href);
+          var here = url.hash && url.pathname === location.pathname && url.search === location.search;
+          if (!(here && glideTo && glideTo(url.hash))) { if (remember && !here) remember(a.href); location.href = a.getAttribute('href'); }
+          if (topbar.classList.contains('is-searching')) closeMobile();
+        }
       } else if (e.key === 'Escape') {
         if (input.value) { input.value = ''; hide(); } else { input.blur(); closeMobile(); }
       }
@@ -208,9 +269,10 @@
     b.addEventListener('click', function () {
       var text = $('code', block).textContent;
       function done() {
-        b.classList.add('is-done');
+        b.classList.add('is-done', 'is-swap');
         b.innerHTML = site.icons.check + '<span>' + esc(site.code.copied) + '</span>';
-        setTimeout(function () { b.classList.remove('is-done'); b.innerHTML = site.icons.copy + '<span>' + esc(site.code.copy) + '</span>'; }, 1600);
+        clearTimeout(b._back);
+        b._back = setTimeout(function () { b.classList.remove('is-done'); b.innerHTML = site.icons.copy + '<span>' + esc(site.code.copy) + '</span>'; }, 1600);
       }
       if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, function () {});
       else {
@@ -231,6 +293,19 @@
     links.forEach(function (a) { map[a.getAttribute('href').slice(1)] = a; });
     var heads = $$('.doc-body h2[id]').filter(function (h) { return map[h.id]; });
     var visible = {};
+    // one bar for the whole list, gliding to the section's link (the program's segmented thumb)
+    var toc = $('.toc'), thumb = el('span', 'toc-thumb'), shown = null;
+    thumb.setAttribute('aria-hidden', 'true');
+    if (toc) { toc.appendChild(thumb); toc.classList.add('has-thumb'); }
+    function place(a) {
+      if (!toc || !a || !a.offsetHeight) return;
+      thumb.style.transform = 'translate(' + a.offsetLeft + 'px,' + a.offsetTop + 'px)';
+      thumb.style.height = a.offsetHeight + 'px';
+      if (!toc.classList.contains('is-ready')) {
+        void thumb.offsetWidth;   // the first place is taken without a glide
+        toc.classList.add('is-ready');
+      }
+    }
     function mark() {
       var cur = null;
       for (var i = 0; i < heads.length; i++) {
@@ -238,7 +313,9 @@
       }
       if (!cur && heads.length) cur = heads[0].id;
       links.forEach(function (a) { if (a === map[cur]) a.setAttribute('aria-current', 'true'); else a.removeAttribute('aria-current'); });
+      if (map[cur] !== shown || !toc.classList.contains('is-ready')) { shown = map[cur]; place(shown); }
     }
+    window.addEventListener('resize', function () { place(shown); });
     var io = new IntersectionObserver(function (entries) {
       entries.forEach(function (en) { visible[en.target.id] = en.isIntersecting; });
       mark();
@@ -334,6 +411,47 @@
     dlg.addEventListener('close', function () { if (opener) opener.focus(); });
   })();
 
+  /* ---------------------------------------------------------------------------------------------- the sidebar remembers itself */
+  // For this tab only: which cards are folded, and, as the reader leaves for another page of the site, where the
+  // sidebar was scrolled and which page it marked. The next page's nav-early script (layout) puts the sidebar back
+  // and glides the highlight across before its first paint.
+  (function memory() {
+    var nav = $('#site-nav');
+    if (!nav) return;
+    var cards = $$('.nav-card', nav);
+    function session(key, value) { try { sessionStorage.setItem(key, value); } catch (e) { /* private mode: nothing kept */ } }
+    function folds() { return cards.map(function (c) { return c.open ? '1' : '0'; }).join(''); }
+    function here() { return location.pathname.replace(/index\.html$/, ''); }
+    session('vdc-folds', folds());
+    cards.forEach(function (c) { c.addEventListener('toggle', function () { session('vdc-folds', folds()); }); });
+    var saved = '';
+    function path(u) { return new URL(u, location.href).pathname.replace(/index\.html$/, ''); }
+    function save(to) {
+      var tab = -1;
+      $$('.top-links a').forEach(function (a, i) { if (a.hasAttribute('aria-current')) tab = i; });
+      session('vdc-nav', JSON.stringify({ from: here(), to: to, t: Date.now(), scroll: Math.round(nav.scrollTop),
+        navTop: Math.round(nav.getBoundingClientRect().top), tab: tab }));
+      saved = to;
+    }
+    remember = save;
+    document.addEventListener('click', function (e) {
+      var a = e.target.closest('a[href]');
+      if (!a || e.defaultPrevented || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      if ((a.target && a.target !== '_self') || a.hasAttribute('download')) return;
+      var url = new URL(a.href, location.href);
+      if (url.origin === location.origin && url.pathname !== location.pathname) save(url.href);
+    });
+    // Only a link or a search result followed in the site glides: any other way out of the page (an address typed in
+    // this tab, the back button, a reload) forgets the record, so the next page simply shows.
+    window.addEventListener('pageswap', function (e) {
+      var act = e.activation;
+      var ours = act && (act.navigationType === 'push' || act.navigationType === 'replace') && act.entry && saved && path(act.entry.url) === path(saved);
+      if (!ours) session('vdc-nav', '');
+    });
+    window.addEventListener('pagehide', function () { if (!saved && !('onpageswap' in window)) session('vdc-nav', ''); });
+    window.addEventListener('pageshow', function (e) { if (e.persisted) saved = ''; });
+  })();
+
   /* ---------------------------------------------------------------------------------------------- the sidebar as a sheet on narrow screens */
   (function sheet() {
     var btn = $('.menu-btn'), nav = $('#site-nav'), closeBtn = $('.nav-close');
@@ -353,7 +471,7 @@
       doc.classList.add('nav-closing');
       doc.classList.remove('nav-open');
       btn.setAttribute('aria-expanded', 'false');
-      setTimeout(function () { doc.classList.remove('nav-closing'); }, 170);
+      setTimeout(function () { doc.classList.remove('nav-closing'); }, 230);
       if (back) btn.focus();
     }
     btn.setAttribute('aria-expanded', 'false');

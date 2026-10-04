@@ -12,6 +12,7 @@
 <link rel="icon" href="{root}assets/icon-32.png" sizes="32x32" type="image/png">
 <link rel="apple-touch-icon" href="{root}assets/icon-180.png">
 <link rel="stylesheet" href="{root}assets/site.css">
+<link rel="expect" href="#nav-early" blocking="render">
 <script defer src="{root}assets/site.js"></script>
 </head>
 <body class="{{body_class}}" data-site="{{site_data}}">
@@ -40,6 +41,92 @@
 <div class="sidenav-head"><span class="sidenav-title">{{contents}}</span><a class="btn btn-icon nav-close" href="#content" aria-label="{{close_menu}}">{{icon_close}}</a></div>
 <div class="sidenav-body">{{nav}}</div>
 </nav>
+<script id="nav-early">
+/* Before the first paint (the head asks the browser to wait for this script): the sidebar comes back as the reader
+   left it on the page before, its folded cards and its scroll position, and the highlight glides from the page they
+   came from to this one, like the program's segmented selection. A reload, a link from elsewhere, the back button,
+   the sheet on a narrow screen or a request for less motion get no glide; without the script the sidebar just shows. */
+(function () {
+  var d = document.documentElement, nav = document.getElementById('site-nav');
+  if (!nav || !d.classList.contains('js') || !window.JSON) return;
+  function get(k) { try { return sessionStorage.getItem(k) || ''; } catch (e) { return ''; } }
+  function path(u) { try { return new URL(u, location.href).pathname.replace(/index\.html$/, ''); } catch (e) { return ''; } }
+  var cards = nav.querySelectorAll('.nav-card'), cur = nav.querySelector('.nav-card a[aria-current]'), i;
+  var folds = get('vdc-folds');
+  if (folds.length === cards.length) {
+    for (i = 0; i < cards.length; i++) if (folds.charAt(i) === '0' && !(cur && cards[i].contains(cur))) cards[i].open = false;
+  }
+  var rec = null;
+  try { rec = JSON.parse(get('vdc-nav') || 'null'); } catch (e) { rec = null; }
+  if (!rec || !(Date.now() - rec.t < 30000)) return;
+  var act = window.navigation && window.navigation.activation, ok = false;
+  if (act) ok = (act.navigationType === 'push' || act.navigationType === 'replace') && !!act.from && path(act.from.url) === rec.from;
+  else {
+    var pn = performance.getEntriesByType ? performance.getEntriesByType('navigation')[0] : null;
+    ok = !!pn && pn.type === 'navigate' && !!document.referrer && path(document.referrer) === rec.from;
+  }
+  if (!ok || (rec.to && path(rec.to) !== path(location.href))) return;
+  if (getComputedStyle(nav).position !== 'sticky') return;
+  nav.scrollTop = rec.scroll || 0;
+  if (cur) {   // a link in the page may lead to an item the kept scroll hides: bring it just into view
+    var nr = nav.getBoundingClientRect(), cr = cur.getBoundingClientRect(), low = Math.min(nr.bottom, innerHeight) - 8;
+    if (cr.top < nr.top + 8) nav.scrollTop -= nr.top + 8 - cr.top;
+    else if (cr.bottom > low) nav.scrollTop += cr.bottom - low;
+  }
+  if ((window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) || document.visibilityState !== 'visible' || !nav.animate) return;
+  var EASE = 'cubic-bezier(.18,1,.56,1)', T = 280;
+  function glide(box, root, a, b, shown, cls) {
+    // The plate and both labels run on one clock: the labels' colours (and weight) are animated from the look of
+    // the page left to the look of this one, while their own hover fades rest (hl-setup) until the plate has landed.
+    root.classList.add('hl-setup', 'is-gliding');
+    var els = [b, b.querySelector('.icon'), a, a.querySelector('.icon')];
+    function look() {
+      return els.map(function (el) { if (!el) return null; var s = getComputedStyle(el); return { color: s.color, fontWeight: s.fontWeight }; });
+    }
+    b.classList.add('hl-from');
+    if (shown) a.classList.add('hl-was');
+    var start = look();
+    b.classList.remove('hl-from');
+    a.classList.remove('hl-was');
+    var end = look();
+    var o = box.getBoundingClientRect(), r1 = b.getBoundingClientRect(), r0 = shown ? a.getBoundingClientRect() : r1;
+    // left/top rather than a transform: the plate is then painted with the labels in the same frame, never ahead of them
+    function key(r, alpha) {
+      var k = { left: (r.left - o.left) + 'px', top: (r.top - o.top) + 'px', width: r.width + 'px', height: r.height + 'px' };
+      if (!shown) k.opacity = alpha;
+      return k;
+    }
+    var pill = document.createElement('span');
+    pill.className = cls;
+    pill.setAttribute('aria-hidden', 'true');
+    box.appendChild(pill);
+    var opt = { duration: T, easing: EASE };
+    for (var k = 0; k < els.length; k++) {
+      if (els[k] && (start[k].color !== end[k].color || start[k].fontWeight !== end[k].fontWeight)) els[k].animate([start[k], end[k]], opt);
+    }
+    pill.animate([key(r0, shown ? 1 : 0), key(r1, 1)], { duration: T, easing: EASE, fill: 'both' }).onfinish = function () {
+      root.classList.remove('is-gliding');
+      void root.offsetWidth;
+      pill.parentNode.removeChild(pill);
+      root.classList.remove('hl-setup');
+    };
+  }
+  var links = nav.querySelectorAll('.nav-card li a'), from = null;
+  for (i = 0; i < links.length; i++) if (path(links[i].href) === rec.from) from = links[i];
+  if (cur && from && from !== cur) {
+    var card = from.closest('details');
+    glide(nav.querySelector('.sidenav-body'), nav, from, cur, !card || card.open, 'nav-hl');
+  }
+  var dy = (rec.navTop || 0) - nav.getBoundingClientRect().top;
+  if (Math.abs(dy) > 1 && !location.hash) nav.animate([{ transform: 'translateY(' + dy + 'px)' }, { transform: 'none' }], { duration: T, easing: EASE });
+  var bar = document.querySelector('.top-links');
+  if (bar && rec.tab >= 0 && getComputedStyle(bar).display !== 'none') {
+    var tabs = bar.querySelectorAll('a'), now = -1;
+    for (i = 0; i < tabs.length; i++) if (tabs[i].hasAttribute('aria-current')) now = i;
+    if (now >= 0 && now !== rec.tab && tabs[rec.tab]) glide(bar, bar, tabs[rec.tab], tabs[now], true, 'tab-hl');
+  }
+})();
+</script>
 </div>
 {{footer}}
 </body>
