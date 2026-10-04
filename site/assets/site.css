@@ -690,6 +690,9 @@ a.ext::after {
   .aside-toc { display: none; }
   .toc-inline { display: block; }
 }
+.ask-r2 .layout { grid-template-columns: 248px minmax(0, 800px); grid-template-areas: "nav main"; gap: 40px; }
+.ask-r2 .aside-toc { display: none; }
+.ask-r2 .toc-inline { display: block; }
 @media (max-width: 999px) {
   .layout, .is-home .layout { display: block; padding: 0 24px; }
   .doc { padding-top: 28px; }
@@ -716,6 +719,25 @@ a.ext::after {
   .js.nav-open .nav-scrim { opacity: 1; visibility: visible; transition: opacity .22s var(--ease-fold); }
   .hero { grid-template-columns: minmax(0, 1fr) 220px; gap: 32px; }
 }
+.ask-r1 .layout, .ask-r1 .is-home .layout { display: block; padding: 0 24px; }
+.ask-r1 .doc { padding-top: 28px; }
+.ask-r1 article { margin: 0 auto; }
+.ask-r1 .menu-btn { display: inline-flex; }
+.ask-r1 .top-links { display: none; }
+.js.ask-r1 .sidenav {
+    position: fixed; top: 0; bottom: 0; left: 0; z-index: 90; width: min(340px, 88vw); max-height: none; padding: 0 14px 24px;
+    background: var(--window); border-right: 1px solid var(--border); box-shadow: var(--shadow-pop);
+    transform: translateX(-104%); visibility: hidden;
+    transition: transform .22s var(--ease-fold), visibility 0s .22s;
+  }
+.js.ask-r1 .sidenav-head {
+    position: sticky; top: 0; z-index: 3; display: flex; align-items: center; justify-content: space-between;
+    height: var(--top); margin: 0 -14px 12px; padding: 0 10px 0 18px; background: var(--window); border-bottom: 1px solid var(--border);
+    font-weight: 600;
+  }
+.js.nav-open.ask-r1 .sidenav { transform: none; visibility: visible; transition: transform .22s var(--ease-fold); }
+.js.nav-open.ask-r1 .nav-scrim { opacity: 1; visibility: visible; transition: opacity .22s var(--ease-fold); }
+.ask-r1 .hero { grid-template-columns: minmax(0, 1fr) 220px; gap: 32px; }
 @media (max-width: 759px) {
   .dl-grid { grid-template-columns: 1fr; }
   .ref-grid { grid-template-columns: 1fr; }
@@ -826,16 +848,21 @@ a.ext::after {
   .ask-btn { width: 36px; padding: 0; }
   .ask-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 }
+.ask-r2 .ask-btn { width: 36px; padding: 0; }
+.ask-r2 .ask-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 /* The extra control takes its room from the brand's subtitle first (below 1240 px, with its own label), then from
    the language menu's label (below 1000 px, the way the bar already folds below 600 px), and on a phone from the
    product's name: the mark still leads home, and every control keeps its full size. Only with the script; without it
    the button is not there and the bar is unchanged. */
 .js .brand { flex-shrink: 0; }   /* the search box gives way, never the name */
 @media (max-width: 1239px) { .js .brand-docs { display: none; } }
+.js.ask-r2 .brand-docs { display: none; }
 @media (max-width: 999px) {
   .js .lang-cur, .js .lang-menu > summary .caret { display: none; }
   .js .lang-menu > summary { padding-inline: 8px; }
 }
+.js.ask-r1 .lang-cur, .js.ask-r1 .lang-menu > summary .caret { display: none; }
+.js.ask-r1 .lang-menu > summary { padding-inline: 8px; }
 @media (max-width: 459px) { .js .brand-text { display: none; } }
 @media (max-width: 419px) { .ask-btn { width: 34px; } }
 
@@ -847,6 +874,17 @@ a.ext::after {
    above the top bar while the layer is see-through. */
 .ask-layer { position: relative; z-index: 75; opacity: 0; transition: opacity .08s var(--ease-out); }
 .ask-layer.is-on { opacity: 1; transition: opacity var(--t-glide) var(--ease-out); }
+
+/* Docked beside a window wide enough, the panel has a column of its own: the page keeps clear of it by its width with
+   the panel's margin (--ask-room, set by ask.js) and is laid out for the width left (html.ask-r2 / ask-r1: the build
+   repeats the narrower widths' rules under these classes). The bars' backgrounds still reach the window's edge, under
+   the panel, so nothing at the edge changes as it comes and goes; only what they hold makes room. */
+.ask-room body { padding-right: var(--ask-room); }
+.ask-room .topbar, .ask-room .site-footer { margin-right: calc(-1 * var(--ask-room)); padding-right: var(--ask-room); }
+.ask-room .suggest { left: calc(50% - var(--ask-room) / 2); }
+/* three columns a little short of their full width (a 1920 px window beside the panel) close their gaps before the
+   text's column gives up any width, so the text keeps its lines and the page only slides */
+.ask-room:not(.ask-r2) .layout { column-gap: clamp(32px, calc((100% - 1280px) / 2), 48px); }
 
 /* the search popup's last row: ask the typed words; it stays in view at the foot of a long list */
 .search-pop .ask-row { position: sticky; bottom: -6px; margin: 4px -6px -6px; padding: 4px 6px 6px; background: var(--panel); border-top: 1px solid var(--border); }
@@ -870,4 +908,7 @@ a.ext::after {
   color: var(--text); font-size: 14px; line-height: 1.45; animation: pop-fade var(--t-pop) var(--ease-pop);
 }
 .ask-live { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-@media print { .ask-btn, .ask-note, .ask-layer { display: none !important; } }
+@media print {
+  .ask-btn, .ask-note, .ask-layer { display: none !important; }
+  .ask-room body, .ask-room .topbar, .ask-room .site-footer { margin-right: 0; padding-right: 0; }
+}

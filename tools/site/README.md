@@ -175,6 +175,25 @@ How it behaves:
   `ask.js` keeps a reference to that root as the widget makes it (`attachShadow` is wrapped only while the widget
   starts, and only for its element) and answers a click on a link to a page here before the widget does. Links to
   other sites, and clicks that ask for a new tab (Ctrl, Shift, the middle button), open as usual.
+- Once the widget has started, the page's own links to other pages of the same language (sidebar, tabs, text links,
+  search results, the previous and next pages, the logo) are followed the same way, so moving through the guide never
+  restarts the widget or loses the conversation, whether the panel is open or closed. A link to the page being read
+  glides to its heading or to the top. Before the widget starts, links load pages as usual.
+- Docked at the side, the panel would cover the right of the page on a 1080p screen. Where the window leaves the page
+  at least 760 px beside the panel (a window of 1256 px or more), the page makes room instead: `ask.js` sets
+  `ask-room` and `--ask-room` (the panel's width and margins, measured) on the root, and `ask.css` keeps the page
+  and the top bar clear of the panel, with the top bar's and footer's backgrounds running on under it. The page is
+  laid out for the width that remains: three columns from 1240 px (their gaps close from 48 to 32 px before the text
+  column narrows, so a 1920 px window keeps the 800 px text column), two columns (`ask-r2`, the contents list moves
+  into the text) from 1000 px, one column below that (`ask-r1`, the sidebar becomes the sheet behind the menu button).
+  No media query sees that width, so `build.py` repeats each rule of `site.css`'s 1239 px and 999 px media blocks
+  under `.ask-r2` and `.ask-r1` (`room_rules`); a rule added to those blocks gets its copy on the next build. When
+  the text keeps its column width, the page slides over with the panel on the panel's 0.45 s curve, and back on the
+  program's 0.28 s curve as it leaves. When it would be laid out again, it fades out (0.12 s), is laid out with the
+  line being read kept in place, and fades back in (0.28 s) while the top bar slides. With reduced motion it switches
+  at once. A narrower window, and a phone, keep the panel over the page.
+- An address with `?ask` (for example `…/zh/?ask`) opens the panel as the page opens, then drops the parameter from
+  the address. The program uses it where it cannot show the panel itself.
 - Mintlify checks each question with hCaptcha (its bot protection, set in the dashboard). A browser hCaptcha
   trusts passes unseen; others, such as a headless browser on a server, first get a picture puzzle above the page.
 

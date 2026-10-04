@@ -42,6 +42,17 @@
 .ask-layer { position: relative; z-index: 75; opacity: 0; transition: opacity .08s var(--ease-out); }
 .ask-layer.is-on { opacity: 1; transition: opacity var(--t-glide) var(--ease-out); }
 
+/* Docked beside a window wide enough, the panel has a column of its own: the page keeps clear of it by its width with
+   the panel's margin (--ask-room, set by ask.js) and is laid out for the width left (html.ask-r2 / ask-r1: the build
+   repeats the narrower widths' rules under these classes). The bars' backgrounds still reach the window's edge, under
+   the panel, so nothing at the edge changes as it comes and goes; only what they hold makes room. */
+.ask-room body { padding-right: var(--ask-room); }
+.ask-room .topbar, .ask-room .site-footer { margin-right: calc(-1 * var(--ask-room)); padding-right: var(--ask-room); }
+.ask-room .suggest { left: calc(50% - var(--ask-room) / 2); }
+/* three columns a little short of their full width (a 1920 px window beside the panel) close their gaps before the
+   text's column gives up any width, so the text keeps its lines and the page only slides */
+.ask-room:not(.ask-r2) .layout { column-gap: clamp(32px, calc((100% - 1280px) / 2), 48px); }
+
 /* the search popup's last row: ask the typed words; it stays in view at the foot of a long list */
 .search-pop .ask-row { position: sticky; bottom: -6px; margin: 4px -6px -6px; padding: 4px 6px 6px; background: var(--panel); border-top: 1px solid var(--border); }
 .search-pop .ask-row:first-child { margin-top: 0; border-top: 0; }
@@ -64,4 +75,7 @@
   color: var(--text); font-size: 14px; line-height: 1.45; animation: pop-fade var(--t-pop) var(--ease-pop);
 }
 .ask-live { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-@media print { .ask-btn, .ask-note, .ask-layer { display: none !important; } }
+@media print {
+  .ask-btn, .ask-note, .ask-layer { display: none !important; }
+  .ask-room body, .ask-room .topbar, .ask-room .site-footer { margin-right: 0; padding-right: 0; }
+}

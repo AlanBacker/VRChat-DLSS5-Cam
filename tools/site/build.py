@@ -789,6 +789,36 @@ def not_found_page():
                ''.join(blocks), langs))
 
 
+ROOM_WIDTHS = (('1239px', 'ask-r2'), ('999px', 'ask-r1'))
+
+
+def room_rules(css):
+    """The page beside the docked AI Q&A panel is laid out for the width the panel leaves it, which no media query
+    sees: ask.js marks the root with ask-r2 (narrower than three columns) or ask-r1 as well (narrower than two), and
+    each rule of the two widths' media blocks is repeated here under that class, right after its block."""
+    def under(sel, cls):
+        m = re.match(r'(?:\.js(?![\w-])|:root|html)(?:[.:\[][^\s>+~]*)?', sel)
+        return sel[:m.end()] + '.' + cls + sel[m.end():] if m else '.' + cls + ' ' + sel
+    out, pos = [], 0
+    for m in re.finditer(r'@media \(max-width: (\d+px)\) \{', css):
+        cls = dict(ROOM_WIDTHS).get(m.group(1))
+        if not cls:
+            continue
+        depth, i = 1, m.end()
+        while depth:
+            depth += {'{': 1, '}': -1}.get(css[i], 0)
+            i += 1
+        body = re.sub(r'/\*.*?\*/', '', css[m.end():i - 1], flags=re.S)
+        rules = []
+        for sel, decl in re.findall(r'([^{}]+)\{([^{}]*)\}', body):
+            sels = [under(x.strip(), cls) for x in sel.split(',') if x.strip() and not x.strip().startswith('.no-js')]
+            if sels:   # the script sets the class, so a rule for pages without it has no copy
+                rules.append('%s {%s}' % (', '.join(sels), decl))
+        out.append(css[pos:i] + '\n' + '\n'.join(rules))
+        pos = i
+    return ''.join(out) + css[pos:]
+
+
 def build():
     images = build_images()
     os.makedirs(OUT, exist_ok=True)
@@ -798,7 +828,8 @@ def build():
         shutil.copyfile(os.path.join(HERE, 'assets', f), os.path.join(adir, f))
     if ASK_ID:   # the AI Q&A rides in site.css and site.js: no request of its own, nothing at all without an ID
         for f, extra in (('site.css', 'ask.css'), ('site.js', 'ask.js')):
-            write(os.path.join(adir, f), read(os.path.join(adir, f)) + read(os.path.join(HERE, 'assets', extra)))
+            text = read(os.path.join(adir, f)) + read(os.path.join(HERE, 'assets', extra))
+            write(os.path.join(adir, f), room_rules(text) if f == 'site.css' else text)
     os.makedirs(os.path.join(adir, 'licenses'), exist_ok=True)
     shutil.copyfile(os.path.join(HERE, 'icons', 'LICENSE'), os.path.join(adir, 'licenses', 'lucide-LICENSE.txt'))
     write(os.path.join(OUT, '.nojekyll'), '')

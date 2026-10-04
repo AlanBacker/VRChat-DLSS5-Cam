@@ -110,7 +110,6 @@
   // The program's SmoothScrollTo: each frame closes the gap by 1 - e^(-18 dt), and a scroll by the reader takes over.
   // The browser makes the jump first (the address, the history and :target stay its own), the view is put back
   // before anything is painted, and then it glides there; the spotlight waits for the arrival.
-  var glideTo = null, remember = null;   // remember: the sidebar memory's save(), set further down
   (function jumps() {
     if (calm || !window.requestAnimationFrame) return;
     var raf = 0, last = 0;
@@ -119,7 +118,7 @@
       raf = 0;
       doc.classList.remove('is-scrolling');
     }
-    glideTo = function (hash) {
+    var glideTo = function (hash) {
       var id = decodeURIComponent(hash.slice(1)), target = id && document.getElementById(id);
       if (!target) return false;
       var y0 = window.scrollY;
@@ -236,12 +235,10 @@
       else if (e.key === 'ArrowUp') { e.preventDefault(); select(sel - 1); }
       else if (e.key === 'Enter') {
         var a = sel >= 0 ? $('#sr-' + sel + ' a', list) : null;
-        if (a) {
+        if (a) {   // followed as if clicked: a heading on this page glides, another page is remembered or put in place
           e.preventDefault();
+          a.click();
           hide();
-          var url = new URL(a.href, location.href);
-          var here = url.hash && url.pathname === location.pathname && url.search === location.search;
-          if (!(here && glideTo && glideTo(url.hash))) { if (remember && !here) remember(a.href); location.href = a.getAttribute('href'); }
           if (topbar.classList.contains('is-searching')) closeMobile();
         }
       } else if (e.key === 'Escape') {
@@ -460,7 +457,6 @@
         navTop: Math.round(nav.getBoundingClientRect().top), tab: tab }));
       saved = to;
     }
-    remember = save;
     document.addEventListener('click', function (e) {
       var a = e.target.closest('a[href]');
       if (!a || e.defaultPrevented || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
@@ -507,5 +503,9 @@
     scrim.addEventListener('click', function () { close(true); });
     document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && doc.classList.contains('nav-open')) close(true); });
     window.addEventListener('resize', function () { if (!narrow()) close(false); });
+    // a link of the sheet whose page a script puts in place without a page load (ask.js) closes the sheet at once,
+    // and so does a page that makes room for a panel and no longer needs the sheet (vdc:room)
+    nav.addEventListener('click', function (e) { if (e.defaultPrevented && e.target.closest('a[href]')) close(false); });
+    document.addEventListener('vdc:room', function () { if (!narrow()) close(false); });
   })();
 })();

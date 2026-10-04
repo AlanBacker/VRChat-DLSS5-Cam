@@ -12,7 +12,10 @@
      to the conversation. The click starts the widget with defaultOpen, so it is drawn open from the start.
    - An answer's link to another page of the site puts that page in place of this one without a page load, so the
      panel and the conversation stay (a page load would start the widget with an empty panel); a link into this page
-     glides there. Every form Mintlify writes such a link in counts, a whole address too. */
+     glides there. Every form Mintlify writes such a link in counts, a whole address too. Once the widget has started,
+     the page's own links to other pages of its language are followed the same way.
+   - Docked at the side of a wide enough window, the panel does not cover the page: the page makes room for it.
+   - An address with ?ask opens the panel as the page opens. */
 (function () {
   'use strict';
   var doc = document.documentElement, body = document.body, site = {};
@@ -24,7 +27,7 @@
   var side = window.matchMedia('(min-width: 768px)');   // from 768 px the widget docks its panel at the side
   var dark = window.matchMedia('(prefers-color-scheme: dark)');
   var api = null, ready = null, started = null, mounted = false, isOpen = false, layer = null, layerTimer = 0;
-  var tries = 0, warming = false, pressedOpen = false, refocusUntil = 0, busyTimer = 0, live = null, note = null;
+  var tries = 0, warming = false, pressedOpen = false, refocusUntil = 0, busyTimer = 0, live = null, note = null, shadow = null;
   function noop() {}
 
   /* ---------------------------------------------------------------- loading */
@@ -138,8 +141,14 @@
     if (on === isOpen) return;
     isOpen = on;
     layerOn(on);
+    makeRoom(true);
     btn.setAttribute('aria-expanded', on ? 'true' : 'false');
-    if (on) { refocusUntil = 0; hideNote(); return; }
+    if (on) {
+      refocusUntil = 0;
+      hideNote();
+      setTimeout(function () { if (isOpen) makeRoom(false); }, 520);   // landed: its own measure, if it differs
+      return;
+    }
     var host = document.querySelector('mintlify-assistant'), hadFocus = !!host && document.activeElement === host;
     refocusUntil = performance.now() + 1000;
     setTimeout(function () {   // out of the closed panel at once, also when the widget leaves it there or lets it fall
@@ -179,6 +188,12 @@
   });
   btn.addEventListener('pointerenter', warm);
   btn.addEventListener('focus', warm);
+  // an address with ?ask (the program opens one where it cannot show the panel itself) opens the panel once the page
+  // has finished opening; the parameter leaves the address, so a reload or a copied link does not open it again
+  if (/(?:^|&)ask(?:[=&]|$)/.test(location.search.slice(1))) {
+    try { history.replaceState(history.state, '', location.pathname + location.hash); } catch (e) { /* the address stays */ }
+    if (document.readyState === 'complete') openPanel('link'); else window.addEventListener('load', function () { openPanel('link'); }, { once: true });
+  }
 
   /* ---------------------------------------------------------------- messages */
   function speaker() {
@@ -370,7 +385,7 @@
     if (!attach) return noop;
     proto.attachShadow = function (init) {
       var r = attach.apply(this, arguments);
-      if (this.localName === 'mintlify-assistant') r.addEventListener('click', onLink, true);
+      if (this.localName === 'mintlify-assistant') { shadow = r; r.addEventListener('click', onLink, true); }
       return r;
     };
     return function () { proto.attachShadow = attach; };
@@ -385,10 +400,13 @@
     e.stopPropagation();   // the widget's own handler would send the event and open the page a second time
     place(to);
   }
+  function folder() {   // this language's folder of the site, as a path
+    var dir = (site.dirs || {})[site.lang];
+    return new URL(((site.root || '') + (dir ? dir + '/' : '')) || './', location.href).pathname;
+  }
   function place(to) {
-    var dir = (site.dirs || {})[site.lang], folder = new URL(((site.root || '') + (dir ? dir + '/' : '')) || './', location.href).pathname;
-    var here = bare(to.pathname) === shownPath;
-    var near = !here && to.pathname.indexOf(folder) === 0 && to.pathname.slice(folder.length).indexOf('/') < 0 && !!window.fetch && !!window.DOMParser;
+    var f = folder(), here = bare(to.pathname) === shownPath;
+    var near = !here && to.pathname.indexOf(f) === 0 && to.pathname.slice(f.length).indexOf('/') < 0 && !!window.fetch && !!window.DOMParser;
     if (!here && !near) {   // a page in another language: in a new tab, this one stays as it is
       var w = window.open(to.href, '_blank');
       if (w) w.opener = null; else click(to.href);   // a blocked new tab: this one goes instead
@@ -404,6 +422,128 @@
     var h = heading(location.hash);
     if (h) location.replace('#' + h.id);
   })();
+
+  /* ---------------------------------------------------------------- the reader moves on, the conversation stays */
+  // Once the widget has started, a page load would start it again with an empty panel. A link to another page of this
+  // language (the sidebar, the tabs, the text, a search result, the previous and next pages) is then followed the way
+  // an answer's link is: the page is put in place of this one and the panel stays as it is, open or closed, with the
+  // conversation. Before the widget starts, and for links to other languages or sites and clicks that ask for a new
+  // tab, links go as usual.
+  function pageOf(href) {   // a link to a page of this language, as an address; null for anything else
+    var u, f = folder();
+    try { u = new URL(href, location.href); } catch (e) { return null; }
+    var rest = u.pathname.slice(f.length);
+    if (u.origin !== location.origin || u.search || u.pathname.indexOf(f) !== 0 || (rest && !/^[^\/]+\.html$/.test(rest))) return null;
+    return (cfg.pages || []).indexOf(rest ? rest.slice(0, -5) : 'index') >= 0 ? u : null;
+  }
+  function toTop() {   // the program's SmoothScrollTo, as site.js glides to a heading: a scroll by the reader takes over
+    if (still() || !window.requestAnimationFrame) { window.scrollTo(0, 0); return; }
+    var y = window.scrollY, last = y, then = performance.now();
+    requestAnimationFrame(function step(now) {
+      if (Math.abs(window.scrollY - last) > 1.5) return;
+      var dt = Math.min(Math.max((now - then) / 1000, 0), 0.05);
+      then = now;
+      y -= y * (1 - Math.exp(-18 * dt));
+      window.scrollTo(0, y > 0.5 ? y : 0);
+      last = window.scrollY;
+      if (y > 0.5) requestAnimationFrame(step);
+    });
+  }
+  document.addEventListener('click', function (e) {   // first, before the site's own handlers
+    if (!mounted || e.defaultPrevented || e.button || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+    var a = e.target.closest ? e.target.closest('a[href]') : null;
+    if (!a || (a.target && a.target !== '_self') || a.hasAttribute('download')) return;
+    var to = pageOf(a.href);
+    if (!to) return;
+    if (bare(to.pathname) === shownPath) {   // this page: a heading glides (site.js), the page itself goes to its top
+      if (to.hash && to.pathname === location.pathname) return;
+      e.preventDefault();
+      if (to.hash) click(to.hash); else toTop();
+      return;
+    }
+    e.preventDefault();
+    show(to, true);
+  }, true);
+
+  /* ---------------------------------------------------------------- the page makes room */
+  // Docked at the side, the panel would cover the right of the page. Where the window leaves the page at least 760 px
+  // beside it, the page makes room instead: it keeps clear of the panel (--ask-room, ask.css) and is laid out for the
+  // width left, with three columns, two (the contents list moves into the text) or one (the sidebar becomes the sheet
+  // behind the menu button), through html.ask-r2 / ask-r1. The page slides over with the panel, on its 0.45 s curve,
+  // and back as it leaves, on the program's 0.28 s. When the text would be laid out again (fewer columns, a narrower
+  // column), it fades out instead, is laid out with the line read kept where it was, and fades back in while the top
+  // bar slides, as when another page is put in its place. A narrower window keeps the panel over the page.
+  var ROOM_MIN = 760, SLIDE_IN = 'cubic-bezier(.32,.72,0,1)', EASE = 'cubic-bezier(.18,1,.56,1)';
+  var room = 0, roomLevel = 3, roomRuns = [], roomSeq = 0, goal = 0, goalLevel = 3;   // goal: where the latest change is heading
+  function level(w) { return w >= 1240 ? 3 : w >= 1000 ? 2 : 1; }   // the site's columns at a width (site.css)
+  function panelRoom() {   // the panel with its margin at the window's edge, and as much again beside the page
+    var d = shadow && shadow.querySelector('[role="dialog"]'), v = d && d.offsetParent;
+    if (!v || !d.offsetWidth) return 496;   // 480 + 8 + 8, before it is drawn
+    return Math.round(doc.getBoundingClientRect().width - v.getBoundingClientRect().left - d.offsetLeft) + 8;   // at rest, wherever its slide is
+  }
+  function want() {
+    var p = isOpen && side.matches ? panelRoom() : 0;
+    return p && window.innerWidth - p >= ROOM_MIN ? p : 0;
+  }
+  function setRoom(px, quiet) {
+    var l = px ? level(window.innerWidth - px) : 3;
+    room = px;
+    roomLevel = l;
+    doc.classList.toggle('ask-room', px > 0);
+    doc.classList.toggle('ask-r2', l < 3);
+    doc.classList.toggle('ask-r1', l < 2);
+    if (px) doc.style.setProperty('--ask-room', px + 'px'); else doc.style.removeProperty('--ask-room');
+    if (!quiet) document.dispatchEvent(new CustomEvent('vdc:room'));   // site.js: the sidebar sheet, when no longer one
+  }
+  function relayout(px) {   // the new width, with the first block of the text in view kept where it stands
+    var top = (document.querySelector('.topbar') || doc).getBoundingClientRect().bottom, at = null, r, i;
+    var els = window.scrollY < 1 ? [] : document.querySelectorAll('#content h1, #content h2, #content h3, #content h4, #content p, #content li, #content tr, #content figure, #content pre');
+    for (i = 0; i < els.length && !at; i++) { r = els[i].getBoundingClientRect(); if (r.bottom > top) at = { el: els[i], y: r.top }; }
+    doc.style.overflowAnchor = 'none';   // the browser would keep a line of its own choosing
+    setRoom(px);
+    if (at) { r = at.el.getBoundingClientRect().top - at.y; if (Math.abs(r) >= 1) window.scrollBy(0, r); }
+    requestAnimationFrame(function () { doc.style.overflowAnchor = ''; });
+  }
+  function left(el) { return el ? el.getBoundingClientRect().left : 0; }
+  function slideFrom(els, x0, T, E) {   // each block from where it stood to where it stands now
+    els.forEach(function (el, i) {
+      var dx = el ? x0[i] - left(el) : 0;
+      if (Math.abs(dx) >= 1) roomRuns.push(el.animate([{ transform: 'translateX(' + dx + 'px)' }, { transform: 'none' }], { duration: T, easing: E }));
+    });
+  }
+  function makeRoom(animate) {
+    var px = want(), was = room, w = window.innerWidth, l = px ? level(w - px) : 3;
+    if (px === goal && l === goalLevel) return;   // there already, or on the way
+    goal = px;
+    goalLevel = l;
+    roomSeq++;
+    roomRuns.forEach(function (a) { a.cancel(); });
+    roomRuns = [];
+    var q = function (s) { return document.querySelector(s); }, main = q('#content'), bar = q('.topbar-in');
+    var text = [q('.layout'), q('.footer-in')], blocks = [bar, q('.sidenav'), main, q('.aside-toc'), text[1]];   // each column on its own: the gaps may change
+    if (!animate || still() || document.visibilityState !== 'visible' || !doc.animate || !main) { relayout(px); return; }
+    var T = px > was ? 450 : 280, E = px > was ? SLIDE_IN : EASE, w0 = main.getBoundingClientRect().width, x0 = blocks.map(left);
+    setRoom(px, true);   // tried first: does the text keep its columns and its width?
+    if (level(w - px) === level(w - was) && Math.abs(main.getBoundingClientRect().width - w0) < 1) {
+      document.dispatchEvent(new CustomEvent('vdc:room'));
+      slideFrom(blocks, x0, T, E);
+      return;
+    }
+    setRoom(was, true);
+    var id = roomSeq, outs = text.map(function (el) {
+      return el && el.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 120, easing: 'cubic-bezier(.32,0,.67,0)', fill: 'forwards' });
+    });
+    roomRuns = outs.filter(Boolean);
+    Promise.all(roomRuns.map(function (a) { return a.finished ? a.finished.catch(noop) : new Promise(function (r) { setTimeout(r, 120); }); })).then(function () {
+      if (id !== roomSeq) return;
+      var xb = left(bar);
+      relayout(px);
+      slideFrom([bar], [xb], T - 120, E);
+      text.forEach(function (el) { if (el) roomRuns.push(el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 280, easing: EASE })); });
+      outs.forEach(function (a) { if (a) a.cancel(); });   // the fade-ins draw from here on
+    });
+  }
+  window.addEventListener('resize', function () { if (mounted) makeRoom(false); });
 
   /* ---------------------------------------------------------------- the search popup's Ask row */
   (function searchRow() {
