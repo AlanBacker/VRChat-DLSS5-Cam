@@ -15,7 +15,7 @@
   "sidebar-display":      {"look": "panel", "show": 396},
   "sidebar-mcp":          {"look": "panel", "show": 396},
   "sidebar-about":        {"look": "panel", "show": 396, "cover": [[14, 116, 300, 138]], "langs": {"zh": {"cover": [[14, 112, 300, 135]]}, "ja": {"cover": [[14, 129, 300, 147]]}, "ko": {"cover": [[14, 111, 300, 134]]}}},
-  "driver-notice":        {"look": "panel", "show": 576, "cover": [[576, 331, 722, 350]], "crop": [512, 296, 1088, 603], "langs": {"zh": {"cover": [[576, 332, 722, 355]]}, "ja": {"cover": [[576, 331, 722, 350]]}, "ko": {"cover": [[576, 331, 722, 350]]}}},
+  "driver-notice":        {"look": "panel", "show": 576, "cover": [[576, 331, 722, 350]], "crop": [512, 296, 1088, 603], "langs": {"zh": {"cover": [[576, 339, 722, 356]]}, "ja": {"cover": [[576, 331, 722, 350]]}, "ko": {"cover": [[576, 331, 722, 350]]}}},
   "update-window":        {"look": "panel", "show": 480, "cover": [[705, 279, 800, 297]], "crop": [560, 234, 1040, 665], "langs": {"zh": {"cover": [[668, 278, 754, 296]]}, "ja": {"cover": [[786, 266, 878, 288]]}, "ko": {"cover": [[766, 276, 834, 297]]}}},
   "radeon-sidebar":       {"look": "panel", "show": 364, "crop": [1210, 676, 1574, 896], "langs": {"zh": {"crop": [1210, 612, 1574, 834]}, "ja": {"crop": [1210, 694, 1574, 962]}, "ko": {"crop": [1210, 644, 1574, 872]}}},
   "presets":              {"look": "panel", "show": 396, "crop": [1204, 114, 1600, 374], "langs": {"ja": {"crop": [1204, 114, 1600, 390]}}},
