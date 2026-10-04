@@ -4,6 +4,8 @@
     python3 tools/site/build.py            build every language
     python3 tools/site/build.py --check    build, then check every internal link and picture of the output
 
+Each build also rewrites mintlify/, the copy of the pages for Mintlify's assistant (tools/site/mintlify.py).
+
 Python 3.8+ with Pillow (for the screenshots' WebP copies); nothing else.
 """
 import argparse
@@ -813,6 +815,8 @@ def main():
     other = [w for w in WARNINGS if not w.startswith('screenshot missing')]
     for w in other:
         print('warning:', w)
+    import mintlify   # the copy of the pages that Mintlify's assistant reads (see mintlify.py)
+    print('Mintlify copy: %d pages into %s' % (mintlify.export(), os.path.relpath(mintlify.OUT, ROOT)))
     if a.check:
         bad = check()
         for b in bad:

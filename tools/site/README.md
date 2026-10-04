@@ -30,6 +30,7 @@ published unpainted, and with `--check` any link or picture that does not resolv
 | `assets/` | `site.css`, `site.js`, the logo files; copied into `site/assets/` |
 | `icons/` | Lucide icons (ISC licence in `icons/LICENSE`), inlined into the pages as SVG |
 | `partials/` | The two sphere drawings used by the hero picture and the comparison illustration |
+| `mintlify.py` | Writes `mintlify/`, the copy of the pages for Mintlify's assistant (see The Mintlify copy) |
 | `logo.py` | Redraws `assets/logo.svg`, `assets/mark.svg`, the PNG icons and `partials/` from `tools/make_app_icon.py`; its output is committed, run it only when the program icon changes (needs pycairo) |
 
 The changelog page is built from `docs/releases/vX.Y.Z[.zh-CN|.ja|.ko].md`: each version's first paragraph and the
@@ -109,6 +110,22 @@ In `images.json`:
 
 A picture that is missing is left out of the pages and named in the build's warnings. Pictures in the pages: no
 name plates, user IDs, error messages or private paths, and the same views in all four languages.
+
+## The Mintlify copy
+
+`mintlify/` at the repository root holds the same pages as `.mdx` files with a `docs.json`, written by
+`mintlify.py` on every build. Mintlify reads that folder from the default branch so that its assistant answers
+questions from these pages; the site in `site/` stays the documentation readers use (the copy tells search engines
+not to list it). Never edit `mintlify/` by hand.
+
+- In the Mintlify dashboard, Git settings: turn on **docs.json is in a subdirectory** and enter `/mintlify`.
+- The folders keep the site's language codes (`en`, `zh`, `ja`, `ko`); `docs.json` names them with Mintlify's
+  codes (`en`, `cn`, `jp`, `ko`).
+- Pictures are not copied: the pages show the WebP copies published on the site, with the alt texts from
+  `strings/<lang>.json`. The draggable comparison links to the site. The `{#anchor}` ids are dropped, so Mintlify
+  makes its own from the headings.
+- To check the copy: `npm install mint` in a scratch folder, then in `mintlify/` run `mint validate` and
+  `mint broken-links` (or `mint dev` for a preview).
 
 ## Base path
 

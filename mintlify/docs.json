@@ -1,0 +1,179 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "theme": "mint",
+  "name": "VRChat DLSS5 Cam",
+  "description": "A free Windows app that runs the VRChat camera, your photos and your videos through NVIDIA DLSS 5 and saves the result.",
+  "colors": {
+    "primary": "#4658E6",
+    "light": "#7281FF",
+    "dark": "#4658E6"
+  },
+  "favicon": "/favicon.svg",
+  "icons": {
+    "library": "lucide"
+  },
+  "appearance": {
+    "default": "system"
+  },
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/AlanBacker/VRChat-DLSS5-Cam"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/AlanBacker/VRChat-DLSS5-Cam",
+      "website": "https://alanbacker.github.io/VRChat-DLSS5-Cam/"
+    }
+  },
+  "seo": {
+    "metatags": {
+      "robots": "noindex"
+    }
+  },
+  "navigation": {
+    "languages": [
+      {
+        "language": "en",
+        "groups": [
+          {
+            "group": "Guide",
+            "pages": [
+              "en/index",
+              "en/install",
+              "en/first-picture",
+              "en/live",
+              "en/videos",
+              "en/library",
+              "en/presets",
+              "en/saving",
+              "en/updates"
+            ]
+          },
+          {
+            "group": "Reference",
+            "pages": [
+              "en/how-it-works",
+              "en/settings",
+              "en/shortcuts",
+              "en/command-line",
+              "en/mcp",
+              "en/linux",
+              "en/radeon",
+              "en/troubleshooting",
+              "en/faq",
+              "en/privacy",
+              "en/changelog"
+            ]
+          }
+        ]
+      },
+      {
+        "language": "cn",
+        "groups": [
+          {
+            "group": "指南",
+            "pages": [
+              "zh/index",
+              "zh/install",
+              "zh/first-picture",
+              "zh/live",
+              "zh/videos",
+              "zh/library",
+              "zh/presets",
+              "zh/saving",
+              "zh/updates"
+            ]
+          },
+          {
+            "group": "参考",
+            "pages": [
+              "zh/how-it-works",
+              "zh/settings",
+              "zh/shortcuts",
+              "zh/command-line",
+              "zh/mcp",
+              "zh/linux",
+              "zh/radeon",
+              "zh/troubleshooting",
+              "zh/faq",
+              "zh/privacy",
+              "zh/changelog"
+            ]
+          }
+        ]
+      },
+      {
+        "language": "jp",
+        "groups": [
+          {
+            "group": "ガイド",
+            "pages": [
+              "ja/index",
+              "ja/install",
+              "ja/first-picture",
+              "ja/live",
+              "ja/videos",
+              "ja/library",
+              "ja/presets",
+              "ja/saving",
+              "ja/updates"
+            ]
+          },
+          {
+            "group": "リファレンス",
+            "pages": [
+              "ja/how-it-works",
+              "ja/settings",
+              "ja/shortcuts",
+              "ja/command-line",
+              "ja/mcp",
+              "ja/linux",
+              "ja/radeon",
+              "ja/troubleshooting",
+              "ja/faq",
+              "ja/privacy",
+              "ja/changelog"
+            ]
+          }
+        ]
+      },
+      {
+        "language": "ko",
+        "groups": [
+          {
+            "group": "가이드",
+            "pages": [
+              "ko/index",
+              "ko/install",
+              "ko/first-picture",
+              "ko/live",
+              "ko/videos",
+              "ko/library",
+              "ko/presets",
+              "ko/saving",
+              "ko/updates"
+            ]
+          },
+          {
+            "group": "레퍼런스",
+            "pages": [
+              "ko/how-it-works",
+              "ko/settings",
+              "ko/shortcuts",
+              "ko/command-line",
+              "ko/mcp",
+              "ko/linux",
+              "ko/radeon",
+              "ko/troubleshooting",
+              "ko/faq",
+              "ko/privacy",
+              "ko/changelog"
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
