@@ -37,6 +37,7 @@
       {"slug": "radeon", "icon": "gpu"},
       {"slug": "troubleshooting", "icon": "life-buoy"},
       {"slug": "faq", "icon": "circle-question-mark"},
+      {"slug": "ai-qa", "icon": "message-circle-question-mark"},
       {"slug": "privacy", "icon": "shield-check"},
       {"slug": "changelog", "icon": "scroll-text"}
     ]}

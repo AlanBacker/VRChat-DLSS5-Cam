@@ -23,7 +23,7 @@ A bare `file` argument (what Windows passes for *Open with*) opens that picture 
 | `--screenshot <seconds> <file.png>` | Save a picture of the whole window `seconds` after the start (repeatable). |
 | `--exit-after <seconds>` | Quit after this many seconds, once pending screenshots and captures are written. A `--headless` run without `--process` stays for this time instead of ending as soon as it has nothing to do. |
 | `--headless` | No window: everything is drawn into an off-screen buffer. Screenshots and processing work as usual, and the program exits by itself when its work is done. Meant for scripted tests and for sessions without a desktop (services, SSH). |
-| `--data-dir <folder>` | Keep `settings.ini`, `presets.txt`, `log.txt` (with the previous sessions' `log-1.txt` to `log-5.txt`), `crash.txt` and `session.txt` in this folder instead of `%LOCALAPPDATA%\VRChatDLSS5Cam`. |
+| `--data-dir <folder>` | Keep `settings.ini`, `presets.txt`, `log.txt` (with the previous sessions' `log-1.txt` to `log-5.txt`), `crash.txt`, `session.txt` and `webview2\` (the AI Q&A panel's cookies and storage) in this folder instead of `%LOCALAPPDATA%\VRChatDLSS5Cam`. |
 | `--mcp` | The stdio bridge for an MCP client: no window; the MCP client's messages are relayed to the running program's MCP server, and the program is started when none runs (the other options travel to it). See [MCP.md](MCP.md). |
 | `--mcp-port <port>` | Run the MCP server on this port for this session, whatever the **Run the MCP server** switch says (1024 to 65535). |
 | `--update` | Look for a newer version on the chosen channel and, if there is one, download and install it: the app closes, replaces its files and starts again. Without a newer version it simply carries on. The check that normally runs at every start is skipped in `--process` runs, so this switch is the way to ask for it there; a `--headless` run never updates. |
@@ -51,6 +51,15 @@ DLSS 5 section keeps a warning line. `--fake-driver <version>` (development, for
 makes the check see that version instead of the installed one, and `--fake-version <x.y.z>` (development) makes the
 update check take the program for that version, so the update window and the release notes in the interface's language
 can be looked at on a current installation.
+
+The AI Q&A panel has test switches of its own (development). `--ask-at <seconds> <action>` (repeatable) does one step
+at that time after the start: `open`, `toggle`, `hide`, `close` (the panel's ✕), `esc`, `link` (clicks the first link in the
+panel, as a reader would), `q:<question>` (asks it), `theme:<0|1|2>`, `lang:<auto|en|zh|ja|ko>`, `min:<seconds>` (minimises
+the window for that long) or `size:<W>x<H>` (the window's client size); `--ask <seconds>` is short for
+`--ask-at <seconds> open`. In a run with `--ask-at` or `--ask`, `log.txt` also takes the first 800 characters of each
+answer, which a normal session never writes. `--ask-no-runtime` behaves as if the WebView2 Runtime were missing, so
+*Ask AI* opens the documentation site's AI Q&A in the browser, and `--dry-open` writes `Open (dry run): <address>` to the
+log instead of opening that page or file.
 
 ## Examples
 

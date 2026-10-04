@@ -46,3 +46,5 @@ Everything else stays as you type it. When a name is already taken, the app adds
 {{tree}}
 
 **About** → **Open settings folder** opens the settings folder, **Open log file** the log.
+
+Once you have opened [AI Q&A](ai-qa.html), the settings folder also holds a `webview2` folder with the panel's cookies and storage.

@@ -9,7 +9,8 @@ Other computers can send it work too: a bot (a chat-group bot, a script, a clien
 or a video with a **key**, the file waits in a **queue**, and the bot is told its place and when its turn comes, then
 downloads the result. One PC with a strong graphics card can serve several bots at once this way.
 
-By default nothing leaves the computer: the server listens on `127.0.0.1` only, never connects anywhere, and refuses
+By default the server stays on this computer: it listens on `127.0.0.1` only, connects nowhere by itself (the one
+download it makes is a job's input given as a `url`, see `vdc_submit`), and refuses
 requests from web pages (a browser sends an `Origin` header; only local origins pass).
 
 ## Turning it on

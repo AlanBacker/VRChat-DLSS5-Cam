@@ -74,6 +74,18 @@ The app's folder must be writable, and a folder under `Program Files` usually is
 
 Where GitHub is slow or blocked, choose **About** → **GitHub access** → **Mirror sites, the fastest one**. [Updates](updates.html#mirror)
 
+## AI Q&A {#ask-ai}
+
+### "AI Q&A could not be loaded" {#ask-failed}
+
+AI Q&A needs an internet connection. Check the connection, then click **Try again** in the panel.
+
+When the panel opens but no answer comes, the project's monthly allowance for AI Q&A may have run out. It comes back the next month. Until then, these pages answer the same questions. [AI Q&A](ai-qa.html#online)
+
+### Ask AI opens the browser {#ask-browser}
+
+The panel inside the app needs the Microsoft Edge WebView2 Runtime. Without it, and in the Linux package, **Ask AI** opens AI Q&A in your browser instead. To have the panel in the app on Windows, install the runtime and start the app again. [AI Q&A](ai-qa.html#browser)
+
 ## The app closed or crashed {#crash}
 
 At the next start the app notices that the last session did not end properly. A window offers **Report on GitHub**, which opens an issue form already filled in, and **Open log folder**.

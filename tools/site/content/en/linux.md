@@ -36,6 +36,7 @@ Settings, presets, the log and the library live in `~/.local/share/VRChatDLSS5Ca
 | Live camera (Spout) | Not available. Spout exists only on Windows. |
 | Motion vectors | The FSR optical flow; NVIDIA Optical Flow is not available under Proton. |
 | MCP, updates, mirror sites, languages | Work. |
+| AI Q&A | **Ask AI** opens it in your browser instead of a panel in the app. [AI Q&A](ai-qa.html#browser) |
 | Radeon edition | Not supported. |
 
 ## Command line {#command-line}

@@ -63,6 +63,7 @@
               "en/radeon",
               "en/troubleshooting",
               "en/faq",
+              "en/ai-qa",
               "en/privacy",
               "en/changelog"
             ]
@@ -98,6 +99,7 @@
               "zh/radeon",
               "zh/troubleshooting",
               "zh/faq",
+              "zh/ai-qa",
               "zh/privacy",
               "zh/changelog"
             ]
@@ -133,6 +135,7 @@
               "ja/radeon",
               "ja/troubleshooting",
               "ja/faq",
+              "ja/ai-qa",
               "ja/privacy",
               "ja/changelog"
             ]
@@ -168,6 +171,7 @@
               "ko/radeon",
               "ko/troubleshooting",
               "ko/faq",
+              "ko/ai-qa",
               "ko/privacy",
               "ko/changelog"
             ]

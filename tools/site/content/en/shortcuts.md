@@ -13,6 +13,7 @@ description: Every key and mouse action of the app on one page.
 | ((F11)) {#fullscreen} | Fullscreen picture. ((Esc)) or ((F11)) leaves. |
 | ((Tab)) · ((Shift+Tab)) {#tab} | Move to the next or the previous control. The arrow keys never move between controls. |
 | ((Esc)) in the search field {#search} | Clear the search. |
+| ((Esc)) in the AI Q&A panel {#ask} | Close the panel. [AI Q&A](ai-qa.html) |
 
 ## Picture {#picture}
 

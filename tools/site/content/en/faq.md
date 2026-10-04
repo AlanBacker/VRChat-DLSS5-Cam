@@ -13,7 +13,9 @@ The app does not touch VRChat at all. It needs no mod, and VRChat's process is n
 
 ## Do my pictures get uploaded? {#upload}
 
-No. Everything runs on your own graphics card. The app goes online only to look for updates and, in the Radeon edition, to fetch DLSS-NR-on-AMD when you ask. [Privacy and licences](privacy.html)
+No. Everything runs on your own graphics card, and your pictures and videos stay on your computer.
+
+The app goes online to look for updates and, in the Radeon edition, to fetch DLSS-NR-on-AMD when you ask. [AI Q&A](ai-qa.html) goes online too, once you open it: it sends your questions to Mintlify, never your files. [Privacy and licences](privacy.html)
 
 ## Does it work without VRChat? {#without-vrchat}
 
@@ -54,6 +56,10 @@ Linux with an NVIDIA card works through Proton, for pictures and videos. [Linux]
 ## How do I get a sharper live picture? {#sharper}
 
 Raise the stream size in VRChat's camera settings, up to 2160p. [Live from VRChat](live.html#resolution)
+
+## Can I ask a question inside the app? {#ask}
+
+Yes. **Ask AI** in the top bar opens AI Q&A beside the picture. It answers from this documentation and links to the pages it used. It needs an internet connection, and its answers can be wrong. [AI Q&A](ai-qa.html)
 
 ## Where do I report a problem or ask for a feature? {#report}
 

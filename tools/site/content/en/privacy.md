@@ -1,11 +1,13 @@
 ---
 title: Privacy and licences
 nav: Privacy and licences
-description: What the app sends over the network (almost nothing), and the licences of the app and its parts.
+description: What the app sends over the network and when, and the licences of the app and its parts.
 ---
-## Nothing is uploaded {#nothing-uploaded}
+## Your files stay on your computer {#nothing-uploaded}
 
-Your pictures, videos and settings stay on your computer. The app has no account, no tracking and no usage statistics. All processing runs on your own graphics card.
+Your pictures, videos and settings stay on your computer. The app itself has no account, no tracking and no usage statistics. All processing runs on your own graphics card.
+
+[AI Q&A](#app-ai-qa) is the one part that sends something you write: once you open it, your questions go to Mintlify. Your files never go with them.
 
 ## When the app goes online {#network}
 
@@ -17,21 +19,39 @@ The app connects to the internet only for these things:
 | Update download {#update-download} | Only when you click **Update now**, or run `--update` or `--edition`. | The same. |
 | Measuring mirror sites {#mirror-sites} | When **Mirror sites, the fastest one** is chosen, or you click **Measure the sites**. | The eight known mirror sites. |
 | DLSS-NR-on-AMD {#port} | Radeon edition only: the look-up of its newest release, and the installer download when you click the button. | That project's release page on GitHub, or the chosen mirror site. |
+| AI Q&A {#ask-ai} | Only after you click **Ask AI**. Once opened, the panel stays loaded until you close the app. | Mintlify, which writes the answers, and hCaptcha, Mintlify's bot check. [Details](#app-ai-qa) |
+| MCP jobs by web address {#mcp-url} | Only when the MCP server is on and a client sends a job that names its picture or video by a web address. | That address. [Details](#mcp) |
 
 Runs from the command line with `--headless` or `--process` never check for updates on their own.
 
 Buttons such as **Documentation**, **Download driver** and **Report a problem** open a page in your browser. **Report a problem** fills in the app version and your graphics card in GitHub's form; nothing is sent until you submit it.
 
+## AI Q&A in the app {#app-ai-qa}
+
+**Ask AI** in the top bar opens AI Q&A in a panel beside the picture. It answers questions from this documentation. [Mintlify](https://mintlify.com) provides it, not the app. [AI Q&A](ai-qa.html)
+
+- **Nothing starts before you open it.** The app starts Microsoft Edge WebView2, which draws the panel, only at your first click on **Ask AI**. Until then, nothing is sent.
+- **What goes to Mintlify.** What you type goes to Mintlify, which writes the answer, so leave out anything private. Mintlify also receives usage events from the panel, such as when it opens. To keep bots out, Mintlify checks questions with hCaptcha, which the panel loads from hCaptcha's servers.
+- **What stays here.** The app never sends your pictures, videos, settings or library. If the panel offers to attach a file, whatever you attach or paste there goes to Mintlify too.
+- **What the panel keeps.** Its cookies and storage, in `%LOCALAPPDATA%\VRChatDLSS5Cam\webview2`, or in `webview2` inside the folder given with [`--data-dir`](command-line.html#data-dir). Your conversation lasts until you close the app. With the app closed, you can delete that folder; the app makes a new one at the next opening.
+- **What the log notes.** When the panel opens and closes, any error it meets, and the HTTP status and the length of each answer. Never your questions or the answers' text. A link you open from an answer is logged with its address, like every page the app opens.
+
+<!-- if askWidget -->
+Without the Microsoft Edge WebView2 Runtime, and in the Linux package, **Ask AI** opens the AI Q&A of this site in your browser instead. Then [AI Q&A on this site](#ai-qa) applies.
+<!-- else -->
+Without the Microsoft Edge WebView2 Runtime, and in the Linux package, **Ask AI** opens this site in your browser instead.
+<!-- endif -->
+
 ## The MCP server {#mcp}
 
-The MCP server is off until you turn it on. When on, it listens on your computer only and never connects anywhere by itself. Other computers can reach it only after you set **Reach** to **Local network** and give them a key. [MCP](mcp.html)
+The MCP server is off until you turn it on. When on, it listens on your computer only and never connects anywhere by itself. A job can name its picture or video by a web address instead of sending the file; the app then downloads it from there. Other computers can reach it only after you set **Reach** to **Local network** and give them a key. [MCP](mcp.html)
 
 ## This site {#this-site}
 
 <!-- if askWidget -->
 These pages load nothing from other servers on their own: no fonts, no scripts, no tracking. The one exception is [AI Q&A](#ai-qa), and only when you reach for it. The theme and language you choose are kept in your browser only.
 
-## AI Q&A {#ai-qa}
+## AI Q&A on this site {#ai-qa}
 
 **Ask AI** opens AI Q&A, which answers questions from these pages. [Mintlify](https://mintlify.com) provides it, not this site.
 
@@ -63,9 +83,12 @@ The full texts: [LICENSE](https://github.com/AlanBacker/VRChat-DLSS5-Cam/blob/ma
 | DirectML | Microsoft's DirectML licence, which allows shipping it with apps. |
 | Depth Anything V2 Small | Apache License 2.0. |
 | libwebp | BSD 3-Clause. |
+| Microsoft Edge WebView2 SDK (built into the app, for the AI Q&A panel) | BSD 3-Clause. The WebView2 Runtime itself is Microsoft's and is not shipped with the app. |
 | Lucide icons | ISC; the icons derived from Feather also MIT. |
 | Direct3D shader compiler (`d3dcompiler_47.dll`, Linux package) | Microsoft Software License Terms for the Windows SDK. |
 
 **DLSS-NR-on-AMD** is not included. It is a separate project under its own terms, which allow personal, non-commercial use and no redistribution. The Radeon edition downloads its installer from that project's release page only when you ask.
+
+**Mintlify's AI Q&A** is not included either. The panel loads it from Mintlify's servers when you first open it.
 
 This site uses Lucide icons under the ISC licence; the licence text is in [assets/licenses/lucide-LICENSE.txt]({root}assets/licenses/lucide-LICENSE.txt).

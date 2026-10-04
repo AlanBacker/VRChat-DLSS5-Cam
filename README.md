@@ -6,7 +6,7 @@
 
 **English** · [简体中文](docs/README.zh-CN.md) · [日本語](docs/README.ja.md) · [한국어](docs/README.ko.md)
 
-**New here?** The [documentation site](https://alanbacker.github.io/VRChat-DLSS5-Cam/) walks you from the download to your first picture step by step, with pictures, in English, 简体中文, 日本語 and 한국어. The *Documentation* button in the application opens it in the interface's language. This page is the full reference.
+**New here?** The [documentation site](https://alanbacker.github.io/VRChat-DLSS5-Cam/) walks you from the download to your first picture step by step, with pictures, in English, 简体中文, 日本語 and 한국어. The *Documentation* button in the application opens it in the interface's language, and *Ask AI* beside it answers questions from it without leaving the application (see *AI Q&A*). This page is the full reference.
 
 VRChat DLSS5 Cam applies NVIDIA **DLSS 5 Neural Rendering** to the output of VRChat's camera on a GeForce RTX card
 and records the result as a lossless PNG. Images and videos on disk pass through the same pipeline, individually or
@@ -39,7 +39,8 @@ as a batch. It is an ordinary Windows application: the VRChat process is never t
 - **Built for daily use.** A start page that leads through the first steps, a flat interface in dark and light
   themes that follow the Windows setting, one *Advanced* switch for everything beyond the essentials, undo and redo
   with a full history, user-defined presets, a search across every setting, a resizable layout that stays readable
-  in a narrow sidebar, an automatic update check, four languages (English, 简体中文, 日本語, 한국어), a dedicated
+  in a narrow sidebar, an automatic update check, questions about the program answered from its documentation in a
+  side panel (*Ask AI*), four languages (English, 简体中文, 日本語, 한국어), a dedicated
   interface thread for a consistently responsive window, and a command line for scripted runs.
 - **Light on the computer.** While nothing changes, the window redraws only a few times a second; the live camera is
   read only when VRChat has sent a new frame; and the depth network is loaded only while DLAA, super resolution or the
@@ -53,6 +54,7 @@ as a batch. It is an ordinary Windows application: the VRChat process is never t
 | Graphics card | NVIDIA GeForce RTX. The **RTX 50** series and the **RTX 40 / 30 / 20** series each have a build of the runtime in the archive (next row), so nothing has to be added for any of them. **AMD Radeon RX 7000 / 9000** with the Radeon edition (`VRChatDLSS5Cam-win64-amd.zip`), which runs the neural pass through DLSS-NR-on-AMD, a separate project installed from the application (see *AMD Radeon cards*). Cards from other vendors are not refused: the application works as a viewer and recorder on them. DLAA and the hardware optical flow stay NVIDIA-only; the FSR optical flow takes over as the motion source. |
 | DLSS 5 runtime | Included. The archive carries `nvngx_dlssnr.dll` 310.8.0.0 in two builds: `runtimes\blackwell\` holds the build as shipped with games (RTX 50) and `runtimes\universal\` a community-adapted build of the same runtime for RTX 40 / 30 / 20. The build for the installed card is chosen at start and the other is tried when it fails. Both files are NVIDIA's software under NVIDIA's terms and are not part of this project's MIT-licensed source (see `THIRD_PARTY_NOTICES.md`); nothing has to be obtained from anywhere else. |
 | VRChat | Any build with the Stream Camera *Spout Stream* option (desktop or VR). Required for the live camera only. |
+| AI Q&A (optional) | An internet connection and the Microsoft Edge WebView2 Runtime, which Windows 11 and most Windows 10 installations already have. Without the runtime, *Ask AI* opens the documentation site's AI Q&A in the browser instead. |
 | Video files | Windows Media Foundation (part of Windows). The N / KN editions require the *Media Feature Pack*; HEVC files may require the *HEVC Video Extensions* from the Microsoft Store. Animated GIF, APNG and WebP files need nothing extra: the application decodes and writes them itself. |
 
 ## Getting started
@@ -232,7 +234,8 @@ is kept across sessions as well.
   the timers, and the pass timings in the status bar. It is on by default; switched off, the sidebar keeps only what
   a first picture needs.
 - **The top bar** holds the source switch (*Live*, *Picture*, *Video*) with a badge for its state and a *DLSS 5*
-  badge while the neural pass runs; on the right undo, redo, the history, help, the language and the main action:
+  badge while the neural pass runs; on the right undo, redo, the history, help (*Documentation* and *Ask AI*), the
+  language and the main action:
   *Capture photo*, *Process & save PNG* or *Process & save video*. The **status bar** at the bottom names what is
   open with its size and frame rate, the progress of a running job with the time left, and the file saved last,
   with a button that shows it in Explorer.
@@ -264,8 +267,9 @@ is kept across sessions as well.
   gap's edge** — the one that turns blue under the mouse, where the pointer becomes a resize arrow — is the drag
   target for the sidebar's width or the library's height, and the thumbnails grow or shrink with it. Both sizes are
   remembered for the next start. While a file is being processed the sidebar is locked and offers *Cancel*.
-- **Help** is one click away: the *?* button in the top bar (or *Documentation* in *About*) opens the
-  [documentation site](https://alanbacker.github.io/VRChat-DLSS5-Cam/) in the interface's language.
+- **Help** is one click away: the *Documentation* button in the top bar (or *Documentation* in *About*) opens the
+  [documentation site](https://alanbacker.github.io/VRChat-DLSS5-Cam/) in the interface's language, and *Ask AI*
+  beside it opens a panel at the right edge that answers questions from that documentation (see *AI Q&A*).
 - **At start** a small card with the icon, the name, the version (marked *Pre-release* on pre-release builds), a
   status line and a moving bar shows what the application is doing; the window itself fades in only once its first
   frame is ready, so no blank window appears at the start. The file from the last session is opened again only if
@@ -282,6 +286,7 @@ is kept across sessions as well.
 | `Ctrl+Alt+P` | Capture a photo of the live camera, or process the open image or video (global hotkey, changeable in the *Capture* section) |
 | `Ctrl+Z` · `Ctrl+Y` / `Ctrl+Shift+Z` | Undo · redo a settings change or a library change (the clock button in the top bar lists them all) |
 | `F11` · `Esc` | Fullscreen preview · leave it |
+| `Esc` in the *Ask AI* panel | Close the panel (the conversation stays until the application closes) |
 | `Ctrl+A` · `Delete` | Select every readable file in the library · take the selected ones out of it, keeping the files on disk (mouse over the library) |
 | `Space` | Play / pause the open video |
 | `←` `→` (`Shift`: 10 frames) · `Home` `End` | Step through the video · jump to the ends |
@@ -317,11 +322,43 @@ executable stays in place. **Release page** opens the release in the browser and
 not; the application says so, and the update can be applied by hand from the release page instead. A failed check or
 a failed update is shown as a notification.
 
-Apart from the MCP server, which answers only the clients you allow (see *MCP*), the application's network access
-is limited to GitHub: `api.github.com` for the release list, `github.com` for the downloads and `raw.githubusercontent.com`
-for `updates.json`, `port.json` and the translated release notes, or the chosen mirror site in their place; the Radeon
-edition also asks DLSS-NR-on-AMD's release page. Nothing else is sent anywhere. Headless and `--process` runs never
-check on their own.
+Apart from two features that act only when you use them, the application's network access is limited to GitHub:
+`api.github.com` for the release list, `github.com` for the downloads and `raw.githubusercontent.com` for
+`updates.json`, `port.json` and the translated release notes, or the chosen mirror site in their place; the Radeon
+edition also asks DLSS-NR-on-AMD's release page. The two features: **AI Q&A** talks to Mintlify (and hCaptcha) once
+*Ask AI* has been opened, and sends what is typed into it, never your files (see *AI Q&A*); the **MCP server** answers only the
+clients you allow, and downloads a picture or video only when a client's job names it by a web address (see *MCP*).
+Nothing else is sent anywhere. Headless and `--process` runs never check on their own.
+
+## AI Q&A
+
+**Ask AI** in the top bar, beside *Documentation*, opens AI Q&A in a panel at the right edge of the window; the
+picture and the sidebar move over to make room. It is the AI Q&A of the
+[documentation site](https://alanbacker.github.io/VRChat-DLSS5-Cam/), provided by [Mintlify](https://mintlify.com):
+a question typed there gets an answer written from the documentation, with links to the pages it used. The panel
+follows the interface's language and theme (a change of language starts a new conversation), links open in the
+default browser, and links to the documentation open in the interface's language. **Esc** in the panel, *Ask AI*
+again or the panel's ✕ closes it; closing only hides it, so the conversation stays until the application closes.
+The answers are written by AI and can be wrong: the page an answer links to is the reference. Mintlify's own
+controls in the panel (*Clear chat*, *Found results for …*) stay in English.
+
+- **Online, with an allowance.** AI Q&A runs on Mintlify's servers and needs an internet connection; when the panel
+  cannot load, it says *AI Q&A could not be loaded* and offers *Try again*. The project has a monthly allowance of
+  answers, shared by everyone who uses the application; once it is used up, AI Q&A stops answering until the next
+  month. It is most useful for finding the right page; for a single control, the documentation's settings page or
+  its search is quicker, and the documentation is always there.
+- **Nothing before the first opening.** Nothing of it starts, not even the WebView2 control that draws the panel,
+  until *Ask AI* is clicked for the first time, and nothing is sent before then.
+- **What is sent.** What is typed into the panel goes to Mintlify, which writes the answer; Mintlify also receives
+  the panel's usage events and checks questions with hCaptcha. Pictures, videos, settings and the library never leave
+  the computer; a file attached in the panel by hand would go to Mintlify too.
+- **What is kept.** The panel's cookies and storage are kept in `%LOCALAPPDATA%\VRChatDLSS5Cam\webview2` (or in
+  `webview2` inside the `--data-dir` folder); with the application closed, the folder can be deleted. `log.txt`
+  records the panel's opening and closing, its errors, and the HTTP status and length of each answer, never the
+  questions or the answers' text.
+- **Without WebView2.** The panel needs the Microsoft Edge WebView2 Runtime. Where it is missing or cannot start,
+  and under Proton (the Linux package), *Ask AI* opens the documentation site's AI Q&A in the browser instead
+  (`?ask` in the address) and the application says *AI Q&A opened in your browser*.
 
 ## MCP
 
@@ -336,7 +373,8 @@ it for you):
 ```
 
 Claude Code: `claude mcp add --transport http vrchat-dlss5-cam http://127.0.0.1:51550/mcp` while the program runs
-with the switch on. By default the server listens on `127.0.0.1` only and never connects anywhere; **Read only**
+with the switch on. By default the server listens on `127.0.0.1` only and connects nowhere by itself (the one download it
+makes is a job's input given as a `url`); **Read only**
 limits clients to looking.
 
 Other computers can send work too: set **Reach** to **Local network**, add a **key** per bot or person (roles
@@ -431,7 +469,8 @@ cmake --build build --config Release --parallel
 ```
 
 The configure step downloads the NVIDIA DLSS SDK (headers, `nvsdk_ngx_s.lib`, `nvngx_dlss.dll`) from NVIDIA's public
-GitHub repository, ONNX Runtime (DirectML build) and DirectML from NuGet, libwebp 1.6.0 from GitHub (built into the executable),
+GitHub repository, ONNX Runtime (DirectML build), DirectML and the Microsoft Edge WebView2 SDK (its static loader, built into
+the executable for the AI Q&A panel) from NuGet, libwebp 1.6.0 from GitHub (built into the executable),
 and the Depth Anything V2 Small FP16 model from Hugging Face (`-DVDC_FETCH_DEPTH_MODEL=OFF` skips the model). All downloads are hash-checked. Shaders are compiled
 at run time, so no shader toolchain is needed. The FidelityFX SDK v1.1.4 headers and its signed `amd_fidelityfx_dx12.dll`
 (MIT) are downloaded from AMD's GitHub repository in the same way. `-DAPP_EDITION_AMD=ON` builds the Radeon edition

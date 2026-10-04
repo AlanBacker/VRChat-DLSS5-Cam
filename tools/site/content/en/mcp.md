@@ -12,7 +12,7 @@ This page covers the basics. Every tool and rule is in [docs/MCP.md](https://git
 ## Safe by default {#default}
 
 - The server is off until you turn it on.
-- When on, it listens on this computer only (`127.0.0.1`) and never connects anywhere by itself.
+- When on, it listens on this computer only (`127.0.0.1`) and never connects anywhere by itself. It downloads from the web only when a client sends a job with a web address in place of a file.
 - It refuses requests from web pages.
 - **Read only** lets clients look but change nothing.
 

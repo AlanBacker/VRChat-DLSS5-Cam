@@ -194,6 +194,10 @@ How it behaves:
   at once. A narrower window, and a phone, keep the panel over the page.
 - An address with `?ask` (for example `…/zh/?ask`) opens the panel as the page opens, then drops the parameter from
   the address. The program uses it where it cannot show the panel itself.
+- The program has its own AI Q&A panel (**Ask AI** in its top bar, `src/core/AskPanel.cpp`) with the same widget. It
+  serves its small page itself under the site's address (`…/app-ask/`, never fetched from the site), so the allowed
+  origin covers it. It opens an answer's link to these pages in the interface's language, and it knows the pages by
+  their slugs (`kPages`): a link to a slug missing there opens the start page. Add a new page's slug to `kPages` too.
 - Mintlify checks each question with hCaptcha (its bot protection, set in the dashboard). A browser hCaptcha
   trusts passes unseen; others, such as a headless browser on a server, first get a picture puzzle above the page.
 

@@ -10,7 +10,7 @@ VRChat DLSS5 Cam takes a picture and runs it through NVIDIA **DLSS 5 Neural Rend
 - **Live from VRChat.** The VRChat camera sends its picture to the app. Press ((Ctrl+Alt+P)) and a lossless PNG is saved, while VRChat stays in front.
 - **Photos and videos.** Open a screenshot or a recording, adjust the look, and save it as PNG, MP4, GIF, APNG or WebP.
 - **Many files at once.** Every file you open goes into the library. Process a few of them, or all, in one run.
-- **Safe to use.** The app does not touch VRChat and needs no mod. Your pictures never leave your computer.
+- **Safe to use.** The app does not touch VRChat and needs no mod. Your pictures and videos never leave your computer.
 
 ## Download {#download}
 

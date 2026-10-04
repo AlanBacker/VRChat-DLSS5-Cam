@@ -47,7 +47,7 @@ VRChatDLSS5Cam.exe --window 1600x900 --lang ja --set theme=2 --open "D:\clip.mp4
 | `--screenshot <seconds> <file.png>` {#screenshot} | Save a picture of the window this many seconds after the start. Can be repeated. |
 | `--exit-after <seconds>` {#exit-after} | Quit after this many seconds, once screenshots and saves are written. |
 | `--headless` {#headless} | No window. Saving and screenshots work as usual, and the app exits when its work is done. |
-| `--data-dir <folder>` {#data-dir} | Keep the settings, presets and logs in this folder instead of `%LOCALAPPDATA%\VRChatDLSS5Cam`. |
+| `--data-dir <folder>` {#data-dir} | Keep the settings, presets, logs and the AI Q&A panel's storage in this folder instead of `%LOCALAPPDATA%\VRChatDLSS5Cam`. |
 | `--mcp` {#mcp} | The bridge for an MCP client. [MCP](mcp.html) |
 | `--mcp-port <port>` {#mcp-port} | Run the MCP server on this port for this session. |
 | `--update` {#update} | Look for a newer version on the chosen channel and install it. |

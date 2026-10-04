@@ -84,6 +84,7 @@ The program's `--data-dir` option still works; the launcher only adds its defaul
 | Motion estimation | NVIDIA optical flow is not exposed to Proton; the program falls back to its FSR optical flow by itself. |
 | MCP server and remote access | Works. The port opens on the Linux side as it would on Windows; the reach (this computer or the local network) and the keys are set in the sidebar's MCP section as usual ([MCP.md](MCP.md)). |
 | Auto-update, GitHub mirror sites, setup guide, languages | Work. |
+| AI Q&A (*Ask AI*) | Opens the documentation site's AI Q&A in the browser. The panel inside the program needs the Microsoft Edge WebView2 Runtime, which does not run under Proton. |
 | Fonts | Proton has none of the Windows fonts, so the program uses Proton's own (Liberation Sans in place of Segoe UI, Source Han Sans and Ume Gothic for Chinese, Japanese and Korean) at the sizes of the Windows fonts: the layout is the same, only the letters' shapes differ. |
 | Radeon edition (DLSS-NR-on-AMD) | Not supported on Linux. |
 
