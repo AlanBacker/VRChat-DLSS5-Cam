@@ -302,8 +302,9 @@ def wipe(lang, hero=False):
     facets, bands = sphere_layers()
     corners = ''
     if hero:
-        # the viewfinder corners of the program icon, in the 200 x 200 box of the sphere drawing
-        d = 'M14 38V14H38M162 14H186V38M14 162V186H38M186 162V186H162'
+        # the viewfinder corners of the program icon (tools/make_app_icon.py: 0.16 s in, 0.12 s arms, 0.04 s wide), measured
+        # from its tile (0.035 s to 0.965 s) into the 200 x 200 box of the stage, so they keep the icon's room inside its round corners
+        d = 'M26.9 52.7V26.9H52.7M147.3 26.9H173.1V52.7M26.9 147.3V173.1H52.7M173.1 147.3V173.1H147.3'
         corners = '<svg class="wipe-corners" viewBox="0 0 200 200" aria-hidden="true"><path d="%s"/></svg>' % d
     box = '<svg class="wipe-layer" viewBox="0 0 200 200" aria-hidden="true">%s</svg>'
     attrs = 'class="wipe%s" data-anim="wipe"' % (' wipe-hero' if hero else ' wipe-demo')
