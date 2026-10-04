@@ -48,7 +48,7 @@ VRChatDLSS5Cam.exe --window 1600x900 --lang ja --set theme=2 --open "D:\clip.mp4
 | `--screenshot <seconds> <file.png>` {#screenshot} | 起動からこの秒数が経ったときに、ウィンドウの画像を保存します。繰り返し指定できます。 |
 | `--exit-after <seconds>` {#exit-after} | スクリーンショットと保存が書き込まれたうえで、この秒数のあとに終了します。 |
 | `--headless` {#headless} | ウィンドウを開きません。保存とスクリーンショットは通常どおり動き、処理が終わるとアプリは終了します。 |
-| `--data-dir <folder>` {#data-dir} | 設定、プリセット、ログを `%LOCALAPPDATA%\VRChatDLSS5Cam` ではなく、このフォルダーに置きます。 |
+| `--data-dir <folder>` {#data-dir} | 設定、プリセット、ログ、AI Q&A のパネルのストレージを `%LOCALAPPDATA%\VRChatDLSS5Cam` ではなく、このフォルダーに置きます。 |
 | `--mcp` {#mcp} | MCP クライアント用のブリッジです。[MCP](mcp.html) |
 | `--mcp-port <port>` {#mcp-port} | 今回のセッションでは、このポートで MCP サーバーを動かします。 |
 | `--update` {#update} | 選んでいるチャネルで新しいバージョンを探し、インストールします。 |

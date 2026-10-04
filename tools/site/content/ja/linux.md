@@ -37,6 +37,7 @@ Linux パッケージは、Steam でおなじみの互換レイヤー Proton の
 | ライブカメラ（Spout） | 使えません。Spout は Windows にしかありません。 |
 | モーションベクトル | FSR オプティカルフローを使います。Proton では NVIDIA Optical Flow は使えません。 |
 | MCP、アップデート、ミラーサイト、言語 | 使えます。 |
+| AI Q&A | **AI に質問** を押すと、アプリの中のパネルではなくブラウザーで開きます。[AI Q&A](ai-qa.html#browser) |
 | Radeon 版 | 対応していません。 |
 
 ## コマンドライン {#command-line}

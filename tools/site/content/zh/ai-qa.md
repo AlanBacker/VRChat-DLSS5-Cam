@@ -1,60 +1,60 @@
 ---
-status: to-be-translated
-title: AI Q&A
-nav: AI Q&A
-description: Ask a question about the app without leaving it, and get an answer written from this documentation.
+status: translated
+title: AI 问答
+nav: AI 问答
+description: 不用离开程序就能提问，得到根据本文档写出的回答。
 ---
-**Ask AI** opens AI Q&A at the side of the window. You type a question about the app, and AI writes an answer from this documentation, with links to the pages it used.
+**问 AI** 会在窗口一侧打开 AI 问答。你输入一个关于本程序的问题，AI 会根据本文档写出回答，并附上它参考的页面链接。
 
-## Open and close it {#open}
+## 打开和关闭 {#open}
 
-1. Click **Ask AI** in the top bar, next to the **Documentation** button. Hold the pointer over a button to see its name.
-   => A panel opens at the right edge of the window. The picture and the sidebar move over to make room, so the panel covers nothing.
-2. Type a question and press ((Enter)), or click one of the questions under **Try asking**.
-   => The answer appears in the panel.
-3. To close the panel, press ((Esc)) in the panel, click **Ask AI** again, or click the panel's **×**.
+1. 点击顶栏中**文档**按钮旁边的**问 AI**。把指针停在按钮上，就能看到按钮的名称。
+   => 窗口右侧打开一个面板。画面和侧栏会向旁边让出位置，所以面板不会挡住任何内容。
+2. 输入问题后按 ((Enter))，或者点击**试试这样问**下面的某个问题。
+   => 回答会显示在面板中。
+3. 要关闭面板，可以在面板中按 ((Esc))，再点一次**问 AI**，或者点击面板上的 **×**。
 
-The first opening takes a moment, because the app starts the panel only then. The panel shows **Loading AI Q&A…** until it is ready.
+第一次打开需要稍等片刻，因为程序到这时才启动面板。面板就绪之前会显示**正在加载 AI 问答…**。
 
-Closing only hides the panel. Your conversation is still there when you open it again, until you close the app.
+关闭只是把面板隐藏起来。再次打开时，之前的对话还在，直到你关闭程序为止。
 
-## What it can answer {#answers}
+## 它能回答什么 {#answers}
 
-AI Q&A knows this documentation: the downloads, every setting, the live camera, videos, the messages the app shows and what to do about them. It answers in the interface's language.
+AI 问答了解本文档的内容：下载、每一项设置、实时相机、视频、程序显示的各种提示以及应对方法。它会用界面语言回答。
 
-- **It cannot see the app.** It knows nothing about your settings, your picture or your screen. Tell it what you see, and name controls and messages the way the app writes them.
-- **Answers can be wrong.** AI writes them, and the panel says so too. Before you rely on an answer, open the page it links to and check.
-- **Links open in your browser.** A link to a page of this documentation opens that page in the interface's language.
-- **It follows the interface.** A change of theme shows at once. A change of language opens the panel again in that language, with a new conversation.
+- **它看不到程序。** 它不知道你的设置、你的画面或你的屏幕。请告诉它你看到了什么，并按程序上的写法写出控件和提示的名称。
+- **回答可能有误。** 回答由 AI 写出，面板中也注明了这一点。在依据某个回答操作之前，请打开它所链接的页面核对。
+- **链接会在浏览器中打开。** 指向本文档某一页的链接，会以界面语言打开那一页。
+- **它跟随界面。** 切换主题会立即生效。切换语言后，面板会以新语言重新打开，并开始一段新的对话。
 
-Mintlify's own controls in the panel, such as **Clear chat** and **Found results for …**, stay in English.
+面板中 Mintlify 自己的控件，例如 **Clear chat** 和 **Found results for …**，会保持英文。
 
-## It works online {#online}
+## 它需要联网 {#online}
 
-AI Q&A runs on the servers of [Mintlify](https://mintlify.com), a documentation service, not on your computer. So it needs an internet connection. When the panel cannot load, it says **AI Q&A could not be loaded** and offers **Try again**.
+AI 问答运行在文档服务商 [Mintlify](https://mintlify.com) 的服务器上，而不是你的电脑上，所以它需要连接互联网。面板无法加载时，会显示**无法加载 AI 问答**，并提供**重试**。
 
-It can also pause for a while. Mintlify gives the project a monthly allowance, and everyone who uses the app shares it. When the allowance runs out, AI Q&A stops answering until the next month.
+它也可能暂停一段时间。Mintlify 每月给本项目一定的使用额度，所有使用本程序的人共用这份额度。额度用完后，AI 问答会停止回答，直到下个月。
 
-So please ask where it helps most: when you don't know which page to read. To look up one control, [All settings](settings.html) or the search at the top of these pages is often quicker. This documentation is always there, with or without AI Q&A.
+所以请在它最能帮上忙的时候提问：当你不知道该看哪一页时。如果只是查一个控件，[全部设置](settings.html)或这些页面顶部的搜索往往更快。无论有没有 AI 问答，本文档都一直在这里。
 
-## What is sent, and what stays {#privacy}
+## 哪些会发送，哪些留在本机 {#privacy}
 
-- **Nothing starts before you open it.** The app starts the panel at your first click on **Ask AI**. Until then, nothing is sent.
-- **What you type goes to Mintlify**, which writes the answer. Leave out anything private, such as an MCP key or a folder path with your name in it. Mintlify also receives usage events from the panel, and checks questions with hCaptcha to keep bots out.
-- **Your files stay on your computer.** The app never sends your pictures, videos, settings or library. If the panel offers to attach a file, whatever you attach or paste there goes to Mintlify too.
-- **The panel keeps its cookies and storage** in `%LOCALAPPDATA%\VRChatDLSS5Cam\webview2`.
-- **The app's log** notes the HTTP status and the length of each answer. Your questions and the answers' text are never written to it.
+- **打开之前什么都不会启动。** 程序在你第一次点击**问 AI** 时才启动面板。在此之前，不会发送任何内容。
+- **你输入的内容会发送给 Mintlify**，由它写出回答。请不要写入任何私人信息，例如 MCP 密钥，或含有你名字的文件夹路径。Mintlify 还会收到面板的使用事件，并用 hCaptcha 检查提问，以拦住机器人。
+- **你的文件留在你的电脑上。** 程序绝不会发送你的图片、视频、设置或素材库。如果面板提供附加文件的功能，你在那里附加或粘贴的任何内容也会发送给 Mintlify。
+- **面板的 Cookie 和存储数据**保存在 `%LOCALAPPDATA%\VRChatDLSS5Cam\webview2` 中。
+- **程序的日志**会记下每个回答的 HTTP 状态和长度。你的问题和回答的文字绝不会写入日志。
 
-All the details: [Privacy and licences](privacy.html#network).
+详细说明见[隐私与许可](privacy.html#app-ai-qa)。
 
-## Without WebView2, and on Linux {#browser}
+## 没有 WebView2 时，以及在 Linux 上 {#browser}
 
-The panel needs the **Microsoft Edge WebView2 Runtime**, a Microsoft component that shows web pages inside apps. Windows 11 has it, and so do most Windows 10 computers.
+面板需要 **Microsoft Edge WebView2 运行时**。这是 Microsoft 的一个组件，用来在应用程序中显示网页。Windows 11 自带它，大多数 Windows 10 电脑也已经装有。
 
 <!-- if askWidget -->
-Where it is missing or cannot start, and in the [Linux package](linux.html), **Ask AI** opens the AI Q&A of this documentation in your browser instead. The app says **AI Q&A opened in your browser**. The answers come from the same pages.
+在没有安装或无法启动它的电脑上，以及在 [Linux 软件包](linux.html)中，**问 AI** 会改为在浏览器中打开本文档的 AI 问答。程序会提示**已在浏览器中打开 AI 问答**。回答依据的是同样的页面。
 <!-- else -->
-Where it is missing or cannot start, and in the [Linux package](linux.html), **Ask AI** opens this documentation in your browser instead.
+在没有安装或无法启动它的电脑上，以及在 [Linux 软件包](linux.html)中，**问 AI** 会改为在浏览器中打开本文档。
 <!-- endif -->
 
-To have the panel inside the app, install the WebView2 Runtime from [Microsoft's download page](https://developer.microsoft.com/microsoft-edge/webview2/), then start the app again.
+要在程序内使用面板，请从 [Microsoft 的下载页面](https://developer.microsoft.com/microsoft-edge/webview2/)安装 WebView2 运行时，然后重新启动程序。

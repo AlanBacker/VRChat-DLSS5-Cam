@@ -2,11 +2,13 @@
 status: translated
 title: 隐私与许可
 nav: 隐私与许可
-description: 程序会通过网络发送什么（几乎什么都不发），以及程序和各个组件的许可。
+description: 程序会通过网络发送什么、在什么时候发送，以及程序和各个组件的许可。
 ---
-## 不上传任何内容 {#nothing-uploaded}
+## 你的文件留在你的电脑上 {#nothing-uploaded}
 
-你的图片、视频和设置都留在你的电脑上。程序没有账号，不做跟踪，也不收集使用统计。所有处理都在你自己的显卡上运行。
+你的图片、视频和设置都留在你的电脑上。程序本身没有账号，不做跟踪，也不收集使用统计。所有处理都在你自己的显卡上运行。
+
+[AI 问答](#app-ai-qa)是唯一会发送你所写内容的部分：打开它之后，你的提问会发送给 Mintlify。你的文件绝不会随之发送。
 
 ## 程序什么时候联网 {#network}
 
@@ -18,21 +20,39 @@ description: 程序会通过网络发送什么（几乎什么都不发），以�
 | 下载更新 {#update-download} | 只在你点击**立即更新**，或运行 `--update` 或 `--edition` 时。 | 同上。 |
 | 镜像站测速 {#mirror-sites} | 选择了**加速镜像站（自动测速选最快）**，或你点击**测速**时。 | 8 个已知的镜像站。 |
 | DLSS-NR-on-AMD {#port} | 仅限 Radeon 版：查询它的最新版本，以及你点击按钮时下载安装器。 | 那个项目在 GitHub 上的发布页，或所选的镜像站。 |
+| AI 问答 {#ask-ai} | 只在你点击**问 AI** 之后。打开后，面板会一直保持加载，直到你关闭程序。 | 写出回答的 Mintlify，以及 Mintlify 用来拦截机器人的 hCaptcha。[详情](#app-ai-qa) |
+| 以网址指定的 MCP 任务 {#mcp-url} | 只在 MCP 服务器已打开，且客户端发来的任务用网址指定图片或视频时。 | 那个网址。[详情](#mcp) |
 
 用 `--headless` 或 `--process` 从命令行运行时，程序绝不会自行检查更新。
 
 **文档**、**下载驱动**和**反馈问题**等按钮会在浏览器中打开一个网页。**反馈问题**会在 GitHub 的表单中填好程序版本和你的显卡；在你提交之前，不会发送任何内容。
 
+## 程序中的 AI 问答 {#app-ai-qa}
+
+顶栏中的**问 AI** 会在画面旁边的面板中打开 AI 问答。它根据本文档回答问题。提供它的是 [Mintlify](https://mintlify.com)，而不是本程序。[AI 问答](ai-qa.html)
+
+- **打开之前什么都不会启动。** 负责绘制面板的 Microsoft Edge WebView2，程序要等你第一次点击**问 AI** 时才会启动。在此之前，不会发送任何内容。
+- **发送给 Mintlify 的内容。** 你输入的内容会发送给 Mintlify，由它写出回答，所以请不要写入任何私人信息。Mintlify 还会收到面板的使用事件，例如面板何时打开。为了拦住机器人，Mintlify 会用 hCaptcha 检查提问，面板会从 hCaptcha 的服务器加载这项检查。
+- **留在本机的内容。** 程序绝不会发送你的图片、视频、设置或素材库。如果面板提供附加文件的功能，你在那里附加或粘贴的任何内容也会发送给 Mintlify。
+- **面板保存的内容。** 它的 Cookie 和存储数据，保存在 `%LOCALAPPDATA%\VRChatDLSS5Cam\webview2`，或用 [`--data-dir`](command-line.html#data-dir) 指定的文件夹中的 `webview2` 里。你的对话会保留到你关闭程序为止。关闭程序后，你可以删除这个文件夹；下次打开时，程序会新建一个。
+- **日志记下的内容。** 面板何时打开和关闭、它遇到的错误，以及每个回答的 HTTP 状态和长度。绝不记录你的问题或回答的文字。你从回答中打开的链接会连同地址一起记入日志，和程序打开的每个网页一样。
+
+<!-- if askWidget -->
+在没有 Microsoft Edge WebView2 运行时的电脑上，以及在 Linux 软件包中，**问 AI** 会改为在浏览器中打开本网站的 AI 问答。这时适用[本网站的 AI 问答](#ai-qa)一节。
+<!-- else -->
+在没有 Microsoft Edge WebView2 运行时的电脑上，以及在 Linux 软件包中，**问 AI** 会改为在浏览器中打开本网站。
+<!-- endif -->
+
 ## MCP 服务器 {#mcp}
 
-在你打开之前，MCP 服务器一直是关闭的。打开后，它只监听你的电脑，绝不会主动连接任何地方。只有在你把**可访问范围**设为**局域网**并给出密钥之后，其他电脑才能访问它。[MCP](mcp.html)
+在你打开之前，MCP 服务器一直是关闭的。打开后，它只监听你的电脑，绝不会主动连接任何地方。任务可以用网址指定图片或视频，而不发送文件本身；这时程序会从那个网址下载。只有在你把**可访问范围**设为**局域网**并给出密钥之后，其他电脑才能访问它。[MCP](mcp.html)
 
 ## 本网站 {#this-site}
 
 <!-- if askWidget -->
 这些网页不会自行从其他服务器加载任何东西：没有字体，没有脚本，没有跟踪。唯一的例外是 [AI 问答](#ai-qa)，而且只在你要用它时才会加载。你选择的主题和语言只保存在你的浏览器中。
 
-## AI 问答 {#ai-qa}
+## 本网站的 AI 问答 {#ai-qa}
 
 **问 AI** 会打开 AI 问答，它根据这些网页回答问题。提供它的是 [Mintlify](https://mintlify.com)，而不是本网站。
 
@@ -64,9 +84,12 @@ description: 程序会通过网络发送什么（几乎什么都不发），以�
 | DirectML | Microsoft 的 DirectML 许可，允许随应用程序一起分发。 |
 | Depth Anything V2 Small | Apache License 2.0。 |
 | libwebp | BSD 3-Clause。 |
+| Microsoft Edge WebView2 SDK（编入程序，供 AI 问答面板使用） | BSD 3-Clause。WebView2 运行时本身属于 Microsoft，不随程序分发。 |
 | Lucide 图标 | ISC；源自 Feather 的图标另适用 MIT。 |
 | Direct3D 着色器编译器（`d3dcompiler_47.dll`，Linux 软件包） | Windows SDK 的 Microsoft 软件许可条款。 |
 
 **DLSS-NR-on-AMD** 不包含在内。它是一个独立项目，有自己的条款：允许个人非商业使用，不允许再分发。只有在你要求时，Radeon 版才会从那个项目的发布页下载它的安装器。
+
+**Mintlify 的 AI 问答**同样不包含在内。你第一次打开面板时，面板会从 Mintlify 的服务器加载它。
 
 本网站使用 ISC 许可的 Lucide 图标，许可全文见 [assets/licenses/lucide-LICENSE.txt]({root}assets/licenses/lucide-LICENSE.txt)。

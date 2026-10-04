@@ -1,60 +1,60 @@
 ---
-status: to-be-translated
+status: translated
 title: AI Q&A
 nav: AI Q&A
-description: Ask a question about the app without leaving it, and get an answer written from this documentation.
+description: アプリから離れずに質問して、このドキュメントをもとに書かれた回答を受け取れます。
 ---
-**Ask AI** opens AI Q&A at the side of the window. You type a question about the app, and AI writes an answer from this documentation, with links to the pages it used.
+**AI に質問** で、ウィンドウの横に AI Q&A が開きます。アプリについて質問を入力すると、AI がこのドキュメントをもとに回答を書き、参考にしたページへのリンクを添えます。
 
-## Open and close it {#open}
+## 開く・閉じる {#open}
 
-1. Click **Ask AI** in the top bar, next to the **Documentation** button. Hold the pointer over a button to see its name.
-   => A panel opens at the right edge of the window. The picture and the sidebar move over to make room, so the panel covers nothing.
-2. Type a question and press ((Enter)), or click one of the questions under **Try asking**.
-   => The answer appears in the panel.
-3. To close the panel, press ((Esc)) in the panel, click **Ask AI** again, or click the panel's **×**.
+1. トップバーの **ドキュメント** ボタンの隣にある **AI に質問** をクリックします。ボタンにポインターを合わせると、そのボタンの名前が表示されます。
+   => ウィンドウの右端にパネルが開きます。画像とサイドバーが横にずれて場所を空けるので、パネルが何かを隠すことはありません。
+2. 質問を入力して ((Enter)) を押すか、**質問の例** の下にある質問をクリックします。
+   => パネルに回答が表示されます。
+3. パネルを閉じるには、パネルの中で ((Esc)) を押すか、もう一度 **AI に質問** をクリックするか、パネルの **×** をクリックします。
 
-The first opening takes a moment, because the app starts the panel only then. The panel shows **Loading AI Q&A…** until it is ready.
+初めて開くときは少し時間がかかります。アプリがパネルを起動するのは、そのときだからです。準備ができるまで、パネルには **AI Q&A を読み込んでいます…** と表示されます。
 
-Closing only hides the panel. Your conversation is still there when you open it again, until you close the app.
+閉じても、パネルは隠れるだけです。アプリを閉じるまでは、もう一度開けば会話がそのまま残っています。
 
-## What it can answer {#answers}
+## 答えられること {#answers}
 
-AI Q&A knows this documentation: the downloads, every setting, the live camera, videos, the messages the app shows and what to do about them. It answers in the interface's language.
+AI Q&A は、このドキュメントの内容を知っています。ダウンロード、すべての設定、ライブカメラ、動画、アプリが表示するメッセージとその対処法などです。回答はインターフェースの言語で返ってきます。
 
-- **It cannot see the app.** It knows nothing about your settings, your picture or your screen. Tell it what you see, and name controls and messages the way the app writes them.
-- **Answers can be wrong.** AI writes them, and the panel says so too. Before you rely on an answer, open the page it links to and check.
-- **Links open in your browser.** A link to a page of this documentation opens that page in the interface's language.
-- **It follows the interface.** A change of theme shows at once. A change of language opens the panel again in that language, with a new conversation.
+- **アプリの画面は見えません。** あなたの設定も、画像も、画面も知りません。見えている内容を伝え、コントロールやメッセージはアプリに書かれているとおりの名前で書いてください。
+- **回答が間違っていることもあります。** 回答は AI が書いたもので、パネルにもそう書かれています。回答に頼る前に、リンク先のページを開いて確かめてください。
+- **リンクはブラウザーで開きます。** このドキュメントのページへのリンクは、インターフェースの言語でそのページを開きます。
+- **インターフェースに合わせます。** テーマを変えると、すぐに反映されます。言語を変えると、パネルがその言語で開き直し、新しい会話になります。
 
-Mintlify's own controls in the panel, such as **Clear chat** and **Found results for …**, stay in English.
+パネルの中にある Mintlify 自身のコントロール（**Clear chat** や **Found results for …** など）は、英語のままです。
 
-## It works online {#online}
+## オンラインで動きます {#online}
 
-AI Q&A runs on the servers of [Mintlify](https://mintlify.com), a documentation service, not on your computer. So it needs an internet connection. When the panel cannot load, it says **AI Q&A could not be loaded** and offers **Try again**.
+AI Q&A は、お使いの PC ではなく、ドキュメントサービスの [Mintlify](https://mintlify.com) のサーバーで動きます。そのため、インターネット接続が必要です。パネルを読み込めないときは **AI Q&A を読み込めませんでした** と表示され、**再試行** ボタンが出ます。
 
-It can also pause for a while. Mintlify gives the project a monthly allowance, and everyone who uses the app shares it. When the allowance runs out, AI Q&A stops answering until the next month.
+しばらく止まることもあります。Mintlify はこのプロジェクトに毎月の利用枠を割り当てていて、アプリを使う全員でそれを分け合っています。枠を使い切ると、翌月まで AI Q&A は回答しなくなります。
 
-So please ask where it helps most: when you don't know which page to read. To look up one control, [All settings](settings.html) or the search at the top of these pages is often quicker. This documentation is always there, with or without AI Q&A.
+ですので、いちばん役に立つ場面で使ってください。どのページを読めばいいかわからないときです。コントロールを 1 つ調べるだけなら、[すべての設定](settings.html) や、このサイトの上部にある検索のほうが早いことがよくあります。AI Q&A があってもなくても、このドキュメントはいつでも読めます。
 
-## What is sent, and what stays {#privacy}
+## 送られるもの、手元に残るもの {#privacy}
 
-- **Nothing starts before you open it.** The app starts the panel at your first click on **Ask AI**. Until then, nothing is sent.
-- **What you type goes to Mintlify**, which writes the answer. Leave out anything private, such as an MCP key or a folder path with your name in it. Mintlify also receives usage events from the panel, and checks questions with hCaptcha to keep bots out.
-- **Your files stay on your computer.** The app never sends your pictures, videos, settings or library. If the panel offers to attach a file, whatever you attach or paste there goes to Mintlify too.
-- **The panel keeps its cookies and storage** in `%LOCALAPPDATA%\VRChatDLSS5Cam\webview2`.
-- **The app's log** notes the HTTP status and the length of each answer. Your questions and the answers' text are never written to it.
+- **開くまでは何も始まりません。** アプリがパネルを起動するのは、**AI に質問** を初めてクリックしたときです。それまでは何も送られません。
+- **入力した内容は Mintlify に送られ**、Mintlify が回答を書きます。MCP の鍵や、自分の名前が入ったフォルダーのパスなど、個人的な情報は入れないでください。Mintlify はパネルの利用イベントも受け取り、ボットを防ぐために hCaptcha で質問を確認します。
+- **ファイルは PC から出ません。** アプリが画像、動画、設定、ライブラリを送ることはありません。パネルにファイルを添付する機能がある場合、そこに添付したり貼り付けたりしたものは Mintlify にも送られます。
+- **パネルの Cookie とストレージ** は `%LOCALAPPDATA%\VRChatDLSS5Cam\webview2` に保存されます。
+- **アプリのログ** には、回答ごとの HTTP ステータスと長さが記録されます。質問や回答の本文が書き込まれることはありません。
 
-All the details: [Privacy and licences](privacy.html#network).
+詳しくは [プライバシーとライセンス](privacy.html#app-ai-qa) をご覧ください。
 
-## Without WebView2, and on Linux {#browser}
+## WebView2 がない場合と Linux {#browser}
 
-The panel needs the **Microsoft Edge WebView2 Runtime**, a Microsoft component that shows web pages inside apps. Windows 11 has it, and so do most Windows 10 computers.
+パネルには **Microsoft Edge WebView2 ランタイム** が必要です。アプリの中で Web ページを表示するための Microsoft のコンポーネントで、Windows 11 には入っていて、ほとんどの Windows 10 の PC にも入っています。
 
 <!-- if askWidget -->
-Where it is missing or cannot start, and in the [Linux package](linux.html), **Ask AI** opens the AI Q&A of this documentation in your browser instead. The app says **AI Q&A opened in your browser**. The answers come from the same pages.
+ランタイムが入っていない、または起動できない場合と、[Linux パッケージ](linux.html) では、**AI に質問** を押すと代わりにこのドキュメントの AI Q&A がブラウザーで開きます。アプリには **AI Q&A をブラウザで開きました** と表示されます。回答のもとになるページは同じです。
 <!-- else -->
-Where it is missing or cannot start, and in the [Linux package](linux.html), **Ask AI** opens this documentation in your browser instead.
+ランタイムが入っていない、または起動できない場合と、[Linux パッケージ](linux.html) では、**AI に質問** を押すと代わりにこのドキュメントがブラウザーで開きます。
 <!-- endif -->
 
-To have the panel inside the app, install the WebView2 Runtime from [Microsoft's download page](https://developer.microsoft.com/microsoft-edge/webview2/), then start the app again.
+アプリの中でパネルを使うには、[Microsoft のダウンロードページ](https://developer.microsoft.com/microsoft-edge/webview2/) から WebView2 ランタイムをインストールし、アプリを起動し直してください。

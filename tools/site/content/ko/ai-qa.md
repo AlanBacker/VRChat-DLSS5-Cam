@@ -1,60 +1,60 @@
 ---
-status: to-be-translated
+status: translated
 title: AI Q&A
 nav: AI Q&A
-description: Ask a question about the app without leaving it, and get an answer written from this documentation.
+description: 앱을 떠나지 않고 질문하고, 이 문서를 바탕으로 작성된 답변을 받습니다.
 ---
-**Ask AI** opens AI Q&A at the side of the window. You type a question about the app, and AI writes an answer from this documentation, with links to the pages it used.
+**AI에게 묻기**를 누르면 창 옆에 AI Q&A가 열립니다. 앱에 대한 질문을 입력하면 AI가 이 문서를 바탕으로 답변을 작성하고, 참고한 페이지의 링크를 함께 보여 줍니다.
 
-## Open and close it {#open}
+## 열기와 닫기 {#open}
 
-1. Click **Ask AI** in the top bar, next to the **Documentation** button. Hold the pointer over a button to see its name.
-   => A panel opens at the right edge of the window. The picture and the sidebar move over to make room, so the panel covers nothing.
-2. Type a question and press ((Enter)), or click one of the questions under **Try asking**.
-   => The answer appears in the panel.
-3. To close the panel, press ((Esc)) in the panel, click **Ask AI** again, or click the panel's **×**.
+1. 상단 바에서 **문서** 버튼 옆의 **AI에게 묻기**를 클릭합니다. 버튼 위에 포인터를 올려 두면 버튼 이름이 표시됩니다.
+   => 창 오른쪽 가장자리에 패널이 열립니다. 이미지와 사이드바가 옆으로 비켜 자리를 만들어 주므로, 패널이 아무것도 가리지 않습니다.
+2. 질문을 입력하고 ((Enter))를 누르거나, **이렇게 물어보세요** 아래의 질문 중 하나를 클릭합니다.
+   => 패널에 답변이 나타납니다.
+3. 패널을 닫으려면 패널에서 ((Esc))를 누르거나, **AI에게 묻기**를 다시 클릭하거나, 패널의 **×**를 클릭합니다.
 
-The first opening takes a moment, because the app starts the panel only then. The panel shows **Loading AI Q&A…** until it is ready.
+처음 열 때는 잠시 걸립니다. 앱이 그때 처음으로 패널을 시작하기 때문입니다. 준비가 끝날 때까지 패널에 **AI Q&A 불러오는 중…**이 표시됩니다.
 
-Closing only hides the panel. Your conversation is still there when you open it again, until you close the app.
+닫으면 패널이 숨겨질 뿐입니다. 앱을 닫기 전까지는 다시 열었을 때 대화가 그대로 남아 있습니다.
 
-## What it can answer {#answers}
+## 답할 수 있는 것 {#answers}
 
-AI Q&A knows this documentation: the downloads, every setting, the live camera, videos, the messages the app shows and what to do about them. It answers in the interface's language.
+AI Q&A는 이 문서의 내용을 알고 있습니다. 다운로드, 모든 설정, 실시간 카메라, 동영상, 앱이 보여 주는 메시지와 그 대처법 등입니다. 답변은 인터페이스 언어로 합니다.
 
-- **It cannot see the app.** It knows nothing about your settings, your picture or your screen. Tell it what you see, and name controls and messages the way the app writes them.
-- **Answers can be wrong.** AI writes them, and the panel says so too. Before you rely on an answer, open the page it links to and check.
-- **Links open in your browser.** A link to a page of this documentation opens that page in the interface's language.
-- **It follows the interface.** A change of theme shows at once. A change of language opens the panel again in that language, with a new conversation.
+- **앱 화면을 볼 수 없습니다.** 내 설정이나 이미지, 화면에 대해서는 아무것도 모릅니다. 보이는 것을 알려 주고, 컨트롤과 메시지 이름은 앱에 적힌 그대로 써 주세요.
+- **답변이 틀릴 수 있습니다.** 답변은 AI가 작성하며, 패널에도 그렇게 적혀 있습니다. 답변을 믿고 따르기 전에 연결된 페이지를 열어 확인하세요.
+- **링크는 브라우저에서 열립니다.** 이 문서의 페이지로 가는 링크는 그 페이지를 인터페이스 언어로 엽니다.
+- **인터페이스를 따릅니다.** 테마를 바꾸면 바로 반영됩니다. 언어를 바꾸면 패널이 그 언어로 다시 열리고 새 대화가 시작됩니다.
 
-Mintlify's own controls in the panel, such as **Clear chat** and **Found results for …**, stay in English.
+패널 안에 있는 Mintlify 자체의 컨트롤(**Clear chat**, **Found results for …** 등)은 영어로 표시됩니다.
 
-## It works online {#online}
+## 온라인에서 동작합니다 {#online}
 
-AI Q&A runs on the servers of [Mintlify](https://mintlify.com), a documentation service, not on your computer. So it needs an internet connection. When the panel cannot load, it says **AI Q&A could not be loaded** and offers **Try again**.
+AI Q&A는 내 컴퓨터가 아니라 문서 서비스인 [Mintlify](https://mintlify.com)의 서버에서 동작합니다. 그래서 인터넷 연결이 필요합니다. 패널을 불러오지 못하면 **AI Q&A를 불러오지 못했습니다**라는 메시지와 함께 **다시 시도** 버튼이 나타납니다.
 
-It can also pause for a while. Mintlify gives the project a monthly allowance, and everyone who uses the app shares it. When the allowance runs out, AI Q&A stops answering until the next month.
+한동안 멈출 수도 있습니다. Mintlify는 이 프로젝트에 매달 사용량 한도를 주며, 앱을 쓰는 모든 사람이 그 한도를 나눠 씁니다. 한도를 다 쓰면 다음 달까지 AI Q&A가 답하지 않습니다.
 
-So please ask where it helps most: when you don't know which page to read. To look up one control, [All settings](settings.html) or the search at the top of these pages is often quicker. This documentation is always there, with or without AI Q&A.
+그러니 가장 도움이 되는 순간에 물어봐 주세요. 어느 페이지를 읽어야 할지 모를 때입니다. 컨트롤 하나를 찾아볼 때는 [모든 설정](settings.html)이나 이 페이지 맨 위의 검색이 더 빠를 때가 많습니다. AI Q&A가 있든 없든 이 문서는 언제나 여기 있습니다.
 
-## What is sent, and what stays {#privacy}
+## 전송되는 것과 남는 것 {#privacy}
 
-- **Nothing starts before you open it.** The app starts the panel at your first click on **Ask AI**. Until then, nothing is sent.
-- **What you type goes to Mintlify**, which writes the answer. Leave out anything private, such as an MCP key or a folder path with your name in it. Mintlify also receives usage events from the panel, and checks questions with hCaptcha to keep bots out.
-- **Your files stay on your computer.** The app never sends your pictures, videos, settings or library. If the panel offers to attach a file, whatever you attach or paste there goes to Mintlify too.
-- **The panel keeps its cookies and storage** in `%LOCALAPPDATA%\VRChatDLSS5Cam\webview2`.
-- **The app's log** notes the HTTP status and the length of each answer. Your questions and the answers' text are never written to it.
+- **열기 전에는 아무것도 시작되지 않습니다.** 앱은 **AI에게 묻기**를 처음 클릭할 때 패널을 시작합니다. 그 전에는 아무것도 전송되지 않습니다.
+- **입력한 내용은 Mintlify로 전송되고**, Mintlify가 답변을 작성합니다. MCP 키나 내 이름이 들어간 폴더 경로처럼 개인적인 내용은 넣지 마세요. Mintlify는 패널의 사용 이벤트도 받으며, 봇을 막기 위해 hCaptcha로 질문을 확인합니다.
+- **파일은 내 컴퓨터에 남습니다.** 앱은 이미지, 동영상, 설정, 라이브러리를 절대 보내지 않습니다. 패널에 파일 첨부 기능이 있다면, 거기에 첨부하거나 붙여 넣은 것은 Mintlify로도 전송됩니다.
+- **패널의 쿠키와 저장 데이터**는 `%LOCALAPPDATA%\VRChatDLSS5Cam\webview2`에 보관됩니다.
+- **앱 로그**에는 답변마다 HTTP 상태와 길이가 기록됩니다. 질문과 답변 본문은 절대 기록되지 않습니다.
 
-All the details: [Privacy and licences](privacy.html#network).
+자세한 내용은 [개인정보와 라이선스](privacy.html#app-ai-qa)에 있습니다.
 
-## Without WebView2, and on Linux {#browser}
+## WebView2가 없을 때와 Linux에서 {#browser}
 
-The panel needs the **Microsoft Edge WebView2 Runtime**, a Microsoft component that shows web pages inside apps. Windows 11 has it, and so do most Windows 10 computers.
+패널에는 **Microsoft Edge WebView2 런타임**이 필요합니다. 앱 안에서 웹 페이지를 보여 주는 Microsoft 구성 요소로, Windows 11에는 들어 있고 대부분의 Windows 10 컴퓨터에도 들어 있습니다.
 
 <!-- if askWidget -->
-Where it is missing or cannot start, and in the [Linux package](linux.html), **Ask AI** opens the AI Q&A of this documentation in your browser instead. The app says **AI Q&A opened in your browser**. The answers come from the same pages.
+런타임이 없거나 시작할 수 없을 때, 그리고 [Linux 패키지](linux.html)에서는 **AI에게 묻기**가 대신 이 문서의 AI Q&A를 브라우저에서 엽니다. 앱에는 **AI Q&A를 브라우저에서 열었습니다**라고 표시됩니다. 답변은 같은 페이지를 바탕으로 합니다.
 <!-- else -->
-Where it is missing or cannot start, and in the [Linux package](linux.html), **Ask AI** opens this documentation in your browser instead.
+런타임이 없거나 시작할 수 없을 때, 그리고 [Linux 패키지](linux.html)에서는 **AI에게 묻기**가 대신 이 문서를 브라우저에서 엽니다.
 <!-- endif -->
 
-To have the panel inside the app, install the WebView2 Runtime from [Microsoft's download page](https://developer.microsoft.com/microsoft-edge/webview2/), then start the app again.
+앱 안에서 패널을 쓰려면 [Microsoft 다운로드 페이지](https://developer.microsoft.com/microsoft-edge/webview2/)에서 WebView2 런타임을 설치한 다음 앱을 다시 시작하세요.

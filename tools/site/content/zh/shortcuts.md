@@ -14,6 +14,7 @@ description: 程序的所有按键和鼠标操作，集中在这一页。
 | ((F11)) {#fullscreen} | 全屏显示画面。按 ((Esc)) 或 ((F11)) 退出。 |
 | ((Tab)) · ((Shift+Tab)) {#tab} | 移到下一个或上一个控件。方向键永远不会在控件之间移动。 |
 | 在搜索框中按 ((Esc)) {#search} | 清空搜索。 |
+| 在 AI 问答面板中按 ((Esc)) {#ask} | 关闭面板。[AI 问答](ai-qa.html) |
 
 ## 画面 {#picture}
 
