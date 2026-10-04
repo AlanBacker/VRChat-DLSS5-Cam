@@ -129,8 +129,8 @@ not to list it). Never edit `mintlify/` by hand.
 
 ## AI Q&A
 
-`askWidget` in `site.json` holds the public ID of a Mintlify widget. It is empty by default, and then the pages carry
-no trace of the feature: the build output is the same as without it. With an ID, the build:
+`askWidget` in `site.json` holds the public ID of a Mintlify widget (not a secret: every page carries it). Left
+empty, the pages carry no trace of the feature: the build output is the same as without it. With an ID, the build:
 
 - adds an **Ask AI** button beside the search box, and an "Ask AI about …" row at the end of the search results;
 - adds `assets/ask.css` and `assets/ask.js` to the end of `site.css` and `site.js` (no extra file to fetch);
@@ -162,6 +162,8 @@ How it behaves:
   messages) stay in English: the widget has no labels for them.
 - An answer's link to another page of the site opens in a new tab, so the conversation stays in this one. A link to
   a heading on the same page scrolls there.
+- Mintlify checks each question with hCaptcha (its bot protection, set in the dashboard). A browser hCaptcha
+  trusts passes unseen; others, such as a headless browser on a server, first get a picture puzzle above the page.
 
 To turn it on:
 

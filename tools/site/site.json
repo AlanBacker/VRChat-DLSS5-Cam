@@ -3,7 +3,7 @@
   "siteUrl": "https://alanbacker.github.io/VRChat-DLSS5-Cam/",
   "basePath": "/VRChat-DLSS5-Cam/",
   "repo": "https://github.com/AlanBacker/VRChat-DLSS5-Cam",
-  "askWidget": "",
+  "askWidget": "mint_widget_0fcdadee-c765-458f-8755-df3fc716e509",
   "downloads": {
     "geforce": "VRChatDLSS5Cam-win64.zip",
     "radeon": "VRChatDLSS5Cam-win64-amd.zip",

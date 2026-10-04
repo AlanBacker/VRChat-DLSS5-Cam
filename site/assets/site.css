@@ -804,3 +804,70 @@ a.ext::after {
 .nf-home { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 0 0 12px; color: var(--dim); font-size: 14px; }
 .nf-home .icon { width: 16px; height: 16px; }
 .nf-links { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* ------------------------------------------------------------------------------------------------ AI Q&A
+   build.py adds this to site.css only when site.json names a Mintlify widget ID (see ask.js). */
+/* the button beside the search box: a flat control like the language menu, its icon in the accent colour */
+.ask-btn { position: relative; flex: none; gap: 7px; padding-inline: 10px; font-size: 14.5px; color: var(--dim); }
+.ask-btn:hover { color: var(--text); }
+.ask-btn .icon, .ask-spin { width: 18px; height: 18px; color: var(--icon-accent); }
+.ask-btn[aria-expanded="true"] { background: var(--control); color: var(--text); }
+.ask-btn:active { background: var(--control-active); transition-duration: 0s; }
+/* loading: the program's turning arc (DrawSpinner: a turn every 1.14 s, the arc breathing between 100° and 260°) */
+.ask-spin { display: none; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+.ask-btn.is-loading .ask-ic { display: none; }
+.ask-btn.is-loading .ask-spin { display: block; animation: ask-turn 1.14s linear infinite; }
+.ask-btn.is-loading .ask-spin circle { stroke-dasharray: 15.5 56.6; animation: ask-sweep 2.73s ease-in-out infinite; }
+@keyframes ask-turn { to { transform: rotate(360deg); } }
+@keyframes ask-sweep { 50% { stroke-dasharray: 41 56.6; } }
+.ask-spin { transform-origin: 50% 50%; }
+@media (min-width: 760px) { .ask-btn { margin-left: -6px; } }   /* it belongs with the search box */
+@media (max-width: 1239px) {
+  .ask-btn { width: 36px; padding: 0; }
+  .ask-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+}
+/* The extra control takes its room from the brand's subtitle first (below 1240 px, with its own label), then from
+   the language menu's label (below 1000 px, the way the bar already folds below 600 px), and on a phone from the
+   product's name: the mark still leads home, and every control keeps its full size. Only with the script; without it
+   the button is not there and the bar is unchanged. */
+.js .brand { flex-shrink: 0; }   /* the search box gives way, never the name */
+@media (max-width: 1239px) { .js .brand-docs { display: none; } }
+@media (max-width: 999px) {
+  .js .lang-cur, .js .lang-menu > summary .caret { display: none; }
+  .js .lang-menu > summary { padding-inline: 8px; }
+}
+@media (max-width: 459px) { .js .brand-text { display: none; } }
+@media (max-width: 419px) { .ask-btn { width: 34px; } }
+
+/* Mintlify's widget takes no page styles: its stylesheet resets the host with `all: initial !important`. It gets the
+   site's look through its settings instead (ask.js): accent, card radius, font, mark and theme. Its host sits in this
+   layer, which is in the page only while the panel is open or sliding away (ask.js): the layer fades with the panel,
+   quickly enough on the way out that the widget's own corner button, drawn as the panel starts to leave and covered
+   by it for the first 0.1 s, is gone before it is uncovered. Positioned at the widget's height, so the panel stays
+   above the top bar while the layer is see-through. */
+.ask-layer { position: relative; z-index: 75; opacity: 0; transition: opacity .08s var(--ease-out); }
+.ask-layer.is-on { opacity: 1; transition: opacity var(--t-glide) var(--ease-out); }
+
+/* the search popup's last row: ask the typed words; it stays in view at the foot of a long list */
+.search-pop .ask-row { position: sticky; bottom: -6px; margin: 4px -6px -6px; padding: 4px 6px 6px; background: var(--panel); border-top: 1px solid var(--border); }
+.search-pop .ask-row:first-child { margin-top: 0; border-top: 0; }
+.search-pop .ask-row button {
+  display: flex; gap: 10px; align-items: flex-start; width: 100%; padding: 8px 10px; border: 0; border-radius: var(--r-control);
+  background: transparent; color: var(--text); font: inherit; text-align: left; cursor: pointer;
+  transition: background-color var(--t-hover) var(--ease-app);
+}
+.search-pop .ask-row button > span { min-width: 0; }
+.search-pop .ask-row .icon { margin-top: 3px; width: 16px; height: 16px; color: var(--icon-accent); }
+.search-pop .ask-row[aria-selected="true"] button, .search-pop .ask-row button:hover { background: var(--control); }
+.search-pop .ask-row button:active { background: var(--control-active); transition-duration: 0s; }
+.search-pop .ask-row .r-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ask-q { color: var(--link); }
+
+/* when the widget cannot be fetched: a card under the button, like the menus */
+.ask-note {
+  position: fixed; z-index: 76; width: max-content; max-width: min(320px, calc(100vw - 24px)); padding: 10px 12px;
+  border: 1px solid var(--border); border-radius: var(--r-card); background: var(--panel); box-shadow: var(--shadow-pop);
+  color: var(--text); font-size: 14px; line-height: 1.45; animation: pop-fade var(--t-pop) var(--ease-pop);
+}
+.ask-live { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+@media print { .ask-btn, .ask-note, .ask-layer { display: none !important; } }
