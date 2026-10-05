@@ -297,6 +297,9 @@ void MainUI::Draw(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Font
     for (ImGuiKey key : { ImGuiKey_LeftArrow, ImGuiKey_RightArrow, ImGuiKey_UpArrow, ImGuiKey_DownArrow })
         ImGui::SetKeyOwner(key, arrowOwner);
     JumpFrame(s, ev);   // a place an answer of the Ask AI panel pointed at
+    // A click in the Ask AI page is a click outside the interface's menus, dropdowns and dialogs: they close, as for
+    // a click anywhere else outside them (ImGui never sees that click, which goes to the page's window).
+    if (info.askPressed) ImGui::ClosePopupsExceptModals();
     ImGuiViewport* vp = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(vp->WorkPos);
     ImGui::SetNextWindowSize(vp->WorkSize);
@@ -327,8 +330,8 @@ void MainUI::Draw(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Font
     // The Ask AI panel docks at the right edge, under the top bar, as tall as the picture and the sidebar, which make
     // room for it while it slides in from beyond the edge. The page is a window of its own over the interface, so
     // whatever is drawn under it would be hidden: from the moment it starts to come in, the main viewport ends at its
-    // left edge (AskTrim), and the popups, tooltips, dialogs and notices keep to the rest of the window. That edge is
-    // known before the top bar is drawn, so the bar's own popups (the language list) keep clear of it too.
+    // left edge (AskTrim), and the dialogs and notices keep to the rest of the window. That edge is known before the
+    // top bar is drawn.
     const float em = ImGui::GetFontSize();
     const float handleW = Px(16.0f);
     const float askGap = Px(8.0f);      // from the body, as the body keeps from the top bar; its right edge is the top bar's
@@ -355,11 +358,12 @@ void MainUI::Draw(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Font
     }
     m_askCut = m_askT > 0.0f ? askLeft : 0.0f;
     AskTrim(true);
-    // Tooltips are the exception: they keep beside the pointer over the page too, which opens a hole for them.
-    SetTooltipArea([](void* user, bool whole) {
+    // Tooltips, dropdowns and menus are the exception: they keep beside the pointer or under their button, as they
+    // would without the panel, and the page opens a hole where one lies over it.
+    SetFloatingArea([](void* user, bool whole) {
         MainUI* ui = static_cast<MainUI*>(user);
-        if (whole) { ui->m_tipTrimmed = ui->m_askTrimmed; ui->AskTrim(false); }
-        else if (ui->m_tipTrimmed) { ui->m_tipTrimmed = false; ui->AskTrim(true); }
+        if (whole) { ui->m_floatTrimmed = ui->m_askTrimmed; ui->AskTrim(false); }
+        else if (ui->m_floatTrimmed) { ui->m_floatTrimmed = false; ui->AskTrim(true); }
     }, this);
 
     DrawTopBar(s, info, ev, fonts);
@@ -513,9 +517,9 @@ void MainUI::Draw(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Font
     TrackUndo(s, info);
 }
 
-// The main viewport ends at the Ask AI panel's left edge while the panel is in (on), or at the window's (off). ImGui
-// keeps popups and tooltips within the viewport, and the dialogs and notices are placed on it, so none of them goes
-// under the page, which is a window of its own over the interface.
+// The main viewport ends at the Ask AI panel's left edge while the panel is in (on), or at the window's (off). The
+// dialogs and notices are placed on it, so none of them goes under the page, which is a window of its own over the
+// interface; tooltips, dropdowns and menus widen it back while they are placed (SetFloatingArea).
 void MainUI::AskTrim(bool on) {
     ImGuiViewport* vp = ImGui::GetMainViewport();
     if (on && !m_askTrimmed && m_askCut > vp->Pos.x) {

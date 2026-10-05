@@ -165,6 +165,7 @@ struct UiFrameInfo {
     // The Ask AI panel (App's AskPanel): docked at the window's right edge while open.
     bool                  askOpen = false;          // the panel is open (or opening); false while it slides away
     bool                  askWebShown = false;      // the page is on screen over the panel's card
+    bool                  askPressed = false;       // the page took the keyboard since the last frame (a click in it)
     int                   askState = 0;             // 0 nothing yet, 1 loading, 2 ready, 3 failed
 };
 
@@ -527,7 +528,7 @@ private:
     double m_askLoadingSince = -1.0; // the page began to load (the arc waits a moment before it shows)
     float  m_askCut = 0.0f;          // the main viewport ends here while the panel is in (0: it is not)
     bool   m_askTrimmed = false;     // the viewport is cut at m_askCut now
-    bool   m_tipTrimmed = false;     // it was cut when a tooltip widened it (SetTooltipArea)
+    bool   m_floatTrimmed = false;   // it was cut when a tooltip, dropdown or menu widened it (SetFloatingArea)
     float  m_vpW = 0.0f, m_vpWorkW = 0.0f;   // its widths before the cut
     void   AskTrim(bool on);         // the main viewport ends at the panel's left edge (on) or at the window's (off)
     void   DrawAskCard(const UiFrameInfo& info, UiEvents& ev);   // the card, and what it shows while the page is not there

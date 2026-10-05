@@ -586,6 +586,7 @@ private:
     int           m_frameCause = 0;        // 0 the main loop, 1 the sizing timer, 2 WM_SIZE while sizing
     void          WriteFrameTrace();
     std::vector<AskPanel::Hole> m_heldShotHoles;
+    bool          m_askPressed = false;    // the keyboard went to the page (a click in it) since the last frame
     bool          m_askPin = false;        // test step pin: a posted pointer stays where it was put (WM_MOUSELEAVE dropped)
     ImVec2        m_askBtnLogged{ -1.0f, -1.0f };   // test runs: the Ask AI button's place last written to the log
     std::optional<CaptureJob> m_heldShot;  // a screenshot waiting for the page's picture

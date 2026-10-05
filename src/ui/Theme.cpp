@@ -603,13 +603,31 @@ float PopupFade(ImGuiID key, bool open) {
 }
 }
 
+namespace {
+void (*g_floatArea)(void*, bool) = nullptr;
+void* g_floatAreaUser = nullptr;
+int g_floatDepth = 0;
+
+void FloatingArea(bool whole) {   // true: the whole window, until the matching false
+    if (g_floatArea && (whole ? g_floatDepth++ == 0 : --g_floatDepth == 0)) g_floatArea(g_floatAreaUser, whole);
+}
+}
+
+void SetFloatingArea(void (*widen)(void* user, bool whole), void* user) {
+    g_floatArea = widen;
+    g_floatAreaUser = user;
+}
+
 bool BeginPopupFade(const char* strId, ImGuiWindowFlags flags) {
     const ImGuiID id = ImGui::GetID(strId);
     const bool open = ImGui::IsPopupOpen(strId);
     const float t = PopupFade(id ^ kFadeKey, open);
     if (!open) return false;
     ImGui::PushStyleVar(ImGuiStyleVar_Alpha, ImGui::GetStyle().Alpha * t);
-    if (!ImGui::BeginPopup(strId, flags)) { ImGui::PopStyleVar(); return false; }
+    FloatingArea(true);   // placed at the pointer or its button, wherever that is in the window
+    const bool begun = ImGui::BeginPopup(strId, flags);
+    FloatingArea(false);
+    if (!begun) { ImGui::PopStyleVar(); return false; }
     WindowShadow();
     return true;
 }
@@ -825,7 +843,10 @@ bool BeginDropdown(const char* label, const char* preview, Icon icon, ImGuiCombo
     const float t = PopupFade(id ^ kFadeKey, open);
     if (!open) return false;
     ImGui::PushStyleVar(ImGuiStyleVar_Alpha, style.Alpha * t);
-    if (!ImGui::BeginComboPopup(popupId, bb, flags)) { ImGui::PopStyleVar(); return false; }
+    FloatingArea(true);   // the list opens under its box, wherever that is in the window
+    const bool begun = ImGui::BeginComboPopup(popupId, bb, flags);
+    FloatingArea(false);
+    if (!begun) { ImGui::PopStyleVar(); return false; }
     WindowShadow();
     return true;
 }
@@ -833,16 +854,6 @@ bool BeginDropdown(const char* label, const char* preview, Icon icon, ImGuiCombo
 void EndDropdown() {
     ImGui::EndCombo();
     ImGui::PopStyleVar();
-}
-
-namespace {
-void (*g_tipArea)(void*, bool) = nullptr;
-void* g_tipAreaUser = nullptr;
-}
-
-void SetTooltipArea(void (*widen)(void* user, bool whole), void* user) {
-    g_tipArea = widen;
-    g_tipAreaUser = user;
 }
 
 void TooltipShow(ImGuiID key, const char* text) {
@@ -865,8 +876,10 @@ void TooltipShow(ImGuiID key, const char* text) {
     ImGui::PushStyleVar(ImGuiStyleVar_Alpha, style.Alpha * Ease(t));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, Px(8.0f));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(Px(10.0f), Px(7.0f)));
-    if (g_tipArea) g_tipArea(g_tipAreaUser, true);   // placed beside the pointer, wherever it is in the window
-    if (ImGui::BeginTooltip()) {
+    FloatingArea(true);   // placed beside the pointer, wherever it is in the window
+    const bool begun = ImGui::BeginTooltip();
+    FloatingArea(false);
+    if (begun) {
         if (more) ImGui::Spacing();
         else WindowShadow();
         ImGui::PushTextWrapPos(ImGui::GetFontSize() * 28.0f);
@@ -874,7 +887,6 @@ void TooltipShow(ImGuiID key, const char* text) {
         ImGui::PopTextWrapPos();
         ImGui::EndTooltip();
     }
-    if (g_tipArea) g_tipArea(g_tipAreaUser, false);
     ImGui::PopStyleVar(3);
 }
 

@@ -67,9 +67,10 @@ bool BeginDropdown(const char* label, const char* preview, ImGuiComboFlags flags
 void EndDropdown();
 void Tooltip(const char* text);                                                // tooltip of the last item, fading in
 void TooltipShow(ImGuiID key, const char* text);                               // shows it now; "key" tells one tooltip from another
-// Tooltips are placed at the pointer on the whole window, even where a viewport is cut short (the Ask AI page, a
-// window of its own, opens a hole where one lies over it): the cut's owner widens it around each tooltip's placing.
-void SetTooltipArea(void (*widen)(void* user, bool whole), void* user);
+// Tooltips, dropdowns and menus are placed on the whole window, where they would be without the cut, even where a
+// viewport is cut short (the Ask AI page, a window of its own, opens a hole where one lies over it): the cut's owner
+// widens it around each one's placing.
+void SetFloatingArea(void (*widen)(void* user, bool whole), void* user);
 
 // Icons: the Lucide line icons from the icon font (sharp at every size), the media controls drawn as filled shapes --
 enum class Icon { Play, Pause, StepBack, StepForward, ChevronDown, ChevronUp, ChevronLeft, ChevronRight,

@@ -2103,6 +2103,8 @@ void App::Frame() {
     info.fullscreen = m_fullscreen;
     info.askOpen = m_askOpen;
     info.askWebShown = m_ask.Visible();
+    info.askPressed = m_askPressed;
+    m_askPressed = false;
     switch (m_ask.GetState()) {
         case AskPanel::State::Creating: case AskPanel::State::Loading: info.askState = 1; break;
         case AskPanel::State::Ready:  info.askState = 2; break;
@@ -4314,6 +4316,7 @@ LRESULT App::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         // holds are let go. Leaving the window for another program is the loss, told through WM_ACTIVATE.
         if (msg == WM_KILLFOCUS && wParam && IsChild(hwnd, (HWND)wParam)) {
             ReleaseImGuiKeys();
+            m_askPressed = true;   // the interface's open menus close
             return DefWindowProcW(hwnd, msg, wParam, lParam);
         }
         if (msg == WM_ACTIVATE) ImGui::GetIO().AddFocusEvent(LOWORD(wParam) != WA_INACTIVE);
