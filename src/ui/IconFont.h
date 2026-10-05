@@ -88,5 +88,6 @@ constexpr ImWchar wifi = 0xE1AE;
 constexpr ImWchar hard_drive = 0xE0ED;
 constexpr ImWchar panel_left = 0xE12A;
 constexpr ImWchar panel_right = 0xE431;
-constexpr ImWchar message_circle_question_mark = 0xE568;
+constexpr ImWchar book_question_mark = 0xF8F0;   // ours, from Lucide's shapes
+constexpr ImWchar message_square_ai = 0xF8F1;   // ours, from Lucide's shapes
 }

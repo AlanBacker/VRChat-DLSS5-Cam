@@ -30,7 +30,7 @@ constexpr double kStartTimeout = 30.0;   // creation, or the page's first word; 
 // The documentation's pages (tools/site/site.json): an answer's link to one of them opens it in the interface's language.
 const char* const kPages[] = { "index", "install", "first-picture", "live", "videos", "library", "presets", "saving",
                                "updates", "how-it-works", "settings", "shortcuts", "command-line", "mcp", "linux",
-                               "radeon", "troubleshooting", "faq", "privacy", "changelog" };
+                               "radeon", "troubleshooting", "faq", "ai-qa", "privacy", "changelog" };
 
 // A COM object for one WebView2 handler interface that calls a function (the SDK's WRL Callback without WRL).
 template <class I, class M> struct Handler;
@@ -126,13 +126,31 @@ void FilterMenu(ICoreWebView2ContextMenuRequestedEventArgs* args) {
 // The page's own look: the window's colour behind a card like the program's (radius, hairline, the shadow in its
 // corners), the same colours as the panel the program draws while the page loads.
 const char kPageCss[] = R"vdc(
-:root{color-scheme:dark;--vdc-win:#0F1014;--vdc-card:#191C22;--vdc-border:#262A33;--vdc-shadow:rgba(0,0,0,.34);--vdc-hair:1px;--vdc-r:10px;--vdc-ease:cubic-bezier(.25,.6,.4,1)}
-:root[data-theme=light]{color-scheme:light;--vdc-win:#F1F3F7;--vdc-card:#FFFFFF;--vdc-border:#DFE2E9;--vdc-shadow:rgba(22,28,50,.22)}
+:root{color-scheme:dark;--vdc-win:#0F1014;--vdc-card:#191C22;--vdc-border:#262A33;--vdc-shadow:rgba(0,0,0,.34);--vdc-hair:1px;--vdc-r:10px;--vdc-ease:cubic-bezier(.25,.6,.4,1);
+--vdc-text:#E8EAF0;--vdc-dim:#969CAC;--vdc-ctl:#252932;--vdc-ctl-h:#2F343F;--vdc-ctl-a:#3A404E;--vdc-acc:#5C6CF5;--vdc-acc-h:#7281FF;--vdc-acc-a:#4C5BDE;--vdc-warn:#FFB847;--vdc-lift:rgba(0,0,0,.45)}
+:root[data-theme=light]{color-scheme:light;--vdc-win:#F1F3F7;--vdc-card:#FFFFFF;--vdc-border:#DFE2E9;--vdc-shadow:rgba(22,28,50,.22);
+--vdc-text:#1B1E25;--vdc-dim:#666D7D;--vdc-ctl:#EEF0F5;--vdc-ctl-h:#E4E7EE;--vdc-ctl-a:#D6DAE4;--vdc-acc:#4658E6;--vdc-acc-h:#5C6DF2;--vdc-acc-a:#3848CC;--vdc-warn:#C27A08;--vdc-lift:rgba(22,28,50,.16)}
 html,body{margin:0;width:100%;height:100%;overflow:hidden}
 html{background:var(--vdc-win);transition:background-color .3s var(--vdc-ease)}
 body{font-family:var(--vdc-font,system-ui);-webkit-user-select:none;user-select:none}
 .card{position:fixed;inset:0;border-radius:var(--vdc-r);background:var(--vdc-card);box-shadow:inset 0 0 0 var(--vdc-hair) var(--vdc-border),0 2px 8px var(--vdc-shadow);transition:background-color .3s var(--vdc-ease),box-shadow .3s var(--vdc-ease)}
-@media (prefers-reduced-motion:reduce){html,.card{transition:none}}
+#vdc-note{position:fixed;left:12px;right:12px;bottom:140px;z-index:20;box-sizing:border-box;display:flex;align-items:flex-start;gap:10px;padding:12px 8px 12px 14px;border-radius:8px;background:var(--vdc-card);color:var(--vdc-text);box-shadow:inset 0 0 0 var(--vdc-hair) var(--vdc-border),0 6px 20px var(--vdc-lift);font:14px/20px var(--vdc-font,system-ui);opacity:0;transform:translateY(6px);visibility:hidden;pointer-events:none;transition:opacity .12s cubic-bezier(.32,0,.67,0),transform .12s cubic-bezier(.32,0,.67,0),visibility 0s linear .12s,background-color .3s var(--vdc-ease),color .3s var(--vdc-ease),box-shadow .3s var(--vdc-ease)}
+:root:not([data-vdc-away]) #vdc-note.on{opacity:1;transform:none;visibility:visible;pointer-events:auto;transition:opacity .28s cubic-bezier(.18,1,.56,1),transform .28s cubic-bezier(.18,1,.56,1),visibility 0s,background-color .3s var(--vdc-ease),color .3s var(--vdc-ease),box-shadow .3s var(--vdc-ease)}
+#vdc-note .i{flex:none;display:flex;align-items:center;height:20px;color:var(--vdc-warn);transition:color .3s var(--vdc-ease)}
+#vdc-note .b{flex:1;min-width:0}
+#vdc-note .t{margin:0;-webkit-user-select:text;user-select:text}
+#vdc-note .a{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;margin-top:10px}
+#vdc-note button{font:inherit;border:0;margin:0;cursor:pointer;outline:none;transition:background-color .16s var(--vdc-ease),color .16s var(--vdc-ease),box-shadow .16s var(--vdc-ease)}
+#vdc-note .btn{height:30px;padding:0 10px;border-radius:6px;background:var(--vdc-ctl);color:var(--vdc-text);white-space:nowrap}
+#vdc-note .btn:hover{background:var(--vdc-ctl-h)}
+#vdc-note .btn:active{background:var(--vdc-ctl-a)}
+#vdc-note .btn.pri{background:var(--vdc-acc);color:#fff}
+#vdc-note .btn.pri:hover{background:var(--vdc-acc-h)}
+#vdc-note .btn.pri:active{background:var(--vdc-acc-a)}
+#vdc-note .x{flex:none;display:flex;align-items:center;justify-content:center;width:24px;height:24px;margin-top:-2px;padding:0;border-radius:6px;background:transparent;color:var(--vdc-dim)}
+#vdc-note .x:hover{background:var(--vdc-ctl-h);color:var(--vdc-text)}
+#vdc-note button:focus-visible{box-shadow:0 0 0 2px var(--vdc-acc)}
+@media (prefers-reduced-motion:reduce){html,.card,#vdc-note,:root:not([data-vdc-away]) #vdc-note.on{transition:none}}
 )vdc";
 
 // Put into the widget's (closed) shadow root. Its stylesheet is all in cascade layers, so these plain rules win
@@ -165,11 +183,13 @@ const char kShadowCss[] = R"vdc(
 :host([data-vdc-shown]) [data-mintlify-assistant-panel]:not([data-starting-style]):not([data-ending-style]){opacity:1;transition:opacity .28s cubic-bezier(.18,1,.56,1),background-color .3s cubic-bezier(.25,.6,.4,1),color .3s cubic-bezier(.25,.6,.4,1)}
 :host([data-vdc-theming]) *,:host([data-vdc-theming]) *::before,:host([data-vdc-theming]) *::after{transition-property:background-color,border-color,color,fill,stroke,outline-color;transition-duration:.3s;transition-timing-function:cubic-bezier(.25,.6,.4,1)}
 :host([data-vdc-instant]) [data-mintlify-assistant-panel]{transition:none!important}
+:host([data-vdc-note]) [data-mintlify-assistant-panel] [role=alert]{display:none}
 @media (prefers-reduced-motion:reduce){[data-mintlify-assistant-panel],[data-mintlify-assistant-panel]::after{transition:none!important}}
 )vdc";
 
 // The page's script: starts the widget (drawn open, its panel docked over the whole page), keeps its shadow root to
-// dress it and to answer its links, and talks with the program (chrome.webview messages).
+// dress it and to answer its links, and talks with the program (chrome.webview messages). In pieces of less than
+// 16 KB: the compiler takes no longer string literal (it joins the pieces).
 const char kPageJs[] = R"vdc(
 (function () {
   'use strict';
@@ -211,6 +231,7 @@ const char kPageJs[] = R"vdc(
       dress();
       r.addEventListener('click', onLink, true);
       r.addEventListener('auxclick', onLink, true);
+      r.addEventListener('input', function () { if (noteKind) requestAnimationFrame(place); }, true);   // the composer grows
       new MutationObserver(check).observe(r, { childList: true, subtree: true });
     }
     return r;
@@ -226,11 +247,133 @@ const char kPageJs[] = R"vdc(
     if (inited && !sentReady && !sentFail && panel()) { sentReady = true; clearTimeout(timer); post({ type: 'ready' }); }
   }
 
+  /* A question that could not be answered: a notice above the composer, in the interface's language, with the way
+     out (the documentation, the question again, or a new conversation). It waits a moment, since the widget tries
+     some failures again by itself; a new question or an answer takes it away. */
+  var N = C.notice || {}, note = null, noteKind = '', noteTimer = 0, alertTimer = 0, awaiting = false, lastQ = '', failWith = null;
+  var SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" ';
+  function kindOf(st) { return st === 403 || st === 429 ? 'busy' : st === 413 ? 'full' : st === 418 ? 'net' : 'off'; }
+  function noteEl() {
+    if (note) return note;
+    note = document.createElement('div');
+    note.id = 'vdc-note';
+    note.setAttribute('role', 'status');
+    note.innerHTML = '<span class="i">' + SVG + 'width="16" height="16"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg></span>' +
+      '<div class="b"><p class="t"></p><div class="a"></div></div>' +
+      '<button type="button" class="x">' + SVG + 'width="14" height="14"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>';
+    var x = note.querySelector('.x');
+    x.setAttribute('aria-label', N.close || 'Close');
+    x.addEventListener('click', function () { unnote(true); });
+    document.body.appendChild(note);
+    return note;
+  }
+  function button(text, primary, fn) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = primary ? 'btn pri' : 'btn';
+    b.textContent = text;
+    b.addEventListener('click', fn);
+    return b;
+  }
+  function place() {   /* just above the composer: the outermost box around its input that is still a small part of the page */
+    if (!note) return;
+    var h = window.innerHeight, p = panel(), el = root && root.querySelector('[data-mintlify-assistant-panel] textarea'), y = 0;
+    for (var i = 0; el && i < 8; i++) {
+      var up = el.parentElement;
+      if (!up || up === p || up.getBoundingClientRect().height > h * 0.45) break;
+      el = up;
+    }
+    if (el) y = el.getBoundingClientRect().top;
+    note.style.bottom = (y > 40 && y < h ? Math.round(h - y + 8) : 140) + 'px';
+  }
+  function notice(kind, status) {
+    clearTimeout(noteTimer);
+    awaiting = false;
+    var text = N[kind] || N.off;
+    if (!text) return;
+    noteKind = kind;
+    var n = noteEl(), a = n.querySelector('.a');
+    n.querySelector('.t').textContent = text;
+    a.textContent = '';
+    var docs = button(N.docs || 'Documentation', kind === 'off', function () { post({ type: 'docs' }); });
+    if (kind === 'full') { a.appendChild(docs); a.appendChild(button(N.fresh || 'New conversation', true, fresh)); }
+    else if (kind === 'off') { a.appendChild(button(N.retry || 'Try again', false, retry)); a.appendChild(docs); }
+    else { a.appendChild(docs); a.appendChild(button(N.retry || 'Try again', true, retry)); }
+    place();
+    clearTimeout(alertTimer);
+    if (host) host.setAttribute('data-vdc-note', '');
+    getComputedStyle(n).opacity;   // drawn hidden first, so the fade runs
+    n.classList.add('on');
+    log('notice ' + kind + (status ? ' (HTTP ' + status + ')' : ' (not sent)'));
+  }
+  function soon(kind, status) {
+    clearTimeout(noteTimer);
+    noteTimer = setTimeout(function () { notice(kind, status); }, 1200);
+  }
+  function unnote(byUser) {   /* the widget's own alert stays hidden: it would repeat the notice, in English */
+    clearTimeout(noteTimer);
+    if (!noteKind) return;
+    noteKind = '';
+    note.classList.remove('on');
+    if (byUser) focus();
+  }
+  function alerts() {   /* the next question or a new conversation: the widget's alerts show again, once its old one has gone */
+    clearTimeout(alertTimer);
+    alertTimer = setTimeout(function () { if (!noteKind && host) host.removeAttribute('data-vdc-note'); }, 400);
+  }
+  function retry() {
+    unnote(false);
+    var b = root && root.querySelector('[data-mintlify-assistant-panel] [role=alert] button');
+    if (b) { log('try again: the widget\'s own retry'); b.click(); return; }
+    if (lastQ && inited) { log('try again: the question asked again'); settle(api.ask(lastQ, { source: 'app', open: true, focus: false })); return; }
+    focus();
+  }
+  function fresh() {
+    unnote(false);
+    alerts();
+    if (inited) { log('a new conversation'); settle(api.reset()); }
+    focus();
+  }
+  function question(body) {   /* the last question in a request, to ask it again */
+    if (typeof body !== 'string') return '';
+    try {
+      var ms = JSON.parse(body).messages || [];
+      for (var i = ms.length - 1; i >= 0; i--) {
+        var m = ms[i];
+        if (!m || m.role !== 'user') continue;
+        if (typeof m.content === 'string' && m.content) return m.content;
+        var t = '', ps = m.parts || [];
+        for (var j = 0; j < ps.length; j++) if (ps[j] && ps[j].type === 'text') t += ps[j].text || '';
+        return t;
+      }
+    } catch (e) { /* not a request to read */ }
+    return '';
+  }
+  window.addEventListener('resize', function () { if (noteKind) place(); });
+
   /* answers: the program learns that one came, and how long it is (in test runs, how it starts) */
   var fetch0 = window.fetch;
-  window.fetch = function (input) {
-    var url = typeof input === 'string' ? input : (input && input.url) || '', p = fetch0.apply(window, arguments);
-    if (String(url).indexOf('/v2/message') < 0) return p;
+  window.fetch = function (input, init) {
+    var url = typeof input === 'string' ? input : (input && input.url) || '';
+    if (String(url).indexOf('/v2/message') < 0) return fetch0.apply(window, arguments);
+    var q = question(init && init.body);
+    if (q) lastQ = q;
+    awaiting = true;
+    unnote(false);
+    alerts();
+    var p;
+    if (failWith === null) p = fetch0.apply(window, arguments);
+    else {   /* test runs: the failure asked for, and nothing goes to the service */
+      log('test: the question met ' + (failWith === 'net' ? 'a network failure' : 'HTTP ' + failWith) + ', nothing was sent');
+      p = failWith === 'net' ? Promise.reject(new TypeError('Failed to fetch'))
+        : Promise.resolve(new Response('{"error":"test"}', { status: failWith, headers: { 'Content-Type': 'application/json' } }));
+    }
+    p.then(function (r) {
+      if (r.ok) { awaiting = false; unnote(false); } else soon(kindOf(r.status), r.status);
+    }, function (e) {
+      if (e && e.name === 'AbortError') { awaiting = false; return; }   // stopped by the user
+      soon('net', 0);
+    });
     p.then(function (r) {
       var c = null;
       try { c = r.clone(); } catch (e) { c = null; }
@@ -252,6 +395,7 @@ const char kPageJs[] = R"vdc(
     return p;
   };
 
+)vdc" R"vdc(
   /* starting */
   function look() {
     var light = doc.getAttribute('data-theme') === 'light';
@@ -268,14 +412,17 @@ const char kPageJs[] = R"vdc(
       starterQuestions: C.questions,
       filter: { language: C.mint },
       analytics: { capturePathname: false },
-      hooks: { event: onEvent, error: function (e) { log('widget error: ' + ((e && (e.message || e.code || e.type)) || e)); } }
+      hooks: { event: onEvent, error: function (e) {
+        log('widget error: ' + ((e && (e.message || e.code || e.type)) || e) + (e && e.status ? ' (HTTP ' + e.status + ')' : ''));
+        if (awaiting && e && typeof e.status === 'number' && e.status >= 400) notice(kindOf(e.status), e.status);   // the widget's last word on it
+      } }
     };
   }
   function load() {
     return new Promise(function (resolve, reject) {
       var s = document.createElement('script');
       s.type = 'module';
-      s.src = SRC;
+      s.src = C.breakLoad ? SRC + '.missing' : SRC;
       s.onload = resolve;
       s.onerror = function () { reject(new Error('the widget script could not be loaded')); };
       document.head.appendChild(s);
@@ -322,6 +469,7 @@ const char kPageJs[] = R"vdc(
   function frames(fn) { requestAnimationFrame(function () { requestAnimationFrame(fn); }); }
   function show(m) {
     shown = true;
+    doc.removeAttribute('data-vdc-away');
     if (host) {
       if (m.instant) {
         host.setAttribute('data-vdc-instant', '');
@@ -342,6 +490,7 @@ const char kPageJs[] = R"vdc(
   function hide() {
     shown = false;
     if (host) host.removeAttribute('data-vdc-shown');
+    doc.setAttribute('data-vdc-away', '');   // the notice fades with the panel
   }
   function focus() {
     var t = root && root.querySelector('[data-mintlify-assistant-panel] textarea, [data-mintlify-assistant-panel] input:not([type=hidden]):not([type=file])');
@@ -396,6 +545,7 @@ const char kPageJs[] = R"vdc(
     if (root && root.querySelector('[role="menu"]')) return;
     e.preventDefault();
     e.stopPropagation();
+    if (noteKind) { unnote(true); return; }   // the notice first, the panel with the next press
     post({ type: 'escape' });
   }, true);
 
@@ -410,6 +560,16 @@ const char kPageJs[] = R"vdc(
       for (var i = 0; i < as.length && !a; i++) if ((as[i].getAttribute('href') || '').charAt(0) !== '#') a = as[i];
       log('test link: ' + (a ? a.getAttribute('href') : 'no link in the panel'));
       if (a) a.click();
+    } else if (what.indexOf('fail:') === 0) {
+      var v = what.slice(5);
+      failWith = v === 'off' ? null : v === 'net' ? 'net' : Math.min(599, Math.max(400, parseInt(v, 10) || 503));
+      log('test fail: ' + (failWith === null ? 'off, questions go to the service again' : failWith));
+    } else if (what.indexOf('note:') === 0) {   /* a notice's button pressed: docs, retry, fresh or close */
+      var want = what.slice(5), nb = null;
+      if (note && noteKind) nb = want === 'close' ? note.querySelector('.x')
+        : [].filter.call(note.querySelectorAll('.a button'), function (x) { return x.textContent === N[want]; })[0] || null;
+      log('test note: ' + (nb ? want : 'no ' + want + ' button on the notice'));
+      if (nb) nb.click();
     }
   }
 
@@ -692,10 +852,15 @@ std::string AskPanel::ConfigJson() const {
     for (const std::string& q : m_cfg.questions) questions.Push(q);
     Json pages = Json::Arr();
     for (const char* p : kPages) pages.Push(p);
+    Json notice = Json::Obj();
+    notice.Set("off", m_cfg.noticeOff).Set("busy", m_cfg.noticeBusy).Set("net", m_cfg.noticeNet).Set("full", m_cfg.noticeFull)
+          .Set("docs", m_cfg.openDocs).Set("retry", m_cfg.retry).Set("fresh", m_cfg.newChat).Set("close", m_cfg.close);
     Json c = Json::Obj();
     c.Set("id", kWidgetId).Set("mint", m_cfg.mintLang).Set("dir", m_cfg.dir).Set("font", m_cfg.font)
      .Set("radius", (double)m_cfg.radius).Set("labels", std::move(labels)).Set("questions", std::move(questions))
-     .Set("pages", std::move(pages)).Set("accentDark", "#5C6CF5").Set("accentLight", "#4658E6").Set("test", m_cfg.test);
+     .Set("pages", std::move(pages)).Set("notice", std::move(notice)).Set("accentDark", "#5C6CF5").Set("accentLight", "#4658E6")
+     .Set("test", m_cfg.test)
+     .Set("breakLoad", m_cfg.breakLoad);
     // inside a <script> element: no "</" (it would end the element) and no "<!--"
     return ReplaceAll(ReplaceAll(c.Dump(), "</", "<\\/"), "<!--", "<\\!--");
 }
@@ -738,6 +903,8 @@ void AskPanel::OnMessage(const std::string& text) {
         Push(Event::Close);
     } else if (type == "escape") {
         Push(Event::Escape);
+    } else if (type == "docs") {
+        Push(Event::Docs);
     } else if (type == "link") {
         const std::string url = m.Str("url");
         if (IsWebUrl(url)) Push(Event::Link, url);
@@ -849,6 +1016,37 @@ void AskPanel::NotifyMoved() {
     if (m_controller) m_controller->NotifyParentWindowPositionChanged();
 }
 
+// The page is a window of its own over the interface, so a tooltip of the interface that reaches over it would be
+// hidden. Where one does, the window that hosts the page in this process gets a hole (a window region), and the
+// interface's own picture, with the tooltip, shows through it; the page's content stays where it is around it.
+void AskPanel::SetHoles(const std::vector<Hole>& holes) {
+    HWND host = nullptr;
+    if (m_controller && m_parent) {
+        for (HWND w = FindWindowExW(m_parent, nullptr, L"Chrome_WidgetWin_0", nullptr); w; w = FindWindowExW(m_parent, w, L"Chrome_WidgetWin_0", nullptr)) {
+            DWORD pid = 0;
+            GetWindowThreadProcessId(w, &pid);
+            if (pid == GetCurrentProcessId()) { host = w; break; }
+        }
+    }
+    if (host != m_holeHost) {
+        if (m_holeHost && IsWindow(m_holeHost)) SetWindowRgn(m_holeHost, nullptr, TRUE);
+        m_holeHost = host;
+        m_holes.clear();
+    }
+    if (!host || holes == m_holes) return;
+    m_holes = holes;
+    if (holes.empty()) { SetWindowRgn(host, nullptr, TRUE); return; }
+    HRGN region = CreateRectRgn(0, 0, 32767, 32767);   // larger than the window, so a later resize keeps it whole
+    for (const Hole& h : holes) {
+        const int d = h.radius * 2;
+        HRGN cut = d > 0 ? CreateRoundRectRgn(h.r.left, h.r.top, h.r.right + 1, h.r.bottom + 1, d, d)
+                         : CreateRectRgn(h.r.left, h.r.top, h.r.right, h.r.bottom);
+        CombineRgn(region, region, cut, RGN_DIFF);
+        DeleteObject(cut);
+    }
+    if (!SetWindowRgn(host, region, TRUE)) DeleteObject(region);   // on success the region belongs to the window
+}
+
 bool AskPanel::CapturePng(std::function<void(std::vector<uint8_t>&&)> done) {
     if (!m_view || !m_visible) return false;
     ComPtr<IStream> stream;
@@ -875,6 +1073,8 @@ bool AskPanel::CapturePng(std::function<void(std::vector<uint8_t>&&)> done) {
 
 void AskPanel::Destroy() {
     ++m_generation;
+    m_holes.clear();
+    m_holeHost = nullptr;   // the window goes with the control
     if (m_controller) {
         FocusBack();
         m_controller->Close();

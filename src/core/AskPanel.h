@@ -27,14 +27,18 @@ struct AskPageConfig {
     float       radius = 10.0f;   // the corner radius of the interface's cards, in CSS pixels
     std::string title, trigger, placeholder, disclaimer, suggestions;
     std::vector<std::string> questions;
+    // the notice over a question that could not be answered: why (the service off or out of its allowance, too many
+    // questions, no connection, a conversation too long), and its buttons
+    std::string noticeOff, noticeBusy, noticeNet, noticeFull, openDocs, retry, newChat, close;
     bool        test = false;     // test runs: the page reports an answer's text (the start of it) for the log
+    bool        breakLoad = false;   // development: the widget's script is asked for where there is none (the load fails)
 };
 
 class AskPanel {
 public:
     enum class State { Idle, Creating, Loading, Ready, Failed };
     struct Event {
-        enum Type { Ready, LoadFailed, Close, Link, Answered, Escape, Fullscreen, CreateFailed, Log } type;
+        enum Type { Ready, LoadFailed, Close, Link, Answered, Escape, Fullscreen, CreateFailed, Log, Docs } type;
         std::string text;
     };
 
@@ -61,9 +65,18 @@ public:
     void Hide();                                          // off the screen
     void Focus();                                         // keyboard focus to the page
     void Ask(const std::string& question);                // asks a question (test runs)
-    void Test(const char* what);                          // test runs: "link" clicks an answer's first link, "close" the widget's close control
+    void Test(const char* what);                          // test runs: "link" clicks an answer's first link, "close" the widget's close control,
+                                                          // "fail:<status|net|off>" answers every question with that failure (nothing is sent),
+                                                          // "note:<docs|retry|fresh|close>" presses that button on the failed-question notice
     bool SendKey(UINT vk);                                // test runs: a key press posted to the page's window
     void NotifyMoved();                                   // the parent window moved on the screen
+    struct Hole {
+        RECT r; int radius;
+        bool operator==(const Hole& o) const { return EqualRect(&r, &o.r) && radius == o.radius; }
+    };
+    // Holes in the page's window where the interface's tooltips and popups lie over it, in the page's pixels (from its
+    // top-left corner); none: the whole page shows.
+    void SetHoles(const std::vector<Hole>& holes);
     bool CapturePng(std::function<void(std::vector<uint8_t>&&)> done);   // the page as shown, as a PNG (empty: failed)
     void Destroy();
     std::vector<Event> Poll();                            // once a frame: what happened since, and the waits that ran out
@@ -106,6 +119,8 @@ private:
     bool          m_reload = false;     // the page's process ended: the page opens again at the next Poll()
     std::vector<std::string> m_queued;  // messages that wait for the page's script
     std::vector<Event> m_events;
+    std::vector<Hole> m_holes;          // the holes the page's window has now
+    HWND          m_holeHost = nullptr; // the window they were cut in
     unsigned      m_generation = 0;     // Destroy() makes the callbacks of an earlier control fall silent
 };
 

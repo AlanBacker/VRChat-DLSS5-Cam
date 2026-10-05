@@ -251,6 +251,7 @@ struct UiEvents {
     bool openDocs = false;           // the documentation in the browser (in the interface's language)
     bool askToggle = false;          // the Ask AI button: open or close the panel
     bool askRetry = false;           // Try again in the panel after a failed start
+    bool askDocs = false;            // Open documentation beside it
     bool mcpOpenPage = false;       // the server's information page in the browser
     bool mcpOpenDocs = false;        // the documentation site's MCP page in the browser
     bool mcpOpenJobs = false;        // the jobs folder in Explorer
@@ -277,8 +278,13 @@ public:
     bool WantsFrames() const;   // something moves or waits: keep drawing at full rate
     // Where the Ask AI page goes (window client pixels): true once the panel has landed and nothing covers it.
     bool AskPanelRect(ImVec2& min, ImVec2& max) const;
+    struct FloatRect { ImVec2 min, max; float rounding; };
+    void FloatingRects(std::vector<FloatRect>& out) const;   // this frame's tooltips and popups (for the page's holes)
+    void AskButtonRect(ImVec2& min, ImVec2& max) const { min = m_askBtnMin; max = m_askBtnMax; }   // the top bar's Ask AI button
     bool FullscreenSwitching() const { return m_fsPending || m_fsRise; }   // the dip to black and the rise after it
     void ToggleFullscreen() { RequestFullscreen(); }   // F11 pressed in the Ask AI page
+    void TestGuide(int page) { m_guideOpen = true; m_guideStartPage = page; }   // test runs: the setup guide at that page (0-based)
+    void TestSpotlight() { m_spotAt = ImGui::GetTime() + 0.3; m_spotUntil = m_spotAt + 1.4; }   // test runs: the guide's pointers flash
 
 private:
     struct ToastItem { std::string text; double time; bool error; bool success; };
@@ -394,11 +400,16 @@ private:
     bool   m_undoInit = false;
     bool   m_undoHold = false;       // skip one TrackUndo: the library restore of an undo lands after this frame
     float  m_sidebarDragW = 0.0f;
+    float  m_askDragW = 0.0f;        // the Ask AI panel's width when its edge drag began
+    int    m_askDragFrames = 0;      // that drag's frames, those slower than a 60 Hz frame, and its longest one
+    int    m_askDragSlow = 0;        // (logged at the end)
+    float  m_askDragLongest = 0.0f;
     float  m_libraryDragH = 0.0f;
     float  m_thumbH = 0.0f;          // thumbnail height of the library cards, from the library's height
     bool   m_updateOpen = false;     // open the update popup on this frame
     // The setup guide, and the places it points at once it closes.
     bool   m_guideOpen = false;      // open the guide on this frame
+    int    m_guideStartPage = 0;     // at this page (test runs only open it elsewhere than the first)
     bool   m_guideShowing = false;   // the guide is up
     bool   m_crashNoticeDone = false;  // the previous session's end was reported (or there was nothing to report)
     bool   m_driverNoticeDone = false;   // the driver check had its one chance this session
@@ -461,13 +472,16 @@ private:
     // The Ask AI panel: its card at the window's right edge, under the page.
     float  m_askT = 0.0f;            // how far it has slid in (0..1, eased)
     ImVec2 m_askMin, m_askMax;       // the card's rectangle this frame
+    ImVec2 m_askBtnMin, m_askBtnMax; // the top bar's Ask AI button this frame
     bool   m_askLanded = false;      // fully in, and its own content (the arc, a failure) faded out: the page may show
     double m_askLoadingSince = -1.0; // the page began to load (the arc waits a moment before it shows)
     float  m_askCut = 0.0f;          // the main viewport ends here while the panel is in (0: it is not)
     bool   m_askTrimmed = false;     // the viewport is cut at m_askCut now
+    bool   m_tipTrimmed = false;     // it was cut when a tooltip widened it (SetTooltipArea)
     float  m_vpW = 0.0f, m_vpWorkW = 0.0f;   // its widths before the cut
     void   AskTrim(bool on);         // the main viewport ends at the panel's left edge (on) or at the window's (off)
     void   DrawAskCard(const UiFrameInfo& info, UiEvents& ev);   // the card, and what it shows while the page is not there
+    void   DrawAskEdge(Settings& s, const UiFrameInfo& info, UiEvents& ev, float gap, float minW, float maxW);   // its resize line
     // Presets.
     const std::vector<UserPreset>* m_presetList = nullptr;
     char   m_presetBuf[96] = {};

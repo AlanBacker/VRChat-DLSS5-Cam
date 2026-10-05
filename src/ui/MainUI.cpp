@@ -333,14 +333,18 @@ void MainUI::Draw(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Font
     const float fullW = ImGui::GetContentRegionAvail().x;
     const float contentX = ImGui::GetCursorScreenPos().x;
     m_askT = Ease(AnimateLinear(ImGui::GetID("##askSlide"), info.askOpen ? 1.0f : 0.0f, 0.22f));
-    float askW = 0.0f, askShown = 0.0f, askLeft = 0.0f;
+    float askW = 0.0f, askShown = 0.0f, askLeft = 0.0f, askMin = 0.0f, askMax = 0.0f;
     if (m_askT > 0.0f) {
-        // About a third of the window, kept between a comfortable reading width and a narrower one that still leaves
-        // the picture some room beside the sidebar.
+        // The user's width (dragged at its left edge), else about a third of the window between a comfortable reading
+        // width and a narrower one; never so wide that the picture loses its room beside the sidebar (20 em keep its
+        // readout and the library's buttons whole), never narrower than the widget can be used at. A window too small
+        // for the stored width shows it narrower and keeps it.
         const float sideNow = s.sidebarVisible ? std::max(em * 16.0f, (s.sidebarWidth > 0.0f ? s.sidebarWidth : 24.0f) * em) : 0.0f;
-        const float want = std::clamp(fullW * 0.3f, em * 20.0f, em * 28.0f);
-        const float room = fullW - sideNow - handleW - em * 14.0f - askGap;
-        askW = std::floor(std::max(em * 16.0f, std::min(want, room)));
+        const float want = s.askWidth > 0.0f ? s.askWidth * em : std::clamp(fullW * 0.3f, em * 20.0f, em * 28.0f);
+        const float room = fullW - sideNow - handleW - em * 20.0f - askGap;
+        askMin = em * 16.0f;
+        askMax = std::max(askMin, room);
+        askW = std::floor(std::clamp(want, askMin, askMax));
         askShown = (askW + askGap) * m_askT;
         // Its left edge keeps the gap from the shrinking body; before it has come in it waits beyond the window's
         // edge, its shadow too.
@@ -349,6 +353,12 @@ void MainUI::Draw(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Font
     }
     m_askCut = m_askT > 0.0f ? askLeft : 0.0f;
     AskTrim(true);
+    // Tooltips are the exception: they keep beside the pointer over the page too, which opens a hole for them.
+    SetTooltipArea([](void* user, bool whole) {
+        MainUI* ui = static_cast<MainUI*>(user);
+        if (whole) { ui->m_tipTrimmed = ui->m_askTrimmed; ui->AskTrim(false); }
+        else if (ui->m_tipTrimmed) { ui->m_tipTrimmed = false; ui->AskTrim(true); }
+    }, this);
 
     DrawTopBar(s, info, ev, fonts);
 
@@ -401,8 +411,7 @@ void MainUI::Draw(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Font
             }
             if (ImGui::IsItemDeactivated()) ev.settingsChanged = true;
             gripLit = ImGui::IsItemHovered() || ImGui::IsItemActive();
-            if (gripLit) ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
-            if (!ImGui::IsItemActive()) Tip(TR(TipSidebarDrag));
+            if (gripLit) ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);   // the cursor and the lit line say it; no tooltip
         }
         const float hov = Animate(ImGui::GetID("##sidebarHandleHover"), foldLit ? 1.0f : 0.0f, 16.0f);
         const float grip = Animate(ImGui::GetID("##sidebarGripHover"), gripLit ? 1.0f : 0.0f, 16.0f);
@@ -479,6 +488,7 @@ void MainUI::Draw(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Font
     m_askMin = ImVec2(askLeft, bodyOrigin.y);
     m_askMax = ImVec2(askLeft + askW, std::round(bodyOrigin.y + bodyH));
     DrawAskCard(info, ev);
+    DrawAskEdge(s, info, ev, askGap, askMin, askMax);
 
     DrawStatusBar(s, info, ev, fonts);
     DrawUpdatePopup(s, info, ev, fonts);
@@ -548,24 +558,92 @@ void MainUI::DrawAskCard(const UiFrameInfo& info, UiEvents& ev) {
         DrawSpinner(dl, ImVec2(c.x, top + spin * 0.5f), spin, ImGui::GetColorU32(p.accent, arcA));
         dl->AddText(nullptr, 0.0f, ImVec2(std::floor(c.x - ts.x * 0.5f), top + spin + spinGap), ImGui::GetColorU32(p.textDim, arcA), text, nullptr, wrap);
     }
-    if (failA > 0.0f) {   // why, and the way out
+    if (failA > 0.0f) {   // why, and the ways out: the documentation, or the page again (the primary one, at the right)
         const char* text = TR(AskFailed);
         const ImVec2 ts = ImGui::CalcTextSize(text, nullptr, false, wrap);
         const float iconS = IconSize(1.6f), gap = Px(10.0f), frameH = ImGui::GetFrameHeight();
-        const float btnW = ImGui::CalcTextSize(TR(AskRetry)).x + style.FramePadding.x * 2.0f;
-        const float top = std::floor(c.y - (iconS + gap + ts.y + gap * 1.6f + frameH) * 0.5f);
+        const float docsW = ImGui::CalcTextSize(TR(AskOpenDocs)).x + style.FramePadding.x * 2.0f;
+        const float retryW = ImGui::CalcTextSize(TR(AskRetry)).x + style.FramePadding.x * 2.0f;
+        const bool row = docsW + style.ItemSpacing.x + retryW <= wrap;   // side by side, else Try again above
+        const float btnsH = row ? frameH : frameH * 2.0f + style.ItemSpacing.y;
+        const float top = std::floor(c.y - (iconS + gap + ts.y + gap * 1.6f + btnsH) * 0.5f);
         DrawIcon(dl, Icon::Wifi, ImVec2(c.x, top + iconS * 0.5f), iconS, ImGui::GetColorU32(p.textDim, failA));
         dl->AddText(nullptr, 0.0f, ImVec2(std::floor(c.x - ts.x * 0.5f), top + iconS + gap), ImGui::GetColorU32(p.text, failA), text, nullptr, wrap);
         const ImVec2 back = ImGui::GetCursorScreenPos();
-        ImGui::SetCursorScreenPos(ImVec2(std::floor(c.x - btnW * 0.5f), std::floor(top + iconS + gap + ts.y + gap * 1.6f)));
+        const float y0 = std::floor(top + iconS + gap + ts.y + gap * 1.6f);
         ImGui::PushStyleVar(ImGuiStyleVar_Alpha, style.Alpha * failA);
-        if (FlatButton(TR(AskRetry), ImVec2(btnW, frameH)) && failA >= 1.0f) ev.askRetry = true;
+        if (row) {
+            const float x0 = std::floor(c.x - (docsW + style.ItemSpacing.x + retryW) * 0.5f);
+            ImGui::SetCursorScreenPos(ImVec2(x0, y0));
+            if (FlatButton(TR(AskOpenDocs), ImVec2(docsW, frameH)) && failA >= 1.0f) ev.askDocs = true;
+            ImGui::SetCursorScreenPos(ImVec2(x0 + docsW + style.ItemSpacing.x, y0));
+            if (AccentButton(TR(AskRetry), ImVec2(retryW, frameH)) && failA >= 1.0f) ev.askRetry = true;
+        } else {
+            const float bw = std::max(docsW, retryW);
+            ImGui::SetCursorScreenPos(ImVec2(std::floor(c.x - bw * 0.5f), y0));
+            if (AccentButton(TR(AskRetry), ImVec2(bw, frameH)) && failA >= 1.0f) ev.askRetry = true;
+            ImGui::SetCursorScreenPos(ImVec2(std::floor(c.x - bw * 0.5f), y0 + frameH + style.ItemSpacing.y));
+            if (FlatButton(TR(AskOpenDocs), ImVec2(bw, frameH)) && failA >= 1.0f) ev.askDocs = true;
+        }
         ImGui::PopStyleVar();
         ImGui::SetCursorScreenPos(back);
     }
     dl->PopClipRect();
     // The page may come once the card is in place, nothing else is on it and nothing covers the window.
     m_askLanded = info.askOpen && m_askT >= 1.0f && info.askState == 2 && arcA <= 0.0f && failA <= 0.0f && !FullscreenSwitching();
+}
+
+// The tooltips and popups on screen this frame (shown, not still being measured), with their corners.
+void MainUI::FloatingRects(std::vector<FloatRect>& out) const {
+    out.clear();
+    for (ImGuiWindow* w : GImGui->Windows) {
+        if (!w->Active || w->Hidden || !(w->Flags & (ImGuiWindowFlags_Tooltip | ImGuiWindowFlags_Popup))) continue;
+        out.push_back({ w->Pos, ImVec2(w->Pos.x + w->Size.x, w->Pos.y + w->Size.y), w->WindowRounding });
+    }
+}
+
+// The panel's left edge resizes it, as the sidebar's edge does: the line in the gap beside the card, always drawn so it
+// can be found and blue under the mouse, with the resize cursor; dragging it left widens the panel. The picture and
+// the sidebar make room as it moves, and the page follows each frame. The page covers the card, so the line and its
+// grip zone keep to the gap.
+void MainUI::DrawAskEdge(Settings& s, const UiFrameInfo& info, UiEvents& ev, float gap, float minW, float maxW) {
+    if (m_askT <= 0.0f || m_askMax.x <= m_askMin.x) return;
+    const Palette& p = Colors();
+    const float em = ImGui::GetFontSize();
+    const float askW = m_askMax.x - m_askMin.x;
+    const bool canResize = m_askT >= 1.0f && info.askOpen;
+    bool lit = false;
+    if (canResize) {
+        const ImVec2 back = ImGui::GetCursorScreenPos();
+        ImGui::SetCursorScreenPos(ImVec2(m_askMin.x - gap, m_askMin.y));
+        ImGui::InvisibleButton("##askResize", ImVec2(gap, m_askMax.y - m_askMin.y));
+        if (ImGui::IsItemActivated()) { m_askDragW = askW; m_askDragFrames = 0; m_askDragSlow = 0; m_askDragLongest = 0.0f; }
+        if (ImGui::IsItemActive()) {
+            const float dx = ImGui::GetMouseDragDelta(ImGuiMouseButton_Left, 0.0f).x;
+            s.askWidth = std::clamp(m_askDragW - dx, minW, maxW) / em;
+            ++m_askDragFrames;
+            if (ImGui::GetIO().DeltaTime > 1.0f / 60.0f) ++m_askDragSlow;
+            m_askDragLongest = std::max(m_askDragLongest, ImGui::GetIO().DeltaTime);
+        }
+        if (ImGui::IsItemDeactivated()) {
+            ev.settingsChanged = true;
+            Log::Info("Ask AI: panel width %.0f px (%.1f em), dragged over %d frames, %d of them over 16.7 ms, the longest %.1f ms",
+                      s.askWidth * em, s.askWidth, m_askDragFrames, m_askDragSlow, m_askDragLongest * 1000.0f);
+        }
+        lit = ImGui::IsItemHovered() || ImGui::IsItemActive();
+        if (lit) ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);   // the cursor and the lit line say it; no tooltip
+        ImGui::SetCursorScreenPos(back);
+    }
+    const float grip = Animate(ImGui::GetID("##askGripHover"), lit ? 1.0f : 0.0f, 16.0f);
+    // It comes and goes with the card, beside it.
+    ImGuiWindow* host = ImGui::GetCurrentWindow();
+    ImDrawList* dl = host->DrawList;
+    dl->PushClipRect(host->Pos, ImVec2(host->Pos.x + host->Size.x, host->Pos.y + host->Size.y), false);
+    const float w = std::max(1.0f, Px(1.0f)) + Px(2.0f) * grip;
+    const float x = m_askMin.x - Px(3.0f);
+    dl->AddRectFilled(ImVec2(x - w * 0.5f, m_askMin.y + CardRounding()), ImVec2(x + w * 0.5f, m_askMax.y - CardRounding()),
+                      Mix(p.cardBorder, p.accent, grip), w * 0.5f);
+    dl->PopClipRect();
 }
 
 bool MainUI::AskPanelRect(ImVec2& min, ImVec2& max) const {
@@ -1195,8 +1273,9 @@ std::string HostOf(const std::string& url) {
     return s;
 }
 
-// One item of the guide's pages: a bold title, a dim paragraph and an accent bar along its left.
-void GuideItem(const Fonts& fonts, const char* title, const char* text) {
+// One item of the guide's pages: a bold title, a dim paragraph and an accent bar along its left; a note, when there
+// is one, follows in a quieter line (a little smaller, in the muted grey).
+void GuideItem(const Fonts& fonts, const char* title, const char* text, const char* note = nullptr) {
     const Palette& p = Colors();
     const float em = ImGui::GetFontSize();
     ImGui::Indent(em * 0.9f);
@@ -1207,6 +1286,14 @@ void GuideItem(const Fonts& fonts, const char* title, const char* text) {
     ImGui::PushStyleColor(ImGuiCol_Text, p.textDim);
     ImGui::TextWrapped("%s", text);
     ImGui::PopStyleColor();
+    if (note) {   // a little apart from the text it qualifies, still inside the item's bar
+        ImGui::SetCursorPosY(ImGui::GetCursorPosY() + Px(2.0f));
+        ImGui::PushFont(nullptr, std::round(em * 0.92f));
+        ImGui::PushStyleColor(ImGuiCol_Text, p.muted);
+        ImGui::TextWrapped("%s", note);
+        ImGui::PopStyleColor();
+        ImGui::PopFont();
+    }
     const ImVec2 e = ImGui::GetCursorScreenPos();
     ImGui::GetWindowDrawList()->AddRectFilled(ImVec2(c.x - em * 0.6f, c.y + Px(2.0f)), ImVec2(c.x - em * 0.6f + Px(3.0f), e.y - Px(3.0f)), WithAlpha(p.accent, 0.75f), Px(1.5f));
     ImGui::Unindent(em * 0.9f);
@@ -1312,7 +1399,7 @@ void MainUI::DrawMirrorPopup(Settings& s, const UiFrameInfo& info, UiEvents& ev,
 }
 
 // A pulsing accent ring around the last item while the setup guide's pointers are lit (Spotlight is called after
-// the Setup guide and Documentation buttons and the top bar's ? button).
+// the Setup guide and Documentation buttons and the top bar's book and AI buttons).
 void MainUI::Spotlight(bool foreground) {
     const double now = ImGui::GetTime();
     if (m_spotUntil < 0.0 || now < m_spotAt || now >= m_spotUntil) return;
@@ -1333,7 +1420,8 @@ void MainUI::CloseGuide(Settings& s, UiEvents& ev, bool point) {
     if (m_updateDeferred) { m_updateDeferred = false; m_updateOpen = true; }
     if (!point) return;
     // The places the last page names light up: the sidebar shows, the About section opens and the sidebar glides
-    // to it, and a ring flashes once around the Setup guide and Documentation buttons and the ? button in the top bar.
+    // to it, and a ring flashes once around the Setup guide and Documentation buttons and the book and AI buttons in
+    // the top bar.
     s.sidebarVisible = true;
     m_searchBuf[0] = 0;
     m_openAbout = true;
@@ -1351,7 +1439,7 @@ void MainUI::DrawSetupGuide(Settings& s, const UiFrameInfo& info, UiEvents& ev, 
         m_guideAutoDone = true;
         if (!s.setupGuideSeen) m_guideOpen = true;
     }
-    if (m_guideOpen) { ImGui::OpenPopup("##guide"); m_guideOpen = false; m_guidePage = 0; m_guidePageTime = now; }
+    if (m_guideOpen) { ImGui::OpenPopup("##guide"); m_guideOpen = false; m_guidePage = m_guideStartPage; m_guideStartPage = 0; m_guidePageTime = now; }
     // Closed by a click outside or Escape: counts as seen, without the pointers.
     if (m_guideShowing && !ImGui::IsPopupOpen("##guide")) CloseGuide(s, ev, false);
     ImGuiViewport* vp = ImGui::GetMainViewport();
@@ -1361,7 +1449,7 @@ void MainUI::DrawSetupGuide(Settings& s, const UiFrameInfo& info, UiEvents& ev, 
     const ImGuiStyle& style = ImGui::GetStyle();
     const float em = ImGui::GetFontSize();
     const float w = std::max(em * 20.0f, std::min(em * 36.0f, vp->WorkSize.x - em * 4.0f));
-    const float pageH = std::max(em * 12.0f, std::min(em * 28.0f, vp->WorkSize.y - em * 11.0f));   // the longest page (the settings) whole in all four languages
+    const float pageH = std::max(em * 12.0f, std::min(em * 32.0f, vp->WorkSize.y - em * 11.0f));   // the longest page (the last, in Japanese) whole in all four languages
     constexpr int kPages = 5;
 
     ImGui::PushFont(fonts.Bold(), style.FontSizeBase * 1.15f);
@@ -1438,6 +1526,7 @@ void MainUI::DrawSetupGuide(Settings& s, const UiFrameInfo& info, UiEvents& ev, 
         title(TR(GuidePageWhere));
         GuideItem(fonts, TR(GuideWhereGuideT), TR(GuideWhereGuide));
         GuideItem(fonts, TR(GuideWhereDocsT), TR(GuideWhereDocs));
+        GuideItem(fonts, TR(GuideWhereAskT), TR(GuideWhereAsk), TR(GuideWhereAskNote));
         GuideItem(fonts, TR(GuideWhereSearchT), TR(GuideWhereSearch));
         ImGui::TextDisabled("%s", TR(GuideWhereLight));
         ImGui::Spacing(); ImGui::Spacing();
@@ -1637,7 +1726,7 @@ void MainUI::DrawTopBar(Settings& s, const UiFrameInfo& info, UiEvents& ev, cons
         ImGui::SameLine();
     }
     ImGui::SetCursorPosY(centred(frameH));
-    if (IconButton("##docs", Icon::Help, ImVec2(frameH, frameH), TR(TipDocs), ButtonKind::Plain)) ev.openDocs = true;
+    if (IconButton("##docs", Icon::Docs, ImVec2(frameH, frameH), TR(TipDocs), ButtonKind::Plain)) ev.openDocs = true;
     Spotlight(true);
     ImGui::SameLine(0.0f, style.ItemInnerSpacing.x);
     ImGui::SetCursorPosY(centred(frameH));
@@ -1650,8 +1739,11 @@ void MainUI::DrawTopBar(Settings& s, const UiFrameInfo& info, UiEvents& ev, cons
         if (onT > 0.0f) dl->AddRectFilled(at, ImVec2(at.x + frameH, at.y + frameH), WithAlpha(p.accent, 0.18f * onT), style.FrameRounding);
         if (IconButton("##ask", Icon::None, ImVec2(frameH, frameH), TR(TipAskAi), ButtonKind::Plain)) ev.askToggle = true;
         const ImVec2 bmin = ImGui::GetItemRectMin(), bmax = ImGui::GetItemRectMax();
+        m_askBtnMin = bmin;
+        m_askBtnMax = bmax;
         DrawIcon(dl, Icon::AskAi, ImVec2((bmin.x + bmax.x) * 0.5f, (bmin.y + bmax.y) * 0.5f), IconSize(),
                  Mix(p.text, Mix(p.accentHover, p.accent, p.light), onT));
+        Spotlight(true);
     }
     ImGui::SameLine();
     ImGui::SetCursorPosY(centred(frameH));
@@ -2477,7 +2569,7 @@ void MainUI::BlockMcp(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         ImGui::BeginDisabled(!info.mcpRunning);
         if (ActionButton(TR(McpOpenPage), Icon::OpenExternal, pair)) ev.mcpOpenPage = true;
         ImGui::EndDisabled();
-        if (ActionButton(TR(Documentation), Icon::Help, ImVec2(fullW, 0.0f))) ev.mcpOpenDocs = true;
+        if (ActionButton(TR(Documentation), Icon::Docs, ImVec2(fullW, 0.0f))) ev.mcpOpenDocs = true;
     }
     // The keys: one row each, then the field for a new one. A key's secret is copied when it is made and on demand.
     if (SearchMatch(TR(McpKeys), TR(TipMcpRole))) {
@@ -3089,7 +3181,7 @@ void MainUI::BlockAbout(Settings& s, const UiFrameInfo& info, UiEvents& ev, cons
     ImGui::PopTextWrapPos();
     if (ActionButton(TR(ReportIssue), Icon::Flag, ImVec2(fullW, 0.0f))) { ev.openIssueReport = true; ev.openIssueCrash = false; }
     const ImVec2 row2 = PairSize(TR(Documentation), TR(ProjectPage), fullW);
-    if (ActionButton(TR(Documentation), Icon::Help, row2)) ev.openDocs = true;
+    if (ActionButton(TR(Documentation), Icon::Docs, row2)) ev.openDocs = true;
     Spotlight(false);
     if (row2.x < fullW) ImGui::SameLine(0.0f, style.ItemSpacing.x);
     if (ActionButton(TR(ProjectPage), Icon::OpenExternal, row2)) ev.openProjectPage = true;
@@ -3183,8 +3275,7 @@ void MainUI::DrawPreview(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
             }
             if (ImGui::IsItemDeactivated()) ev.settingsChanged = true;
             gripLit = ImGui::IsItemHovered() || ImGui::IsItemActive();
-            if (gripLit) ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNS);
-            if (!ImGui::IsItemActive()) Tip(TR(TipLibraryResize));
+            if (gripLit) ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNS);   // the cursor and the lit line say it; no tooltip
         }
         const float hov = Animate(ImGui::GetID("##libraryBarHover"), foldLit ? 1.0f : 0.0f, 16.0f);
         const float grip = Animate(ImGui::GetID("##libraryGripHover"), gripLit ? 1.0f : 0.0f, 16.0f);

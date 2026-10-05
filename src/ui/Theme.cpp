@@ -835,6 +835,16 @@ void EndDropdown() {
     ImGui::PopStyleVar();
 }
 
+namespace {
+void (*g_tipArea)(void*, bool) = nullptr;
+void* g_tipAreaUser = nullptr;
+}
+
+void SetTooltipArea(void (*widen)(void* user, bool whole), void* user) {
+    g_tipArea = widen;
+    g_tipAreaUser = user;
+}
+
 void TooltipShow(ImGuiID key, const char* text) {
     if (!text || !*text) return;
     static ImGuiID lastKey = 0;
@@ -855,6 +865,7 @@ void TooltipShow(ImGuiID key, const char* text) {
     ImGui::PushStyleVar(ImGuiStyleVar_Alpha, style.Alpha * Ease(t));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, Px(8.0f));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(Px(10.0f), Px(7.0f)));
+    if (g_tipArea) g_tipArea(g_tipAreaUser, true);   // placed beside the pointer, wherever it is in the window
     if (ImGui::BeginTooltip()) {
         if (more) ImGui::Spacing();
         else WindowShadow();
@@ -863,6 +874,7 @@ void TooltipShow(ImGuiID key, const char* text) {
         ImGui::PopTextWrapPos();
         ImGui::EndTooltip();
     }
+    if (g_tipArea) g_tipArea(g_tipAreaUser, false);
     ImGui::PopStyleVar(3);
 }
 
@@ -890,7 +902,7 @@ ImWchar Glyph(Icon icon) {
     case Icon::Fullscreen:     return lucide::maximize;
     case Icon::ExitFullscreen: return lucide::minimize;
     case Icon::History:        return lucide::history;
-    case Icon::Help:           return lucide::circle_question_mark;
+    case Icon::Docs:           return lucide::book_question_mark;
     case Icon::Save:           return lucide::save;
     case Icon::Edit:           return lucide::pencil;
     case Icon::Plus:           return lucide::plus;
@@ -960,7 +972,7 @@ ImWchar Glyph(Icon icon) {
     case Icon::HardDrive:      return lucide::hard_drive;
     case Icon::PanelLeft:      return lucide::panel_left;
     case Icon::PanelRight:     return lucide::panel_right;
-    case Icon::AskAi:          return lucide::message_circle_question_mark;
+    case Icon::AskAi:          return lucide::message_square_ai;
     default:                   return 0;
     }
 }

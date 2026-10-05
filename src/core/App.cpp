@@ -13,6 +13,7 @@
 #include <shellapi.h>
 #include <shobjidl.h>
 #include <timeapi.h>
+#include <windowsx.h>
 #include <wrl/client.h>
 #include <algorithm>
 #include <cstring>
@@ -256,6 +257,7 @@ CommandLine CommandLine::Parse() {
             else if (cl.error.empty()) cl.error = "--ask expects <seconds>";
         }
         else if (a == L"--ask-no-runtime") cl.askNoRuntime = true;
+        else if (a == L"--ask-break-load") cl.askBreakLoad = true;
         else if (a == L"--dry-open") cl.dryOpen = true;
         else if (!a.empty() && a[0] != L'-' && cl.open.empty() && FileExists(a)) cl.open = a;   // "Open with"
         else if (cl.error.empty()) cl.error = "unknown option " + WideToUtf8(a);
@@ -2378,6 +2380,7 @@ void App::HandleEvents(ui::UiEvents& ev) {
     if (ev.captureNow) CaptureNow();
     if (ev.askToggle) { if (m_askOpen && m_askClosing < 0.0) CloseAsk(); else OpenAsk(true); }
     if (ev.askRetry) { Log::Info("Ask AI: Try again"); m_ask.Retry(); }
+    if (ev.askDocs) { Log::Info("Ask AI: Open documentation from the card"); OpenPath(DocsUrl()); }
     if (ev.browseRuntime) m_pendingBrowseRuntime = true;
     if (ev.browseDepthModel) m_pendingBrowseDepthModel = true;
     if (ev.openImage) m_pendingBrowseImage = true;
@@ -2490,10 +2493,7 @@ void App::HandleEvents(ui::UiEvents& ev) {
         const Updater::Status us = m_updater.Get();
         OpenPath(us.release.pageUrl.empty() ? std::wstring(kProjectUrl) + L"/releases" : Utf8ToWide(us.release.pageUrl));
     }
-    if (ev.openLicenses) {
-        const std::wstring local = JoinPath(m_exeDir, L"THIRD_PARTY_NOTICES.md");
-        OpenPath(FileExists(local) ? local : std::wstring(kProjectUrl) + L"/blob/main/THIRD_PARTY_NOTICES.md");
-    }
+    if (ev.openLicenses) OpenPath(NoticesPath());
     if (ev.languageChanged) {
         I18n::SetLanguage(I18n::FromSetting(m_settings.language));
         m_fontsDirty = true;
@@ -3760,6 +3760,27 @@ void App::OpenPath(const std::wstring& path) {
 
 // ------------------------------------------------------------------------------------------
 
+// The third-party notices in the interface's language where they are translated: next to the executable (both
+// editions ship them there), else in its docs folder, else the English ones; without the files, the same on GitHub.
+std::wstring App::NoticesPath() const {
+    const wchar_t* lang = nullptr;
+    switch (I18n::Current()) {
+        case Lang::Chinese:  lang = L"zh-CN"; break;
+        case Lang::Japanese: lang = L"ja"; break;
+        case Lang::Korean:   lang = L"ko"; break;
+        default: break;
+    }
+    if (lang) {
+        const std::wstring name = std::wstring(L"THIRD_PARTY_NOTICES.") + lang + L".md";
+        for (const std::wstring& path : { JoinPath(m_exeDir, name), JoinPath(JoinPath(m_exeDir, L"docs"), name) })
+            if (FileExists(path)) return path;
+    }
+    const std::wstring english = JoinPath(m_exeDir, L"THIRD_PARTY_NOTICES.md");
+    if (!lang && FileExists(english)) return english;
+    if (lang) return std::wstring(kProjectUrl) + L"/blob/main/docs/THIRD_PARTY_NOTICES." + lang + L".md";
+    return std::wstring(kProjectUrl) + L"/blob/main/THIRD_PARTY_NOTICES.md";
+}
+
 // ------------------------------------------------------------------------------------------ Ask AI
 
 // The interface's theme as the page should show it: the one the interface is going to (it crossfades on its own).
@@ -3794,7 +3815,16 @@ AskPageConfig App::AskConfig() const {
     c.disclaimer = TR(AskDisclaimer);
     c.suggestions = TR(AskSuggestions);
     c.questions = { TR(AskQuestion1), TR(AskQuestion2), TR(AskQuestion3) };
+    c.noticeOff = TR(AskNoticeOff);
+    c.noticeBusy = TR(AskNoticeBusy);
+    c.noticeNet = TR(AskNoticeNet);
+    c.noticeFull = TR(AskNoticeFull);
+    c.openDocs = TR(AskOpenDocs);
+    c.retry = TR(AskRetry);
+    c.newChat = TR(AskNewChat);
+    c.close = TR(Close);
     c.test = !m_cli.askAt.empty();
+    c.breakLoad = m_cli.askBreakLoad;
     return c;
 }
 
@@ -3808,6 +3838,7 @@ uint32_t AskBackground(bool light) { return light ? 0xFFFFFFu : 0x191C22u; }
 void App::OpenAsk(bool byUser) {
     if (m_askOpen) {
         if (m_askClosing >= 0.0) {   // opened again while its page was fading out
+            Log::Info("Ask AI: panel opened again while it faded out");
             m_askClosing = -1.0;
             if (m_ask.Visible()) m_ask.Show(byUser);
         }
@@ -3876,6 +3907,23 @@ void App::TickAsk() {
         case AskPanel::Event::Fullscreen: Log::Info("Ask AI: F11 in the page"); m_ui.ToggleFullscreen(); break;
         case AskPanel::Event::Answered:   Log::Info("Ask AI: answer (%s)", e.text.c_str()); break;
         case AskPanel::Event::Log:        Log::Info("Ask AI: %s", e.text.c_str()); break;
+        case AskPanel::Event::Docs:       Log::Info("Ask AI: Open documentation from the page"); OpenPath(DocsUrl()); break;
+        }
+    }
+    if (!m_cli.askAt.empty()) {   // test runs: where the button is, for a script that clicks it
+        ImVec2 bmin, bmax;
+        m_ui.AskButtonRect(bmin, bmax);
+        if (bmin.x != m_askBtnLogged.x || bmin.y != m_askBtnLogged.y) {
+            m_askBtnLogged = bmin;
+            Log::Info("Ask AI: trace button %d,%d-%d,%d", (int)bmin.x, (int)bmin.y, (int)bmax.x, (int)bmax.y);
+        }
+        ImVec2 pmin, pmax;
+        const bool landed = m_ui.AskPanelRect(pmin, pmax);
+        const RECT pr{ landed ? (LONG)std::lround(pmin.x) : 0, landed ? (LONG)std::lround(pmin.y) : 0,
+                       landed ? (LONG)std::lround(pmax.x) : 0, landed ? (LONG)std::lround(pmax.y) : 0 };
+        if (!EqualRect(&pr, &m_askPanelLogged) && !ImGui::IsMouseDown(ImGuiMouseButton_Left)) {   // not each frame of a drag
+            m_askPanelLogged = pr;
+            if (landed) Log::Info("Ask AI: trace panel %d,%d-%d,%d", (int)pr.left, (int)pr.top, (int)pr.right, (int)pr.bottom);
         }
     }
     if (!m_ask.Created()) return;
@@ -3902,11 +3950,28 @@ void App::TickAsk() {
         m_ask.BeginHide();
         m_ask.Hide();
     }
+    // The interface's tooltips (and any popup) that lie over the page show through holes in it.
+    m_askHoles.clear();
+    if (m_ask.Visible()) {
+        std::vector<ui::MainUI::FloatRect> rects;
+        m_ui.FloatingRects(rects);
+        for (const ui::MainUI::FloatRect& f : rects) {
+            RECT r{ (LONG)std::floor(f.min.x), (LONG)std::floor(f.min.y), (LONG)std::ceil(f.max.x), (LONG)std::ceil(f.max.y) }, in{};
+            if (!IntersectRect(&in, &r, &m_askRect)) continue;
+            OffsetRect(&r, -m_askRect.left, -m_askRect.top);
+            m_askHoles.push_back({ r, (int)std::lround(f.rounding) });
+        }
+    }
+    m_ask.SetHoles(m_askHoles);
 }
 
 // --ask-at: open, toggle, hide (the button's way), close (the page's own close control), esc (a key press in the
-// page), link (an answer's first link), q:<question>, theme:<0|1|2>, lang:<auto|en|zh|ja|ko>, min:<seconds> (the
-// window minimised that long, never activated), size:<W>x<H> (the window's client size).
+// page), link (an answer's first link), fail:<status|net|off> (questions answered with that failure in the page,
+// nothing sent), note:<docs|retry|fresh|close> (that notice button pressed), guide:<1..5> (the setup guide at that
+// page), spot (its pointers flash), pin (posted pointer messages rest where they are put: WM_MOUSELEAVE is dropped,
+// since the real pointer is elsewhere on a desktop someone works at), q:<question>, theme:<0|1|2>,
+// lang:<auto|en|zh|ja|ko>, min:<seconds> (the window minimised that long, never activated), size:<W>x<H> (the
+// window's client size).
 void App::RunAskAction(const std::string& action) {
     Log::Info("Ask AI: test step %s", action.c_str());
     if (action == "open") OpenAsk(true);
@@ -3915,6 +3980,11 @@ void App::RunAskAction(const std::string& action) {
     else if (action == "close") m_ask.Test("close");
     else if (action == "esc") { if (!m_ask.SendKey(VK_ESCAPE)) Log::Warn("Ask AI: no page window to send Esc to"); }
     else if (action == "link") m_ask.Test("link");
+    else if (action.rfind("fail:", 0) == 0) m_ask.Test(action.c_str());   // every question meets that failure, nothing is sent
+    else if (action.rfind("note:", 0) == 0) m_ask.Test(action.c_str());   // a button on the failed-question notice
+    else if (action.rfind("guide:", 0) == 0) m_ui.TestGuide(std::clamp(atoi(action.c_str() + 6) - 1, 0, 4));
+    else if (action == "spot") m_ui.TestSpotlight();
+    else if (action == "pin") m_askPin = true;   // a pointer posted into the window rests there as a real one does
     else if (action.rfind("q:", 0) == 0) m_ask.Ask(action.substr(2));
     else if (action.rfind("min:", 0) == 0) {   // minimised for that long, then restored by a timer
         ShowWindow(m_hwnd, SW_SHOWMINNOACTIVE);
@@ -3946,6 +4016,7 @@ void App::AskShotBegin() {
     m_askShotWaiting = false;
     if (!m_ask.Visible()) return;
     m_heldShotRect = m_askRect;
+    m_heldShotHoles = m_askHoles;
     m_askShotWaiting = true;
     if (!m_ask.CapturePng([this](std::vector<uint8_t>&& png) { m_askShotPng = std::move(png); m_askShotWaiting = false; })) {
         m_askShotWaiting = false;
@@ -3963,8 +4034,21 @@ void App::AskShotFinish(bool force) {
     if (!m_askShotPng.empty() && AskPanel::DecodePng(m_askShotPng, rgba, w, h)) {
         const int x0 = std::max(0, (int)m_heldShotRect.left), y0 = std::max(0, (int)m_heldShotRect.top);
         const int cw = std::min(w, (int)job.width - x0), ch = std::min(h, (int)job.height - y0);
-        for (int y = 0; y < ch; ++y)
-            memcpy(&job.pixels[(size_t)(y0 + y) * job.rowPitch + (size_t)x0 * 4], &rgba[(size_t)y * (size_t)w * 4], (size_t)std::max(0, cw) * 4);
+        for (int y = 0; y < ch; ++y) {
+            // Row by row, leaving out the holes, where the interface's own picture (a tooltip) was on the screen.
+            int x = 0;
+            while (x < cw) {
+                int end = cw, skip = 0;
+                for (const AskPanel::Hole& hole : m_heldShotHoles) {
+                    if (y < hole.r.top || y >= hole.r.bottom || hole.r.right <= x) continue;
+                    if (hole.r.left <= x) { skip = std::max(skip, (int)hole.r.right - x); end = x; }
+                    else end = std::min(end, (int)hole.r.left);
+                }
+                if (skip > 0) { x += skip; continue; }
+                memcpy(&job.pixels[(size_t)(y0 + y) * job.rowPitch + (size_t)(x0 + x) * 4], &rgba[((size_t)y * (size_t)w + (size_t)x) * 4], (size_t)(end - x) * 4);
+                x = end;
+            }
+        }
         Log::Info("Screenshot: the Ask AI page (%dx%d) copied in at %d,%d", w, h, x0, y0);
     } else {
         Log::Warn("Screenshot: without the Ask AI page (its picture did not come)");
@@ -3990,14 +4074,58 @@ LRESULT CALLBACK App::WndProcThunk(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
     return DefWindowProcW(hwnd, msg, wParam, lParam);
 }
 
+namespace {
+bool IsMouseButtonDown(UINT msg) {
+    return msg == WM_LBUTTONDOWN || msg == WM_RBUTTONDOWN || msg == WM_MBUTTONDOWN || msg == WM_XBUTTONDOWN
+        || msg == WM_LBUTTONDBLCLK || msg == WM_RBUTTONDBLCLK || msg == WM_MBUTTONDBLCLK || msg == WM_XBUTTONDBLCLK;
+}
+bool IsMouseButtonMessage(UINT msg) {
+    return IsMouseButtonDown(msg) || msg == WM_LBUTTONUP || msg == WM_RBUTTONUP || msg == WM_MBUTTONUP || msg == WM_XBUTTONUP;
+}
+// Key-up events for every key ImGui holds down, queued like the real ones.
+void ReleaseImGuiKeys() {
+    ImGuiIO& io = ImGui::GetIO();
+    for (int k = ImGuiKey_NamedKey_BEGIN; k < ImGuiKey_MouseLeft; ++k)   // the keyboard's and the gamepad's keys
+        if (ImGui::IsKeyDown((ImGuiKey)k)) io.AddKeyEvent((ImGuiKey)k, false);
+    for (ImGuiKey mod : { ImGuiMod_Ctrl, ImGuiMod_Shift, ImGuiMod_Alt, ImGuiMod_Super })
+        io.AddKeyEvent(mod, false);
+}
+}   // namespace
+
 LRESULT App::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    if (m_askPin && msg == WM_MOUSELEAVE) return 0;
+    if (!m_cli.askAt.empty() && m_imguiReady) {   // test runs: the keyboard's moves and the clicks, against ImGui's pointer
+        if (msg == WM_SETFOCUS || msg == WM_KILLFOCUS)
+            Log::Info("Ask AI: trace %s", msg == WM_SETFOCUS ? "keyboard to the window" : "keyboard away from the window");
+        if (msg == WM_LBUTTONDOWN) {
+            const ImVec2 mp = ImGui::GetIO().MousePos;
+            const std::string where = ImGui::IsMousePosValid(&mp) ? StrPrintf("at %d,%d", (int)mp.x, (int)mp.y) : std::string("unknown");
+            Log::Info("Ask AI: trace click at %d,%d, the interface's pointer %s", (int)(short)LOWORD(lParam), (int)(short)HIWORD(lParam), where.c_str());
+        }
+    }
     if ((msg >= WM_MOUSEFIRST && msg <= WM_MOUSELAST) || (msg >= WM_KEYFIRST && msg <= WM_KEYLAST) || msg == WM_MOUSELEAVE
         || msg == WM_SETFOCUS || msg == WM_KILLFOCUS || msg == WM_SIZE || msg == WM_DROPFILES)
         m_lastInputTime = NowSeconds();   // the interface draws at full rate for a moment after the user's hand
+    if (m_imguiReady && IsMouseButtonMessage(msg)) {
+        // A click carries its own position: the interface may not have seen the pointer move there (a pointer that
+        // rested while another window had it), and a click without a position is lost.
+        ImGui::GetIO().AddMousePosEvent((float)GET_X_LPARAM(lParam), (float)GET_Y_LPARAM(lParam));
+        if (IsMouseButtonDown(msg)) m_askFocusNext = false;   // a click elsewhere keeps the keyboard where it went
+    }
     // A click on the interface takes the keyboard back from the Ask AI page (Windows leaves it with the page).
-    if ((msg == WM_LBUTTONDOWN || msg == WM_RBUTTONDOWN || msg == WM_MBUTTONDOWN || msg == WM_XBUTTONDOWN) && m_ask.Created() && GetFocus() != hwnd)
+    if (IsMouseButtonDown(msg) && m_ask.Created() && GetFocus() != hwnd)
         SetFocus(hwnd);
-    if (m_imguiReady && ImGui_ImplWin32_WndProcHandler(hwnd, msg, wParam, lParam)) return 1;
+    if (m_imguiReady) {
+        // The keyboard moving to the Ask AI page inside this window is not the window losing focus: ImGui would
+        // forget the pointer every frame (no hover, no tooltips, the next resting click lost). Only the keys it
+        // holds are let go. Leaving the window for another program is the loss, told through WM_ACTIVATE.
+        if (msg == WM_KILLFOCUS && wParam && IsChild(hwnd, (HWND)wParam)) {
+            ReleaseImGuiKeys();
+            return DefWindowProcW(hwnd, msg, wParam, lParam);
+        }
+        if (msg == WM_ACTIVATE) ImGui::GetIO().AddFocusEvent(LOWORD(wParam) != WA_INACTIVE);
+        if (ImGui_ImplWin32_WndProcHandler(hwnd, msg, wParam, lParam)) return 1;
+    }
     switch (msg) {
     case WM_SIZE:
         if (wParam == SIZE_MINIMIZED) {

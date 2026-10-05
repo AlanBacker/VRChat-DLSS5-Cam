@@ -134,6 +134,7 @@ struct Settings {
     bool libraryVisible = true;        // the media library strip under the preview
     float sidebarWidth = 0.0f;         // in font-size units, 0 = default (24); dragged at the sidebar handle
     float libraryHeight = 0.0f;        // in font-size units, 0 = default; dragged at the library's top edge
+    float askWidth = 0.0f;             // the Ask AI panel's width in font-size units, 0 = default (a third of the window); dragged at its left edge
     float toolRowX = -1.0f, toolRowY = -1.0f;   // centre of the turn/mirror/crop tool row as fractions of the picture area; -1 = bottom centre
     int   toolRowDock = 0;             // the tool row tucked away at an edge: 0 shown, 1 left, 2 right, 3 top, 4 bottom
     bool showAdvanced = true;          // advanced controls in the sidebar

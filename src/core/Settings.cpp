@@ -168,6 +168,7 @@ bool Settings::ApplyText(const std::string& data, bool wholeFile) {
     r.Get("libraryVisible", libraryVisible);
     r.Get("sidebarWidth", sidebarWidth);
     r.Get("libraryHeight", libraryHeight);
+    r.Get("askWidth", askWidth);
     r.Get("toolRowX", toolRowX);
     r.Get("toolRowY", toolRowY);
     r.Get("toolRowDock", toolRowDock);
@@ -434,6 +435,7 @@ std::string Settings::Text() const {
     w.Put("libraryVisible", libraryVisible);
     w.Put("sidebarWidth", sidebarWidth);
     w.Put("libraryHeight", libraryHeight);
+    w.Put("askWidth", askWidth);
     w.Put("toolRowX", toolRowX);
     w.Put("toolRowY", toolRowY);
     w.Put("toolRowDock", toolRowDock);
@@ -492,6 +494,7 @@ void Settings::Clamp() {
     nrPreset = std::clamp(nrPreset, 0, 3);
     if (sidebarWidth != 0.0f) sidebarWidth = std::clamp(sidebarWidth, 16.0f, 48.0f);
     if (libraryHeight != 0.0f) libraryHeight = std::clamp(libraryHeight, 7.0f, 30.0f);
+    if (askWidth != 0.0f) askWidth = std::clamp(askWidth, 16.0f, 80.0f);
     toolRowX = toolRowX < 0.0f ? -1.0f : std::clamp(toolRowX, 0.0f, 1.0f);   // either one below zero = the default place
     toolRowY = toolRowY < 0.0f ? -1.0f : std::clamp(toolRowY, 0.0f, 1.0f);   // (each key is applied, and clamped, on its own)
     toolRowDock = std::clamp(toolRowDock, 0, 4);

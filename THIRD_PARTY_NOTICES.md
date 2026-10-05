@@ -113,7 +113,7 @@ and the static loader library (`WebView2LoaderStatic.lib`) are compiled into the
 uses them to host the documentation's AI Q&A in the Ask AI panel. The WebView2 Runtime itself is
 part of Windows and is not shipped. The license text is shipped in `licenses/WebView2-LICENSE.txt`.
 
-The AI Q&A in that panel is Mintlify's assistant widget. It is not included: the panel loads it
+The AI Q&A in that panel is Mintlify's AI Q&A widget. It is not included: the panel loads it
 from Mintlify's servers (`widget.mintlify.com`) when it is first opened, and only then.
 
 ## Depth Anything V2 Small
@@ -129,7 +129,11 @@ The license text is shipped in `licenses/DepthAnythingV2-LICENSE-Apache-2.0.txt`
 
 Lucide (https://lucide.dev), ISC License; the icons derived from Feather are also under the
 MIT License. The interface draws its line icons from a subset of the Lucide icon font, compiled
-into the application (`src/ui/IconFont.inc`, made by `tools/make_icon_font.py`). The license:
+into the application (`src/ui/IconFont.inc`, made by `tools/make_icon_font.py`). Two glyphs in it are
+put together by this project from Lucide icons and stay under the same licenses: a book with a
+question mark (the book icon with the question mark of circle-question-mark, which is help-circle in
+the Feather list below) and a speech bubble with the letters AI (the message-square icon with the two
+letters drawn in Lucide's stroke). The license:
 
 ```
 ISC License

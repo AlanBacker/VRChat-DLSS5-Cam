@@ -67,11 +67,14 @@ bool BeginDropdown(const char* label, const char* preview, ImGuiComboFlags flags
 void EndDropdown();
 void Tooltip(const char* text);                                                // tooltip of the last item, fading in
 void TooltipShow(ImGuiID key, const char* text);                               // shows it now; "key" tells one tooltip from another
+// Tooltips are placed at the pointer on the whole window, even where a viewport is cut short (the Ask AI page, a
+// window of its own, opens a hole where one lies over it): the cut's owner widens it around each tooltip's placing.
+void SetTooltipArea(void (*widen)(void* user, bool whole), void* user);
 
 // Icons: the Lucide line icons from the icon font (sharp at every size), the media controls drawn as filled shapes --
 enum class Icon { Play, Pause, StepBack, StepForward, ChevronDown, ChevronUp, ChevronLeft, ChevronRight,
                   Reset, Refresh, OpenExternal, Close, Lock, Undo, Redo, Fullscreen, ExitFullscreen, History,
-                  Help, Save, Edit, Plus, Search, RotateLeft, RotateRight, FlipH, FlipV, Crop,
+                  Docs, Save, Edit, Plus, Search, RotateLeft, RotateRight, FlipH, FlipV, Crop,
                   Image, Film, Broadcast, Sparkle, Download, Layers, Grid, Eye, Plug, Gauge, Info, Folder, Check,
                   Camera, Warning, Stop, Sliders, CircleCheck, CircleX, ImagePlus, Languages, Trash, Keyboard, Monitor,
                   Wand, Settings, Compare, ZoomIn, ZoomOut, Terminal, Key, Upload, Copy, Images, Video, Cpu, Loader,

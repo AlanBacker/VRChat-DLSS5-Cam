@@ -59,6 +59,7 @@ struct CommandLine {
     std::string  mcpKey;                  // --mcp-key <key>: the key the bridge presents
     std::vector<std::pair<double, std::string>> askAt;   // --ask-at <seconds> <action> / --ask <seconds> (development: drives the Ask AI panel)
     bool         askNoRuntime = false;    // --ask-no-runtime (development: as if the WebView2 Runtime were missing)
+    bool         askBreakLoad = false;    // --ask-break-load (development: the widget fails to load, the card says so)
     bool         dryOpen = false;         // --dry-open (development: pages and links are logged, not opened)
     std::string  error;                   // the first unknown option
 
@@ -297,6 +298,7 @@ private:
     void OpenAsk(bool byUser);
     void CloseAsk();
     void AskInBrowser(const std::string& why);
+    std::wstring NoticesPath() const;   // the third-party notices in the interface's language (a file, else on GitHub)
     void TickAsk();                        // once a frame after the interface: the page's events, its place, its look
     void RunAskAction(const std::string& action);   // --ask-at
     AskPageConfig AskConfig() const;
@@ -568,6 +570,11 @@ private:
     std::string   m_askLook;               // the language and theme the page was last given
     RECT          m_askRect{};             // where the page is (client pixels)
     size_t        m_nextAskAction = 0;
+    std::vector<AskPanel::Hole> m_askHoles;
+    RECT m_askPanelLogged{};   // test runs: the panel's place as last logged   // this frame's holes in the page (tooltips over it), in its pixels
+    std::vector<AskPanel::Hole> m_heldShotHoles;
+    bool          m_askPin = false;        // test step pin: a posted pointer stays where it was put (WM_MOUSELEAVE dropped)
+    ImVec2        m_askBtnLogged{ -1.0f, -1.0f };   // test runs: the Ask AI button's place last written to the log
     std::optional<CaptureJob> m_heldShot;  // a screenshot waiting for the page's picture
     double        m_heldShotSince = 0.0;
     RECT          m_heldShotRect{};

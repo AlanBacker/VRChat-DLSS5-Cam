@@ -253,6 +253,7 @@ const std::vector<McpSettingInfo> kSettings = {
     { "libraryVisible", "window", "bool", "", "The media library strip is shown." },
     { "sidebarWidth", "window", "float", "0 or 16..48", "Sidebar width in font-size units; 0 = default." },
     { "libraryHeight", "window", "float", "0 or 7..30", "Library height in font-size units; 0 = default." },
+    { "askWidth", "window", "float", "0 or 16..80", "Width of the Ask AI panel in font-size units; 0 = default. The window may show it narrower." },
     { "toolRowX", "window", "float", "-1 or 0..1", "Position of the turn/mirror/crop tool row; -1 = bottom centre." },
     { "toolRowY", "window", "float", "-1 or 0..1", "Position of the tool row." },
     { "toolRowDock", "window", "enum", "0 = shown, 1 = left, 2 = right, 3 = top, 4 = bottom", "The tool row tucked away at an edge." },

@@ -59,6 +59,7 @@ jobs:
             Copy-Item -Recurse "$build/Release/models" "$out/models"
             Copy-Item -Recurse "$build/Release/licenses" "$out/licenses"
             Copy-Item README.md, LICENSE, THIRD_PARTY_NOTICES.md $out
+            Copy-Item docs/THIRD_PARTY_NOTICES.zh-CN.md, docs/THIRD_PARTY_NOTICES.ja.md, docs/THIRD_PARTY_NOTICES.ko.md $out
             Copy-Item "$build/ngx_sdk/NVIDIA_LICENSE.txt" $out
             Copy-Item -Recurse docs "$out/docs"
           }
