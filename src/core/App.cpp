@@ -259,6 +259,7 @@ CommandLine CommandLine::Parse() {
         else if (a == L"--ask-no-runtime") cl.askNoRuntime = true;
         else if (a == L"--ask-break-load") cl.askBreakLoad = true;
         else if (a == L"--dry-open") cl.dryOpen = true;
+        else if (a == L"--frame-trace") cl.frameTrace = true;
         else if (!a.empty() && a[0] != L'-' && cl.open.empty() && FileExists(a)) cl.open = a;   // "Open with"
         else if (cl.error.empty()) cl.error = "unknown option " + WideToUtf8(a);
     }
@@ -697,6 +698,8 @@ void App::ApplyDpi(float scale) {
 }
 
 void App::Shutdown() {
+    if (m_askDrag.joinable()) m_askDrag.join();
+    WriteFrameTrace();
     AskShotFinish(true);
     m_ask.Destroy();   // its browser processes end with it
     StopMcp();
@@ -1977,7 +1980,9 @@ void App::Frame() {
     }
     if (m_pendingResize) {
         m_pendingResize = false;
-        m_device.Resize(m_pendingWidth, m_pendingHeight);
+        const double t0 = NowSeconds();
+        m_device.Resize(m_pendingWidth, m_pendingHeight, m_sizing);
+        m_traceResizeMs += (NowSeconds() - t0) * 1000.0;
     }
     if (m_fontsDirty || !m_fonts.Built()) {
         m_fontsDirty = false;
@@ -1987,8 +1992,11 @@ void App::Frame() {
     PollScanner();
     UpdateStoryboard();
 
+    const double tWait = NowSeconds();
+    m_device.WaitForSwapChain();   // a frame begins when the screen can take it: the newest input, one frame of latency
     ID3D12GraphicsCommandList* cmd = m_device.BeginFrame();
     if (!cmd) { m_inFrame = false; return; }
+    const double tBegun = NowSeconds();
     m_atlas.Upload(cmd, m_device.Ui());
     const DisplayView display = m_pipeline.AcquireDisplay(m_device.Ui());
     m_pipeline.StatusSnapshot(m_status);
@@ -2175,11 +2183,15 @@ void App::Frame() {
     info.lastSavedKnown = m_lastSavedKnown;
 
     ui::UiEvents ev;
+    const double tDraw = NowSeconds();
     m_ui.Draw(m_settings, info, ev, m_fonts);
     DrainMcp(info, ev);
     McpJobsTick();
     HandleEvents(ev);
+    const double tTick = NowSeconds();
+    m_ask.traceBoundsMs = m_ask.traceHolesMs = 0.0;
     TickAsk();
+    const double tTicked = NowSeconds();
     UpdateTitleBar();
     ImGui::Render();
 
@@ -2201,7 +2213,32 @@ void App::Frame() {
     Device::Barrier(cmd, backBuffer, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT);
     m_device.TimerEnd(cmd, GpuTimer::Ui);
 
+    const double tPresent = NowSeconds();
     const UINT64 uiFence = m_device.EndFrame(m_settings.vsync);
+    if (m_cli.frameTrace && m_trace.size() < 200000) {
+        const double tEnd = NowSeconds();
+        RECT cr{};
+        GetClientRect(m_hwnd, &cr);
+        TraceRow r{};
+        r.t = frameStart - m_startTime;
+        r.gap = m_traceLast > 0.0 ? (float)((frameStart - m_traceLast) * 1000.0) : 0.0f;
+        r.wait = (float)((tBegun - tWait) * 1000.0);
+        r.draw = (float)((tTick - tDraw) * 1000.0);
+        r.tick = (float)((tTicked - tTick) * 1000.0);
+        r.bounds = (float)m_ask.traceBoundsMs;
+        r.holes = (float)m_ask.traceHolesMs;
+        r.render = (float)((tPresent - tTicked) * 1000.0);
+        r.present = (float)((tEnd - tPresent) * 1000.0);
+        r.resize = (float)m_traceResizeMs;
+        r.panelW = m_ask.Visible() ? (int)(m_askRect.right - m_askRect.left) : 0;
+        r.clientW = (int)(cr.right - cr.left);
+        r.cause = (uint8_t)m_frameCause;
+        r.sizing = m_sizing ? 1 : 0;
+        r.web = m_ask.Visible() ? 1 : 0;
+        m_trace.push_back(r);
+        m_traceLast = frameStart;
+        m_traceResizeMs = 0.0;
+    }
     m_pipeline.ReleaseDisplay(uiFence);
     if (m_device.ScreenshotPending()) m_screenshotFence = uiFence;
 
@@ -2296,7 +2333,7 @@ void App::RunCommandLineActions() {
         }
     }
     // The Ask AI panel's test steps at their times.
-    while (m_nextAskAction < m_cli.askAt.size() && elapsed >= m_cli.askAt[m_nextAskAction].first)
+    while (!m_askNested && m_nextAskAction < m_cli.askAt.size() && elapsed >= m_cli.askAt[m_nextAskAction].first)
         RunAskAction(m_cli.askAt[m_nextAskAction++].second);
     // Screenshots at their times, one at a time.
     if (m_nextScreenshot < m_cli.screenshots.size() && m_pendingScreenshot.empty() && !m_device.ScreenshotPending() && !m_heldShot &&
@@ -3940,7 +3977,16 @@ void App::TickAsk() {
     if (m_askOpen && m_askClosing < 0.0 && m_ask.GetState() == AskPanel::State::Ready && m_ui.AskPanelRect(mn, mx)) {
         const RECT r{ (LONG)std::lround(mn.x), (LONG)std::lround(mn.y), (LONG)std::lround(mx.x), (LONG)std::lround(mx.y) };
         m_askRect = r;
-        m_ask.SetBounds(r);
+        // The page's window is as large as the screen the window is on (see AskPanel.cpp): resizing the card, or the
+        // window with it, never resizes the page's window.
+        int screenW = 0, screenH = 0;
+        MONITORINFO mi{};
+        mi.cbSize = sizeof(mi);
+        if (GetMonitorInfoW(MonitorFromWindow(m_hwnd, MONITOR_DEFAULTTONEAREST), &mi)) {
+            screenW = (int)(mi.rcMonitor.right - mi.rcMonitor.left);
+            screenH = (int)(mi.rcMonitor.bottom - mi.rcMonitor.top);
+        }
+        m_ask.Place(r, screenW, screenH, (int)std::lround(ui::CardRounding()));
         if (!m_ask.Visible()) {
             m_ask.Show(m_askFocusNext, m_askInstant);
             m_askFocusNext = false;
@@ -3997,6 +4043,71 @@ void App::RunAskAction(const std::string& action) {
         AdjustWindowRectExForDpi(&rc, WS_OVERLAPPEDWINDOW, FALSE, 0, GetDpiForWindow(m_hwnd));
         SetWindowPos(m_hwnd, nullptr, 0, 0, rc.right - rc.left, rc.bottom - rc.top, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
     }
+    else if (action.rfind("edrag:", 0) == 0 || action.rfind("wsize:", 0) == 0) {
+        // edrag:<dx>:<seconds> drags the panel's edge by dx pixels with posted pointer messages, at a hand's pace (a
+        // move each millisecond); wsize:<dx>:<seconds> widens the window by dx as the frame's sizing loop does it
+        // (WM_ENTERSIZEMOVE, a new size for each millisecond's move, the messages between them, WM_EXITSIZEMOVE).
+        const int dx = atoi(action.c_str() + 6);
+        const char* colon = strchr(action.c_str() + 6, ':');
+        const double secs = std::clamp(colon ? atof(colon + 1) : 1.0, 0.05, 20.0);
+        constexpr double kPi = 3.14159265358979;
+        if (action[0] == 'e') {
+            ImVec2 mn, mx;
+            if (!m_ui.AskPanelRect(mn, mx)) { Log::Warn("Ask AI: no panel to drag"); return; }
+            if (m_askDrag.joinable()) m_askDrag.join();
+            const int x0 = (int)std::lround(mn.x - 4.0f * m_dpiScale), y = (int)std::lround((mn.y + mx.y) * 0.5f);
+            const HWND hwnd = m_hwnd;
+            Log::Info("Ask AI: trace edge drag from %d,%d by %d px over %.2f s", x0, y, dx, secs);
+            m_askDrag = std::thread([hwnd, x0, y, dx, secs]() {
+                auto at = [](int px, int py) { return (LPARAM)(((unsigned)(py & 0xFFFF) << 16) | (unsigned)(px & 0xFFFF)); };
+                timeBeginPeriod(1);
+                PostMessageW(hwnd, WM_MOUSEMOVE, 0, at(x0, y));
+                Sleep(80);
+                PostMessageW(hwnd, WM_LBUTTONDOWN, MK_LBUTTON, at(x0, y));
+                Sleep(30);
+                const double t0 = NowSeconds();
+                int last = x0;
+                for (;;) {
+                    const double u = std::min(1.0, (NowSeconds() - t0) / secs);
+                    const int x = x0 + (int)std::lround(dx * (0.5 - 0.5 * std::cos(u * kPi)));
+                    if (x != last) { PostMessageW(hwnd, WM_MOUSEMOVE, MK_LBUTTON, at(x, y)); last = x; }
+                    if (u >= 1.0) break;
+                    Sleep(1);
+                }
+                Sleep(40);
+                PostMessageW(hwnd, WM_LBUTTONUP, 0, at(last, y));
+                timeEndPeriod(1);
+            });
+        } else {
+            RECT wr{};
+            GetWindowRect(m_hwnd, &wr);
+            const int w0 = wr.right - wr.left, h0 = wr.bottom - wr.top;
+            Log::Info("Ask AI: trace window sizing from %d by %d px over %.2f s", w0, dx, secs);
+            m_askNested = true;
+            SendMessageW(m_hwnd, WM_ENTERSIZEMOVE, 0, 0);
+            timeBeginPeriod(1);
+            const double t0 = NowSeconds();
+            int last = w0, sizes = 0;
+            bool quit = false;
+            for (;;) {
+                const double u = std::min(1.0, (NowSeconds() - t0) / secs);
+                const int w = w0 + (int)std::lround(dx * (0.5 - 0.5 * std::cos(u * kPi)));
+                if (w != last) { SetWindowPos(m_hwnd, nullptr, 0, 0, w, h0, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE); last = w; ++sizes; }
+                MSG msg;
+                while (PeekMessageW(&msg, nullptr, 0, 0, PM_REMOVE)) {
+                    if (msg.message == WM_QUIT) { PostQuitMessage((int)msg.wParam); quit = true; break; }
+                    TranslateMessage(&msg);
+                    DispatchMessageW(&msg);
+                }
+                if (quit || u >= 1.0) break;
+                MsgWaitForMultipleObjects(0, nullptr, FALSE, 1, QS_ALLINPUT);
+            }
+            timeEndPeriod(1);
+            SendMessageW(m_hwnd, WM_EXITSIZEMOVE, 0, 0);
+            m_askNested = false;
+            Log::Info("Ask AI: trace window sizing done, %d sizes", sizes);
+        }
+    }
     else if (action.rfind("theme:", 0) == 0) m_settings.theme = std::clamp(atoi(action.c_str() + 6), 0, 2);
     else if (action.rfind("lang:", 0) == 0) {
         const int l = LanguageCode(Utf8ToWide(action.substr(5)));
@@ -4009,6 +4120,21 @@ void App::RunAskAction(const std::string& action) {
     else Log::Warn("Ask AI: unknown test step %s", action.c_str());
 }
 
+// --frame-trace: the frames' timings, written once at the end (frame-trace.csv in the data folder).
+void App::WriteFrameTrace() {
+    if (!m_cli.frameTrace || m_trace.empty()) return;
+    const std::wstring path = JoinPath(m_appDataDir, L"frame-trace.csv");
+    FILE* f = _wfopen(path.c_str(), L"wb");
+    if (!f) return;
+    fputs("t,gap,wait,draw,tick,bounds,holes,render,present,resize,panelW,clientW,cause,sizing,web\n", f);
+    for (const TraceRow& r : m_trace)
+        fprintf(f, "%.4f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%d,%d,%d,%d,%d\n", r.t, r.gap, r.wait, r.draw, r.tick, r.bounds,
+                r.holes, r.render, r.present, r.resize, r.panelW, r.clientW, (int)r.cause, (int)r.sizing, (int)r.web);
+    fclose(f);
+    Log::Info("Frame trace: %zu frames in %s", m_trace.size(), WideToUtf8(path).c_str());
+    m_trace.clear();
+}
+
 // A screenshot is being recorded: the page is a window of its own, so its picture is asked for separately and
 // copied into the screenshot where the page is (AskShotFinish).
 void App::AskShotBegin() {
@@ -4017,6 +4143,9 @@ void App::AskShotBegin() {
     if (!m_ask.Visible()) return;
     m_heldShotRect = m_askRect;
     m_heldShotHoles = m_askHoles;
+    m_heldShotCanvas = m_ask.Canvas();
+    m_heldShotShown = m_ask.Shown();
+    m_heldShotRadius = m_ask.ShownRadius();
     m_askShotWaiting = true;
     if (!m_ask.CapturePng([this](std::vector<uint8_t>&& png) { m_askShotPng = std::move(png); m_askShotWaiting = false; })) {
         m_askShotWaiting = false;
@@ -4032,24 +4161,40 @@ void App::AskShotFinish(bool force) {
     std::vector<uint8_t> rgba;
     int w = 0, h = 0;
     if (!m_askShotPng.empty() && AskPanel::DecodePng(m_askShotPng, rgba, w, h)) {
-        const int x0 = std::max(0, (int)m_heldShotRect.left), y0 = std::max(0, (int)m_heldShotRect.top);
-        const int cw = std::min(w, (int)job.width - x0), ch = std::min(h, (int)job.height - y0);
-        for (int y = 0; y < ch; ++y) {
-            // Row by row, leaving out the holes, where the interface's own picture (a tooltip) was on the screen.
-            int x = 0;
-            while (x < cw) {
-                int end = cw, skip = 0;
+        // Only the part of the page's window that was on screen (the card inside its hairline, its corners rounded),
+        // row by row, leaving out the holes, where the interface's own picture (a tooltip) was. The window's picture
+        // starts at its own top-left corner.
+        const RECT s = m_heldShotShown, cv = m_heldShotCanvas, card = m_heldShotRect;
+        const int rr = m_heldShotRadius;
+        for (int y = std::max(0, (int)s.top); y < std::min((int)job.height, (int)s.bottom); ++y) {
+            const int sy = y - (int)cv.top;
+            if (sy < 0 || sy >= h) continue;
+            int inset = 0;
+            const int edge = std::min(y - (int)s.top, (int)s.bottom - 1 - y);
+            if (rr > 0 && edge < rr) {
+                const float d = (float)rr - (float)edge - 0.5f;
+                inset = (int)std::ceil((float)rr - std::sqrt(std::max(0.0f, (float)(rr * rr) - d * d)));
+            }
+            int x = std::max(0, (int)s.left + inset);
+            const int xEnd = std::min((int)job.width, (int)s.right - inset);
+            while (x < xEnd) {
+                int end = xEnd, skip = 0;
                 for (const AskPanel::Hole& hole : m_heldShotHoles) {
-                    if (y < hole.r.top || y >= hole.r.bottom || hole.r.right <= x) continue;
-                    if (hole.r.left <= x) { skip = std::max(skip, (int)hole.r.right - x); end = x; }
-                    else end = std::min(end, (int)hole.r.left);
+                    RECT hr = hole.r;
+                    OffsetRect(&hr, card.left, card.top);
+                    if (y < hr.top || y >= hr.bottom || hr.right <= x) continue;
+                    if (hr.left <= x) { skip = std::max(skip, (int)hr.right - x); end = x; }
+                    else end = std::min(end, (int)hr.left);
                 }
                 if (skip > 0) { x += skip; continue; }
-                memcpy(&job.pixels[(size_t)(y0 + y) * job.rowPitch + (size_t)(x0 + x) * 4], &rgba[((size_t)y * (size_t)w + (size_t)x) * 4], (size_t)(end - x) * 4);
+                const int sx = x - (int)cv.left;
+                if (sx >= 0 && sx + (end - x) <= w)
+                    memcpy(&job.pixels[(size_t)y * job.rowPitch + (size_t)x * 4], &rgba[((size_t)sy * (size_t)w + (size_t)sx) * 4], (size_t)(end - x) * 4);
                 x = end;
             }
         }
-        Log::Info("Screenshot: the Ask AI page (%dx%d) copied in at %d,%d", w, h, x0, y0);
+        Log::Info("Screenshot: the Ask AI page (%dx%d of its %dx%d window) copied in at %d,%d", (int)(s.right - s.left),
+                  (int)(s.bottom - s.top), w, h, (int)s.left, (int)s.top);
     } else {
         Log::Warn("Screenshot: without the Ask AI page (its picture did not come)");
     }
@@ -4136,8 +4281,12 @@ LRESULT App::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             m_minimized = false;
             if (m_deviceReady && !(m_headless && m_cli.width > 0)) {
                 const UINT w = LOWORD(lParam), h = HIWORD(lParam);
-                if (m_inFrame) { m_pendingResize = true; m_pendingWidth = w; m_pendingHeight = h; }
-                else m_device.Resize(w, h);
+                if (m_inFrame || m_sizing) { m_pendingResize = true; m_pendingWidth = w; m_pendingHeight = h; }
+                else { const double t0 = NowSeconds(); m_device.Resize(w, h); m_traceResizeMs += (NowSeconds() - t0) * 1000.0; }
+                // While the window is resized by hand, Windows runs a loop of its own and the interface would only be
+                // drawn on the sizing timer, the last picture stretched over the new size in between: each new size is
+                // drawn at once instead (Frame() resizes the buffers first, and the display's rate paces it).
+                if (m_sizing && !m_inFrame) { m_frameCause = 2; Frame(); m_frameCause = 0; }
             }
         }
         return 0;
@@ -4146,14 +4295,27 @@ LRESULT App::WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         break;
     case WM_ENTERSIZEMOVE:
         m_sizing = true;
-        SetTimer(hwnd, kSizeTimer, 16, nullptr);
+        SetTimer(hwnd, kSizeTimer, USER_TIMER_MINIMUM, nullptr);
         return 0;
     case WM_EXITSIZEMOVE:
         m_sizing = false;
         KillTimer(hwnd, kSizeTimer);
+        if (m_deviceReady && !m_minimized && !(m_headless && m_cli.width > 0)) {
+            // the buffers were as large as the screen while the window was resized: the window's size again
+            RECT rc{};
+            GetClientRect(hwnd, &rc);
+            m_pendingResize = true;
+            m_pendingWidth = (UINT)(rc.right - rc.left);
+            m_pendingHeight = (UINT)(rc.bottom - rc.top);
+            m_lastInputTime = NowSeconds();
+        }
         return 0;
+    case WM_ERASEBKGND:
+        if (m_deviceReady) return 1;   // the swap chain covers the whole client area; no fill under it on each resize
+        break;
     case WM_TIMER:
-        if (wParam == kSizeTimer && m_sizing && !m_minimized) Frame();
+        // the timer keeps the interface moving while the pointer rests mid-resize (no new size to draw)
+        if (wParam == kSizeTimer && m_sizing && !m_minimized && NowSeconds() - m_lastFrameTime > 0.008) { m_frameCause = 1; Frame(); m_frameCause = 0; }
         if (wParam == kAskRestoreTimer) { KillTimer(hwnd, kAskRestoreTimer); Log::Info("Ask AI: test window restored"); ShowWindow(hwnd, SW_SHOWNOACTIVATE); }
         return 0;
     case WM_HOTKEY:

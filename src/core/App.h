@@ -61,6 +61,7 @@ struct CommandLine {
     bool         askNoRuntime = false;    // --ask-no-runtime (development: as if the WebView2 Runtime were missing)
     bool         askBreakLoad = false;    // --ask-break-load (development: the widget fails to load, the card says so)
     bool         dryOpen = false;         // --dry-open (development: pages and links are logged, not opened)
+    bool         frameTrace = false;      // --frame-trace (development: each frame's timings to frame-trace.csv at the end)
     std::string  error;                   // the first unknown option
 
     static CommandLine Parse();
@@ -570,14 +571,29 @@ private:
     std::string   m_askLook;               // the language and theme the page was last given
     RECT          m_askRect{};             // where the page is (client pixels)
     size_t        m_nextAskAction = 0;
-    std::vector<AskPanel::Hole> m_askHoles;
-    RECT m_askPanelLogged{};   // test runs: the panel's place as last logged   // this frame's holes in the page (tooltips over it), in its pixels
+    std::vector<AskPanel::Hole> m_askHoles;   // this frame's holes in the page (tooltips over it), in its pixels
+    RECT          m_askPanelLogged{};      // test runs: the panel's place as last logged
+    bool          m_askNested = false;     // test runs: a step runs its own message loop (no further steps meanwhile)
+    std::thread   m_askDrag;               // test runs: posts a drag's pointer messages (edrag)
+    // --frame-trace: per frame, when it began and where its time went (ms), the panel's width, what drew it
+    struct TraceRow {
+        double t; float gap, wait, draw, tick, bounds, holes, render, present, resize;
+        int panelW, clientW; uint8_t cause, sizing, web;
+    };
+    std::vector<TraceRow> m_trace;
+    double        m_traceLast = 0.0;
+    double        m_traceResizeMs = 0.0;   // Device::Resize outside a frame since the last one
+    int           m_frameCause = 0;        // 0 the main loop, 1 the sizing timer, 2 WM_SIZE while sizing
+    void          WriteFrameTrace();
     std::vector<AskPanel::Hole> m_heldShotHoles;
     bool          m_askPin = false;        // test step pin: a posted pointer stays where it was put (WM_MOUSELEAVE dropped)
     ImVec2        m_askBtnLogged{ -1.0f, -1.0f };   // test runs: the Ask AI button's place last written to the log
     std::optional<CaptureJob> m_heldShot;  // a screenshot waiting for the page's picture
     double        m_heldShotSince = 0.0;
     RECT          m_heldShotRect{};
+    RECT          m_heldShotCanvas{};      // the page's window then, the part of it on screen, and that part's corner
+    RECT          m_heldShotShown{};
+    int           m_heldShotRadius = 0;
     bool          m_askShotWaiting = false;
     std::vector<uint8_t> m_askShotPng;
     bool          m_mainShown = false;     // the main window has been shown (after its first frame)

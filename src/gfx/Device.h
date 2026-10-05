@@ -191,6 +191,7 @@ public:
     ID3D12GraphicsCommandList* BeginFrame() { return m_ui.BeginFrame(); }
     ID3D12GraphicsCommandList* SubmitAndContinue() { return m_ui.SubmitAndContinue(); }
     UINT64 EndFrame(bool vsync);            // execute, present, signal; returns the frame's fence value
+    void   WaitForSwapChain();              // until the swap chain can take a frame (at most one waits to be shown)
     UINT   FrameIndex() const { return m_ui.FrameIndex(); }
     UINT64 FrameNumber() const { return m_ui.FrameNumber(); }
     double TimerMs(GpuTimer t) const { return m_ui.TimerMs(t); }
@@ -198,7 +199,10 @@ public:
     void   TimerEnd(ID3D12GraphicsCommandList* cmd, GpuTimer t) { m_ui.TimerEnd(cmd, t); }
 
     // Back buffer ------------------------------------------------------------
-    bool Resize(UINT width, UINT height);
+    // The window's new client size. "live": the window is being resized by hand, and the buffers are not resized each
+    // time but made as large as the screen once, of which the part the size of the window is shown; the next resize
+    // that is not live gives them the window's size again.
+    bool Resize(UINT width, UINT height, bool live = false);
     UINT BackBufferWidth() const { return m_width; }
     UINT BackBufferHeight() const { return m_height; }
     ID3D12Resource* CurrentBackBuffer() const { return m_backBuffers[m_backBufferIndex].Get(); }
@@ -245,6 +249,10 @@ private:
     GpuContext                    m_ui;
     GpuContext                    m_proc;
     ComPtr<IDXGISwapChain3>       m_swapChain;
+    UINT                          m_swapFlags = 0;
+    UINT                          m_bufW = 0, m_bufH = 0;  // the buffers' size (m_width x m_height of it is shown)
+    bool                          m_sourceSize = true;     // showing part of the buffers works (SetSourceSize)
+    HANDLE                        m_frameWait = nullptr;   // the swap chain's frame latency object (none: not supported)
     ComPtr<ID3D11Device>          m_device11;
     ComPtr<ID3D11DeviceContext>   m_context11;
     ComPtr<ID3D11On12Device>      m_on12;

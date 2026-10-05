@@ -59,7 +59,10 @@ public:
                std::string& error);
     void Retry();                                         // after a failure: the page again (the control again if it is gone)
     void Configure(const AskPageConfig& cfg, uint32_t background);   // the theme or the language changed
-    void SetBounds(const RECT& r);                        // in the parent's client pixels
+    // Where the page goes: over "card" (the parent's client pixels), its window as large as "canvasW" x "canvasH" with
+    // its bottom-right corner at the card's, so that resizing the card never resizes the window (see Place()). "radius"
+    // is the card's corner radius in pixels.
+    void Place(const RECT& card, int canvasW, int canvasH, int radius);
     void Show(bool focus, bool instant = false);          // on screen; the page fades its content in (instant: at once)
     void BeginHide();                                     // the page fades its content out (Hide() after kHideFade)
     void Hide();                                          // off the screen
@@ -74,9 +77,12 @@ public:
         RECT r; int radius;
         bool operator==(const Hole& o) const { return EqualRect(&r, &o.r) && radius == o.radius; }
     };
-    // Holes in the page's window where the interface's tooltips and popups lie over it, in the page's pixels (from its
-    // top-left corner); none: the whole page shows.
+    // Holes in the page where the interface's tooltips and popups lie over it, in pixels from the card's top-left
+    // corner; none: the whole card shows the page.
     void SetHoles(const std::vector<Hole>& holes);
+    RECT Canvas() const { return m_bounds; }              // the page's window (the parent's client pixels)
+    RECT Shown() const { return m_shownClient; }          // the part of it on screen (the card inside its hairline)
+    int  ShownRadius() const { return m_shownRadius; }    // and that part's corner radius
     bool CapturePng(std::function<void(std::vector<uint8_t>&&)> done);   // the page as shown, as a PNG (empty: failed)
     void Destroy();
     std::vector<Event> Poll();                            // once a frame: what happened since, and the waits that ran out
@@ -87,6 +93,7 @@ public:
     bool  Created() const { return m_controller != nullptr; }
 
     static constexpr double kHideFade = 0.13;            // the page's fade-out (120 ms) and a frame
+    double traceBoundsMs = 0.0, traceHolesMs = 0.0;       // --frame-trace: time in put_Bounds and SetWindowRgn (added up)
 
 private:
     void OnEnvironment(HRESULT hr, ICoreWebView2Environment* env, unsigned gen);
@@ -100,6 +107,9 @@ private:
     std::string ConfigJson() const;
     void ApplyBackground();
     void FocusBack();
+    HWND RegionHost();
+    void ApplyRegion();
+    void SendSize();
     void Push(Event::Type type, std::string text = std::string()) { m_events.push_back({ type, std::move(text) }); }
 
     HWND m_parent = nullptr;
@@ -119,8 +129,19 @@ private:
     bool          m_reload = false;     // the page's process ended: the page opens again at the next Poll()
     std::vector<std::string> m_queued;  // messages that wait for the page's script
     std::vector<Event> m_events;
-    std::vector<Hole> m_holes;          // the holes the page's window has now
-    HWND          m_holeHost = nullptr; // the window they were cut in
+    std::vector<Hole> m_holes;          // the holes the interface asks for
+    HWND          m_holeHost = nullptr; // the window that hosts the page in this process (its region is cut)
+    RECT          m_card{};             // the card this frame and the one before (the parent's client pixels)
+    RECT          m_cardBefore{};
+    bool          m_cardKnown = false;
+    int           m_radius = 0;
+    int           m_sizeW = 0, m_sizeH = 0;   // the card's size as told to the page (0: not yet)
+    bool          m_sizeSent = false;
+    RECT          m_shownClient{};      // the region as last set: its rectangle (client pixels), corner, holes
+    int           m_shownRadius = 0;
+    RECT          m_rgnRect{};
+    POINT         m_rgnOrigin{};
+    std::vector<Hole> m_rgnHoles;
     unsigned      m_generation = 0;     // Destroy() makes the callbacks of an earlier control fall silent
 };
 

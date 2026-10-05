@@ -1,8 +1,17 @@
 // VRChat DLSS5 Cam - the Ask AI panel (see AskPanel.h).
 //
 // The control is hidden while the page and Mintlify's widget start; the program draws the panel's card and a turning
-// arc meanwhile. The page paints the same card behind the widget (its corners, hairline and shadow match the program's
-// cards), so the moment the control appears changes nothing; the widget's panel then fades in on the program's curve.
+// arc meanwhile. The page's background is the card's colour and the program keeps drawing the card's hairline, corners
+// and shadow around it, so the moment the control appears changes nothing; the widget's panel then fades in on the
+// program's curve.
+//
+// Resizing. A browser window that changes size shows its last picture, drawn for the old size and pinned at its
+// top-left corner, until the page has drawn itself again, a few frames later: dragging the panel's edge made the whole
+// page, the send button at its bottom-right corner included, shake by as much as the edge moved in those frames. So
+// the page's window never changes size while it is on screen. It is as large as the screen, its bottom-right corner at
+// the card's, and only the part over the card shows (a window region, set with each frame of the interface's own).
+// The page lays itself out to the card's size at that corner: what is near the bottom-right corner stays where it is,
+// and the rest follows within a frame or two, inside the card's edge.
 #include "AskPanel.h"
 
 #include "Json.h"
@@ -123,17 +132,17 @@ void FilterMenu(ICoreWebView2ContextMenuRequestedEventArgs* args) {
 }
 
 // ------------------------------------------------------------------------------------------------ the page
-// The page's own look: the window's colour behind a card like the program's (radius, hairline, the shadow in its
-// corners), the same colours as the panel the program draws while the page loads.
+// The page's own look: the card's colour (the program draws the card's edge around the part of the page that shows),
+// and the notice over a question that could not be answered. The page's window is larger than the card (see the top
+// of this file): "body" is the card, at the window's bottom-right corner and of the card's size, and every fixed
+// element of the widget is placed in it (contain: layout), as it was in the whole page when the page was the card.
 const char kPageCss[] = R"vdc(
 :root{color-scheme:dark;--vdc-win:#0F1014;--vdc-card:#191C22;--vdc-border:#262A33;--vdc-shadow:rgba(0,0,0,.34);--vdc-hair:1px;--vdc-r:10px;--vdc-ease:cubic-bezier(.25,.6,.4,1);
 --vdc-text:#E8EAF0;--vdc-dim:#969CAC;--vdc-ctl:#252932;--vdc-ctl-h:#2F343F;--vdc-ctl-a:#3A404E;--vdc-acc:#5C6CF5;--vdc-acc-h:#7281FF;--vdc-acc-a:#4C5BDE;--vdc-warn:#FFB847;--vdc-lift:rgba(0,0,0,.45)}
 :root[data-theme=light]{color-scheme:light;--vdc-win:#F1F3F7;--vdc-card:#FFFFFF;--vdc-border:#DFE2E9;--vdc-shadow:rgba(22,28,50,.22);
 --vdc-text:#1B1E25;--vdc-dim:#666D7D;--vdc-ctl:#EEF0F5;--vdc-ctl-h:#E4E7EE;--vdc-ctl-a:#D6DAE4;--vdc-acc:#4658E6;--vdc-acc-h:#5C6DF2;--vdc-acc-a:#3848CC;--vdc-warn:#C27A08;--vdc-lift:rgba(22,28,50,.16)}
-html,body{margin:0;width:100%;height:100%;overflow:hidden}
-html{background:var(--vdc-win);transition:background-color .3s var(--vdc-ease)}
-body{font-family:var(--vdc-font,system-ui);-webkit-user-select:none;user-select:none}
-.card{position:fixed;inset:0;border-radius:var(--vdc-r);background:var(--vdc-card);box-shadow:inset 0 0 0 var(--vdc-hair) var(--vdc-border),0 2px 8px var(--vdc-shadow);transition:background-color .3s var(--vdc-ease),box-shadow .3s var(--vdc-ease)}
+html{margin:0;width:100%;height:100%;overflow:hidden;background:var(--vdc-card);transition:background-color .3s var(--vdc-ease)}
+body{position:fixed!important;left:auto!important;top:auto!important;right:0!important;bottom:0!important;width:var(--vdc-w,100vw)!important;height:var(--vdc-h,100vh)!important;margin:0!important;overflow:hidden!important;contain:layout;font-family:var(--vdc-font,system-ui);-webkit-user-select:none;user-select:none}
 #vdc-note{position:fixed;left:12px;right:12px;bottom:140px;z-index:20;box-sizing:border-box;display:flex;align-items:flex-start;gap:10px;padding:12px 8px 12px 14px;border-radius:8px;background:var(--vdc-card);color:var(--vdc-text);box-shadow:inset 0 0 0 var(--vdc-hair) var(--vdc-border),0 6px 20px var(--vdc-lift);font:14px/20px var(--vdc-font,system-ui);opacity:0;transform:translateY(6px);visibility:hidden;pointer-events:none;transition:opacity .12s cubic-bezier(.32,0,.67,0),transform .12s cubic-bezier(.32,0,.67,0),visibility 0s linear .12s,background-color .3s var(--vdc-ease),color .3s var(--vdc-ease),box-shadow .3s var(--vdc-ease)}
 :root:not([data-vdc-away]) #vdc-note.on{opacity:1;transform:none;visibility:visible;pointer-events:auto;transition:opacity .28s cubic-bezier(.18,1,.56,1),transform .28s cubic-bezier(.18,1,.56,1),visibility 0s,background-color .3s var(--vdc-ease),color .3s var(--vdc-ease),box-shadow .3s var(--vdc-ease)}
 #vdc-note .i{flex:none;display:flex;align-items:center;height:20px;color:var(--vdc-warn);transition:color .3s var(--vdc-ease)}
@@ -150,13 +159,13 @@ body{font-family:var(--vdc-font,system-ui);-webkit-user-select:none;user-select:
 #vdc-note .x{flex:none;display:flex;align-items:center;justify-content:center;width:24px;height:24px;margin-top:-2px;padding:0;border-radius:6px;background:transparent;color:var(--vdc-dim)}
 #vdc-note .x:hover{background:var(--vdc-ctl-h);color:var(--vdc-text)}
 #vdc-note button:focus-visible{box-shadow:0 0 0 2px var(--vdc-acc)}
-@media (prefers-reduced-motion:reduce){html,.card,#vdc-note,:root:not([data-vdc-away]) #vdc-note.on{transition:none}}
+@media (prefers-reduced-motion:reduce){html,#vdc-note,:root:not([data-vdc-away]) #vdc-note.on{transition:none}}
 )vdc";
 
 // Put into the widget's (closed) shadow root. Its stylesheet is all in cascade layers, so these plain rules win
-// without !important. The colours are the program's palette; the panel fills the page edge to edge (no inset, no
-// shadow of its own: the page's card is the program's), draws the hairline inside its edge, and fades in and out on
-// the program's curves instead of sliding in from the side.
+// without !important. The colours are the program's palette; the panel fills the card edge to edge (no inset, no
+// shadow or hairline of its own: the card's are the program's), and fades in and out on the program's curves instead
+// of sliding in from the side.
 const char kShadowCss[] = R"vdc(
 :host{
 --assistant-background-gray:light-dark(#FFFFFF,#191C22);
@@ -179,12 +188,11 @@ const char kShadowCss[] = R"vdc(
 }
 .assistant-panel-viewport{padding:0}
 [data-mintlify-assistant-panel]{width:100%;max-width:none;height:100%;box-shadow:none;transform:none;opacity:0;transition:opacity .12s cubic-bezier(.32,0,.67,0),background-color .3s cubic-bezier(.25,.6,.4,1),color .3s cubic-bezier(.25,.6,.4,1)}
-[data-mintlify-assistant-panel]::after{content:"";position:absolute;inset:0;border:var(--vdc-hair,1px) solid var(--assistant-border-gray);border-radius:inherit;pointer-events:none;z-index:2147483647;transition:border-color .3s cubic-bezier(.25,.6,.4,1)}
 :host([data-vdc-shown]) [data-mintlify-assistant-panel]:not([data-starting-style]):not([data-ending-style]){opacity:1;transition:opacity .28s cubic-bezier(.18,1,.56,1),background-color .3s cubic-bezier(.25,.6,.4,1),color .3s cubic-bezier(.25,.6,.4,1)}
 :host([data-vdc-theming]) *,:host([data-vdc-theming]) *::before,:host([data-vdc-theming]) *::after{transition-property:background-color,border-color,color,fill,stroke,outline-color;transition-duration:.3s;transition-timing-function:cubic-bezier(.25,.6,.4,1)}
 :host([data-vdc-instant]) [data-mintlify-assistant-panel]{transition:none!important}
 :host([data-vdc-note]) [data-mintlify-assistant-panel] [role=alert]{display:none}
-@media (prefers-reduced-motion:reduce){[data-mintlify-assistant-panel],[data-mintlify-assistant-panel]::after{transition:none!important}}
+@media (prefers-reduced-motion:reduce){[data-mintlify-assistant-panel]{transition:none!important}}
 )vdc";
 
 // The page's script: starts the widget (drawn open, its panel docked over the whole page), keeps its shadow root to
@@ -204,8 +212,17 @@ const char kPageJs[] = R"vdc(
   function log(t) { post({ type: 'log', text: String(t).slice(0, 300) }); }
   function settle(p) { return Promise.resolve(p).catch(function (e) { log('widget: ' + ((e && e.message) || e)); }); }
 
-  /* the hairline is one device pixel, as the program's; the font is the interface's */
-  function hair() { doc.style.setProperty('--vdc-hair', (1 / (window.devicePixelRatio || 1)) + 'px'); }
+  /* the card's size, from the program in device pixels (the page's window is larger, see "body"); the notice's
+     hairline is one device pixel, as the program's; the font is the interface's */
+  var cardW = 0, cardH = 0;
+  function hair() {
+    var r = window.devicePixelRatio || 1;
+    doc.style.setProperty('--vdc-hair', (1 / r) + 'px');
+    if (cardW > 0 && cardH > 0) {
+      doc.style.setProperty('--vdc-w', (cardW / r) + 'px');
+      doc.style.setProperty('--vdc-h', (cardH / r) + 'px');
+    }
+  }
   hair();
   window.addEventListener('resize', hair);
   doc.style.setProperty('--vdc-font', C.font || 'system-ui');
@@ -275,15 +292,16 @@ const char kPageJs[] = R"vdc(
     b.addEventListener('click', fn);
     return b;
   }
-  function place() {   /* just above the composer: the outermost box around its input that is still a small part of the page */
+  function place() {   /* just above the composer: the outermost box around its input that is still a small part of the card */
     if (!note) return;
-    var h = window.innerHeight, p = panel(), el = root && root.querySelector('[data-mintlify-assistant-panel] textarea'), y = 0;
+    var box = document.body.getBoundingClientRect(), h = box.height, p = panel(), y = 0;
+    var el = root && root.querySelector('[data-mintlify-assistant-panel] textarea');
     for (var i = 0; el && i < 8; i++) {
       var up = el.parentElement;
       if (!up || up === p || up.getBoundingClientRect().height > h * 0.45) break;
       el = up;
     }
-    if (el) y = el.getBoundingClientRect().top;
+    if (el) y = el.getBoundingClientRect().top - box.top;
     note.style.bottom = (y > 40 && y < h ? Math.round(h - y + 8) : 140) + 'px';
   }
   function notice(kind, status) {
@@ -463,6 +481,7 @@ const char kPageJs[] = R"vdc(
     else if (m.type === 'hide') hide();
     else if (m.type === 'focus') focus();
     else if (m.type === 'look') theme(!!m.light);
+    else if (m.type === 'size') { cardW = +m.w || 0; cardH = +m.h || 0; hair(); if (noteKind) place(); }
     else if (m.type === 'ask') { if (inited) settle(api.ask(String(m.q || ''), { source: 'app', open: true, focus: false })); }
     else if (m.type === 'test') test(String(m.what || ''));
   });
@@ -882,7 +901,7 @@ std::string AskPanel::PageHtml() const {
     h += ConfigJson();
     h += ";</script><script>";
     h += kPageJs;
-    h += "</script></head><body><div class=\"card\"></div></body></html>";
+    h += "</script></head><body></body></html>";
     return h;
 }
 
@@ -892,6 +911,8 @@ void AskPanel::OnMessage(const std::string& text) {
     const std::string type = m.Str("type");
     if (type == "hello") {
         m_pageAlive = true;
+        m_sizeSent = false;
+        SendSize();
         std::vector<std::string> queued;
         queued.swap(m_queued);
         for (const std::string& q : queued) Post(q);
@@ -945,10 +966,39 @@ void AskPanel::Configure(const AskPageConfig& cfg, uint32_t background) {
     if (look) Post(Json::Obj().Set("type", "look").Set("light", cfg.light).Dump());
 }
 
-void AskPanel::SetBounds(const RECT& r) {
-    if (EqualRect(&r, &m_bounds)) return;
-    m_bounds = r;
-    if (m_controller) m_controller->put_Bounds(r);
+// The page's window keeps its size while it is on screen (see the top of this file): as large as the screen it is
+// on, or the card if that is larger, it only grows while shown; hidden, it takes the size of the screen it is on now.
+// Moving it (the window resized, the card with it) is cheap and immediate. Should the window that hosts the page in
+// this process not be found, the region cannot be cut, and the page's window is the card itself, as it once was.
+void AskPanel::Place(const RECT& card, int canvasW, int canvasH, int radius) {
+    const int cw = (int)(card.right - card.left), ch = (int)(card.bottom - card.top);
+    if (cw <= 0 || ch <= 0) return;
+    int w = std::max(canvasW, cw), h = std::max(canvasH, ch);
+    if (m_visible) {
+        w = std::max(w, (int)(m_bounds.right - m_bounds.left));
+        h = std::max(h, (int)(m_bounds.bottom - m_bounds.top));
+    }
+    if (!RegionHost()) { w = cw; h = ch; }
+    const RECT canvas{ card.right - w, card.bottom - h, card.right, card.bottom };
+    m_cardBefore = m_cardKnown ? m_card : card;
+    m_card = card;
+    m_cardKnown = true;
+    m_radius = radius;
+    if (!EqualRect(&canvas, &m_bounds)) {
+        m_bounds = canvas;
+        const double t0 = NowSeconds();
+        if (m_controller) m_controller->put_Bounds(canvas);
+        traceBoundsMs += (NowSeconds() - t0) * 1000.0;
+    }
+    if (cw != m_sizeW || ch != m_sizeH) { m_sizeW = cw; m_sizeH = ch; m_sizeSent = false; }
+    SendSize();
+    ApplyRegion();
+}
+
+void AskPanel::SendSize() {   // the card's size, for the page's layout (device pixels; the page divides)
+    if (m_sizeSent || !m_view || !m_pageAlive || m_sizeW <= 0 || m_sizeH <= 0) return;
+    m_sizeSent = true;
+    m_view->PostWebMessageAsJson(Utf8ToWide(StrPrintf("{\"type\":\"size\",\"w\":%d,\"h\":%d}", m_sizeW, m_sizeH)).c_str());
 }
 
 void AskPanel::Show(bool focus, bool instant) {
@@ -974,6 +1024,7 @@ void AskPanel::Hide() {
     if (!m_controller) return;
     FocusBack();
     if (m_visible) { m_controller->put_IsVisible(FALSE); m_visible = false; }
+    m_cardKnown = false;
 }
 
 void AskPanel::Focus() {
@@ -1017,34 +1068,61 @@ void AskPanel::NotifyMoved() {
 }
 
 // The page is a window of its own over the interface, so a tooltip of the interface that reaches over it would be
-// hidden. Where one does, the window that hosts the page in this process gets a hole (a window region), and the
-// interface's own picture, with the tooltip, shows through it; the page's content stays where it is around it.
+// hidden. Where one does, the page's window gets a hole, and the interface's own picture, with the tooltip, shows
+// through it; the page's content stays where it is around it.
 void AskPanel::SetHoles(const std::vector<Hole>& holes) {
-    HWND host = nullptr;
-    if (m_controller && m_parent) {
-        for (HWND w = FindWindowExW(m_parent, nullptr, L"Chrome_WidgetWin_0", nullptr); w; w = FindWindowExW(m_parent, w, L"Chrome_WidgetWin_0", nullptr)) {
-            DWORD pid = 0;
-            GetWindowThreadProcessId(w, &pid);
-            if (pid == GetCurrentProcessId()) { host = w; break; }
-        }
-    }
-    if (host != m_holeHost) {
-        if (m_holeHost && IsWindow(m_holeHost)) SetWindowRgn(m_holeHost, nullptr, TRUE);
-        m_holeHost = host;
-        m_holes.clear();
-    }
-    if (!host || holes == m_holes) return;
+    if (holes == m_holes) return;
     m_holes = holes;
-    if (holes.empty()) { SetWindowRgn(host, nullptr, TRUE); return; }
-    HRGN region = CreateRectRgn(0, 0, 32767, 32767);   // larger than the window, so a later resize keeps it whole
-    for (const Hole& h : holes) {
-        const int d = h.radius * 2;
-        HRGN cut = d > 0 ? CreateRoundRectRgn(h.r.left, h.r.top, h.r.right + 1, h.r.bottom + 1, d, d)
-                         : CreateRectRgn(h.r.left, h.r.top, h.r.right, h.r.bottom);
+    ApplyRegion();
+}
+
+HWND AskPanel::RegionHost() {   // the window that hosts the page in this process (the browser's own are its children)
+    if (!m_controller || !m_parent) return nullptr;
+    if (m_holeHost && IsWindow(m_holeHost) && GetParent(m_holeHost) == m_parent) return m_holeHost;
+    m_holeHost = nullptr;
+    m_rgnRect = RECT{};
+    for (HWND w = FindWindowExW(m_parent, nullptr, L"Chrome_WidgetWin_0", nullptr); w; w = FindWindowExW(m_parent, w, L"Chrome_WidgetWin_0", nullptr)) {
+        DWORD pid = 0;
+        GetWindowThreadProcessId(w, &pid);
+        if (pid == GetCurrentProcessId()) { m_holeHost = w; break; }
+    }
+    return m_holeHost;
+}
+
+// What shows of the page's window: the card inside its hairline, where it was both this frame and the one before (one
+// of the two is on the screen while the other is on its way), its corners rounded a little more than the card's so
+// that the region's square-cut corner stays inside the card's smooth one, less the holes.
+void AskPanel::ApplyRegion() {
+    const HWND host = RegionHost();
+    if (!host || !m_cardKnown) return;
+    RECT now{ m_card.left + 1, m_card.top + 1, m_card.right - 1, m_card.bottom - 1 };
+    RECT before{ m_cardBefore.left + 1, m_cardBefore.top + 1, m_cardBefore.right - 1, m_cardBefore.bottom - 1 }, v{};
+    if (!IntersectRect(&v, &now, &before)) v = now;
+    if (v.right <= v.left || v.bottom <= v.top) return;
+    const int radius = std::max(0, std::min(m_radius + 1, (int)std::min(v.right - v.left, v.bottom - v.top) / 2));
+    const POINT origin{ m_bounds.left, m_bounds.top };
+    if (EqualRect(&v, &m_rgnRect) && radius == m_shownRadius && origin.x == m_rgnOrigin.x && origin.y == m_rgnOrigin.y &&
+        m_holes == m_rgnHoles)
+        return;
+    struct Timer { double t0; double& out; ~Timer() { out += (NowSeconds() - t0) * 1000.0; } } timer{ NowSeconds(), traceHolesMs };
+    RECT r = v;
+    OffsetRect(&r, -origin.x, -origin.y);
+    const int d = radius * 2;
+    HRGN region = d > 0 ? CreateRoundRectRgn(r.left, r.top, r.right + 1, r.bottom + 1, d, d) : CreateRectRgn(r.left, r.top, r.right, r.bottom);
+    for (const Hole& h : m_holes) {
+        RECT c = h.r;
+        OffsetRect(&c, m_card.left - origin.x, m_card.top - origin.y);
+        const int hd = h.radius * 2;
+        HRGN cut = hd > 0 ? CreateRoundRectRgn(c.left, c.top, c.right + 1, c.bottom + 1, hd, hd) : CreateRectRgn(c.left, c.top, c.right, c.bottom);
         CombineRgn(region, region, cut, RGN_DIFF);
         DeleteObject(cut);
     }
-    if (!SetWindowRgn(host, region, TRUE)) DeleteObject(region);   // on success the region belongs to the window
+    if (!SetWindowRgn(host, region, TRUE)) { DeleteObject(region); return; }   // on success the region belongs to the window
+    m_rgnRect = v;
+    m_rgnOrigin = origin;
+    m_rgnHoles = m_holes;
+    m_shownClient = v;
+    m_shownRadius = radius;
 }
 
 bool AskPanel::CapturePng(std::function<void(std::vector<uint8_t>&&)> done) {
@@ -1075,6 +1153,10 @@ void AskPanel::Destroy() {
     ++m_generation;
     m_holes.clear();
     m_holeHost = nullptr;   // the window goes with the control
+    m_rgnRect = RECT{};
+    m_rgnHoles.clear();
+    m_cardKnown = false;
+    m_sizeSent = false;
     if (m_controller) {
         FocusBack();
         m_controller->Close();

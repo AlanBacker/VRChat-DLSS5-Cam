@@ -582,6 +582,8 @@ bool Device::CreateSwapChain() {
     GetClientRect(m_hwnd, &rc);
     m_width = std::max<UINT>(1, (UINT)(rc.right - rc.left));
     m_height = std::max<UINT>(1, (UINT)(rc.bottom - rc.top));
+    m_bufW = m_width;
+    m_bufH = m_height;
 
     DXGI_SWAP_CHAIN_DESC1 sd{};
     sd.Width = m_width;
@@ -593,14 +595,27 @@ bool Device::CreateSwapChain() {
     sd.Scaling = DXGI_SCALING_STRETCH;
     sd.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
     sd.AlphaMode = DXGI_ALPHA_MODE_IGNORE;
-    sd.Flags = m_tearing ? DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING : 0;
+    // At most one frame waits to be shown (a frame latency object): what is drawn is on the screen at the next refresh,
+    // with the newest input, and in step with the windows of other processes over the interface (the Ask AI page),
+    // which move at once. Without it, three frames could queue up, the interface a few refreshes behind them.
+    m_swapFlags = (m_tearing ? DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING : 0) | DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
+    sd.Flags = m_swapFlags;
 
     ComPtr<IDXGISwapChain1> sc1;
     HRESULT hr = m_factory->CreateSwapChainForHwnd(m_ui.Queue(), m_hwnd, &sd, nullptr, nullptr, &sc1);
+    if (FAILED(hr)) {
+        m_swapFlags &= ~(UINT)DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
+        sd.Flags = m_swapFlags;
+        hr = m_factory->CreateSwapChainForHwnd(m_ui.Queue(), m_hwnd, &sd, nullptr, nullptr, &sc1);
+    }
     if (FAILED(hr)) { Log::Hr(LogLevel::Error, "CreateSwapChainForHwnd", hr); return false; }
     m_factory->MakeWindowAssociation(m_hwnd, DXGI_MWA_NO_ALT_ENTER);
     hr = sc1.As(&m_swapChain);
     if (FAILED(hr)) { Log::Hr(LogLevel::Error, "IDXGISwapChain3", hr); return false; }
+    if (m_swapFlags & DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT) {
+        if (SUCCEEDED(m_swapChain->SetMaximumFrameLatency(1))) m_frameWait = m_swapChain->GetFrameLatencyWaitableObject();
+    }
+    Log::Info("Swap chain: %s", m_frameWait ? "one frame of latency" : "the driver's frame queue (no frame latency object)");
     return CreateBackBuffers();
 }
 
@@ -620,26 +635,57 @@ void Device::ReleaseBackBuffers() {
     for (auto& b : m_backBuffers) b.Reset();
 }
 
-bool Device::Resize(UINT width, UINT height) {
+// Resizing the buffers waits for the queue to empty and takes a few milliseconds each time; while the window is resized
+// by hand that came with every new size. Instead, the buffers are then made as large as the screen once, and only the
+// part the size of the window is shown (the swap chain's source size), which costs nothing.
+bool Device::Resize(UINT width, UINT height, bool live) {
     width = std::max<UINT>(1, width);
     height = std::max<UINT>(1, height);
-    if (width == m_width && height == m_height) return true;
     if (m_headless) {
+        if (width == m_width && height == m_height) return true;
         m_ui.WaitIdle();
         return CreateOffscreenBuffers(width, height);
     }
     if (!m_swapChain) return true;
+    live = live && m_sourceSize;
+    if (width == m_width && height == m_height && (live || (width == m_bufW && height == m_bufH))) return true;
+    if (live && width <= m_bufW && height <= m_bufH) {
+        if (SUCCEEDED(m_swapChain->SetSourceSize(width, height))) { m_width = width; m_height = height; return true; }
+        m_sourceSize = false;
+        live = false;
+        Log::Info("Swap chain: part of the buffers cannot be shown; they are resized with the window");
+    }
+    UINT bw = width, bh = height;
+    if (live) {   // as large as the screen the window is on, at least
+        MONITORINFO mi{};
+        mi.cbSize = sizeof(mi);
+        if (GetMonitorInfoW(MonitorFromWindow(m_hwnd, MONITOR_DEFAULTTONEAREST), &mi)) {
+            bw = std::max(bw, (UINT)(mi.rcMonitor.right - mi.rcMonitor.left));
+            bh = std::max(bh, (UINT)(mi.rcMonitor.bottom - mi.rcMonitor.top));
+        }
+        bw = std::max(bw, m_bufW);
+        bh = std::max(bh, m_bufH);
+    }
     m_ui.WaitIdle();
     ReleaseBackBuffers();
-    HRESULT hr = m_swapChain->ResizeBuffers(kBackBuffers, width, height, kBackBufferFormat,
-                                            m_tearing ? DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING : 0);
+    HRESULT hr = m_swapChain->ResizeBuffers(kBackBuffers, bw, bh, kBackBufferFormat, m_swapFlags);
     if (FAILED(hr)) {
         Log::Hr(LogLevel::Error, "ResizeBuffers", hr);
         if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET) NoteDeviceRemoved("ResizeBuffers");
         return false;
     }
+    m_bufW = bw;
+    m_bufH = bh;
     m_width = width;
     m_height = height;
+    if (live) Log::Info("Swap chain: %ux%u buffers while the window is resized", bw, bh);
+    if (m_sourceSize && FAILED(m_swapChain->SetSourceSize(width, height))) {
+        m_sourceSize = false;
+        if (bw != width || bh != height) {   // shown whole after all: the window's size
+            Log::Info("Swap chain: part of the buffers cannot be shown; they are resized with the window");
+            return Resize(width, height, false);
+        }
+    }
     return CreateBackBuffers();
 }
 
@@ -647,6 +693,10 @@ D3D12_CPU_DESCRIPTOR_HANDLE Device::CurrentRtv() const {
     D3D12_CPU_DESCRIPTOR_HANDLE h = m_rtvHeap->GetCPUDescriptorHandleForHeapStart();
     h.ptr += (SIZE_T)m_backBufferIndex * m_rtvDescSize;
     return h;
+}
+
+void Device::WaitForSwapChain() {
+    if (m_frameWait && !m_headless) WaitForSingleObjectEx(m_frameWait, 100, TRUE);   // a window that is not shown never signals it
 }
 
 UINT64 Device::EndFrame(bool vsync) {
@@ -724,6 +774,8 @@ bool Device::BeginScreenshot(ID3D12GraphicsCommandList* cmd) {
     ID3D12Resource* src = CurrentBackBuffer();
     if (!src || !cmd || m_shotPending) return false;
     D3D12_RESOURCE_DESC desc = src->GetDesc();
+    desc.Width = std::min<UINT64>(desc.Width, m_width);   // the part on screen (the buffers can be larger, see Resize())
+    desc.Height = std::min<UINT>(desc.Height, m_height);
     UINT64 total = 0;
     m_device->GetCopyableFootprints(&desc, 0, 1, 0, &m_shotFootprint, nullptr, nullptr, &total);
     if (!EnsureShotBuffer(total)) return false;
@@ -737,8 +789,9 @@ bool Device::BeginScreenshot(ID3D12GraphicsCommandList* cmd) {
     from.pResource = src;
     from.Type = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
     from.SubresourceIndex = 0;
+    const D3D12_BOX box{ 0, 0, 0, m_shotWidth, m_shotHeight, 1 };
     Barrier(cmd, src, D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_COPY_SOURCE);
-    cmd->CopyTextureRegion(&dst, 0, 0, 0, &from, nullptr);
+    cmd->CopyTextureRegion(&dst, 0, 0, 0, &from, &box);
     Barrier(cmd, src, D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_RENDER_TARGET);
     m_shotPending = true;
     return true;
@@ -835,6 +888,7 @@ void Device::Shutdown() {
     ReleaseBackBuffers();
     m_shotBuffer.Reset();
     m_shotPending = false;
+    if (m_frameWait) { CloseHandle(m_frameWait); m_frameWait = nullptr; }
     m_swapChain.Reset();
     m_rtvHeap.Reset();
     m_stagingHeap.Reset();
