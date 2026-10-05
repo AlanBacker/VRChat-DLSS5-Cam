@@ -81,7 +81,7 @@ as a batch. It is an ordinary Windows application: the VRChat process is never t
    A file of your own can be used instead: `nvngx_dlssnr.dll` next to `VRChatDLSS5Cam.exe` is tried after the build
    for the card, and any file can be selected under *DLSS 5 Neural Rendering → Runtime path*.
 3. In VRChat, open the **Camera**, switch it to **Stream** mode and enable **Spout Stream** in its settings.
-4. Start `VRChatDLSS5Cam.exe`. The first start opens a short setup guide (language, GitHub access, what the controls do). The camera picture then appears in the preview with DLSS 5 applied, and the badge next to the *Enable DLSS 5* switch reads *Active*.
+4. Start `VRChatDLSS5Cam.exe`. The first start opens a short setup guide (language, GitHub access, what the controls do, where to find help). The camera picture then appears in the preview with DLSS 5 applied, and the badge next to the *Enable DLSS 5* switch reads *Active*.
 5. Frame the shot in VRChat and press **Ctrl+Alt+P** (or use the *Capture photo* button). The PNG is written to `Pictures\VRChat DLSS5 Cam`.
 
 While nothing is open, the preview shows the **Get started** page: the three steps (choose the source, adjust DLSS 5,
@@ -234,8 +234,8 @@ is kept across sessions as well.
   the timers, and the pass timings in the status bar. It is on by default; switched off, the sidebar keeps only what
   a first picture needs.
 - **The top bar** holds the source switch (*Live*, *Picture*, *Video*) with a badge for its state and a *DLSS 5*
-  badge while the neural pass runs; on the right undo, redo, the history, help (*Documentation* and *Ask AI*), the
-  language and the main action:
+  badge while the neural pass runs; on the right undo, redo, the history, help (*Documentation*, a book with a question mark, and *Ask AI*, a speech
+  bubble with *AI*, to its right), the language and the main action:
   *Capture photo*, *Process & save PNG* or *Process & save video*. The **status bar** at the bottom names what is
   open with its size and frame rate, the progress of a running job with the time left, and the file saved last,
   with a button that shows it in Explorer.
@@ -286,7 +286,7 @@ is kept across sessions as well.
 | `Ctrl+Alt+P` | Capture a photo of the live camera, or process the open image or video (global hotkey, changeable in the *Capture* section) |
 | `Ctrl+Z` · `Ctrl+Y` / `Ctrl+Shift+Z` | Undo · redo a settings change or a library change (the clock button in the top bar lists them all) |
 | `F11` · `Esc` | Fullscreen preview · leave it |
-| `Esc` in the *Ask AI* panel | Close the panel (the conversation stays until the application closes) |
+| `Esc` in the *Ask AI* panel | Close a notice in the panel if one is showing, else the panel (the conversation stays until the application closes) |
 | `Ctrl+A` · `Delete` | Select every readable file in the library · take the selected ones out of it, keeping the files on disk (mouse over the library) |
 | `Space` | Play / pause the open video |
 | `←` `→` (`Shift`: 10 frames) · `Home` `End` | Step through the video · jump to the ends |
@@ -295,6 +295,7 @@ is kept across sessions as well.
 | Click a thumbnail · double-click · `Ctrl`+click · `Shift`+click · right button | Select only that file · open it in the preview · add or remove one · extend the selection · open the menu |
 | Drag on the library's empty space · click on it | Selection rectangle · clear the selection |
 | Click the gap beside the sidebar or above the library · drag the thin line at its edge | Fold or unfold that panel · change its width or height |
+| Drag the left edge of the *Ask AI* panel | Change the panel's width (remembered) |
 | `Enter` · `Esc` while cropping | Apply the crop · cancel it |
 
 ## Updates
@@ -339,14 +340,21 @@ a question typed there gets an answer written from the documentation, with links
 follows the interface's language and theme (a change of language starts a new conversation), links open in the
 default browser, and links to the documentation open in the interface's language. **Esc** in the panel, *Ask AI*
 again or the panel's ✕ closes it; closing only hides it, so the conversation stays until the application closes.
-The answers are written by AI and can be wrong: the page an answer links to is the reference. Mintlify's own
-controls in the panel (*Clear chat*, *Found results for …*) stay in English.
+Its left edge is a drag line like the sidebar's: the panel is at least 16 times the font size wide and always leaves
+the picture 20 times the font size, and its width is remembered (`askWidth` in `settings.ini`, in font sizes).
+The answers are written by AI and can be wrong, as the line at the top of the panel says: the page an answer links
+to is the reference. Mintlify's own controls in the panel (*Clear chat*, *Found results for …*) stay in English.
 
 - **Online, with an allowance.** AI Q&A runs on Mintlify's servers and needs an internet connection; when the panel
-  cannot load, it says *AI Q&A could not be loaded* and offers *Try again*. The project has a monthly allowance of
-  answers, shared by everyone who uses the application; once it is used up, AI Q&A stops answering until the next
-  month. It is most useful for finding the right page; for a single control, the documentation's settings page or
+  cannot load, it says *AI Q&A could not be loaded* and offers *Try again* and *Open documentation*. The project has
+  a monthly allowance of answers, shared by everyone who uses the application; once it is used up, AI Q&A stops
+  answering until the next month. It is most useful for finding the right page; for a single control, the documentation's settings page or
   its search is quicker, and the documentation is always there.
+- **When a question gets no answer**, a notice above the input box says why, in the interface's language, with
+  the way on: *AI Q&A can't answer right now* (the allowance is used up or the service is down; *Try again* /
+  *Open documentation*), *Too many questions in a short time* and *Your question could not be sent* (*Open
+  documentation* / *Try again*), *This conversation has reached its length limit* (*Open documentation* / *New
+  conversation*). **Esc** closes the notice first and the panel with the next press.
 - **Nothing before the first opening.** Nothing of it starts, not even the WebView2 control that draws the panel,
   until *Ask AI* is clicked for the first time, and nothing is sent before then.
 - **What is sent.** What is typed into the panel goes to Mintlify, which writes the answer; Mintlify also receives
@@ -538,3 +546,7 @@ cumulatively, so long files keep their timing (`src/core/AnimatedImage.cpp`).
 MIT (see `LICENSE`). Third-party components and the NVIDIA notice are listed in `THIRD_PARTY_NOTICES.md`.
 This project is not affiliated with VRChat Inc. or NVIDIA Corporation. The DLSS 5 runtime (`nvngx_dlssnr.dll`) is
 NVIDIA's software under NVIDIA's terms, not covered by this project's MIT licence; it is used at the user's own risk.
+
+The third-party notices also come in Chinese, Japanese and Korean (`docs/THIRD_PARTY_NOTICES.zh-CN.md`, `.ja.md`,
+`.ko.md`, shipped next to the executable); the English file is the one that counts. *About* → *Third-party notices*
+opens the one in the interface's language.

@@ -13,7 +13,7 @@ description: Every key and mouse action of the app on one page.
 | ((F11)) {#fullscreen} | Fullscreen picture. ((Esc)) or ((F11)) leaves. |
 | ((Tab)) · ((Shift+Tab)) {#tab} | Move to the next or the previous control. The arrow keys never move between controls. |
 | ((Esc)) in the search field {#search} | Clear the search. |
-| ((Esc)) in the AI Q&A panel {#ask} | Close the panel. [AI Q&A](ai-qa.html) |
+| ((Esc)) in the AI Q&A panel {#ask} | Close the panel. When a notice is showing, the first ((Esc)) closes the notice. [AI Q&A](ai-qa.html#notices) |
 
 ## Picture {#picture}
 
@@ -52,4 +52,4 @@ description: Every key and mouse action of the app on one page.
 | Do this | What happens |
 |---|---|
 | Click the gap beside the sidebar, or above the library {#fold} | Fold or unfold that panel. |
-| Drag the thin line at the gap's edge {#resize} | Change the sidebar's width or the library's height. The app remembers both. |
+| Drag the thin line at the gap's edge {#resize} | Change the sidebar's width or the library's height. The line at the AI Q&A panel's left edge changes the panel's width. The app remembers all three. |

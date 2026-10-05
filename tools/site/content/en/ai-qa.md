@@ -7,7 +7,7 @@ description: Ask a question about the app without leaving it, and get an answer 
 
 ## Open and close it {#open}
 
-1. Click **Ask AI** in the top bar, next to the **Documentation** button. Hold the pointer over a button to see its name.
+1. Click **Ask AI** at the top right of the window: the speech bubble with "AI", just right of the book with "?" (**Documentation**). Hold the pointer over a button to see what it does.
    => A panel opens at the right edge of the window. The picture and the sidebar move over to make room, so the panel covers nothing.
 2. Type a question and press ((Enter)), or click one of the questions under **Try asking**.
    => The answer appears in the panel.
@@ -17,12 +17,14 @@ The first opening takes a moment, because the app starts the panel only then. Th
 
 Closing only hides the panel. Your conversation is still there when you open it again, until you close the app.
 
+To make the panel wider or narrower, drag its left edge; a line lights up under the pointer. The panel stays at least 16 font sizes wide and always leaves the picture some room. The app remembers the width.
+
 ## What it can answer {#answers}
 
 AI Q&A knows this documentation: the downloads, every setting, the live camera, videos, the messages the app shows and what to do about them. It answers in the interface's language.
 
 - **It cannot see the app.** It knows nothing about your settings, your picture or your screen. Tell it what you see, and name controls and messages the way the app writes them.
-- **Answers can be wrong.** AI writes them, and the panel says so too. Before you rely on an answer, open the page it links to and check.
+- **Answers can be wrong.** AI writes them, and the line at the top of the panel says so too. Before you rely on an answer, open the page it links to and check.
 - **Links open in your browser.** A link to a page of this documentation opens that page in the interface's language.
 - **It follows the interface.** A change of theme shows at once. A change of language opens the panel again in that language, with a new conversation.
 
@@ -30,11 +32,24 @@ Mintlify's own controls in the panel, such as **Clear chat** and **Found results
 
 ## It works online {#online}
 
-AI Q&A runs on the servers of [Mintlify](https://mintlify.com), a documentation service, not on your computer. So it needs an internet connection. When the panel cannot load, it says **AI Q&A could not be loaded** and offers **Try again**.
+AI Q&A runs on the servers of [Mintlify](https://mintlify.com), a documentation service, not on your computer. So it needs an internet connection. When the panel cannot load, it says **AI Q&A could not be loaded** and offers **Try again** and **Open documentation**.
 
 It can also pause for a while. Mintlify gives the project a monthly allowance, and everyone who uses the app shares it. When the allowance runs out, AI Q&A stops answering until the next month.
 
 So please ask where it helps most: when you don't know which page to read. To look up one control, [All settings](settings.html) or the search at the top of these pages is often quicker. This documentation is always there, with or without AI Q&A.
+
+## When a question gets no answer {#notices}
+
+When a question cannot be answered, a notice appears above the box you type in. Its buttons offer the way on, and **Open documentation** opens these pages in your browser.
+
+| The notice says | What to do |
+|---|---|
+| AI Q&A can't answer right now. {#notice-off} | This month's allowance may be used up, or the service is down. Look it up in the documentation, or click **Try again** later. |
+| Too many questions in a short time. {#notice-busy} | Wait a moment, then click **Try again**. |
+| Your question could not be sent. {#notice-net} | Check your connection, then click **Try again**. |
+| This conversation has reached its length limit. {#notice-full} | Click **New conversation**, then ask again. |
+
+((Esc)) or the notice's **×** closes the notice. The next ((Esc)) closes the panel.
 
 ## What is sent, and what stays {#privacy}
 

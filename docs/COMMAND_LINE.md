@@ -54,12 +54,15 @@ can be looked at on a current installation.
 
 The AI Q&A panel has test switches of its own (development). `--ask-at <seconds> <action>` (repeatable) does one step
 at that time after the start: `open`, `toggle`, `hide`, `close` (the panel's ✕), `esc`, `link` (clicks the first link in the
-panel, as a reader would), `q:<question>` (asks it), `theme:<0|1|2>`, `lang:<auto|en|zh|ja|ko>`, `min:<seconds>` (minimises
-the window for that long) or `size:<W>x<H>` (the window's client size); `--ask <seconds>` is short for
-`--ask-at <seconds> open`. In a run with `--ask-at` or `--ask`, `log.txt` also takes the first 800 characters of each
-answer, which a normal session never writes. `--ask-no-runtime` behaves as if the WebView2 Runtime were missing, so
-*Ask AI* opens the documentation site's AI Q&A in the browser, and `--dry-open` writes `Open (dry run): <address>` to the
-log instead of opening that page or file.
+panel, as a reader would), `q:<question>` (asks it), `fail:<status|net|off>` (questions then meet that HTTP status or a
+network failure and are not sent; `off` ends it), `note:<docs|retry|fresh|close>` (presses that button on the notice),
+`guide:<1..5>` (shows that page of the setup guide), `spot` (lights the guide's pointers), `theme:<0|1|2>`,
+`lang:<auto|en|zh|ja|ko>`, `min:<seconds>` (minimises the window for that long) or `size:<W>x<H>` (the window's client
+size); `--ask <seconds>` is short for `--ask-at <seconds> open`, and `--ask-break-load` points the panel at a missing
+script, so it shows the *could not be loaded* card. In a run with `--ask-at` or `--ask`, `log.txt` also takes the first
+800 characters of each answer, which a normal session never writes. `--ask-no-runtime` behaves as if the WebView2
+Runtime were missing, so *Ask AI* opens the documentation site's AI Q&A in the browser, and `--dry-open` writes
+`Open (dry run): <address>` to the log instead of opening that page or file.
 
 ## Examples
 

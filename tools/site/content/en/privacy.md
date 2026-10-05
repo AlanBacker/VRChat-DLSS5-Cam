@@ -31,7 +31,7 @@ Buttons such as **Documentation**, **Download driver** and **Report a problem** 
 **Ask AI** in the top bar opens AI Q&A in a panel beside the picture. It answers questions from this documentation. [Mintlify](https://mintlify.com) provides it, not the app. [AI Q&A](ai-qa.html)
 
 - **Nothing starts before you open it.** The app starts Microsoft Edge WebView2, which draws the panel, only at your first click on **Ask AI**. Until then, nothing is sent.
-- **What goes to Mintlify.** What you type goes to Mintlify, which writes the answer, so leave out anything private. Mintlify also receives usage events from the panel, such as when it opens. To keep bots out, Mintlify checks questions with hCaptcha, which the panel loads from hCaptcha's servers.
+- **What goes to Mintlify.** What you type goes to Mintlify, which writes the answer, so leave out anything private. The line at the top of the panel says so too. Mintlify also receives usage events from the panel, such as when it opens. To keep bots out, Mintlify checks questions with hCaptcha, which the panel loads from hCaptcha's servers.
 - **What stays here.** The app never sends your pictures, videos, settings or library. If the panel offers to attach a file, whatever you attach or paste there goes to Mintlify too.
 - **What the panel keeps.** Its cookies and storage, in `%LOCALAPPDATA%\VRChatDLSS5Cam\webview2`, or in `webview2` inside the folder given with [`--data-dir`](command-line.html#data-dir). Your conversation lasts until you close the app. With the app closed, you can delete that folder; the app makes a new one at the next opening.
 - **What the log notes.** When the panel opens and closes, any error it meets, and the HTTP status and the length of each answer. Never your questions or the answers' text. A link you open from an answer is logged with its address, like every page the app opens.
@@ -66,7 +66,7 @@ The app's licence statement, as it stands in the README:
 
 > MIT (see `LICENSE`). Third-party components and the NVIDIA notice are listed in `THIRD_PARTY_NOTICES.md`. This project is not affiliated with VRChat Inc. or NVIDIA Corporation.
 
-The full texts: [LICENSE](https://github.com/AlanBacker/VRChat-DLSS5-Cam/blob/main/LICENSE) and [THIRD_PARTY_NOTICES.md](https://github.com/AlanBacker/VRChat-DLSS5-Cam/blob/main/THIRD_PARTY_NOTICES.md). Both are also in the app's folder, and **About** → **Third-party notices** opens them.
+The full texts: [LICENSE](https://github.com/AlanBacker/VRChat-DLSS5-Cam/blob/main/LICENSE) and [THIRD_PARTY_NOTICES.md](https://github.com/AlanBacker/VRChat-DLSS5-Cam/blob/main/THIRD_PARTY_NOTICES.md). Both are also in the app's folder. The third-party notices come in four languages: next to the English file are translations into Chinese, Japanese and Korean (`THIRD_PARTY_NOTICES.zh-CN.md`, `.ja.md` and `.ko.md`), where the English file is the one that counts. **About** → **Third-party notices** opens the one in the interface's language.
 
 ## Parts the app uses {#components}
 
