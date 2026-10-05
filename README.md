@@ -351,7 +351,7 @@ to is the reference. Mintlify's own controls in the panel (*Clear chat*, *Found 
   answering until the next month. It is most useful for finding the right page; for a single control, the documentation's settings page or
   its search is quicker, and the documentation is always there.
 - **When a question gets no answer**, a notice above the input box says why, in the interface's language, with
-  the way on: *AI Q&A can't answer right now* (the allowance is used up or the service is down; *Try again* /
+  the way on: *AI Q&A is unavailable right now* (the allowance is used up or the service is down; *Try again* /
   *Open documentation*), *Too many questions in a short time* and *Your question could not be sent* (*Open
   documentation* / *Try again*), *This conversation has reached its length limit* (*Open documentation* / *New
   conversation*). **Esc** closes the notice first and the panel with the next press.

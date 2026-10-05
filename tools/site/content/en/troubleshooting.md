@@ -80,7 +80,7 @@ Where GitHub is slow or blocked, choose **About** → **GitHub access** → **Mi
 
 AI Q&A needs an internet connection. Check the connection, then click **Try again** in the panel. **Open documentation** beside it opens these pages in your browser instead.
 
-### "AI Q&A can't answer right now" {#ask-off}
+### "AI Q&A is unavailable right now" {#ask-off}
 
 The project's monthly allowance for AI Q&A may be used up, or Mintlify's service is down. The allowance comes back the next month. Until then, these pages answer the same questions: **Open documentation** in the notice opens them.
 

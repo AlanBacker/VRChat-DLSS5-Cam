@@ -44,7 +44,7 @@ When a question cannot be answered, a notice appears above the box you type in. 
 
 | The notice says | What to do |
 |---|---|
-| AI Q&A can't answer right now. {#notice-off} | This month's allowance may be used up, or the service is down. Look it up in the documentation, or click **Try again** later. |
+| AI Q&A is unavailable right now. {#notice-off} | This month's allowance may be used up, or the service is down. Look it up in the documentation, or click **Try again** later. |
 | Too many questions in a short time. {#notice-busy} | Wait a moment, then click **Try again**. |
 | Your question could not be sent. {#notice-net} | Check your connection, then click **Try again**. |
 | This conversation has reached its length limit. {#notice-full} | Click **New conversation**, then ask again. |
