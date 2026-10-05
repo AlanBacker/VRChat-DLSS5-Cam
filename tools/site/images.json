@@ -1,7 +1,7 @@
 {
   "_about": "The screenshots of the site. Each one is <name>.png in tools/site/shots/ (not published) or in site/assets/img/ (published as it is) - English interface, dark theme unless the name says otherwise; the PNG files are kept as they are. A language's own screenshots lie in tools/site/shots/<lang>/<name>.png (zh, ja, ko); a picture without one shows the English copy. The build makes WebP copies in site/assets/img/gen/ and gen/<lang>/: 'cover' first paints rectangles [left, top, right, bottom] (source pixels) with the colour found just right of each one, or at [.., x, y] when a sixth and seventh number are given - used to keep a graphics card's model, a user folder or a test version out of the pictures; 'crop' then cuts [left, top, right, bottom] out of the source; 'width' caps the width of the published copy. 'langs': {'zh': {...}} gives a language's own 'cover', 'crop' or 'width' (the English values otherwise). 'look' sets how the figure sits on the page: 'window' (a whole window, as wide as the text) or 'panel' (a part of the window, at most 'show' CSS pixels wide). A picture that is missing is left out of the pages and named by the build.",
   "start-page":           {"look": "window"},
-  "setup-guide":          {"look": "panel", "show": 608, "crop": [496, 210, 1104, 790]},
+  "setup-guide":          {"look": "panel", "show": 608, "crop": [496, 179, 1104, 821]},
   "picture-dlss5":        {"look": "window"},
   "picture-output":       {"look": "window"},
   "picture-depth-view":   {"look": "window"},
@@ -19,6 +19,6 @@
   "update-window":        {"look": "panel", "show": 480, "cover": [[705, 279, 800, 297]], "crop": [560, 234, 1040, 665], "langs": {"zh": {"cover": [[668, 278, 754, 296]]}, "ja": {"cover": [[786, 266, 878, 288]]}, "ko": {"cover": [[766, 276, 834, 297]]}}},
   "radeon-sidebar":       {"look": "panel", "show": 364, "crop": [1210, 676, 1574, 896], "langs": {"zh": {"crop": [1210, 612, 1574, 834]}, "ja": {"crop": [1210, 694, 1574, 962]}, "ko": {"crop": [1210, 644, 1574, 872]}}},
   "presets":              {"look": "panel", "show": 396, "crop": [1204, 114, 1600, 374], "langs": {"ja": {"crop": [1204, 114, 1600, 390]}}},
-  "history":              {"look": "panel", "crop": [852, 0, 1600, 352]},
+  "history":              {"look": "panel", "crop": [852, 0, 1600, 352], "langs": {"ja": {"crop": [820, 0, 1600, 352]}}},
   "compare-menu":         {"look": "panel", "show": 396, "crop": [1204, 108, 1600, 330], "langs": {"zh": {"crop": [1204, 250, 1600, 472]}}}
 }
