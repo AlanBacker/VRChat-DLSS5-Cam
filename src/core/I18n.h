@@ -547,6 +547,8 @@ enum class Lang { English = 0, Chinese = 1, Japanese = 2, Korean = 3, Count = 4 
     X(AskNoticeBusy,     "Too many questions in a short time. Wait a moment, then try again.", "短时间内提问过多。请稍等片刻再试。", "短時間に質問が集中しています。少し待ってから、もう一度試してください。", "짧은 시간에 질문이 몰렸습니다. 잠시 후 다시 시도하세요.") \
     X(AskNoticeNet,      "Your question could not be sent. Check your connection and try again, or look it up in the documentation.", "问题未能发送。请检查网络连接后重试，或在文档中查找答案。", "質問を送信できませんでした。インターネット接続を確認してもう一度試すか、ドキュメントで調べてください。", "질문을 보내지 못했습니다. 인터넷 연결을 확인하고 다시 시도하거나 문서에서 찾아보세요.") \
     X(AskNoticeFull,     "This conversation has reached its length limit. Start a new conversation to ask more.", "本次对话已达长度上限。开始新对话即可继续提问。", "この会話は長さの上限に達しました。続けて質問するには、新しい会話を始めてください。", "이 대화가 길이 한도에 도달했습니다. 새 대화를 시작하면 계속 질문할 수 있습니다.") \
+    X(AskJumpShow,       "Show in the app", "在程序中定位", "アプリで場所を表示", "앱에서 위치 보기") \
+    X(AskJumpPage,       "Open its page in the documentation", "在文档中查看", "ドキュメントで該当ページを開く", "문서에서 해당 페이지 열기") \
     X(Prerelease,         "Pre-release", "预发布", "プレリリース", "프리릴리스") \
     X(ReopenLast,         "Reopen the last file at start", "启动时重新打开上次的文件", "起動時に前回のファイルを開く", "시작할 때 마지막 파일 다시 열기") \
     X(TipReopenLast,      "The picture or video that was open when the app was closed comes back at the next start.", "关闭时打开着的图片或视频，下次启动时自动重新打开。", "終了時に開いていた画像や動画を、次回の起動時にもう一度開きます。", "종료할 때 열려 있던 사진이나 동영상을 다음 시작 때 다시 엽니다.") \
