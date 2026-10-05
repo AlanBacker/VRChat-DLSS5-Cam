@@ -14,7 +14,7 @@ VRChat DLSS5 Cam は、VRChat のカメラ映像に GeForce RTX 上で NVIDIA �
 Mod も必要としません。
 
 <p align="center">
-  <img src="images/main.png" width="900" alt="メインウィンドウ: ワイプ比較（左がオリジナル、右が DLSS 5）を表示した VRChat の写真、その下にメディアライブラリ、右側に設定">
+  <img src="images/ja/main.png" width="900" alt="メインウィンドウ: ワイプ比較（左がオリジナル、右が DLSS 5）を表示した VRChat の写真、その下にメディアライブラリ、右側に設定">
 </p>
 
 [![Build](https://github.com/AlanBacker/VRChat-DLSS5-Cam/actions/workflows/build.yml/badge.svg)](https://github.com/AlanBacker/VRChat-DLSS5-Cam/actions/workflows/build.yml)
@@ -84,7 +84,7 @@ Mod も必要としません。
 複数のファイルやフォルダーはライブラリに入ります。
 
 <p align="center">
-  <img src="images/welcome.png" width="900" alt="何も開いていないときの「はじめましょう」ページ: 3 つの手順と、ライブカメラ・画像・動画のタイル">
+  <img src="images/ja/welcome.png" width="900" alt="何も開いていないときの「はじめましょう」ページ: 3 つの手順と、ライブカメラ・画像・動画のタイル">
 </p>
 
 ライブカメラについて
@@ -166,7 +166,7 @@ Radeon 版は RX 9060 XT 上で動作を確認しています（720p と 4K の�
 `<name>_DLSS5_<w>x<h>.png`、`.mp4`、アニメーションなら `.gif` / `.png`（APNG）/ `.webp`、または PNG フレームのフォルダとして書き出されます。
 
 <p align="center">
-  <img src="images/video.png" width="900" alt="プレビューで開いた動画。ワイプ比較と、画像の下の再生・コマ送り・範囲のコントロール">
+  <img src="images/ja/video.png" width="900" alt="プレビューで開いた動画。ワイプ比較と、画像の下の再生・コマ送り・範囲のコントロール">
 </p>
 
 動画の場合、プレビュー下のコントロールでファイルをパイプライン全体を通して再生・一時停止し、1 フレームずつコマ送りでき、
@@ -255,7 +255,7 @@ GIF、APNG、WebP のアニメーションは動画として開きます。再�
   （既定ではオフ）がオンのときだけです。
 
 <p align="center">
-  <img src="images/light.png" width="900" alt="ライトテーマの同じウィンドウ">
+  <img src="images/ja/light.png" width="900" alt="ライトテーマの同じウィンドウ">
 </p>
 
 ### キーボードとマウス

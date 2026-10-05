@@ -12,7 +12,7 @@ VRChat DLSS5 Cam 将 VRChat 相机的画面接入 GeForce RTX 显卡上的 NVIDI
 磁盘上的图片与视频同样经由这条管线处理，支持单个处理与批量处理。程序不对 VRChat 进程做任何干预，无需 Mod。
 
 <p align="center">
-  <img src="images/main.png" width="900" alt="主窗口：一张 VRChat 照片的分割对比（左边原始画面，右边 DLSS 5 结果），下方是素材库，右侧是设置">
+  <img src="images/zh-CN/main.png" width="900" alt="主窗口：一张 VRChat 照片的分割对比（左边原始画面，右边 DLSS 5 结果），下方是素材库，右侧是设置">
 </p>
 
 [![Build](https://github.com/AlanBacker/VRChat-DLSS5-Cam/actions/workflows/build.yml/badge.svg)](https://github.com/AlanBacker/VRChat-DLSS5-Cam/actions/workflows/build.yml)
@@ -77,7 +77,7 @@ VRChat DLSS5 Cam 将 VRChat 相机的画面接入 GeForce RTX 显卡上的 NVIDI
 把文件拖到窗口任意位置同样可以打开；一次拖入多个文件或一个文件夹会加入素材库。
 
 <p align="center">
-  <img src="images/welcome.png" width="900" alt="未打开任何内容时显示的“开始使用”页面：三个步骤，以及实时相机、图片、视频三张卡片">
+  <img src="images/zh-CN/welcome.png" width="900" alt="未打开任何内容时显示的“开始使用”页面：三个步骤，以及实时相机、图片、视频三张卡片">
 </p>
 
 实时相机说明
@@ -144,7 +144,7 @@ DLSS-NR-on-AMD 文件，并在结尾附上该项目自己的日志（程序目�
 文件名为 `<名称>_DLSS5_<宽>x<高>.png`、`.mp4`、动图对应的 `.gif` / `.png`（APNG）/ `.webp`，或一个装有 PNG 帧的文件夹。
 
 <p align="center">
-  <img src="images/video.png" width="900" alt="预览里打开了一个视频：分割对比，画面下方是播放、逐帧和范围控件">
+  <img src="images/zh-CN/video.png" width="900" alt="预览里打开了一个视频：分割对比，画面下方是播放、逐帧和范围控件">
 </p>
 
 对于视频，预览下方的控件可让文件经过整条管线播放与暂停、逐帧步进，并在鼠标悬停于进度条时显示该位置的缩略画面。
@@ -215,7 +215,7 @@ GIF 每帧最多 256 色，帧率最高 50 fps。
   *启动时重新打开上次的文件*（默认关闭）时，上次的文件才会再次打开。
 
 <p align="center">
-  <img src="images/light.png" width="900" alt="同一个窗口的浅色主题">
+  <img src="images/zh-CN/light.png" width="900" alt="同一个窗口的浅色主题">
 </p>
 
 ### 键盘与鼠标

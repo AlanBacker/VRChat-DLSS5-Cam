@@ -14,7 +14,7 @@ VRChat DLSS5 Cam은 VRChat 카메라의 화면에 GeForce RTX에서 NVIDIA **DLS
 모드도 필요하지 않습니다.
 
 <p align="center">
-  <img src="images/main.png" width="900" alt="메인 창: 와이프 비교가 적용된 VRChat 사진(왼쪽은 원본, 오른쪽은 DLSS 5), 아래에는 미디어 라이브러리, 오른쪽에는 설정">
+  <img src="images/ko/main.png" width="900" alt="메인 창: 와이프 비교가 적용된 VRChat 사진(왼쪽은 원본, 오른쪽은 DLSS 5), 아래에는 미디어 라이브러리, 오른쪽에는 설정">
 </p>
 
 [![Build](https://github.com/AlanBacker/VRChat-DLSS5-Cam/actions/workflows/build.yml/badge.svg)](https://github.com/AlanBacker/VRChat-DLSS5-Cam/actions/workflows/build.yml)
@@ -83,7 +83,7 @@ VRChat DLSS5 Cam은 VRChat 카메라의 화면에 GeForce RTX에서 NVIDIA **DLS
 폴더는 라이브러리에 들어갑니다.
 
 <p align="center">
-  <img src="images/welcome.png" width="900" alt="아무것도 열려 있지 않을 때의 시작하기 페이지: 세 단계와 실시간 카메라·사진·동영상 타일">
+  <img src="images/ko/welcome.png" width="900" alt="아무것도 열려 있지 않을 때의 시작하기 페이지: 세 단계와 실시간 카메라·사진·동영상 타일">
 </p>
 
 실시간 카메라 참고 사항
@@ -163,7 +163,7 @@ Radeon 에디션은 RX 9060 XT에서 실행을 확인했습니다(720p와 4K 정
 누르면 결과가 *촬영* 섹션의 저장 폴더(바꾸지 않았다면 `Pictures\VRChat DLSS5 Cam`)에 `<name>_DLSS5_<w>x<h>.png`, `.mp4`, 애니메이션이면 `.gif` / `.png`(APNG) / `.webp`, 또는 PNG 프레임이 담긴 폴더로 기록됩니다.
 
 <p align="center">
-  <img src="images/video.png" width="900" alt="와이프 비교가 적용된 동영상이 미리보기에 열려 있고, 화면 아래에 재생, 프레임 이동, 구간 컨트롤이 있는 모습">
+  <img src="images/ko/video.png" width="900" alt="와이프 비교가 적용된 동영상이 미리보기에 열려 있고, 화면 아래에 재생, 프레임 이동, 구간 컨트롤이 있는 모습">
 </p>
 
 동영상의 경우 미리보기 아래의 컨트롤로 파일을 전체 파이프라인을 거쳐 재생·일시정지하고, 한 프레임씩 이동하며,
@@ -251,7 +251,7 @@ GIF, APNG, WebP 애니메이션은 동영상으로 열립니다. 재생·프레�
   지난 세션의 파일은 *표시* 섹션의 *시작할 때 마지막 파일 다시 열기*(기본 꺼짐)가 켜져 있을 때만 다시 열립니다.
 
 <p align="center">
-  <img src="images/light.png" width="900" alt="라이트 테마의 같은 창">
+  <img src="images/ko/light.png" width="900" alt="라이트 테마의 같은 창">
 </p>
 
 ### 키보드와 마우스
