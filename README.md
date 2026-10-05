@@ -345,6 +345,13 @@ the picture 20 times the font size, and its width is remembered (`askWidth` in `
 The answers are written by AI and can be wrong, as the line at the top of the panel says: the page an answer links
 to is the reference. Mintlify's own controls in the panel (*Clear chat*, *Found results for …*) stay in English.
 
+- **From an answer to the control.** Names of the interface in an answer (in bold, as code or in quotes, as the
+  interface writes them) get a dotted underline. A click shows the place in the application: the sidebar comes out,
+  the section opens, the sidebar glides to the control and a ring lights up around it; nothing is set or changed.
+  Pointing at a name offers *Show in the app* or *Open its page in the documentation*. A control that *Advanced*
+  hides is shown through the settings search, one that appears only in some states points at the control that
+  decides it, one of another source rings that source's button in the top bar, and when nothing can be shown the
+  control's page of the documentation opens.
 - **Online, with an allowance.** AI Q&A runs on Mintlify's servers and needs an internet connection; when the panel
   cannot load, it says *AI Q&A could not be loaded* and offers *Try again* and *Open documentation*. The project has
   a monthly allowance of answers, shared by everyone who uses the application; once it is used up, AI Q&A stops
@@ -538,6 +545,16 @@ same source interface with its own reader: GIF and APNG frames are decoded by Wi
 chunks are assembled into single PNG frames first) and composited onto the canvas with their disposal and blend rules,
 animated WebP by libwebp; the writer builds the output animation frame by frame with the source delays rounded
 cumulatively, so long files keep their timing (`src/core/AnimatedImage.cpp`).
+
+The *Ask AI* panel (`src/core/AskPanel.cpp`) is a WebView2 control that the main window docks at its right edge,
+created at the first opening only. Its page is the program's own, served under the documentation site's address so
+Mintlify's widget sees the site it belongs to; it styles the widget with the interface's palette and fonts and talks
+to the application through web messages (language, theme, notices, links, jumps). The control's window is made the
+size of the monitor once and clipped to the panel, so resizing the window or the panel moves only the clip and the
+page never lays itself out again mid-drag. The places an answer can point at are listed in `src/ui/JumpTargets.h`,
+each with its names from `src/core/I18n.h`, its documentation page and where the interface draws it;
+`tools/check_jump_targets.py` checks that table against the documentation in every language and against
+`src/ui/MainUI.cpp`.
 
 </details>
 

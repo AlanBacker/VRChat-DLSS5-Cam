@@ -30,6 +30,23 @@ AI Q&A knows this documentation: the downloads, every setting, the live camera, 
 
 Mintlify's own controls in the panel, such as **Clear chat** and **Found results for …**, stay in English.
 
+## From an answer to the control {#jump}
+
+When an answer names a control or a section of the app the way the interface writes it, in bold, as code or in quotes, the name gets a dotted underline. It takes you to that place in the app:
+
+- **Click the name.** The sidebar comes out if it was hidden, the section opens, the sidebar glides to the control, and a ring lights up around it for a moment. Nothing is set or changed: the value is still yours to choose.
+- **Hold the pointer over the name** for a card with two choices. **Show in the app** does the same as a click. **Open its page in the documentation** opens the control's page in your browser. With touch or a pen, a tap opens the card.
+- With the keyboard, ((Tab)) to a name in bold or code and press ((Enter)).
+
+When the control is not on screen at the moment, the app shows what brings it out:
+
+- A control that **Advanced** hides is found with **Search the settings**: its name goes into the field. The next jump puts back what you had typed there.
+- A control that shows only in some cases points at what decides it. **Save as**, for example, shows only while **Match the source** is off, so **Match the source** is ringed.
+- A control of another source, such as a video setting while **Live** is on, rings the buttons in the top bar that switch to it.
+- When there is nothing to show, the control's page of the documentation opens instead.
+
+A key, a click or the mouse wheel fades the ring at once.
+
 ## It works online {#online}
 
 AI Q&A runs on the servers of [Mintlify](https://mintlify.com), a documentation service, not on your computer. So it needs an internet connection. When the panel cannot load, it says **AI Q&A could not be loaded** and offers **Try again** and **Open documentation**.
