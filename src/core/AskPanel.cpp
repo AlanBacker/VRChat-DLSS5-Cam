@@ -174,7 +174,10 @@ body{position:fixed!important;left:auto!important;top:auto!important;right:0!imp
 // Put into the widget's (closed) shadow root. Its stylesheet is all in cascade layers, so these plain rules win
 // without !important. The colours are the program's palette; the panel fills the card edge to edge (no inset, no
 // shadow or hairline of its own: the card's are the program's), and fades in and out on the program's curves instead
-// of sliding in from the side.
+// of sliding in from the side. The widget's panel is a drawer that a held pointer can pull and fling away, as on a
+// phone; the program's panel never moves, so its place is pinned with !important, over the drawer's inline style
+// (see still() in the page for the gesture itself). The page selects nothing, as the program; the conversation
+// itself can be selected by dragging, to copy a line of an answer, in the program's selection colour.
 const char kShadowCss[] = R"vdc(
 :host{
 --assistant-background-gray:light-dark(#FFFFFF,#191C22);
@@ -196,7 +199,9 @@ const char kShadowCss[] = R"vdc(
 --assistant-border-solid:light-dark(#1B1E25,#E8EAF0);
 }
 .assistant-panel-viewport{padding:0}
-[data-mintlify-assistant-panel]{width:100%;max-width:none;height:100%;box-shadow:none;transform:none;opacity:0;transition:opacity .12s cubic-bezier(.32,0,.67,0),background-color .3s cubic-bezier(.25,.6,.4,1),color .3s cubic-bezier(.25,.6,.4,1)}
+[data-mintlify-assistant-panel]{width:100%;max-width:none;height:100%;box-shadow:none;transform:none!important;translate:none!important;opacity:0;transition:opacity .12s cubic-bezier(.32,0,.67,0),background-color .3s cubic-bezier(.25,.6,.4,1),color .3s cubic-bezier(.25,.6,.4,1)}
+[data-slot=assistant-message-scroller-content]{-webkit-user-select:text;user-select:text}
+[data-mintlify-assistant-panel] ::selection{background-color:light-dark(rgba(70,88,230,.28),rgba(92,108,245,.4))}
 :host([data-vdc-shown]) [data-mintlify-assistant-panel]:not([data-starting-style]):not([data-ending-style]){opacity:1;transition:opacity .28s cubic-bezier(.18,1,.56,1),background-color .3s cubic-bezier(.25,.6,.4,1),color .3s cubic-bezier(.25,.6,.4,1)}
 :host([data-vdc-theming]) *,:host([data-vdc-theming]) *::before,:host([data-vdc-theming]) *::after{transition-property:background-color,border-color,color,fill,stroke,outline-color;transition-duration:.3s;transition-timing-function:cubic-bezier(.25,.6,.4,1)}
 :host([data-vdc-instant]) [data-mintlify-assistant-panel]{transition:none!important}
@@ -278,8 +283,26 @@ const char kPageJs[] = R"vdc(
   function panel() { return root ? root.querySelector('[data-mintlify-assistant-panel]') : null; }
   function check() {   // a mutation, not a frame: a hidden page draws no frames
     dress();
+    still();
     if (inited && !sentReady && !sentFail && panel()) { sentReady = true; clearTimeout(timer); post({ type: 'ready' }); }
   }
+
+  /* The widget's panel is a drawer: a held pointer pulls it along and a fling to the side closes it, as on a phone.
+     The program's panel stays where it is. The drawer is told not to start that gesture, with its own switch, on the
+     panel each time it is made; a press that lands in the panel keeps its moves from the widget until it ends, so
+     nothing can follow it whatever the widget becomes; the style pins the panel in place. Selecting text, the
+     scrollbar and touch scrolling are the browser's own and keep working. */
+  function still() {
+    var p = panel();
+    if (p && !p.hasAttribute('data-base-ui-swipe-ignore')) p.setAttribute('data-base-ui-swipe-ignore', '');
+  }
+  var held = {};
+  function unhold(e) { delete held[e.pointerId]; }
+  window.addEventListener('pointerdown', function (e) { if (host && e.target === host) held[e.pointerId] = 1; else unhold(e); }, true);
+  window.addEventListener('pointerup', unhold, true);
+  window.addEventListener('pointercancel', unhold, true);
+  window.addEventListener('pointermove', function (e) { if (e.buttons && held[e.pointerId]) e.stopPropagation(); }, true);
+  window.addEventListener('touchmove', function (e) { if (host && e.target === host) e.stopPropagation(); }, true);
 
   /* A question that could not be answered: a notice above the composer, in the interface's language, with the way
      out (the documentation, the question again, or a new conversation). It waits a moment, since the widget tries
