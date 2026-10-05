@@ -3,13 +3,13 @@
 
     python3 tools/site/mintlify.py      (build.py runs it too, after the site)
 
-The pages of site/ stay the documentation readers use. The copy exists so that Mintlify's assistant answers
+The pages of site/ stay the documentation readers use. The copy exists so that Mintlify's AI Q&A answers
 questions from the same text: Mintlify reads docs.json and the .mdx pages of mintlify/ from the default branch
 (dashboard: Git settings, "docs.json is in a subdirectory", path /mintlify). Every file in mintlify/ is generated;
 edit tools/site/content/ and the strings, never mintlify/.
 
 The screenshots are not copied: the pages show the published WebP copies of the documentation site, and each
-picture's alt text (strings/<lang>.json "img") describes what it shows, which is what the assistant reads.
+picture's alt text (strings/<lang>.json "img") describes what it shows, which is what the AI Q&A reads.
 """
 import json
 import os
@@ -283,7 +283,7 @@ def docs_json():
         'appearance': {'default': 'system'},
         'navbar': {'primary': {'type': 'github', 'href': REPO}},
         'footer': {'socials': {'github': REPO, 'website': SITE}},
-        # The documentation site is the one search engines should list; this copy serves the assistant.
+        # The documentation site is the one search engines should list; this copy serves the AI Q&A.
         'seo': {'metatags': {'robots': 'noindex'}},
         'navigation': {'languages': langs},
     }
