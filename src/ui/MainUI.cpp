@@ -1,6 +1,7 @@
 // VRChat DLSS5 Cam - the main window. Flat layout: a top bar with the source switch and the main action, the preview
 // in the middle with the video controls and the media library under it, a sidebar of plain sections on the right.
 #include "ui/MainUI.h"
+#include "ui/JumpTargets.h"
 #include "ui/Theme.h"
 #include "core/Capture.h"
 #include "core/I18n.h"
@@ -295,6 +296,7 @@ void MainUI::Draw(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Font
     static const ImGuiID arrowOwner = ImHashStr("##arrowKeys");
     for (ImGuiKey key : { ImGuiKey_LeftArrow, ImGuiKey_RightArrow, ImGuiKey_UpArrow, ImGuiKey_DownArrow })
         ImGui::SetKeyOwner(key, arrowOwner);
+    JumpFrame(s, ev);   // a place an answer of the Ask AI panel pointed at
     ImGuiViewport* vp = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(vp->WorkPos);
     ImGui::SetNextWindowSize(vp->WorkSize);
@@ -471,8 +473,11 @@ void MainUI::Draw(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Font
             if (ImGui::GetTime() < m_scrollToAbout) { if (m_aboutY >= 0.0f) SmoothScrollTo(m_aboutY); }
             else m_scrollToAbout = -1.0;
         }
+        JumpGlide();
         const int vtx0 = ImGui::GetWindowDrawList()->VtxBuffer.Size;
+        m_markSidebar = true;
         DrawSidebar(s, info, ev, fonts);
+        m_markSidebar = false;
         ModeFadeContent(vtx0);
         ImGui::EndChild();
         if (lockSpace > 0.0f) {   // the layout goes on below the settings
@@ -1412,6 +1417,297 @@ void MainUI::Spotlight(bool foreground) {
     dl->AddRect(ImVec2(a0.x - grow, a0.y - grow), ImVec2(a1.x + grow, a1.y + grow), WithAlpha(Colors().accent, a), ImGui::GetStyle().FrameRounding + grow, std::max(1.0f, Px(2.0f)));
 }
 
+// ------------------------------------------------------------------------------------------------ jumps
+// An answer of the Ask AI panel names a place in the interface (JumpTargets.h); "Show in the app" brings the place
+// into view and rings it in the setup guide's way. Nothing is changed but what it takes to see it: the sidebar comes
+// out, the section opens, the sidebar glides to the row. A control that the Advanced switch hides is found the way
+// the search finds it (the switch stays as it is), one of another source mode points at that mode's segment of the
+// source switch, one that is not drawn now at what stands for it (its fallback), and a place that cannot be shown
+// at all opens its page of the documentation. The ring ends on its own, sooner with any input, and the keyboard
+// focus stays where it is.
+
+namespace {
+constexpr double kJumpRing = 2.2;          // the ring's life
+constexpr double kJumpCutFade = 0.18;      // its fade when an input ends it early
+constexpr double kJumpSettle = 0.22;       // what opened for it (the sidebar's slide, a section's fold) has come to rest
+constexpr double kJumpGlideMax = 0.6;      // the ring does not wait longer for the glide
+
+// A key press, a click or a turn of the wheel in the window (the pointer only moving is none).
+bool JumpInput() {
+    const ImGuiIO& io = ImGui::GetIO();
+    if (io.MouseWheel != 0.0f || io.MouseWheelH != 0.0f) return true;
+    for (int b = 0; b < ImGuiMouseButton_COUNT; ++b)
+        if (ImGui::IsMouseClicked(b)) return true;
+    for (int k = ImGuiKey_NamedKey_BEGIN; k < ImGuiKey_NamedKey_END; ++k) {
+        if (k >= ImGuiKey_MouseLeft && k <= ImGuiKey_MouseWheelY) continue;   // the mouse, above
+        if (ImGui::IsKeyPressed((ImGuiKey)k, false)) return true;
+    }
+    return false;
+}
+
+// A label as a search query: without a closing ellipsis or colon.
+std::string JumpQueryText(const char* label) {
+    std::string q = label ? label : "";
+    auto endsWith = [&q](const char* e) { const size_t n = std::strlen(e); return q.size() >= n && q.compare(q.size() - n, n, e) == 0; };
+    for (;;) {
+        if (endsWith("...")) q.resize(q.size() - 3);
+        else if (endsWith("\xE2\x80\xA6") || endsWith("\xEF\xBC\x9A")) q.resize(q.size() - 3);   // an ellipsis, a full-width colon
+        else if (!q.empty() && (q.back() == ':' || q.back() == ' ')) q.pop_back();
+        else break;
+    }
+    return q;
+}
+
+// The header of a section of the sidebar, by the section's code.
+const JumpTarget* JumpHeaderOf(const char* section) {
+    for (const JumpTarget& t : kJumpTargets)
+        if ((t.flags & JumpHeader) && JumpInEdition(t) && std::strcmp(t.section, section) == 0) return &t;
+    return nullptr;
+}
+
+// The ring: up quickly, held, then it fades while it widens a little (an input fades it at once).
+float JumpRingAlpha(double now, double ringAt, double cut, float& widen) {
+    const float p = (float)((now - ringAt) / kJumpRing);
+    float a = p < 0.08f ? Ease(p / 0.08f) : p < 0.45f ? 1.0f : 1.0f - Ease((p - 0.45f) / 0.55f);
+    widen = p < 0.45f ? 0.0f : Ease((p - 0.45f) / 0.55f);
+    if (cut >= 0.0) a *= 1.0f - Ease((float)((now - cut) / kJumpCutFade));
+    return ImSaturate(a);
+}
+}
+
+bool MainUI::JumpWants(const char* id) const {
+    return m_jumpPhase != 0 && !m_jumpIsHeader && m_jumpCur && std::strcmp(id, m_jumpCurId) == 0;
+}
+
+void MainUI::JumpFrame(Settings& s, UiEvents& ev) {
+    const double now = ImGui::GetTime();
+    if (!m_jumpAsk.empty()) {
+        std::string id;
+        id.swap(m_jumpAsk);
+        const JumpTarget* t = FindJumpTarget(id.c_str());
+        if (!t) { Log::Warn("Jump: there is no place called \"%s\"", id.c_str()); return; }
+        JumpRestoreQuery();   // the last jump's search, untouched since: the field as the user had it
+        m_jumpReq = t;
+        m_jumpHops = 0;
+        m_jumpCut = -1.0;
+        m_jumpOpenedAt = -1.0;
+        Log::Info("Jump: %s", t->id);
+        JumpAim(s, ev, t);
+    }
+    if (m_jumpPhase == 0 || !m_jumpCur) { m_jumpPhase = 0; return; }
+    ++m_jumpFrames;
+    const bool seen = m_jumpSeenFrame >= ImGui::GetFrameCount() - 1;   // its marker was drawn on the last frame
+    if (JumpInput()) {
+        if (m_jumpPhase == 1) { Log::Info("Jump: %s left by an input before it was shown", m_jumpCur->id); m_jumpPhase = 0; m_jumpCur = nullptr; return; }
+        if (m_jumpCut < 0.0) m_jumpCut = now;
+    }
+    if (m_jumpPhase == 2) {
+        const double end = m_jumpCut >= 0.0 ? std::min(m_jumpRingAt + kJumpRing, m_jumpCut + kJumpCutFade) : m_jumpRingAt + kJumpRing;
+        if (now >= end) { m_jumpPhase = 0; m_jumpCur = nullptr; }
+        return;
+    }
+    const bool settled = m_jumpOpenedAt < 0.0 || now - m_jumpOpenedAt >= kJumpSettle;
+    if (seen) {
+        const bool arrived = !m_jumpInSidebar || m_jumpGlideAt < 0.0 || m_jumpDist < ImGui::GetFontSize() * 2.0f ||
+                             now - m_jumpGlideAt >= kJumpGlideMax;
+        if (arrived && settled) {
+            m_jumpPhase = 2;
+            m_jumpRingAt = now;
+            Log::Info("Jump: %s ringed after %.2f s", m_jumpCur->id, now - m_jumpAimAt);
+        }
+        return;
+    }
+    // Not drawn: what opened for it gets a moment, then the search, then what stands for it.
+    if (m_jumpFrames < 3 || now - m_jumpAimAt < 0.15 + (m_jumpOpenedAt >= m_jumpAimAt ? 0.1 : 0.0)) return;
+    const bool fieldBusy = m_searchId != 0 && ImGui::GetActiveID() == m_searchId;   // the user is typing in it
+    if (!m_jumpSearched && !fieldBusy && m_jumpCur->section[0]) {
+        if ((m_jumpCur->flags & JumpAdv) && !s.showAdvanced) {
+            if (JumpSearchFor(m_jumpCur)) return;
+        } else if (m_searchBuf[0]) {   // the user's search leaves it out: the search goes, as with its clear mark
+            Log::Info("Jump: the search left %s out and was cleared", m_jumpCur->id);
+            m_searchBuf[0] = 0;
+            m_jumpQuerySet = false;
+            m_jumpSearched = true;
+            m_jumpAimAt = now;
+            m_jumpFrames = 0;
+            return;
+        }
+    }
+    if (m_jumpSearched) JumpRestoreQuery();   // the search did not show it either
+    JumpFallback(s, ev);
+}
+
+void MainUI::JumpAim(Settings& s, UiEvents& ev, const JumpTarget* t) {
+    const double now = ImGui::GetTime();
+    m_jumpPhase = 1;
+    m_jumpFrames = 0;
+    m_jumpAimAt = now;
+    m_jumpGlideAt = -1.0;
+    m_jumpDist = 1e9f;
+    m_jumpSeenFrame = -100;
+    m_jumpInSidebar = false;
+    m_jumpSearched = false;
+    m_jumpOpenSection.clear();
+    m_jumpModeMask = JumpAnyMode;
+    if (!(t->modes & (1u << s.sourceMode))) {   // drawn in another source mode: that mode's segment of the switch
+        if (const JumpTarget* m = FindJumpTarget("mode")) {
+            Log::Info("Jump: %s is drawn in another source mode, the source switch stands for it", t->id);
+            m_jumpModeMask = t->modes;
+            t = m;
+        }
+    }
+    m_jumpCur = t;
+    m_jumpIsHeader = (t->flags & JumpHeader) != 0;
+    m_jumpCurId = m_jumpIsHeader ? t->section : t->id;
+    if (t->flags & JumpNoPlace) { JumpFallback(s, ev); return; }
+    const bool sidebar = t->section[0] != 0;
+    if ((sidebar || (t->flags & JumpSearch)) && !s.sidebarVisible) {
+        s.sidebarVisible = true;
+        ev.settingsChanged = true;
+        m_jumpOpenedAt = now;
+    }
+    if (sidebar) m_jumpOpenSection = t->section;
+    if (sidebar && (t->flags & JumpAdv) && !s.showAdvanced && !(m_searchId != 0 && ImGui::GetActiveID() == m_searchId))
+        JumpSearchFor(t);
+}
+
+void MainUI::JumpFallback(Settings& s, UiEvents& ev) {
+    const JumpTarget* t = m_jumpCur;
+    const JumpTarget* next = nullptr;
+    if (t && ++m_jumpHops <= 4) {
+        if (t->fallback[0]) next = FindJumpTarget(t->fallback);
+        else if (t->section[0] && !(t->flags & JumpHeader)) next = JumpHeaderOf(t->section);
+    }
+    if (next) {
+        Log::Info("Jump: %s is not shown now, %s stands for it", t->id, next->id);
+        JumpAim(s, ev, next);
+        return;
+    }
+    Log::Info("Jump: %s cannot be shown now, its page of the documentation opens", m_jumpReq ? m_jumpReq->id : "?");
+    if (m_jumpReq) ev.jumpDocs = m_jumpReq->doc;
+    m_jumpPhase = 0;
+    m_jumpCur = nullptr;
+}
+
+// A control the Advanced switch hides: the sidebar's search shows it (and the expert controls with it, see
+// DrawSidebar), with its name in the field. The field stays so, with its clear mark, until the user changes it or
+// the next jump gives the field back as it was.
+bool MainUI::JumpSearchFor(const JumpTarget* t) {
+    if (!t || t->labels.n == 0) return false;
+    const std::string q = JumpQueryText(I18n::T(t->labels.s[0]));
+    if (q.empty() || q.size() >= sizeof(m_searchBuf)) return false;
+    if (!m_jumpQuerySet) { m_jumpUserQuery = m_searchBuf; m_jumpQuerySet = true; }
+    m_jumpQuery = q;
+    std::memcpy(m_searchBuf, q.c_str(), q.size() + 1);
+    m_jumpSearched = true;
+    m_jumpAimAt = ImGui::GetTime();
+    m_jumpFrames = 0;
+    Log::Info("Jump: the search shows %s", t->id);
+    return true;
+}
+
+void MainUI::JumpRestoreQuery() {
+    if (!m_jumpQuerySet) return;
+    m_jumpQuerySet = false;
+    if (m_jumpQuery != m_searchBuf) return;   // the user has changed it since: it is theirs
+    std::snprintf(m_searchBuf, sizeof(m_searchBuf), "%s", m_jumpUserQuery.c_str());
+}
+
+// In the sidebar's child, before its content: a row that is not wholly in view is glided to, a little above the
+// middle (a tall one, or a section header, to the top), with the sidebar's own scrolling motion.
+void MainUI::JumpGlide() {
+    if (m_jumpPhase == 0 || m_jumpCut >= 0.0 || !m_jumpInSidebar || m_jumpGlideAt < 0.0) return;
+    ImGuiWindow* w = ImGui::GetCurrentWindow();
+    const float em = ImGui::GetFontSize(), visH = w->Size.y, h = m_jumpY1 - m_jumpY0;
+    float want;
+    if (m_jumpIsHeader) want = m_jumpY0 - em * 0.5f;
+    else if (h + em * 2.0f >= visH) want = m_jumpY0 - em;
+    else want = m_jumpY0 - std::max(em, (visH - h) * 0.35f);
+    want = std::clamp(want, 0.0f, std::max(0.0f, w->ScrollMax.y));
+    m_jumpDist = std::fabs(want - w->Scroll.y);
+    SmoothScrollTo(want);
+}
+
+bool MainUI::Section(const char* label, const char* code, bool defaultOpen, Icon icon) {
+    ImGuiWindow* w = ImGui::GetCurrentWindow();
+    ImGui::PushID(code);
+    const ImGuiID hid = w->GetID("##header");
+    ImGui::PopID();
+    if (!m_jumpOpenSection.empty() && m_jumpOpenSection == code && !w->SkipItems) {   // a jump opens it
+        m_jumpOpenSection.clear();
+        if (!w->DC.StateStorage->GetBool(hid, defaultOpen)) {
+            w->DC.StateStorage->SetBool(hid, true);
+            m_jumpOpenedAt = ImGui::GetTime();
+        }
+    }
+    const bool open = SectionHeader(label, code, defaultOpen, icon);
+    if (m_jumpPhase != 0 && m_jumpIsHeader && m_jumpCur && std::strcmp(m_jumpCurId, code) == 0 && ImGui::GetItemID() == hid)
+        JumpSeen(ImGui::GetItemRectMin(), ImGui::GetItemRectMax(), true, true);
+    return open;
+}
+
+void MainUI::JumpBegin(const char* id) {
+    IM_ASSERT(m_jumpDepth < (int)IM_ARRAYSIZE(m_jumpStack));
+    JumpMark& m = m_jumpStack[m_jumpDepth++];
+    m.on = m_markSidebar && JumpWants(id);
+    if (!m.on) return;
+    const ImVec2 c = ImGui::GetCursorScreenPos();
+    m.x = c.x;
+    m.y = c.y;
+}
+
+void MainUI::JumpEnd() {
+    if (m_jumpDepth <= 0) return;
+    const JumpMark m = m_jumpStack[--m_jumpDepth];
+    if (!m.on) return;
+    ImGuiWindow* w = ImGui::GetCurrentWindow();
+    const float y1 = ImGui::GetCursorScreenPos().y - ImGui::GetStyle().ItemSpacing.y;   // the row ended one spacing above
+    if (y1 - m.y < 1.0f) return;   // nothing of it was drawn (the search left it out)
+    JumpSeen(ImVec2(m.x, m.y), ImVec2(w->WorkRect.Max.x, y1), true, false);
+}
+
+void MainUI::JumpItem(const char* id) {
+    if (!m_markSidebar || !JumpWants(id) || SearchSkipped()) return;
+    JumpSeen(ImGui::GetItemRectMin(), ImGui::GetItemRectMax(), true, false);
+}
+
+void MainUI::JumpRect(const char* id, const ImVec2& min, const ImVec2& max, bool inside) {
+    if (!JumpWants(id) || max.x - min.x < 1.0f || max.y - min.y < 1.0f) return;
+    JumpSeen(min, max, false, inside);
+}
+
+void MainUI::JumpSeen(const ImVec2& min, const ImVec2& max, bool sidebar, bool inside) {
+    const double now = ImGui::GetTime();
+    m_jumpSeenFrame = ImGui::GetFrameCount();
+    m_jumpInSidebar = sidebar;
+    if (sidebar) {
+        ImGuiWindow* w = ImGui::GetCurrentWindow();
+        m_jumpY0 = min.y - w->Pos.y + w->Scroll.y;
+        m_jumpY1 = max.y - w->Pos.y + w->Scroll.y;
+        if (m_jumpPhase == 1 && m_jumpGlideAt < 0.0 && (m_jumpY0 < w->Scroll.y || m_jumpY1 > w->Scroll.y + w->Size.y))
+            m_jumpGlideAt = now;   // not wholly in view: JumpGlide takes it there from the next frame
+    }
+    if (m_jumpPhase != 2) return;
+    float widen = 0.0f;
+    const float a = JumpRingAlpha(now, m_jumpRingAt, m_jumpCut, widen);
+    if (a <= 0.002f) return;
+    ImVec2 a0 = min, a1 = max;
+    float rounding;
+    if (inside) {   // inside a card's edge: a section header, the library
+        const float in = Px(4.0f) - Px(3.0f) * widen;
+        a0 = ImVec2(a0.x + in, a0.y + in);
+        a1 = ImVec2(a1.x - in, a1.y - in);
+        rounding = std::max(0.0f, CardRounding() - in);
+    } else {        // around a control or a row
+        const float grow = Px(3.0f) + Px(3.0f) * widen;
+        a0 = ImVec2(a0.x - grow, a0.y - grow);
+        a1 = ImVec2(a1.x + grow, a1.y + grow);
+        rounding = ImGui::GetStyle().FrameRounding + grow;
+    }
+    ImDrawList* dl = sidebar ? ImGui::GetWindowDrawList() : ImGui::GetForegroundDrawList();
+    dl->AddRect(a0, a1, WithAlpha(Colors().accent, a), rounding, std::max(1.0f, Px(2.0f)));
+}
+
 void MainUI::CloseGuide(Settings& s, UiEvents& ev, bool point) {
     s.setupGuideSeen = 1;
     ev.settingsChanged = true;
@@ -1694,6 +1990,18 @@ void MainUI::DrawTopBar(Settings& s, const UiFrameInfo& info, UiEvents& ev, cons
     }
     ImGui::EndDisabled();
     Tip(TR(SourceModeHint));
+    if (m_jumpPhase != 0) {
+        const ImVec2 r1 = ImGui::GetItemRectMax();   // the last segment's
+        const float x0 = r1.x - switchW, y0 = ImGui::GetItemRectMin().y;
+        static const char* const kModeJumps[] = { "mode-live", "mode-picture", "mode-video" };
+        float u0 = FLT_MAX, u1 = -FLT_MAX;
+        for (int i = 0; i < 3; ++i) {
+            const float a = x0 + SegmentedWidth(modes, i, modeIcons), b = a + SegmentedWidth(modes + i, 1, modeIcons + i);
+            JumpRect(kModeJumps[i], ImVec2(a, y0), ImVec2(b, r1.y));
+            if (m_jumpModeMask & (1 << i)) { u0 = std::min(u0, a); u1 = std::max(u1, b); }
+        }
+        if (u1 > u0) JumpRect("mode", ImVec2(u0, y0), ImVec2(u1, r1.y));
+    }
     if (showBadges && badgesW > 0.0f) {
         ImGui::SameLine(0.0f, Px(12.0f));
         if (badge) {
@@ -1713,15 +2021,18 @@ void MainUI::DrawTopBar(Settings& s, const UiFrameInfo& info, UiEvents& ev, cons
         ImGui::SetCursorPosY(centred(frameH));
         ImGui::BeginDisabled(m_undo.empty());
         if (IconButton("##undo", Icon::Undo, ImVec2(frameH, frameH), TR(TipUndo), ButtonKind::Plain)) ApplyUndo(s, info, ev, false);
+        JumpRect("undo", ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
         ImGui::EndDisabled();
         ImGui::SameLine(0.0f, style.ItemInnerSpacing.x);
         ImGui::SetCursorPosY(centred(frameH));
         ImGui::BeginDisabled(m_redo.empty());
         if (IconButton("##redo", Icon::Redo, ImVec2(frameH, frameH), TR(TipRedo), ButtonKind::Plain)) ApplyUndo(s, info, ev, true);
+        JumpRect("redo", ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
         ImGui::EndDisabled();
         ImGui::SameLine(0.0f, style.ItemInnerSpacing.x);
         ImGui::SetCursorPosY(centred(frameH));
         if (IconButton("##historyBtn", Icon::History, ImVec2(frameH, frameH), TR(TipHistory), ButtonKind::Plain)) ImGui::OpenPopup("##history");
+        JumpRect("history", ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
         DrawHistory(s, info, ev, fonts, ImGui::GetItemRectMax());
         ImGui::SameLine();
     }
@@ -1858,8 +2169,10 @@ float MainUI::DrawSidebarSearch(Settings& s, UiEvents& ev, float rowW) {
     if (hasQuery) ImGui::SetNextItemAllowOverlap();   // the clear mark inside it takes the mouse
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(style.FramePadding.x + iconW, style.FramePadding.y));
     ImGui::InputTextWithHint("##search", TR(SearchHint), m_searchBuf, sizeof(m_searchBuf));
+    m_searchId = ImGui::GetItemID();   // a jump leaves the field alone while it is typed in
     ImGui::PopStyleVar();
     FocusRing();
+    JumpRect("search", f0, ImVec2(f0.x + fieldW, f0.y + frameH));
     if (ImGui::IsItemDeactivated() && ImGui::IsKeyDown(ImGuiKey_Escape)) m_searchBuf[0] = 0;
     ImDrawList* dl = ImGui::GetWindowDrawList();
     DrawIcon(dl, Icon::Search, ImVec2(f0.x + style.FramePadding.x + iconS * 0.5f, f0.y + frameH * 0.5f), iconS, p.textDim);
@@ -1874,6 +2187,7 @@ float MainUI::DrawSidebarSearch(Settings& s, UiEvents& ev, float rowW) {
     // window, on the line the preview column started, so the line break after the field lands below the body.
     ImGui::SetCursorScreenPos(sameRow ? ImVec2(f0.x + rowW - toggleW, f0.y) : ImVec2(f0.x, std::floor(f0.y + frameH + style.ItemSpacing.y)));
     if (Toggle(TR(Advanced), &s.showAdvanced)) ev.settingsChanged = true;
+    JumpRect("advanced", ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
     const float bottom = std::max(f0.y + frameH, ImGui::GetItemRectMax().y);
     Tip(TR(TipAdvanced));
     ImGui::PopID();
@@ -1888,25 +2202,25 @@ void MainUI::DrawSidebar(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
     m_adv = Searching() ? 1.0f : m_advShown;   // a search looks through the expert controls too
     ImGui::BeginDisabled(locked);
     ImGui::PushItemWidth(-LabelColumn(ImGui::GetContentRegionAvail().x));
-    if (SectionHeader(TR(SecSource), "source", true, Icon::Import)) { BlockSource(s, info, ev); SectionEnd(); }
-    if (SectionHeader(TR(SecNeural), "neural", true, Icon::Sparkle)) { BlockNeural(s, info, ev); SectionEnd(); }
-    if (SectionHeader(TR(SecCapture), "save", true, Icon::Save)) { BlockSave(s, info, ev); SectionEnd(); }
+    if (Section(TR(SecSource), "source", true, Icon::Import)) { BlockSource(s, info, ev); SectionEnd(); }
+    if (Section(TR(SecNeural), "neural", true, Icon::Sparkle)) { BlockNeural(s, info, ev); SectionEnd(); }
+    if (Section(TR(SecCapture), "save", true, Icon::Save)) { BlockSave(s, info, ev); SectionEnd(); }
     // The expert sections open and close with the Advanced switch; Display sits under DLAA, before the internals.
     if (RevealBegin("##advSections", m_adv)) {
-        if (SectionHeader(TR(SecGuidance), "guidance", false, Icon::Layers)) { BlockGuidance(s, info, ev); SectionEnd(); }
+        if (Section(TR(SecGuidance), "guidance", false, Icon::Layers)) { BlockGuidance(s, info, ev); SectionEnd(); }
 #if !APP_EDITION_AMD   // DLAA is NVIDIA-only
-        if (SectionHeader(TR(SecDlaa), "dlaa", false, Icon::Grid)) { BlockDlaa(s, info, ev); SectionEnd(); }
+        if (Section(TR(SecDlaa), "dlaa", false, Icon::Grid)) { BlockDlaa(s, info, ev); SectionEnd(); }
 #endif
         RevealEnd();
     }
-    if (SectionHeader(TR(SecDisplay), "view", false, Icon::Monitor)) { BlockView(s, info, ev); SectionEnd(); }
-    if (SectionHeader(TR(SecMcp), "mcp", false, Icon::Plug)) { BlockMcp(s, info, ev); SectionEnd(); }
+    if (Section(TR(SecDisplay), "view", false, Icon::Monitor)) { BlockView(s, info, ev); SectionEnd(); }
+    if (Section(TR(SecMcp), "mcp", false, Icon::Plug)) { BlockMcp(s, info, ev); SectionEnd(); }
     if (RevealBegin("##advInternals", m_adv)) {
-        if (SectionHeader(TR(SecInternals), "internals", false, Icon::Cpu)) { BlockInternals(s, info, ev); SectionEnd(); }
+        if (Section(TR(SecInternals), "internals", false, Icon::Cpu)) { BlockInternals(s, info, ev); SectionEnd(); }
         RevealEnd();
     }
     m_aboutY = ImGui::GetCursorPosY() - ImGui::GetCurrentWindow()->WindowPadding.y;   // where the sidebar glides to after the setup guide
-    if (SectionHeader(TR(SecAbout), "about", false, Icon::Info)) { BlockAbout(s, info, ev, fonts); SectionEnd(); }
+    if (Section(TR(SecAbout), "about", false, Icon::Info)) { BlockAbout(s, info, ev, fonts); SectionEnd(); }
     const bool nothingFound = Searching() && SearchHits() == 0;
     SearchEnd();
     if (nothingFound) {
@@ -1978,7 +2292,9 @@ void MainUI::BlockSource(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
     const bool busy = info.videoProcessing || info.batchRunning;
     if (s.sourceMode == SourceVideo) {
         ImGui::BeginDisabled(busy);
+        JumpBegin("open-file");
         OpenCloseRow(TR(OpenVideo), Icon::FileVideo, info.videoLoaded, ev.openVideo, ev.closeMedia);
+        JumpEnd();
         ImGui::EndDisabled();
         if (info.videoLoaded) {
             StatusDot(p.good, StrPrintf("%s  %ux%u  %.3g %s  %s", info.videoName.c_str(), info.videoWidth, info.videoHeight, info.videoFps, TR(Fps),
@@ -2016,8 +2332,10 @@ void MainUI::BlockSource(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         {
             ImGui::BeginDisabled(busy);
             // The output follows the opened file by default: same codec, average bitrate and frame rate.
+            JumpBegin("match-source");
             if (Toggle(TR(MatchSource), &s.videoMatchSource)) ev.settingsChanged = true;
             Help(TR(TipMatchSource));
+            JumpEnd();
             if (s.videoMatchSource && info.videoLoaded && info.videoAnimation != 0) {
                 // An animated image comes back in its own format; only a lossy WebP has a quality to choose.
                 const bool webp = info.videoAnimation == 3;
@@ -2028,12 +2346,16 @@ void MainUI::BlockSource(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
                 ImGui::TextDisabled(TR(MatchedAnim), fmt.c_str(), loop.c_str());
                 ImGui::PopTextWrapPos();
                 if (webp && !info.videoLossless) {
+                    JumpBegin("webp-quality");
                     if (SliderIntReset(TR(WebpQuality), &s.webpQuality, 50, 100, 90, "%d", TR(TipWebpQuality))) ev.settingsChanged = true;
+                    JumpEnd();
                 }
             } else if (s.videoMatchSource && RunningUnderWine()) {
                 // Proton: a video comes back as WebP whatever its codec (no MP4 writer); the quality is the WebP one.
                 Hint(TR(ProtonNoMp4));
+                JumpBegin("webp-quality");
                 if (SliderIntReset(TR(WebpQuality), &s.webpQuality, 50, 100, 90, "%d", TR(TipWebpQuality))) ev.settingsChanged = true;
+                JumpEnd();
             } else if (s.videoMatchSource) {
                 if (info.videoLoaded) {
                     const std::string rate = info.videoBitrateKbps > 0 ? StrPrintf("%.1f Mbit/s", info.videoBitrateKbps / 1000.0) : std::string(TR(BitrateUnknown));
@@ -2041,32 +2363,46 @@ void MainUI::BlockSource(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
                     ImGui::TextDisabled(TR(MatchedSpecs), IsHevc(info.videoCodec) ? TR(VideoOutputHevc) : TR(VideoOutputH264), rate.c_str(), info.videoFps);
                     ImGui::PopTextWrapPos();
                 }
+                JumpBegin("keep-audio");
                 if (Toggle(TR(KeepAudio), &s.videoKeepAudio)) ev.settingsChanged = true;
                 Help(TR(TipKeepAudio));
+                JumpEnd();
             } else {
                 const char* outputs[] = { TR(VideoOutputH264), TR(VideoOutputHevc), TR(VideoOutputPng), TR(VideoOutputGif), TR(VideoOutputApng), TR(VideoOutputWebP) };
+                JumpBegin("save-as");
                 if (RunningUnderWine()) {
                     // Proton: the two MP4 entries are left out (no MP4 writer); the setting keeps its Windows numbering.
                     int choice = std::clamp(s.videoOutput - 2, 0, 3);
                     if (ComboIds(TR(VideoOutput), &choice, outputs + 2, 4, TR(ProtonNoMp4))) { s.videoOutput = choice + 2; ev.settingsChanged = true; }
                 } else if (ComboIds(TR(VideoOutput), &s.videoOutput, outputs, 6, TR(TipVideoOutput))) ev.settingsChanged = true;
+                JumpEnd();
                 if (s.videoOutput == 0 || s.videoOutput == 1) {
+                    JumpBegin("bitrate");
                     if (SliderIntReset(TR(Bitrate), &s.videoBitrateMbps, 5, 200, 40, "%d Mbit/s", TR(TipBitrate))) ev.settingsChanged = true;
+                    JumpEnd();
+                    JumpBegin("keep-audio");
                     if (Toggle(TR(KeepAudio), &s.videoKeepAudio)) ev.settingsChanged = true;
                     Help(TR(TipKeepAudio));
+                    JumpEnd();
                 } else if (s.videoOutput == 5) {
+                    JumpBegin("webp-quality");
                     if (SliderIntReset(TR(WebpQuality), &s.webpQuality, 50, 100, 90, "%d", TR(TipWebpQuality))) ev.settingsChanged = true;
+                    JumpEnd();
                 }
             }
             if (info.videoAnimation == 0 && RevealBegin("##advDecode", m_adv)) {
+                JumpBegin("hardware-decoding");
                 if (Toggle(TR(HardwareDecode), &s.videoHardwareDecode)) ev.settingsChanged = true;
                 Help(TR(TipHardwareDecode));
+                JumpEnd();
                 RevealEnd();
             }
             ImGui::EndDisabled();
         }
     } else if (s.sourceMode == SourceImage) {
+        JumpBegin("open-file");
         OpenCloseRow(TR(OpenImage), Icon::FileImage, info.imageLoaded, ev.openImage, ev.closeMedia);
+        JumpEnd();
         if (info.imageLoaded) {
             StatusDot(p.good, StrPrintf("%s  %ux%u", info.imageName.c_str(), info.imageOrigWidth, info.imageOrigHeight).c_str());
             if (info.imageWidth != info.imageOrigWidth || info.imageHeight != info.imageOrigHeight)
@@ -2079,6 +2415,7 @@ void MainUI::BlockSource(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
             Hint(TR(ImageHint));
         }
     } else {
+        JumpBegin("spout-sender");
         // Sender selection.
         {
             const std::string preview = s.senderName.empty() ? std::string(TR(SenderAuto)) : s.senderName;
@@ -2099,6 +2436,7 @@ void MainUI::BlockSource(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
             ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
             TrailingLabel(TR(Sender));
         }
+        JumpEnd();
         if (info.status && info.sourceConnected) {
             StatusDot(p.good, StrPrintf("%s  %ux%u  %s  %3.0f %s", info.senderName.c_str(), info.status->srcWidth, info.status->srcHeight,
                                         info.sourceFormat.c_str(), m_shown.senderFps, TR(Fps)).c_str());
@@ -2116,8 +2454,10 @@ void MainUI::BlockSource(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
     ImGui::Spacing();
     // Output resolution: off = the source size; larger than the source = upscaling (DLSS super resolution or
     // resampling), smaller = downscaling.
+    JumpBegin("custom-resolution");
     if (Toggle(TR(CustomResolution), &s.customResolution)) ev.settingsChanged = true;
     Help(TR(CustomResolutionHint));
+    JumpEnd();
     if (s.customResolution) {
         SearchHold(true);   // the block shows as a whole under its switch
         ImGui::Indent(Px(6.0f));
@@ -2157,7 +2497,9 @@ void MainUI::BlockSource(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         if (upscaling) {
             const bool dlss = st->ngxInitialized && st->dlssAvailable;
             const char* methods[] = { TR(UpscaleDlss), TR(UpscaleResample) };
+            JumpBegin("upscaling");
             if (ComboIds(TR(UpscaleMethod), &s.upscaleMode, methods, 2, TR(TipUpscaleMethod))) ev.settingsChanged = true;
+            JumpEnd();
             if (!dlss && s.upscaleMode == 0) Hint(TR(UpscaleNoDlss));
             const double factor = (double)outW * outH / ((double)srcW * srcH);
             ImGui::PushStyleColor(ImGuiCol_Text, p.warn);
@@ -2188,6 +2530,7 @@ void MainUI::BlockSource(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
     // HDR source controls: only meaningful for floating-point (scene-linear) Spout textures.
     if (info.sourceIsHdr && s.sourceMode == SourceSpout) {
         ImGui::Spacing();
+        JumpBegin("hdr");
         SectionLabel(TR(HdrSource));
         ImGui::Indent(Px(6.0f));
         bool ch = false;
@@ -2196,6 +2539,7 @@ void MainUI::BlockSource(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         if (ch) ev.settingsChanged = true;
         Hint(TR(HdrSourceHint));
         ImGui::Unindent(Px(6.0f));
+        JumpEnd();
     }
     ImGui::Spacing();
 }
@@ -2203,6 +2547,7 @@ void MainUI::BlockSource(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
 void MainUI::BlockNeural(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
     const Palette& p = Colors();
     const PipelineStatus* st = info.status;
+    JumpBegin("enable");
     if (Toggle(TR(NrEnable), &s.nrEnabled)) { ev.nrChanged = true; ev.settingsChanged = true; }
     if (st) {
         if (st->nrActive) PillAfter(TR(Active), WithAlpha(p.good, 0.18f), p.good, Px(10.0f));
@@ -2210,10 +2555,13 @@ void MainUI::BlockNeural(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         else if (st->nrStandby) PillAfter(TR(Standby), WithAlpha(p.warn, 0.18f), p.warn, Px(10.0f));
         else PillAfter(TR(Inactive), WithAlpha(p.muted, 0.2f), p.muted, Px(10.0f));
     }
+    JumpEnd();
     Hint(TR(NrHint));
     if (s.sourceMode == SourceSpout && RevealBegin("##advCaptureOnly", m_adv)) {
+        JumpBegin("capture-only");
         if (Toggle(TR(NrCaptureOnly), &s.nrCaptureOnly)) ev.settingsChanged = true;
         Help(TR(TipNrCaptureOnly));
+        JumpEnd();
         RevealEnd();
     }
 
@@ -2221,15 +2569,19 @@ void MainUI::BlockNeural(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
     ImGui::Spacing();
     // The runtime rows differ by edition: the NVIDIA runtime file the GeForce edition hosts, or the FSR host that
     // DLSS-NR-on-AMD attaches to in the Radeon edition. The route is the edition's; there is nothing to choose.
+    JumpBegin("runtime");
     if (EditionRoute() == RouteFsrHost) BlockFsrHost(s, info, ev);
     else BlockNgxRuntime(s, info, ev);
+    JumpEnd();
     ImGui::Spacing();
     EffectControls(s, ev, m_adv, s.nrEnabled, st);
     if (st && RevealBegin("##advNeuralReadouts", m_adv)) {
+        JumpBegin("readouts");
         Readout(m_fonts, TR(GpuTime), FormatMsFixed(m_shown.gpuMs[(UINT)GpuTimer::Neural]));
         Readout(m_fonts, TR(Frames), StrPrintf("%llu", m_shown.processedFrames));
         Readout(m_fonts, TR(NrPassSize), st->nrActive && st->nrPassWidth ? StrPrintf("%ux%u", st->nrPassWidth, st->nrPassHeight) : std::string("-"));
         Readout(m_fonts, TR(NrOutputCheck), st->nrActive && m_shown.nrOutDelta >= 0.0f ? StrPrintf("%5.3f", m_shown.nrOutDelta) : std::string("-"), TR(TipNrOutputCheck));
+        JumpEnd();
         RevealEnd();
     }
     ImGui::Spacing();
@@ -2239,20 +2591,33 @@ void MainUI::BlockNeural(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
 void MainUI::EffectControls(Settings& s, UiEvents& ev, float advanced, bool enabled, const PipelineStatus* st) {
     ImGui::BeginDisabled(!enabled);
     {
+        JumpBegin("preset");
         DrawPresetRow(s, ev);
+        JumpEnd();
         const char* styles[] = { TR(StyleDefault), TR(StyleNatural), TR(StyleCinematic) };
+        JumpBegin("style");
         if (ComboIds(TR(Style), &s.nrStyle, styles, 3, TR(TipStyle))) { ev.nrChanged = true; ev.settingsChanged = true; }
+        JumpEnd();
     }
     bool ch = false;
     // 0..2: up to 1 goes to the runtime (which stops there); above 1 the composite pass amplifies the matching part
     // of the change the network made (see the tooltips).
+    JumpBegin("intensity");
     ch |= SliderReset(TR(Intensity), &s.nrIntensity, 0.0f, 2.0f, 1.0f, "%.2f", TR(TipIntensity));
+    JumpEnd();
     if (RevealBegin("##basicHint", 1.0f - advanced)) { Hint(TR(NrStrengthHint)); RevealEnd(); }
     bool blend = false;
     if (RevealBegin("##advEffect", advanced)) {
+        JumpBegin("global-tone");
         ch |= SliderReset(TR(GlobalTone), &s.nrGlobalTone, 0.0f, 2.0f, 1.0f, "%.2f", TR(TipGlobalTone));
+        JumpEnd();
+        JumpBegin("local-tone");
         ch |= SliderReset(TR(LocalTone), &s.nrLocalTone, 0.0f, 2.0f, 1.0f, "%.2f", TR(TipLocalTone));
+        JumpEnd();
+        JumpBegin("local-structure");
         ch |= SliderReset(TR(LocalStructure), &s.nrLocalStructure, 0.0f, 2.0f, 1.0f, "%.2f", TR(TipLocalStructure));
+        JumpEnd();
+        JumpBegin("skin-structure");
         if (SearchMatch(TR(SkinStructure), TR(TipSkinStructure))) {
             // The box and its slider are one entry, found by the slider's name: the box's own label is only
             // "Runtime default", and its caption would otherwise stand alone in a search.
@@ -2273,10 +2638,16 @@ void MainUI::EffectControls(Settings& s, UiEvents& ev, float advanced, bool enab
             ImGui::PopID();
             SearchHold(false);
         }
+        JumpEnd();
+        JumpBegin("auto-mask");
         if (Toggle(TR(AutoMask), &s.nrAutoMask)) ch = true;
         Help(TR(TipAutoMask));
+        JumpEnd();
+        JumpBegin("ui-correction");
         if (Toggle(TR(UiCorrection), &s.nrUiCorrection)) ch = true;
         Help(TR(TipUiCorrection));
+        JumpEnd();
+        JumpBegin("pass-resolution");
         {
             // Neural pass resolution, one list: the full picture, a cap on the long edge, or a percentage; a reduced
             // pass has its change upsampled onto the full picture. A value from the settings file or the command
@@ -2303,14 +2674,27 @@ void MainUI::EffectControls(Settings& s, UiEvents& ev, float advanced, bool enab
             if (st && s.nrEnabled && st->nrPassCapped && st->nrPassWidth)
                 Hint(StrPrintf(TR(NrPassCapped), st->nrPassWidth, st->nrPassHeight).c_str());
         }
+        JumpEnd();
         ImGui::Spacing();
+        JumpBegin("output-blend");
         SectionLabel(TR(OutputBlend));
         // The exposure changes what the network sees (neural pass re-run); the strengths only change the composite.
+        JumpBegin("input-exposure");
         ch |= SliderReset(TR(InputExposure), &s.nrInputExposure, 0.25f, 4.0f, 1.0f, "%.2fx", TR(TipInputExposure));
+        JumpEnd();
+        JumpBegin("tone-transfer");
         blend |= SliderReset(TR(ToneTransfer), &s.nrToneTransfer, 0.0f, 2.0f, 1.0f, "%.2f", TR(TipToneTransfer));
+        JumpEnd();
+        JumpBegin("colour-strength");
         blend |= SliderReset(TR(ColorStrength), &s.nrColorStrength, 0.0f, 2.0f, 1.0f, "%.2f", TR(TipColorStrength));
+        JumpEnd();
+        JumpBegin("shadow-strength");
         blend |= SliderReset(TR(ShadowGain), &s.nrShadowGain, 0.0f, 2.0f, 1.0f, "%.2f", TR(TipShadowGain));
+        JumpEnd();
+        JumpBegin("highlight-strength");
         blend |= SliderReset(TR(HighlightGain), &s.nrHighlightGain, 0.0f, 2.0f, 1.0f, "%.2f", TR(TipHighlightGain));
+        JumpEnd();
+        JumpEnd();
         RevealEnd();
     }
     ImGui::EndDisabled();
@@ -2324,6 +2708,7 @@ void MainUI::EffectControls(Settings& s, UiEvents& ev, float advanced, bool enab
                          style.FramePadding.x * 4.0f + style.ItemSpacing.x <= rowW;
     const ImVec2 resetSize(oneLine ? 0.0f : rowW, 0.0f);
     if (GhostButton(TR(ResetHistory), resetSize)) ev.resetHistory = true;
+    JumpItem("reset-history");
     if (oneLine) ImGui::SameLine();
     if (GhostButton(TR(ResetDefaults), resetSize)) {
         s.nrPreset = 0; s.nrStyle = 0; s.nrIntensity = 1.0f; s.nrGlobalTone = 1.0f; s.nrLocalTone = 1.0f;
@@ -2332,6 +2717,7 @@ void MainUI::EffectControls(Settings& s, UiEvents& ev, float advanced, bool enab
         s.nrShadowGain = 1.0f; s.nrHighlightGain = 1.0f; s.nrInputScale = 100; s.nrScaleMode = 0; s.nrMaxLongEdge = 2160;
         ev.nrChanged = true; ev.settingsChanged = true;
     }
+    JumpItem("reset-defaults");
 }
 
 void MainUI::BlockSave(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
@@ -2341,13 +2727,17 @@ void MainUI::BlockSave(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
     if (IconTextButton(s.sourceMode == SourceVideo ? TR(ProcessVideo) : s.sourceMode == SourceImage ? TR(ProcessAndSave) : TR(Capture),
                        s.sourceMode == SourceVideo ? Icon::Film : s.sourceMode == SourceImage ? Icon::Sparkle : Icon::Camera, ImVec2(-FLT_MIN, 0), ButtonKind::Accent))
         ev.captureNow = true;
+    JumpItem("save-button");
     ImGui::EndDisabled();
     Tip(s.sourceMode == SourceVideo ? TR(VideoHint) : s.sourceMode == SourceImage ? TR(ImageHint) : TR(CaptureHint));
     Hint(TR(OutputHint));
     if (s.sourceMode != SourceSpout) {
         // What the run would take on this card, so a slow card can be judged before the wait.
+        JumpBegin("estimated-time");
         Readout(m_fonts, TR(Estimate), EstimateText(s, info), TR(TipEstimate));
+        JumpEnd();
     }
+    JumpBegin("folder");
     if (SearchMatch(TR(CaptureFolder), TR(OpenFolder))) {
         SyncBuffer(m_folderBuf, sizeof(m_folderBuf), s.captureFolder, m_folderEditing);
         const float btnW = ImGui::GetFrameHeight();
@@ -2365,6 +2755,8 @@ void MainUI::BlockSave(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
         TrailingLabel(TR(CaptureFolder));
     }
+    JumpEnd();
+    JumpBegin("file-name");
     {
         // The saved files' names, from a template; an empty box means the default it shows. Live captures and
         // processed files have their own (a capture has no source name to build on), the mode says which is shown.
@@ -2382,15 +2774,21 @@ void MainUI::BlockSave(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         TrailingLabel(nameLabel);
         Help(TR(TipFileName));
     }
+    JumpEnd();
+    JumpBegin("save-original");
     if (Toggle(TR(SaveOriginal), &s.saveOriginal)) ev.settingsChanged = true;
+    JumpEnd();
     if (RevealBegin("##advKeepAlpha", m_adv)) {
+        JumpBegin("keep-alpha");
         if (Toggle(TR(KeepAlpha), &s.keepAlpha)) ev.settingsChanged = true;
         Help(TR(TipKeepAlpha));
+        JumpEnd();
         RevealEnd();
     }
     if (s.sourceMode == SourceSpout) {
         ImGui::Spacing();
         // Hotkey.
+        JumpBegin("hotkey");
         if (Toggle(TR(Hotkey), &s.hotkeyEnabled)) { ev.hotkeyChanged = true; ev.settingsChanged = true; }
         Help(TR(TipHotkey));
         if (s.hotkeyEnabled && !SearchSkipped()) {
@@ -2414,6 +2812,8 @@ void MainUI::BlockSave(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
             ImGui::Unindent(Px(6.0f));
             SearchHold(false);
         }
+        JumpEnd();
+        JumpBegin("timelapse");
         // Timelapse.
         {
             int idx = 0;
@@ -2426,6 +2826,7 @@ void MainUI::BlockSave(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
             }
             if (ComboIds(TR(Timelapse), &idx, items, IM_ARRAYSIZE(kTimelapseChoices), TR(TipTimelapse))) { s.timelapseSeconds = kTimelapseChoices[idx]; ev.settingsChanged = true; }
         }
+        JumpEnd();
     }
     if (!info.lastCapture.empty()) {
         ImGui::PushStyleColor(ImGuiCol_Text, info.lastCaptureOk ? ImGui::GetColorU32(ImGuiCol_TextDisabled) : p.bad);
@@ -2439,6 +2840,7 @@ void MainUI::BlockSave(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
 }
 
 void MainUI::BlockView(Settings& s, const UiFrameInfo& /*info*/, UiEvents& ev) {
+    JumpBegin("theme");
     if (SearchMatch(TR(Theme), TR(TipTheme))) {
         const char* themes[] = { TR(ThemeSystem), TR(ThemeDark), TR(ThemeLight) };
         const Icon themeIcons[] = { Icon::Monitor, Icon::Moon, Icon::Sun };
@@ -2455,6 +2857,8 @@ void MainUI::BlockView(Settings& s, const UiFrameInfo& /*info*/, UiEvents& ev) {
             ev.settingsChanged = true;
         }
     }
+    JumpEnd();
+    JumpBegin("compare");
     {
         const char* items[] = { TR(CompareOutput), TR(CompareOriginal), TR(CompareWipe), TR(CompareMotion), TR(CompareDepth) };
         if (ComboIds(TR(Compare), &s.compareMode, items, 5)) ev.settingsChanged = true;
@@ -2462,11 +2866,15 @@ void MainUI::BlockView(Settings& s, const UiFrameInfo& /*info*/, UiEvents& ev) {
     if (s.compareMode == CompareWipe && !SearchSkipped()) {
         if (SliderFloatFill("##wipe", &s.wipePosition, 0.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp)) ev.settingsChanged = true;
     }
+    JumpEnd();
     {
         const char* items[] = { TR(FitWindowLabel), TR(OneToOne) };
+        JumpBegin("fit");
         if (ComboIds("##fit", &s.fitMode, items, 2)) { ev.settingsChanged = true; ResetView(false); }
+        JumpEnd();
         // Manual magnification on top of the fit, shown relative to the picture's pixels. The wheel over the preview
         // does the same; the button returns to the fitted view.
+        JumpBegin("zoom");
         if (SearchMatch(TR(Zoom), TR(TipZoom))) {
             ImGui::PushID("zoom");
             LabelRowBegin(TR(Zoom));
@@ -2486,17 +2894,32 @@ void MainUI::BlockView(Settings& s, const UiFrameInfo& /*info*/, UiEvents& ev) {
             TrailingLabel(TR(Zoom));
             ImGui::PopID();
         }
+        JumpEnd();
     }
+    JumpBegin("checkerboard");
     if (Toggle(TR(Checkerboard), &s.checkerboard)) ev.settingsChanged = true;
+    JumpEnd();
+    JumpBegin("show-library");
     if (Toggle(TR(ShowLibrary), &s.libraryVisible)) ev.settingsChanged = true;
+    JumpEnd();
+    JumpBegin("overlay");
     if (Toggle(TR(Overlay), &s.showOverlay)) ev.settingsChanged = true;
+    JumpEnd();
+    JumpBegin("show-log");
     if (Toggle(TR(ShowLog), &s.showLog)) ev.settingsChanged = true;
+    JumpEnd();
+    JumpBegin("reopen-last");
     if (Toggle(TR(ReopenLast), &s.reopenLast)) ev.settingsChanged = true;
     Help(TR(TipReopenLast));
+    JumpEnd();
     if (RevealBegin("##advView", m_adv)) {
+        JumpBegin("vsync");
         if (Toggle(TR(Vsync), &s.vsync)) ev.settingsChanged = true;
+        JumpEnd();
+        JumpBegin("rate-cap");
         if (SliderIntReset(TR(RateLimit), &s.processRateLimit, 0, 240, 0, s.processRateLimit > 0 ? "%d fps" : TR(RateLimitOff), TR(TipRateLimit)))
             ev.settingsChanged = true;
+        JumpEnd();
         RevealEnd();
     }
     ImGui::Spacing();
@@ -2516,8 +2939,11 @@ void MainUI::BlockMcp(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         return StrPrintf("%.0f d", age / 86400.0);
     };
     Hint(TR(McpHint));
+    JumpBegin("mcp-run");
     if (Toggle(TR(McpEnable), &s.mcpEnabled)) ev.settingsChanged = true;
     Help(TR(TipMcp));
+    JumpEnd();
+    JumpBegin("mcp-reach");
     {
         const char* items[] = { TR(McpReachLocal), TR(McpReachNetwork) };
         if (ComboIds(TR(McpReach), &s.mcpBind, items, 2, TR(TipMcpReach))) ev.settingsChanged = true;
@@ -2531,6 +2957,8 @@ void MainUI::BlockMcp(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         if (ActionButton(TR(McpFirewall), Icon::Shield, ImVec2(fullW, 0.0f))) ev.mcpFirewall = true;
         Tooltip(TR(TipMcpFirewall));
     }
+    JumpEnd();
+    JumpBegin("mcp-port");
     if (SearchMatch(TR(McpPort), TR(TipMcpPort))) {
         LabelSeen(TR(McpPort));
         if (InputIntLabel(TR(McpPort), &s.mcpPort, 1, 100)) { s.Clamp(); ev.settingsChanged = true; }
@@ -2538,6 +2966,7 @@ void MainUI::BlockMcp(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
     }
     if (Toggle(TR(McpReadOnly), &s.mcpReadOnly)) ev.settingsChanged = true;
     Help(TR(TipMcpReadOnly));
+    JumpEnd();
     if (SearchMatch(TR(McpCopyConfig), TR(TipMcpCopyConfig))) {   // shows with the section's title or its buttons
         // The state: a badge and the address, then how much the clients have done.
         ImGui::Spacing();
@@ -2572,6 +3001,7 @@ void MainUI::BlockMcp(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         if (ActionButton(TR(Documentation), Icon::Docs, ImVec2(fullW, 0.0f))) ev.mcpOpenDocs = true;
     }
     // The keys: one row each, then the field for a new one. A key's secret is copied when it is made and on demand.
+    JumpBegin("mcp-keys");
     if (SearchMatch(TR(McpKeys), TR(TipMcpRole))) {
         SearchHold(true);   // the list and the row for a new key show as a whole
         ImGui::Spacing();
@@ -2634,6 +3064,7 @@ void MainUI::BlockMcp(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         Tip(TR(TipMcpKeepHours));
         if (ActionButton(TR(McpOpenJobs), Icon::Folder, ImVec2(fullW, 0.0f))) ev.mcpOpenJobs = true;
     }
+    JumpEnd();
     if (RevealBegin("##advMcp", m_adv)) {
         if (SearchMatch(TR(McpQueueMax), TR(TipMcpQueueMax))) {
             LabelSeen(TR(McpQueueMax));
@@ -2674,22 +3105,30 @@ void MainUI::BlockGuidance(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
     const PipelineStatus* st = info.status;
     // A picture or a paused video has no motion to measure: say so rather than reporting the flow as unavailable.
     const bool still = (s.sourceMode == SourceImage) || (s.sourceMode == SourceVideo && !info.videoPlaying && !info.videoProcessing);
+    JumpBegin("motion-vectors");
     {
         const char* items[] = { TR(MotionZero), TR(MotionCompute), TR(MotionNvof), TR(MotionFsr) };
         // The FSR flow is this program's own and deserves a word of explanation when it is selected.
         if (ComboIds(TR(MotionSource), &s.motionMode, items, 4, s.motionMode == MotionFsrFlow ? TR(TipFsrFlow) : TR(TipMotion))) ev.settingsChanged = true;
     }
+    JumpEnd();
     if (s.motionMode == MotionCompute) {
+        JumpBegin("search-radius");
         if (SliderIntReset(TR(SearchRadius), &s.searchRadius, 2, 12, 7, "%d px", TR(TipSearchRadius))) ev.settingsChanged = true;
+        JumpEnd();
     } else if (s.motionMode == MotionNvOpticalFlow) {
+        JumpBegin("flow-grid");
         int grid = (s.nvofGrid == 4) ? 0 : (s.nvofGrid == 1) ? 2 : 1;
         const char* grids[] = { "4 px", "2 px", "1 px" };
         if (ComboIds(TR(NvofGrid), &grid, grids, 3, TR(TipNvof))) { s.nvofGrid = (grid == 0) ? 4 : (grid == 2) ? 1 : 2; ev.settingsChanged = true; }
         int perf = (s.nvofPerf == 5) ? 0 : (s.nvofPerf == 20) ? 2 : 1;
         const char* perfs[] = { TR(PerfSlow), TR(PerfMedium), TR(PerfFast) };
         if (ComboIds(TR(NvofPerf), &perf, perfs, 3)) { s.nvofPerf = (perf == 0) ? 5 : (perf == 2) ? 20 : 10; ev.settingsChanged = true; }
+        JumpEnd();
+        JumpBegin("bidirectional");
         if (Toggle(TR(NvofBidirectional), &s.nvofBidirectional)) ev.settingsChanged = true;
         Help(TR(TipNvofBidirectional));
+        JumpEnd();
         if (st) {
             if (still && !st->nvofReady) StatusDot(p.muted, StrPrintf("%s: %s", TR(Nvof), TR(StaticPreview)).c_str());
             else if (st->nvofReady) StatusDot(p.good, StrPrintf("%s: %s (%u px%s)", TR(Nvof), TR(Available), st->nvofGrid, st->nvofBidirectional ? " \xE2\x87\x84" : "").c_str());
@@ -2701,9 +3140,13 @@ void MainUI::BlockGuidance(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         }
     }
     if (s.motionMode == MotionFsrFlow) {
+        JumpBegin("search-radius");
         if (SliderIntReset(TR(SearchRadius), &s.searchRadius, 2, 12, 7, "%d px", TR(TipFlowRadius))) ev.settingsChanged = true;
+        JumpEnd();
+        JumpBegin("bidirectional");
         if (Toggle(TR(FlowBidirectional), &s.flowBidirectional)) ev.settingsChanged = true;
         Help(TR(TipFlowBidirectional));
+        JumpEnd();
         if (st) {
             if (still) StatusDot(p.muted, StrPrintf("%s: %s", TR(Nvof), TR(StaticPreview)).c_str());
             else if (st->srcWidth == 0) StatusDot(p.muted, StrPrintf("%s: %s", TR(Nvof), TR(DepthWaitingSource)).c_str());
@@ -2711,14 +3154,18 @@ void MainUI::BlockGuidance(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
                                              s.flowBidirectional ? " \xE2\x87\x84" : "").c_str());
         }
     }
+    JumpBegin("confidence");
     if (s.motionMode != MotionZero && SliderReset(TR(MotionConfidence), &s.motionConfidence, 0.0f, 1.0f, 0.35f, "%.2f", TR(TipConfidence)))
         ev.settingsChanged = true;
+    JumpEnd();
+    JumpBegin("depth");
     {
         // Display order puts the estimated depth first; the enum keeps the 0.1.x numbering.
         const char* items[] = { TR(DepthEstimated), TR(DepthFlat), TR(DepthGradient), TR(DepthZero) };
         int sel = (s.depthMode == DepthEstimated) ? 0 : std::clamp(s.depthMode, 0, 2) + 1;
         if (ComboIds(TR(DepthSource), &sel, items, 4, TR(TipDepth))) { s.depthMode = (sel == 0) ? DepthEstimated : sel - 1; ev.settingsChanged = true; }
     }
+    JumpEnd();
     if (s.depthMode == DepthEstimated) {
         if (st && st->depthParked) {
             StatusDot(p.muted, StrPrintf("%s: %s", TR(DepthStatus), TR(DepthParked)).c_str());
@@ -2748,7 +3195,10 @@ void MainUI::BlockGuidance(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
                 break;
             }
         }
+        JumpBegin("depth-interval");
         if (SliderIntReset(TR(DepthInterval), &s.depthInterval, 1, 10, 4, "%d", TR(TipDepthInterval))) ev.settingsChanged = true;
+        JumpEnd();
+        JumpBegin("depth-resolution");
         {
             static const int kSides[] = { 252, 336, 420, 518 };
             const char* sides[] = { "252 px", "336 px", "420 px", "518 px" };
@@ -2756,6 +3206,8 @@ void MainUI::BlockGuidance(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
             for (int i = 0; i < 4; ++i) if (s.depthLongSide == kSides[i]) res = i;
             if (ComboIds(TR(DepthResolution), &res, sides, 4, TR(TipDepthResolution))) { s.depthLongSide = kSides[res]; ev.settingsChanged = true; }
         }
+        JumpEnd();
+        JumpBegin("depth-model");
         if (SearchMatch(TR(DepthModel), TR(Reload))) {
             // The model file: the field, then browse and reload as icon buttons on the same row.
             SyncBuffer(m_depthModelBuf, sizeof(m_depthModelBuf), s.depthModelPath, m_depthModelEditing);
@@ -2775,11 +3227,16 @@ void MainUI::BlockGuidance(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
             ImGui::SameLine(0.0f, gap);
             TrailingLabel(TR(DepthModel));
         }
+        JumpEnd();
     }
+    JumpBegin("auto-reset");
     if (Toggle(TR(AutoReset), &s.autoReset)) ev.settingsChanged = true;
     Help(TR(TipAutoReset));
+    JumpEnd();
+    JumpBegin("cut-threshold");
     if (s.autoReset && SliderReset(TR(CutThreshold), &s.cutThreshold, 0.01f, 0.5f, 0.10f, "%.2f", TR(TipCutThreshold)))
         ev.settingsChanged = true;
+    JumpEnd();
     if (st) {
         Readout(m_fonts, TR(FrameCost), StrPrintf("%5.3f  max %5.3f", m_shown.statAvgCost, m_shown.statMaxCost));
         Readout(m_fonts, "|mv|", StrPrintf("%5.2f px", m_shown.statAvgMotion));
@@ -3034,6 +3491,7 @@ void MainUI::BlockDlaa(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
     const PipelineStatus* st = info.status;
     const bool available = st && st->ngxInitialized && st->dlssAvailable;
     const bool inSr = st && st->upscaleMode == 1;   // DLSS super resolution in effect: it includes the anti-aliasing
+    JumpBegin("dlaa-enable");
     ImGui::BeginDisabled(!available || inSr);
     if (Toggle(TR(DlaaEnable), &s.dlaaEnabled)) { ev.dlaaChanged = true; ev.settingsChanged = true; }
     ImGui::EndDisabled();
@@ -3043,6 +3501,7 @@ void MainUI::BlockDlaa(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         else if (!available) PillAfter(TR(Unsupported), WithAlpha(p.muted, 0.2f), p.muted, Px(12.0f));
         else PillAfter(TR(Inactive), WithAlpha(p.muted, 0.2f), p.muted, Px(12.0f));
     }
+    JumpEnd();
     Hint(inSr ? TR(DlaaInSr) : (st && st->dlaaTooLarge) ? TR(DlaaTooLarge) : TR(DlaaHint));
     if (st && st->dlaaFailed && !st->dlaaError.empty()) {
         ImGui::PushStyleColor(ImGuiCol_Text, p.bad);
@@ -3055,9 +3514,11 @@ void MainUI::BlockDlaa(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         // runtime may differ. The value is never re-mapped here: an earlier build turned any letter outside its
         // list into K before the runtime saw it, which looked like the preset could not be chosen.
         static const char* presets[] = { "Default", "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O" };
+        JumpBegin("dlaa-preset");
         ImGui::BeginDisabled(!available);
         if (ComboIds(TR(DlaaPreset), &s.dlaaPreset, presets, 16, TR(TipDlaaPreset))) { ev.dlaaChanged = true; ev.settingsChanged = true; }
         ImGui::EndDisabled();
+        JumpEnd();
     }
     if (info.status) Readout(m_fonts, TR(GpuTime), FormatMsFixed(m_shown.gpuMs[(UINT)GpuTimer::Dlaa]));
     ImGui::Spacing();
@@ -3065,6 +3526,7 @@ void MainUI::BlockDlaa(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
 
 void MainUI::BlockInternals(Settings& /*s*/, const UiFrameInfo& info, UiEvents& /*ev*/) {
     if (!info.status) return;
+    JumpBegin("timings");
     ImGui::TextDisabled("%s:", TR(Timers));
     const struct { GpuTimer t; const char* name; } timers[] = {
         { GpuTimer::Convert, TR(TmConvert) }, { GpuTimer::Guidance, TR(TmGuidance) }, { GpuTimer::OpticalFlow, TR(TmOpticalFlow) },
@@ -3095,6 +3557,7 @@ void MainUI::BlockInternals(Settings& /*s*/, const UiFrameInfo& info, UiEvents& 
     for (const auto& t : timers) row(t.name, m_shown.gpuMs[(UINT)t.t]);
     row(TR(TmUi), m_shown.uiGpuMs);
     row(StrPrintf("%s CPU", TR(UiFps)).c_str(), m_shown.cpuMs);
+    JumpEnd();
     ImGui::Spacing();
 }
 
@@ -3129,9 +3592,14 @@ void MainUI::BlockAbout(Settings& s, const UiFrameInfo& info, UiEvents& ev, cons
     const ImGuiStyle& style = ImGui::GetStyle();
     const float fullW = ImGui::GetContentRegionAvail().x;
     ImGui::Spacing();
+    JumpBegin("update-auto");
     if (Toggle(TR(UpdateAuto), &s.updateCheck)) ev.settingsChanged = true;
+    JumpEnd();
+    JumpBegin("driver-check");
     if (Toggle(TR(DriverCheckAuto), &s.driverCheck)) ev.settingsChanged = true;
     Help(TR(TipDriverCheck));
+    JumpEnd();
+    JumpBegin("update-channel");
     {
         const char* channels[] = { TR(ChannelStable), TR(ChannelPreview) };
         if (ComboIds("##updateChannel", &s.updateChannel, channels, 2)) { ev.settingsChanged = true; ev.updateCheckNow = true; }
@@ -3140,12 +3608,16 @@ void MainUI::BlockAbout(Settings& s, const UiFrameInfo& info, UiEvents& ev, cons
         ImGui::TextUnformatted(TR(UpdateChannel));
         Help(TR(TipUpdateChannel));
     }
+    JumpEnd();
     // GitHub access: directly, or through a mirror site where GitHub is slow or unreachable.
     ImGui::Spacing();
+    JumpBegin("github-access");
     ImGui::TextUnformatted(TR(GithubAccess));
     Help(TR(MirrorWhy));
     MirrorControls(s, info, ev, fullW, false);
+    JumpEnd();
     ImGui::Spacing();
+    JumpBegin("update-now");
     {
         const int st = info.updateState;
         const bool busy = st == UpChecking || st == UpDownloading || st == UpExtracting || st == UpRestarting;
@@ -3169,28 +3641,37 @@ void MainUI::BlockAbout(Settings& s, const UiFrameInfo& info, UiEvents& ev, cons
         }
         else if (st == UpFailed) { ImGui::PushStyleColor(ImGuiCol_Text, p.bad); ImGui::TextWrapped("%s", info.updateWritable ? StrPrintf(TR(UpdateCheckFailed), info.updateError.c_str()).c_str() : TR(UpdateNotWritable)); ImGui::PopStyleColor(); }
     }
+    JumpEnd();
     ImGui::Spacing();
     // Rows of two equal buttons (a pair whose names do not fit half the row goes one above the other) and the reset
     // across the full width, all the same height.
+    JumpBegin("logs");
     const ImVec2 row1 = PairSize(TR(OpenLogFile), TR(OpenSettingsFolder), fullW);
     if (ActionButton(TR(OpenLogFile), Icon::Terminal, row1)) ev.openLogFile = true;
     if (row1.x < fullW) ImGui::SameLine(0.0f, style.ItemSpacing.x);
     if (ActionButton(TR(OpenSettingsFolder), Icon::Folder, row1)) ev.openSettingsFolder = true;
+    JumpEnd();
     ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + fullW);
     Hint(TR(LogsKeptHint));
     ImGui::PopTextWrapPos();
     if (ActionButton(TR(ReportIssue), Icon::Flag, ImVec2(fullW, 0.0f))) { ev.openIssueReport = true; ev.openIssueCrash = false; }
+    JumpItem("report");
+    JumpBegin("docs");
     const ImVec2 row2 = PairSize(TR(Documentation), TR(ProjectPage), fullW);
     if (ActionButton(TR(Documentation), Icon::Docs, row2)) ev.openDocs = true;
     Spotlight(false);
     if (row2.x < fullW) ImGui::SameLine(0.0f, style.ItemSpacing.x);
     if (ActionButton(TR(ProjectPage), Icon::OpenExternal, row2)) ev.openProjectPage = true;
+    JumpEnd();
     const ImVec2 row3 = PairSize(TR(GuideTitle), TR(Licenses), fullW);
     if (ActionButton(TR(GuideTitle), Icon::Wand, row3)) m_guideOpen = true;
+    JumpItem("setup-guide");
     Spotlight(false);
     if (row3.x < fullW) ImGui::SameLine(0.0f, style.ItemSpacing.x);
     if (ActionButton(TR(Licenses), Icon::Shield, row3)) ev.openLicenses = true;
+    JumpItem("notices");
     if (ActionButton(TR(ResetAllSettings), Icon::Reset, ImVec2(fullW, 0.0f))) ImGui::OpenPopup("##resetall");
+    JumpItem("reset-all");
     if (BeginPopupFade("##resetall")) {
         const float bw = ImGui::GetFontSize() * 7.5f;
         ImGui::TextUnformatted(TR(ResetAllSettings));
@@ -4072,6 +4553,7 @@ void MainUI::DrawLibrary(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
                                         ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     ImGui::PopStyleVar();
     if (!open) { ImGui::EndChild(); return; }
+    JumpRect("library", pos, ImVec2(pos.x + size.x, pos.y + size.y), true);
     const int vtxRow = ImGui::GetWindowDrawList()->VtxBuffer.Size;   // the header, faded around a mode switch
     std::vector<LibraryItem>* lib = info.library;
     const int count = lib ? (int)lib->size() : 0;
@@ -4142,10 +4624,13 @@ void MainUI::DrawLibrary(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
         } else {
             if (fullAdd) {
                 if (IconTextButton(addF, Icon::ImagePlus, ImVec2(0, 0), ButtonKind::Ghost)) ev.libraryAddFiles = true;
+                const ImVec2 add0 = ImGui::GetItemRectMin();
                 ImGui::SameLine();
                 if (IconTextButton(addD, Icon::Folder, ImVec2(0, 0), ButtonKind::Ghost)) ev.libraryAddFolder = true;
+                JumpRect("library-add", add0, ImGui::GetItemRectMax());
             } else {
                 if (IconButton("##libAdd", Icon::Plus, ImVec2(0, 0), addF, ButtonKind::Ghost)) ImGui::OpenPopup("##libAddMenu");
+                JumpRect("library-add", ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
                 if (BeginPopupFade("##libAddMenu")) {
                     if (ImGui::MenuItem(addF)) ev.libraryAddFiles = true;
                     if (ImGui::MenuItem(addD)) ev.libraryAddFolder = true;
@@ -4159,11 +4644,13 @@ void MainUI::DrawLibrary(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
             const bool process = level < 5 ? IconTextButton(procSel, Icon::Wand, ImVec2(0, 0), ButtonKind::Accent)
                                            : IconButton("##procSel", Icon::Wand, ImVec2(0, 0), procSel, ButtonKind::Accent);
             if (process) ev.libraryProcessSelected = true;
+            JumpRect("process-selected", ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
             ImGui::EndDisabled();
             if (level < 3) {
                 ImGui::SameLine();
                 ImGui::BeginDisabled(count == 0 || busy);
                 if (IconTextButton(procAll, Icon::ListChecks, ImVec2(0, 0), ButtonKind::Flat)) ev.libraryProcessAll = true;
+                JumpRect("batch", ImGui::GetItemRectMin(), ImGui::GetItemRectMax());
                 ImGui::EndDisabled();
                 ImGui::SameLine();
                 // Red only while something is selected. It drops the items from the library; the files stay.
@@ -4174,6 +4661,7 @@ void MainUI::DrawLibrary(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
             }
             ImGui::SameLine();
             if (IconButton("##libMore", Icon::Ellipsis, ImVec2(0, 0), TR(More), ButtonKind::Plain)) ImGui::OpenPopup("##libMenu");
+            if (level >= 3) JumpRect("batch", ImGui::GetItemRectMin(), ImGui::GetItemRectMax());   // "Process all" is in its menu
             if (BeginPopupFade("##libMenu")) {
                 if (level >= 3) {
                     if (ImGui::MenuItem(procAll, nullptr, false, count > 0 && !busy)) ev.libraryProcessAll = true;
@@ -5050,6 +5538,7 @@ bool MainUI::WantsFrames() const {
     if (m_startFade >= 0.0 && now - m_startFade < 0.6) return true;
     if (m_seekDragging || m_wipeDragging || m_toolRowDragging || m_libDrag || m_cropHandle >= 0 || m_seekTarget >= 0.0) return true;
     if ((m_spotUntil >= 0.0 && now < m_spotUntil) || m_scrollToAbout > 0.0) return true;
+    if (m_jumpPhase != 0 || !m_jumpAsk.empty()) return true;
     if (m_mirrorBlockTime >= 0.0 && now - m_mirrorBlockTime < 0.5) return true;
     if (m_fullscreenControls > 0.0f && now - m_fullscreenMouseTime < 2.6) return true;
     if (ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel)) return true;

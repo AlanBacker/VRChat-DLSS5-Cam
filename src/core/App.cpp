@@ -3,6 +3,7 @@
 #include "core/Log.h"
 #include "core/Util.h"
 #include "gfx/FsrHost.h"
+#include "ui/JumpTargets.h"
 #include "ui/Theme.h"
 #include "../../resources/resource.h"
 #include "imgui.h"
@@ -2418,6 +2419,7 @@ void App::HandleEvents(ui::UiEvents& ev) {
     if (ev.askToggle) { if (m_askOpen && m_askClosing < 0.0) CloseAsk(); else OpenAsk(true); }
     if (ev.askRetry) { Log::Info("Ask AI: Try again"); m_ask.Retry(); }
     if (ev.askDocs) { Log::Info("Ask AI: Open documentation from the card"); OpenPath(DocsUrl()); }
+    if (!ev.jumpDocs.empty()) OpenPath(DocsUrl(Utf8ToWide(ev.jumpDocs).c_str()));   // a place that cannot be shown now: its page
     if (ev.browseRuntime) m_pendingBrowseRuntime = true;
     if (ev.browseDepthModel) m_pendingBrowseDepthModel = true;
     if (ev.openImage) m_pendingBrowseImage = true;
@@ -3860,6 +3862,30 @@ AskPageConfig App::AskConfig() const {
     c.retry = TR(AskRetry);
     c.newChat = TR(AskNewChat);
     c.close = TR(Close);
+    // the places an answer can point at, by their names in this language (ui/JumpTargets.h)
+    for (const ui::JumpTarget& t : ui::kJumpTargets) {
+        if (!ui::JumpInEdition(t)) continue;
+        AskPageConfig::JumpEntry e;
+        e.id = t.id;
+        e.doc = t.doc;
+        e.header = (t.flags & ui::JumpHeader) != 0;
+        for (int i = 0; i < t.labels.n; ++i) {
+            std::string l = I18n::T(t.labels.s[i]);
+            const size_t id = l.find("##");   // an ImGui id after the name
+            if (id != std::string::npos) l.resize(id);
+            while (!l.empty() && l.back() == ' ') l.pop_back();
+            if (!l.empty() && l.find('%') == std::string::npos && l.find('\n') == std::string::npos) e.labels.push_back(l);
+        }
+        for (const char* a = t.aliases; *a;) {   // key combinations, the same in every language
+            const char* bar = std::strchr(a, '|');
+            const size_t n = bar ? (size_t)(bar - a) : std::strlen(a);
+            if (n) e.labels.emplace_back(a, n);
+            a += n + (bar ? 1 : 0);
+        }
+        if (!e.labels.empty()) c.jump.push_back(std::move(e));
+    }
+    c.jumpShow = TR(AskJumpShow);
+    c.jumpPage = TR(AskJumpPage);
     c.test = !m_cli.askAt.empty();
     c.breakLoad = m_cli.askBreakLoad;
     return c;
@@ -3945,6 +3971,7 @@ void App::TickAsk() {
         case AskPanel::Event::Answered:   Log::Info("Ask AI: answer (%s)", e.text.c_str()); break;
         case AskPanel::Event::Log:        Log::Info("Ask AI: %s", e.text.c_str()); break;
         case AskPanel::Event::Docs:       Log::Info("Ask AI: Open documentation from the page"); OpenPath(DocsUrl()); break;
+        case AskPanel::Event::Jump:       Log::Info("Ask AI: show %s in the interface", e.text.c_str()); m_ui.JumpTo(e.text); break;
         }
     }
     if (!m_cli.askAt.empty()) {   // test runs: where the button is, for a script that clicks it
@@ -4017,7 +4044,10 @@ void App::TickAsk() {
 // page), spot (its pointers flash), pin (posted pointer messages rest where they are put: WM_MOUSELEAVE is dropped,
 // since the real pointer is elsewhere on a desktop someone works at), q:<question>, theme:<0|1|2>,
 // lang:<auto|en|zh|ja|ko>, min:<seconds> (the window minimised that long, never activated), size:<W>x<H> (the
-// window's client size).
+// window's client size), replay:<file>|<question> (the question asked and a saved answer stream of the service
+// streamed in as its answer, nothing sent), marks (the marked phrases logged), hover:<n> (the n-th one's card),
+// jump:<n> / page:<n> (that card's buttons), goto:<id> (a place of ui/JumpTargets.h shown, as a jump does),
+// adv:<0|1> (the Advanced switch), sidebar:<0|1> (the sidebar shown or folded away).
 void App::RunAskAction(const std::string& action) {
     Log::Info("Ask AI: test step %s", action.c_str());
     if (action == "open") OpenAsk(true);
@@ -4032,6 +4062,24 @@ void App::RunAskAction(const std::string& action) {
     else if (action == "spot") m_ui.TestSpotlight();
     else if (action == "pin") m_askPin = true;   // a pointer posted into the window rests there as a real one does
     else if (action.rfind("q:", 0) == 0) m_ask.Ask(action.substr(2));
+    else if (action.rfind("replay:", 0) == 0) {
+        const size_t bar = action.find('|', 7);
+        const std::wstring file = Utf8ToWide(action.substr(7, bar == std::string::npos ? std::string::npos : bar - 7));
+        std::string sse;
+        FILE* f = nullptr;
+        if (_wfopen_s(&f, file.c_str(), L"rb") == 0 && f) {
+            char buf[65536];
+            for (size_t n; (n = fread(buf, 1, sizeof(buf), f)) > 0;) sse.append(buf, n);
+            fclose(f);
+        }
+        if (sse.empty()) { Log::Warn("Ask AI: no saved answer in %s", WideToUtf8(file).c_str()); return; }
+        m_ask.TestReplay(sse, bar == std::string::npos ? std::string("replay") : action.substr(bar + 1));
+    }
+    else if (action == "marks" || action.rfind("hover:", 0) == 0 || action.rfind("jump:", 0) == 0 || action.rfind("page:", 0) == 0)
+        m_ask.Test(action.c_str());
+    else if (action.rfind("goto:", 0) == 0) m_ui.JumpTo(action.substr(5));
+    else if (action.rfind("adv:", 0) == 0) m_settings.showAdvanced = atoi(action.c_str() + 4) != 0;
+    else if (action.rfind("sidebar:", 0) == 0) m_settings.sidebarVisible = atoi(action.c_str() + 8) != 0;
     else if (action.rfind("min:", 0) == 0) {   // minimised for that long, then restored by a timer
         ShowWindow(m_hwnd, SW_SHOWMINNOACTIVE);
         SetTimer(m_hwnd, kAskRestoreTimer, (UINT)std::clamp(atof(action.c_str() + 4) * 1000.0, 100.0, 60000.0), nullptr);

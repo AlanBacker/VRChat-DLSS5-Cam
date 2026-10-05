@@ -30,6 +30,16 @@ struct AskPageConfig {
     // the notice over a question that could not be answered: why (the service off or out of its allowance, too many
     // questions, no connection, a conversation too long), and its buttons
     std::string noticeOff, noticeBusy, noticeNet, noticeFull, openDocs, retry, newChat, close;
+    // The places of the interface an answer can point at (ui/JumpTargets.h): the page marks a phrase of an answer
+    // that is one of a place's names and offers to show it (Event::Jump) or to open its page of the documentation.
+    struct JumpEntry {
+        std::string id;                    // what Event::Jump carries
+        std::vector<std::string> labels;   // its names in the interface's language (and key combinations)
+        std::string doc;                   // its page of the documentation (and anchor), under the language's folder
+        bool header = false;               // a section of the sidebar ("the ... section" means it, not a control of that name)
+    };
+    std::vector<JumpEntry> jump;
+    std::string jumpShow, jumpPage;   // the two ways on from a marked phrase
     bool        test = false;     // test runs: the page reports an answer's text (the start of it) for the log
     bool        breakLoad = false;   // development: the widget's script is asked for where there is none (the load fails)
 };
@@ -38,7 +48,7 @@ class AskPanel {
 public:
     enum class State { Idle, Creating, Loading, Ready, Failed };
     struct Event {
-        enum Type { Ready, LoadFailed, Close, Link, Answered, Escape, Fullscreen, CreateFailed, Log, Docs } type;
+        enum Type { Ready, LoadFailed, Close, Link, Answered, Escape, Fullscreen, CreateFailed, Log, Docs, Jump } type;
         std::string text;
     };
 
@@ -70,7 +80,11 @@ public:
     void Ask(const std::string& question);                // asks a question (test runs)
     void Test(const char* what);                          // test runs: "link" clicks an answer's first link, "close" the widget's close control,
                                                           // "fail:<status|net|off>" answers every question with that failure (nothing is sent),
-                                                          // "note:<docs|retry|fresh|close>" presses that button on the failed-question notice
+                                                          // "note:<docs|retry|fresh|close>" presses that button on the failed-question notice,
+                                                          // "marks" logs the marked phrases, "hover:<n>" shows the n-th one's card,
+                                                          // "jump:<n>" / "page:<n>" presses that card's first / second button
+    void TestReplay(const std::string& sse, const std::string& question);   // test runs: the question asked, a saved answer (the
+                                                          // service's stream) streamed in as its answer; nothing is sent
     bool SendKey(UINT vk);                                // test runs: a key press posted to the page's window
     void NotifyMoved();                                   // the parent window moved on the screen
     struct Hole {

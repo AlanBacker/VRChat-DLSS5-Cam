@@ -137,9 +137,9 @@ void FilterMenu(ICoreWebView2ContextMenuRequestedEventArgs* args) {
 // of this file): "body" is the card, at the window's bottom-right corner and of the card's size, and every fixed
 // element of the widget is placed in it (contain: layout), as it was in the whole page when the page was the card.
 const char kPageCss[] = R"vdc(
-:root{color-scheme:dark;--vdc-win:#0F1014;--vdc-card:#191C22;--vdc-border:#262A33;--vdc-shadow:rgba(0,0,0,.34);--vdc-hair:1px;--vdc-r:10px;--vdc-ease:cubic-bezier(.25,.6,.4,1);
+:root{color-scheme:dark;--vdc-acc-t:#7C8AFF;--vdc-win:#0F1014;--vdc-card:#191C22;--vdc-border:#262A33;--vdc-shadow:rgba(0,0,0,.34);--vdc-hair:1px;--vdc-r:10px;--vdc-ease:cubic-bezier(.25,.6,.4,1);
 --vdc-text:#E8EAF0;--vdc-dim:#969CAC;--vdc-ctl:#252932;--vdc-ctl-h:#2F343F;--vdc-ctl-a:#3A404E;--vdc-acc:#5C6CF5;--vdc-acc-h:#7281FF;--vdc-acc-a:#4C5BDE;--vdc-warn:#FFB847;--vdc-lift:rgba(0,0,0,.45)}
-:root[data-theme=light]{color-scheme:light;--vdc-win:#F1F3F7;--vdc-card:#FFFFFF;--vdc-border:#DFE2E9;--vdc-shadow:rgba(22,28,50,.22);
+:root[data-theme=light]{color-scheme:light;--vdc-acc-t:#4658E6;--vdc-win:#F1F3F7;--vdc-card:#FFFFFF;--vdc-border:#DFE2E9;--vdc-shadow:rgba(22,28,50,.22);
 --vdc-text:#1B1E25;--vdc-dim:#666D7D;--vdc-ctl:#EEF0F5;--vdc-ctl-h:#E4E7EE;--vdc-ctl-a:#D6DAE4;--vdc-acc:#4658E6;--vdc-acc-h:#5C6DF2;--vdc-acc-a:#3848CC;--vdc-warn:#C27A08;--vdc-lift:rgba(22,28,50,.16)}
 html{margin:0;width:100%;height:100%;overflow:hidden;background:var(--vdc-card);transition:background-color .3s var(--vdc-ease)}
 body{position:fixed!important;left:auto!important;top:auto!important;right:0!important;bottom:0!important;width:var(--vdc-w,100vw)!important;height:var(--vdc-h,100vh)!important;margin:0!important;overflow:hidden!important;contain:layout;font-family:var(--vdc-font,system-ui);-webkit-user-select:none;user-select:none}
@@ -159,7 +159,16 @@ body{position:fixed!important;left:auto!important;top:auto!important;right:0!imp
 #vdc-note .x{flex:none;display:flex;align-items:center;justify-content:center;width:24px;height:24px;margin-top:-2px;padding:0;border-radius:6px;background:transparent;color:var(--vdc-dim)}
 #vdc-note .x:hover{background:var(--vdc-ctl-h);color:var(--vdc-text)}
 #vdc-note button:focus-visible{box-shadow:0 0 0 2px var(--vdc-acc)}
-@media (prefers-reduced-motion:reduce){html,#vdc-note,:root:not([data-vdc-away]) #vdc-note.on{transition:none}}
+#vdc-jump{position:fixed;left:0;top:0;z-index:21;box-sizing:border-box;display:flex;flex-direction:column;gap:2px;width:max-content;max-width:calc(100% - 16px);padding:4px;border-radius:8px;background:var(--vdc-card);color:var(--vdc-text);box-shadow:inset 0 0 0 var(--vdc-hair) var(--vdc-border),0 6px 20px var(--vdc-lift);font:14px/20px var(--vdc-font,system-ui);opacity:0;transform:translateY(-4px);visibility:hidden;pointer-events:none;transition:opacity .12s cubic-bezier(.32,0,.67,0),transform .12s cubic-bezier(.32,0,.67,0),visibility 0s linear .12s,background-color .3s var(--vdc-ease),color .3s var(--vdc-ease),box-shadow .3s var(--vdc-ease)}
+#vdc-jump[data-side=above]{transform:translateY(4px)}
+:root:not([data-vdc-away]) #vdc-jump.on{opacity:1;transform:none;visibility:visible;pointer-events:auto;transition:opacity .2s cubic-bezier(.18,1,.56,1),transform .2s cubic-bezier(.18,1,.56,1),visibility 0s,background-color .3s var(--vdc-ease),color .3s var(--vdc-ease),box-shadow .3s var(--vdc-ease)}
+#vdc-jump .it{display:flex;align-items:flex-start;gap:8px;min-height:30px;box-sizing:border-box;padding:5px 10px 5px 8px;border:0;margin:0;border-radius:6px;background:transparent;color:var(--vdc-text);font:inherit;text-align:start;cursor:pointer;outline:none;transition:background-color .16s var(--vdc-ease),color .16s var(--vdc-ease),box-shadow .16s var(--vdc-ease)}
+#vdc-jump .it svg{flex:none;margin-top:2px;color:var(--vdc-dim);transition:color .16s var(--vdc-ease)}
+#vdc-jump .it:hover{background:var(--vdc-ctl-h)}
+#vdc-jump .it:active{background:var(--vdc-ctl-a)}
+#vdc-jump .it.pri,#vdc-jump .it.pri svg{color:var(--vdc-acc-t)}
+#vdc-jump .it:focus-visible{box-shadow:0 0 0 2px var(--vdc-acc)}
+@media (prefers-reduced-motion:reduce){html,#vdc-note,:root:not([data-vdc-away]) #vdc-note.on,#vdc-jump,:root:not([data-vdc-away]) #vdc-jump.on{transition:none}}
 )vdc";
 
 // Put into the widget's (closed) shadow root. Its stylesheet is all in cascade layers, so these plain rules win
@@ -192,7 +201,14 @@ const char kShadowCss[] = R"vdc(
 :host([data-vdc-theming]) *,:host([data-vdc-theming]) *::before,:host([data-vdc-theming]) *::after{transition-property:background-color,border-color,color,fill,stroke,outline-color;transition-duration:.3s;transition-timing-function:cubic-bezier(.25,.6,.4,1)}
 :host([data-vdc-instant]) [data-mintlify-assistant-panel]{transition:none!important}
 :host([data-vdc-note]) [data-mintlify-assistant-panel] [role=alert]{display:none}
-@media (prefers-reduced-motion:reduce){[data-mintlify-assistant-panel]{transition:none!important}}
+[data-slot=assistant-markdown]{text-underline-offset:4px}
+[data-slot=assistant-markdown] [data-vdc-jump]{cursor:pointer;border-radius:3px;outline:none;text-decoration-line:underline;text-decoration-style:dotted;text-decoration-thickness:2px;text-decoration-color:light-dark(rgba(70,88,230,.7),rgba(124,138,255,.75));transition:color .16s cubic-bezier(.25,.6,.4,1),background-color .16s cubic-bezier(.25,.6,.4,1),box-shadow .16s cubic-bezier(.25,.6,.4,1),text-decoration-color .16s cubic-bezier(.25,.6,.4,1)}
+[data-slot=assistant-markdown] [data-vdc-jump]:hover,[data-slot=assistant-markdown] [data-vdc-jump][data-vdc-hot]{color:light-dark(#4658E6,#8E9AFF);background-color:light-dark(rgba(70,88,230,.1),rgba(124,138,255,.14));box-shadow:0 0 0 2px light-dark(rgba(70,88,230,.1),rgba(124,138,255,.14));text-decoration-style:solid;text-decoration-color:light-dark(#4658E6,#7C8AFF)}
+[data-slot=assistant-markdown] [data-vdc-jump]:focus-visible{box-shadow:0 0 0 2px light-dark(#4658E6,#5C6CF5)}
+::highlight(vdc-jump){text-decoration-line:underline;text-decoration-style:dotted;text-decoration-thickness:2px;text-decoration-color:light-dark(rgba(70,88,230,.7),rgba(124,138,255,.75))}
+::highlight(vdc-jump-hot){color:light-dark(#4658E6,#8E9AFF);background-color:light-dark(rgba(70,88,230,.1),rgba(124,138,255,.14));text-decoration-line:underline;text-decoration-style:solid;text-decoration-thickness:2px;text-decoration-color:light-dark(#4658E6,#7C8AFF)}
+:host([data-vdc-hand]) [data-slot=assistant-markdown]{cursor:pointer}
+@media (prefers-reduced-motion:reduce){[data-mintlify-assistant-panel]{transition:none!important}[data-slot=assistant-markdown] [data-vdc-jump]{transition:none}}
 )vdc";
 
 // The page's script: starts the widget (drawn open, its panel docked over the whole page), keeps its shadow root to
@@ -250,6 +266,7 @@ const char kPageJs[] = R"vdc(
       r.addEventListener('auxclick', onLink, true);
       r.addEventListener('input', function () { if (noteKind) requestAnimationFrame(place); }, true);   // the composer grows
       new MutationObserver(check).observe(r, { childList: true, subtree: true });
+      jumpWatch(r);
     }
     return r;
   };
@@ -292,8 +309,7 @@ const char kPageJs[] = R"vdc(
     b.addEventListener('click', fn);
     return b;
   }
-  function place() {   /* just above the composer: the outermost box around its input that is still a small part of the card */
-    if (!note) return;
+  function composerY() {   /* the composer's top in the card (0: not found): the outermost box around its input that is still a small part of the card */
     var box = document.body.getBoundingClientRect(), h = box.height, p = panel(), y = 0;
     var el = root && root.querySelector('[data-mintlify-assistant-panel] textarea');
     for (var i = 0; el && i < 8; i++) {
@@ -302,7 +318,12 @@ const char kPageJs[] = R"vdc(
       el = up;
     }
     if (el) y = el.getBoundingClientRect().top - box.top;
-    note.style.bottom = (y > 40 && y < h ? Math.round(h - y + 8) : 140) + 'px';
+    return y > 40 && y < h ? y : 0;
+  }
+  function place() {   /* just above the composer */
+    if (!note) return;
+    var y = composerY();
+    note.style.bottom = (y ? Math.round(document.body.getBoundingClientRect().height - y + 8) : 140) + 'px';
   }
   function notice(kind, status) {
     clearTimeout(noteTimer);
@@ -380,7 +401,13 @@ const char kPageJs[] = R"vdc(
     unnote(false);
     alerts();
     var p;
-    if (failWith === null) p = fetch0.apply(window, arguments);
+    if (replayWith !== null) {   /* test runs: a saved answer, streamed in; nothing goes to the service */
+      var id = 'replay-' + Date.now();   /* with the headers that start a session, which the widget asks of a first answer */
+      p = Promise.resolve(new Response(stream(replayWith), { status: 200, headers: { 'Content-Type': 'text/event-stream',
+        'x-vercel-ai-ui-message-stream': 'v1', 'x-mintlify-widget-session': id, 'x-thread-id': id, 'x-message-id': id,
+        'x-mintlify-widget-session-expires-at': new Date(Date.now() + 3600e3).toISOString() } }));
+      replayWith = null;
+    } else if (failWith === null) p = fetch0.apply(window, arguments);
     else {   /* test runs: the failure asked for, and nothing goes to the service */
       log('test: the question met ' + (failWith === 'net' ? 'a network failure' : 'HTTP ' + failWith) + ', nothing was sent');
       p = failWith === 'net' ? Promise.reject(new TypeError('Failed to fetch'))
@@ -483,7 +510,7 @@ const char kPageJs[] = R"vdc(
     else if (m.type === 'look') theme(!!m.light);
     else if (m.type === 'size') { cardW = +m.w || 0; cardH = +m.h || 0; hair(); if (noteKind) place(); }
     else if (m.type === 'ask') { if (inited) settle(api.ask(String(m.q || ''), { source: 'app', open: true, focus: false })); }
-    else if (m.type === 'test') test(String(m.what || ''));
+    else if (m.type === 'test') test(String(m.what || ''), m);
   });
   function frames(fn) { requestAnimationFrame(function () { requestAnimationFrame(fn); }); }
   function show(m) {
@@ -508,6 +535,7 @@ const char kPageJs[] = R"vdc(
   }
   function hide() {
     shown = false;
+    hideCard();
     if (host) host.removeAttribute('data-vdc-shown');
     doc.setAttribute('data-vdc-away', '');   // the notice fades with the panel
   }
@@ -564,13 +592,15 @@ const char kPageJs[] = R"vdc(
     if (root && root.querySelector('[role="menu"]')) return;
     e.preventDefault();
     e.stopPropagation();
-    if (noteKind) { unnote(true); return; }   // the notice first, the panel with the next press
+    if (cardOn) { hideCard(); return; }       // a mark's card first,
+    if (noteKind) { unnote(true); return; }   // then the notice, the panel with the next press
     post({ type: 'escape' });
   }, true);
 
   /* test runs */
-  function test(what) {
-    if (what === 'close') {
+  function test(what, m) {
+    if (what === 'replay' || what === 'marks' || /^(hover|jump|page):/.test(what)) testJump(what, m || {});
+    else if (what === 'close') {
       var b = root && root.querySelector('[data-mintlify-assistant-panel] [aria-keyshortcuts="Escape"]');
       log('test close: ' + (b ? 'the close control' : 'no close control, closed by the API'));
       if (b) b.click(); else if (api) settle(api.close());
@@ -590,6 +620,319 @@ const char kPageJs[] = R"vdc(
       log('test note: ' + (nb ? want : 'no ' + want + ' button on the notice'));
       if (nb) nb.click();
     }
+  }
+
+)vdc" R"vdc(
+  /* Jumps. A phrase of an answer that names a place in the interface (one of its labels in the interface's language,
+     in bold, as code or in quotes) is marked. Pointing at it offers two ways on: the place shown in the program (it
+     is opened, glided to and ringed there, nothing is changed) or its page of the documentation; a click is the
+     first. The widget's elements only get attributes and a quoted phrase is a highlight over the text, so nothing
+     the widget draws is changed; the marks are looked for again whenever the answers have been still a moment, so
+     an answer drawn again while it streams in keeps them. */
+  var JT = C.jump || [], JI = new Map(), JK = new Map(), JK2 = new Map(), JH = new Map(), HL = null;
+  var SECTION = /^\s*(section|\u30bb\u30af\u30b7\u30e7\u30f3|\u5206\u8282|\u5206\u533a|\u680f|\uc139\uc158)/i;   /* "section", in the four languages */
+  var PAIR = { '"': '"', '“': '”', '「': '」', '『': '』', '‘': '’' };
+  var QUOTE = /(["“「『‘])([^"“”「」『』‘’\n]{2,40})(["”」』’])/g;
+  var quotes = [], scanTimer = 0, scanFirst = 0, replayWith = null;
+  var card = null, cardOn = false, cardFor = null, showTimer = 0, hideTimer = 0, hiddenAt = 0, ptr = 'mouse', overCard = false;
+  function jkey(t) {   /* a name as it is compared: no spaces, case or width, quotes around it, or "...", ":" after it */
+    return String(t || '').normalize('NFKC').toLowerCase().replace(/[\s​]+/g, '')
+      .replace(/^["'“”‘’「」『』]+|["'“”‘’「」『』]+$/g, '')
+      .replace(/[.:]+$/, '');
+  }
+  function bare(k) { return k.replace(/\([^()]*\)$/, ''); }   /* without a note in brackets at its end: "interval(s)" */
+  JT.forEach(function (t, i) {
+    if (!JI.has(t.id)) JI.set(t.id, i);
+    (t.l || []).forEach(function (l) {   /* the earlier target keeps a name two share */
+      var k = jkey(l), b = bare(k);
+      if (t.h && !JH.has(k)) JH.set(k, i);
+      if (k.length >= 2 && !JK.has(k)) JK.set(k, i);
+      if (b !== k && b.length >= 2 && !JK2.has(b)) JK2.set(b, i);
+    });
+  });
+  function find(text, after) {   /* "after": the text that follows it ("the Capture section" is the section, not the button) */
+    var k = jkey(text);
+    if (k.length < 2 || k.length > 60) return -1;
+    if (JH.has(k) && SECTION.test(after || '')) return JH.get(k);
+    if (JK.has(k)) return JK.get(k);
+    var b = bare(k);
+    return JK.has(b) ? JK.get(b) : JK2.has(b) ? JK2.get(b) : -1;
+  }
+  function next(el) {   /* the start of the text after an element */
+    for (var n = el; n; n = n.parentElement) {
+      if (n.nextSibling) return (n.nextSibling.textContent || '').slice(0, 24);
+      if (n.matches && n.matches('p, li, td, th, div')) break;
+    }
+    return '';
+  }
+  if (JT.length && window.Highlight && window.CSS && CSS.highlights) {
+    HL = { all: new Highlight(), hot: new Highlight() };
+    HL.hot.priority = 1;
+    CSS.highlights.set('vdc-jump', HL.all);
+    CSS.highlights.set('vdc-jump-hot', HL.hot);
+  }
+
+  /* looking for them: a moment after the answers stop changing, and at least once a second while one streams in */
+  function scanSoon() {
+    if (!JT.length) return;
+    var now = Date.now();
+    if (!scanFirst) scanFirst = now;
+    clearTimeout(scanTimer);
+    scanTimer = setTimeout(scan, now - scanFirst > 1000 ? 0 : 200);
+  }
+  function scan() {
+    clearTimeout(scanTimer);
+    scanTimer = 0;
+    scanFirst = 0;
+    if (!root || !JT.length) return;
+    var boxes = root.querySelectorAll('[data-slot="assistant-markdown"]'), q = [];
+    for (var b = 0; b < boxes.length; b++) {
+      var els = boxes[b].querySelectorAll('strong, b, code');
+      for (var e = 0; e < els.length; e++) {
+        var el = els[e], up = el.parentElement && el.parentElement.closest('strong, b, code, pre, a, button');
+        var i = up && boxes[b].contains(up) ? -1 : find(el.textContent, next(el)), id = i < 0 ? '' : JT[i].id;
+        if ((el.getAttribute('data-vdc-jump') || '') === id) continue;
+        if (id) { el.setAttribute('data-vdc-jump', id); el.setAttribute('role', 'button'); el.setAttribute('tabindex', '0'); }
+        else { el.removeAttribute('data-vdc-jump'); el.removeAttribute('role'); el.removeAttribute('tabindex'); el.removeAttribute('data-vdc-hot'); }
+      }
+      if (HL) quoted(boxes[b], q);
+    }
+    quotes = q;
+    if (HL) {
+      HL.all.clear();
+      q.forEach(function (m) { HL.all.add(m.range); });
+    }
+    if (cardFor && !alive(cardFor)) hideCard();   /* what the card was for has gone (drawn again) */
+  }
+  function quoted(box, out) {
+    var w = document.createTreeWalker(box, NodeFilter.SHOW_TEXT), n;
+    while ((n = w.nextNode())) {
+      var s = n.nodeValue, p = n.parentElement;
+      if (s.length < 4 || !/["“「『‘]/.test(s) || (p && p.closest('pre, code, a, strong, b, button'))) continue;
+      QUOTE.lastIndex = 0;
+      for (var m = QUOTE.exec(s); m; m = QUOTE.exec(s)) {
+        if (PAIR[m[1]] !== m[3]) { QUOTE.lastIndex = m.index + 1; continue; }
+        var i = find(m[2], s.slice(m.index + m[0].length, m.index + m[0].length + 24));
+        if (i < 0) continue;
+        var r = document.createRange();
+        r.setStart(n, m.index + 1);
+        r.setEnd(n, m.index + 1 + m[2].length);
+        out.push({ range: r, i: i, box: box });
+      }
+    }
+  }
+  function alive(m) { return m.el ? m.el.isConnected && m.el.hasAttribute('data-vdc-jump') : quotes.some(function (q) { return same(q, m); }); }
+  function same(a, b) {
+    if (!a || !b) return false;
+    if (a.el || b.el) return a.el === b.el;
+    return a.range.startContainer === b.range.startContainer && a.range.startOffset === b.range.startOffset && a.i === b.i;
+  }
+  function marks() {   /* in the order of the conversation: in each answer its marked elements, then its quoted phrases */
+    var out = [];
+    if (!root) return out;
+    var boxes = root.querySelectorAll('[data-slot="assistant-markdown"]');
+    for (var b = 0; b < boxes.length; b++) {
+      var els = boxes[b].querySelectorAll('[data-vdc-jump]');
+      for (var e = 0; e < els.length; e++) if (JI.has(els[e].getAttribute('data-vdc-jump'))) out.push({ el: els[e], i: JI.get(els[e].getAttribute('data-vdc-jump')) });
+      for (var k = 0; k < quotes.length; k++) if (quotes[k].box === boxes[b]) out.push(quotes[k]);
+    }
+    return out;
+  }
+  function markOf(t) {
+    var el = t && t.closest ? t.closest('[data-vdc-jump]') : null;
+    return el && JI.has(el.getAttribute('data-vdc-jump')) ? { el: el, i: JI.get(el.getAttribute('data-vdc-jump')) } : null;
+  }
+  function quoteAt(x, y) {
+    for (var k = 0; k < quotes.length; k++) {
+      var rs = quotes[k].range.getClientRects();
+      for (var j = 0; j < rs.length; j++) if (x >= rs[j].left && x <= rs[j].right && y >= rs[j].top - 1 && y <= rs[j].bottom + 1) return quotes[k];
+    }
+    return null;
+  }
+  function hot(m) {   /* the mark the card is for keeps its pointed-at look while the pointer is on the card */
+    if (!root) return;
+    var was = root.querySelectorAll('[data-vdc-hot]');
+    for (var k = 0; k < was.length; k++) if (!m || was[k] !== m.el) was[k].removeAttribute('data-vdc-hot');
+    if (HL) { HL.hot.clear(); if (m && m.range) HL.hot.add(m.range); }
+    if (m && m.el) m.el.setAttribute('data-vdc-hot', '');
+  }
+
+  /* the card under (or over) a mark */
+  function cardEl() {
+    if (card) return card;
+    card = document.createElement('div');
+    card.id = 'vdc-jump';
+    card.setAttribute('role', 'group');
+    card.innerHTML = '<button type="button" class="it pri">' + SVG + 'width="16" height="16"><circle cx="12" cy="12" r="3"/>' +
+      '<path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/></svg>' +
+      '<span></span></button><button type="button" class="it">' + SVG + 'width="16" height="16"><path d="M12 5v16"/>' +
+      '<path d="M20.001 19A2 2 0 0 0 22 17V5a2 2 0 0 0-1.999-2L16 3.002A5 5 0 0 0 12 5a5 5 0 0 0-4-2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 1.999 2H8a5 5 0 0 1 4 2 5 5 0 0 1 4-2z"/></svg>' +
+      '<span></span></button>';
+    var bs = card.querySelectorAll('button');
+    bs[0].lastChild.textContent = C.jumpShow || 'Show in the app';
+    bs[1].lastChild.textContent = C.jumpPage || 'Open its page in the documentation';
+    bs[0].addEventListener('click', function () { if (cardFor) go(cardFor.i); });
+    bs[1].addEventListener('click', function () { if (cardFor) docPage(cardFor.i); });
+    card.addEventListener('mousedown', function (e) { e.preventDefault(); });   /* the focus stays where it is */
+    card.addEventListener('pointerenter', function () { overCard = true; clearTimeout(hideTimer); });
+    card.addEventListener('pointerleave', function () { overCard = false; hideSoon(); });
+    document.body.appendChild(card);
+    return card;
+  }
+  function rectOf(m, x, y) {   /* the mark's box, the line of it under the pointer where it wraps */
+    var rs = m.el ? m.el.getClientRects() : m.range.getClientRects(), r = rs[0] || null;
+    for (var k = 0; k < rs.length; k++) if (y >= rs[k].top && y <= rs[k].bottom && x >= rs[k].left - 2 && x <= rs[k].right + 2) r = rs[k];
+    return r;
+  }
+  function showCard(m, x, y) {
+    var c = cardEl(), r = rectOf(m, x, y);
+    clearTimeout(showTimer);
+    clearTimeout(hideTimer);
+    if (!r) return;
+    cardFor = m;
+    hot(m);
+    c.setAttribute('aria-label', m.el ? m.el.textContent : String(m.range));
+    var box = document.body.getBoundingClientRect(), cw = c.offsetWidth, ch = c.offsetHeight;
+    var limit = (composerY() || box.height) - 8, below = r.bottom - box.top + 6, above = r.top - box.top - 6 - ch;
+    var side = below + ch <= limit || above < 8 ? 'below' : 'above';
+    var left = Math.max(8, Math.min(r.left - box.left - 12, box.width - cw - 8));   /* its icons under the mark's start */
+    if (!cardOn) {   /* drawn at its start first, so the motion runs */
+      c.setAttribute('data-side', side);
+      c.style.left = Math.round(left) + 'px';
+      c.style.top = Math.round(side === 'below' ? below : above) + 'px';
+      getComputedStyle(c).opacity;
+      c.classList.add('on');
+      cardOn = true;
+    } else {
+      c.setAttribute('data-side', side);
+      c.style.left = Math.round(left) + 'px';
+      c.style.top = Math.round(side === 'below' ? below : above) + 'px';
+    }
+  }
+  function hideCard() {
+    clearTimeout(showTimer);
+    clearTimeout(hideTimer);
+    if (cardOn) { card.classList.remove('on'); cardOn = false; hiddenAt = Date.now(); }
+    overCard = false;
+    cardFor = null;
+    hot(null);
+    if (host) host.removeAttribute('data-vdc-hand');
+  }
+  function hideSoon() {
+    clearTimeout(showTimer);
+    clearTimeout(hideTimer);
+    hideTimer = setTimeout(function () { if (!overCard) hideCard(); }, 240);
+  }
+  function hoverOn(m, x, y) {
+    clearTimeout(hideTimer);
+    if (cardOn) { if (!same(cardFor, m)) showCard(m, x, y); return; }
+    if (m.range) hot(m);
+    clearTimeout(showTimer);
+    showTimer = setTimeout(function () { showCard(m, x, y); }, Date.now() - hiddenAt < 300 ? 0 : 280);   /* at once when moving on from another */
+  }
+  function go(i) {
+    var t = JT[i];
+    hideCard();
+    if (t) post({ type: 'jump', id: t.id });
+  }
+  function docPage(i) {
+    var t = JT[i];
+    hideCard();
+    if (t) link(SITE + (C.dir || '') + t.d);
+  }
+  function jumpWatch(r) {
+    if (!JT.length) return;
+    new MutationObserver(scanSoon).observe(r, { childList: true, subtree: true, characterData: true });
+    r.addEventListener('pointerdown', function (e) { ptr = e.pointerType || 'mouse'; }, true);
+    r.addEventListener('pointerover', function (e) {
+      if (e.pointerType === 'touch') return;
+      var m = markOf(e.target);
+      if (m) hoverOn(m, e.clientX, e.clientY);
+    });
+    r.addEventListener('pointerout', function (e) {
+      var m = markOf(e.target);
+      if (!m || (e.relatedTarget && m.el.contains(e.relatedTarget))) return;
+      if (same(cardFor, m) || !cardOn) hideSoon();
+    });
+    r.addEventListener('pointermove', function (e) {   /* the quoted phrases have no element to point at */
+      if (!quotes.length || e.pointerType === 'touch') return;
+      var q = markOf(e.target) ? null : quoteAt(e.clientX, e.clientY), was = cardFor && cardFor.range ? cardFor : null;
+      if (q) { host.setAttribute('data-vdc-hand', ''); if (!same(was, q)) hoverOn(q, e.clientX, e.clientY); }
+      else if (host.hasAttribute('data-vdc-hand')) {
+        host.removeAttribute('data-vdc-hand');
+        if (!cardOn) { clearTimeout(showTimer); hot(null); } else if (was) hideSoon();
+      }
+    });
+    r.addEventListener('click', function (e) {
+      if (e.button !== 0 || e.defaultPrevented) return;
+      var sel = r.getSelection ? r.getSelection() : window.getSelection();
+      if (sel && !sel.isCollapsed && String(sel).trim()) return;   /* the end of a selection made by dragging */
+      var m = markOf(e.target) || quoteAt(e.clientX, e.clientY);
+      if (!m) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (ptr === 'touch' || ptr === 'pen') showCard(m, e.clientX, e.clientY);   /* no pointing without a touch: the card */
+      else go(m.i);
+    });
+    r.addEventListener('keydown', function (e) {
+      var m = markOf(e.target);
+      if (!m || e.isComposing || (e.key !== 'Enter' && e.key !== ' ')) return;
+      e.preventDefault();
+      go(m.i);
+    });
+    r.addEventListener('focusin', function (e) {
+      var m = markOf(e.target);
+      if (m && e.target === m.el && m.el.matches(':focus-visible')) showCard(m, -1, -1);
+    });
+    r.addEventListener('focusout', function (e) {
+      var m = markOf(e.target);
+      if (m && same(cardFor, m) && !overCard) hideSoon();
+    });
+    r.addEventListener('scroll', function () { if (cardOn) hideCard(); }, true);
+    r.addEventListener('wheel', function () { if (cardOn && !overCard) hideCard(); }, { capture: true, passive: true });
+  }
+  window.addEventListener('resize', function () { if (cardOn) hideCard(); });
+)vdc" R"vdc(
+  function stream(sse) {   /* test runs: a saved answer, in the pieces and at about the pace the service sends them */
+    var parts = sse.split(/\n\n/), k = 0, enc = new TextEncoder();
+    return new ReadableStream({ pull: function (c) {
+      return new Promise(function (done) {
+        setTimeout(function () {
+          if (k < parts.length) c.enqueue(enc.encode(parts[k++] + '\n\n')); else c.close();
+          done();
+        }, 16);
+      });
+    } });
+  }
+  function testJump(what, m) {
+    if (what === 'replay') {
+      replayWith = String(m.sse || '');
+      log('test replay: a saved answer of ' + replayWith.length + ' bytes, nothing is sent');
+      if (inited) settle(api.ask(String(m.q || 'replay'), { source: 'app', open: true, focus: false }));
+      return;
+    }
+    scan();
+    var ms = marks();
+    if (what === 'marks') {
+      var line = 'test marks: ' + ms.length;
+      for (var k = 0; k < ms.length; k++) {
+        var part = ' ' + (k + 1) + '=' + JSON.stringify(ms[k].el ? ms[k].el.textContent : String(ms[k].range)) + '>' + JT[ms[k].i].id + (ms[k].range ? '(quoted)' : '');
+        if (line.length + part.length > 290) { log(line); line = 'test marks:'; }
+        line += part;
+      }
+      log(line);
+      return;
+    }
+    var x = ms[(parseInt(what.slice(what.indexOf(':') + 1), 10) || 0) - 1];
+    if (!x) { log('test ' + what + ': no such mark (' + ms.length + ')'); return; }
+    if (x.el) x.el.scrollIntoView({ block: 'nearest' });
+    else if (x.range.startContainer.parentElement) x.range.startContainer.parentElement.scrollIntoView({ block: 'nearest' });
+    log('test ' + what + ': ' + JT[x.i].id);
+    setTimeout(function () {   /* after the scroll it caused (a scroll takes the card away) */
+      showCard(x, -1, -1);
+      if (what.indexOf('jump:') === 0) card.querySelector('.it.pri').click();
+      else if (what.indexOf('page:') === 0) card.querySelector('.it:not(.pri)').click();
+    }, 120);
   }
 
   function begin() { post({ type: 'hello' }); start(); }
@@ -880,6 +1223,16 @@ std::string AskPanel::ConfigJson() const {
      .Set("pages", std::move(pages)).Set("notice", std::move(notice)).Set("accentDark", "#5C6CF5").Set("accentLight", "#4658E6")
      .Set("test", m_cfg.test)
      .Set("breakLoad", m_cfg.breakLoad);
+    Json jump = Json::Arr();
+    for (const AskPageConfig::JumpEntry& e : m_cfg.jump) {
+        Json names = Json::Arr();
+        for (const std::string& l : e.labels) names.Push(l);
+        Json t = Json::Obj();
+        t.Set("id", e.id).Set("l", std::move(names)).Set("d", e.doc);
+        if (e.header) t.Set("h", true);
+        jump.Push(std::move(t));
+    }
+    c.Set("jump", std::move(jump)).Set("jumpShow", m_cfg.jumpShow).Set("jumpPage", m_cfg.jumpPage);
     // inside a <script> element: no "</" (it would end the element) and no "<!--"
     return ReplaceAll(ReplaceAll(c.Dump(), "</", "<\\/"), "<!--", "<\\!--");
 }
@@ -926,6 +1279,9 @@ void AskPanel::OnMessage(const std::string& text) {
         Push(Event::Escape);
     } else if (type == "docs") {
         Push(Event::Docs);
+    } else if (type == "jump") {
+        const std::string id = m.Str("id");
+        if (!id.empty() && id.size() < 64) Push(Event::Jump, id);
     } else if (type == "link") {
         const std::string url = m.Str("url");
         if (IsWebUrl(url)) Push(Event::Link, url);
@@ -1036,6 +1392,10 @@ void AskPanel::Focus() {
 void AskPanel::Ask(const std::string& question) { Post(Json::Obj().Set("type", "ask").Set("q", question).Dump()); }
 
 void AskPanel::Test(const char* what) { Post(Json::Obj().Set("type", "test").Set("what", what ? what : "").Dump()); }
+
+void AskPanel::TestReplay(const std::string& sse, const std::string& question) {
+    Post(Json::Obj().Set("type", "test").Set("what", "replay").Set("sse", sse).Set("q", question).Dump());
+}
 
 bool AskPanel::SendKey(UINT vk) {
     if (!m_parent || !m_controller) return false;

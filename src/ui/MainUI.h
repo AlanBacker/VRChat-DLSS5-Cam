@@ -14,6 +14,9 @@
 
 namespace vdc::ui {
 
+enum class Icon;
+struct JumpTarget;
+
 struct McpKeyView {
     std::string name;
     int         role = 1;        // McpRole
@@ -252,6 +255,7 @@ struct UiEvents {
     bool askToggle = false;          // the Ask AI button: open or close the panel
     bool askRetry = false;           // Try again in the panel after a failed start
     bool askDocs = false;            // Open documentation beside it
+    std::string jumpDocs;            // a place an answer pointed at could not be shown: its documentation page (under the language's folder)
     bool mcpOpenPage = false;       // the server's information page in the browser
     bool mcpOpenDocs = false;        // the documentation site's MCP page in the browser
     bool mcpOpenJobs = false;        // the jobs folder in Explorer
@@ -285,6 +289,8 @@ public:
     void ToggleFullscreen() { RequestFullscreen(); }   // F11 pressed in the Ask AI page
     void TestGuide(int page) { m_guideOpen = true; m_guideStartPage = page; }   // test runs: the setup guide at that page (0-based)
     void TestSpotlight() { m_spotAt = ImGui::GetTime() + 0.3; m_spotUntil = m_spotAt + 1.4; }   // test runs: the guide's pointers flash
+    // A place an answer of the Ask AI panel pointed at (an id of JumpTargets.h): shown and ringed on the next frame.
+    void JumpTo(const std::string& id) { m_jumpAsk = id; }
 
 private:
     struct ToastItem { std::string text; double time; bool error; bool success; };
@@ -347,6 +353,22 @@ private:
     void DrawDriverNotice(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts);  // the NVIDIA driver is too old for DLSS 5
     void CloseGuide(Settings& s, UiEvents& ev, bool point);                                          // point = light up the places the guide named
     void Spotlight(bool foreground);                                                                 // a pulsing ring around the last item, after the guide
+    // Jumps (JumpTo): the place is shown (the sidebar comes out, its section opens, the sidebar glides to it) and ringed.
+    // The markers say where each place is drawn: JumpBegin/JumpEnd around a row of the sidebar, JumpItem after a
+    // single control there, JumpRect anywhere with its rectangle, Section for the sidebar's section headers.
+    void JumpFrame(Settings& s, UiEvents& ev);                                                       // at the top of the frame: takes up a jump, decides its next step
+    void JumpAim(Settings& s, UiEvents& ev, const JumpTarget* t);
+    void JumpFallback(Settings& s, UiEvents& ev);
+    bool JumpSearchFor(const JumpTarget* t);
+    void JumpRestoreQuery();                                                                         // the search field as the user left it, if a jump's query is still there
+    void JumpGlide();                                                                                // in the sidebar, before its content
+    bool Section(const char* label, const char* code, bool defaultOpen, Icon icon);
+    void JumpBegin(const char* id);
+    void JumpEnd();
+    void JumpItem(const char* id);
+    void JumpRect(const char* id, const ImVec2& min, const ImVec2& max, bool inside = false);
+    bool JumpWants(const char* id) const;
+    void JumpSeen(const ImVec2& min, const ImVec2& max, bool sidebar, bool inside);
     static std::vector<LibrarySnapshotItem> LibrarySnapshot(const UiFrameInfo& info);
     static bool SameLibrary(const std::vector<LibrarySnapshotItem>& a, const std::vector<LibrarySnapshotItem>& b);
     void ResetView(bool animate);                                                  // back to the fitted, centred picture
@@ -434,6 +456,34 @@ private:
     std::string m_lockText;          // the lock banner's text, kept while the banner fades out
     double m_spotAt = -1.0;          // the spotlight rings flash once, from this time ...
     double m_spotUntil = -1.0;       // ... until this one
+    // Jumps.
+    struct JumpMark { bool on = false; float x = 0.0f, y = 0.0f; };
+    std::string m_jumpAsk;           // asked for (an id), taken up at the top of the next frame
+    const JumpTarget* m_jumpReq = nullptr;   // what was asked for
+    const JumpTarget* m_jumpCur = nullptr;   // what is pointed at: that, what stands for it, or the source switch
+    const char* m_jumpCurId = "";   // its marker's id (a section header's: the section's code)
+    bool   m_jumpIsHeader = false;   // it is a section header of the sidebar
+    int    m_jumpPhase = 0;          // 0 nothing, 1 looking for it (and gliding to it), 2 ringing it
+    int    m_jumpHops = 0;           // fallbacks taken
+    int    m_jumpFrames = 0;         // frames since it was aimed at
+    double m_jumpAimAt = -1.0;       // when it was aimed at
+    double m_jumpOpenedAt = -1.0;    // when something opened to show it (the sidebar, a section)
+    double m_jumpRingAt = -1.0;      // when the ring came up
+    double m_jumpCut = -1.0;         // when an input ended it early (the ring fades)
+    double m_jumpGlideAt = -1.0;     // when the sidebar began to glide to it (-1: it did not have to)
+    int    m_jumpSeenFrame = -100;   // the last frame its marker was drawn
+    bool   m_jumpInSidebar = false;  // that marker is in the sidebar's scrolled settings
+    float  m_jumpY0 = 0.0f, m_jumpY1 = 0.0f;   // its place there (content coordinates)
+    float  m_jumpDist = 0.0f;        // how far the glide still has to go
+    unsigned m_jumpModeMask = 0;     // the source modes the asked-for place is drawn in ("mode" rings their segments)
+    std::string m_jumpOpenSection;   // the sidebar section to open (its code)
+    bool   m_jumpSearched = false;   // the search was used to show it
+    bool   m_jumpQuerySet = false;   // the search field holds what a jump put there ...
+    std::string m_jumpQuery, m_jumpUserQuery;   // ... this, and what it held before
+    ImGuiID m_searchId = 0;          // the search field
+    bool   m_markSidebar = false;    // the sidebar's settings are being drawn (EffectControls also draws a library item's own values)
+    JumpMark m_jumpStack[8];
+    int    m_jumpDepth = 0;
     bool   m_upscaleWarned = false;  // the notice about the cost of super resolution was shown for the current upscale
     bool   m_wipeDragging = false;
     // Seek bar: while the knob is dragged the bar follows the cursor and seeks are sent a few times per second;
