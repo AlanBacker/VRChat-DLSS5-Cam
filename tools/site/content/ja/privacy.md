@@ -32,7 +32,7 @@ description: アプリがネットワークに何をいつ送るのかと、ア�
 トップバーの **AI に質問** で、画像の横のパネルに AI Q&A が開きます。このドキュメントをもとに質問に答える機能で、提供しているのはアプリではなく [Mintlify](https://mintlify.com) です。[AI Q&A](ai-qa.html)
 
 - **開くまでは何も始まりません。** パネルを描画する Microsoft Edge WebView2 をアプリが起動するのは、**AI に質問** を初めてクリックしたときだけです。それまでは何も送られません。
-- **Mintlify に送られるもの。** 入力した内容は Mintlify に送られ、Mintlify が回答を書くので、個人的な情報は入れないでください。Mintlify は、パネルが開いたときなどのパネルの利用イベントも受け取ります。ボットを防ぐため、Mintlify は hCaptcha で質問を確認します。このチェックは、パネルが hCaptcha のサーバーから読み込みます。
+- **Mintlify に送られるもの。** 入力した内容は Mintlify に送られ、Mintlify が回答を書くので、個人的な情報は入れないでください。パネル上部の一文にもそう書かれています。Mintlify は、パネルが開いたときなどのパネルの利用イベントも受け取ります。ボットを防ぐため、Mintlify は hCaptcha で質問を確認します。このチェックは、パネルが hCaptcha のサーバーから読み込みます。
 - **手元に残るもの。** アプリが画像、動画、設定、ライブラリを送ることはありません。パネルにファイルを添付する機能がある場合、そこに添付したり貼り付けたりしたものは Mintlify にも送られます。
 - **パネルが保存するもの。** Cookie とストレージです。保存先は `%LOCALAPPDATA%\VRChatDLSS5Cam\webview2`、または [`--data-dir`](command-line.html#data-dir) で指定したフォルダーの中の `webview2` です。会話はアプリを閉じるまで残ります。アプリを閉じているときは、このフォルダーを削除してもかまいません。次に開いたとき、アプリが新しく作ります。
 - **ログに記録されるもの。** パネルを開いた・閉じたタイミング、発生したエラー、回答ごとの HTTP ステータスと長さです。質問や回答の本文は記録されません。回答から開いたリンクは、アプリが開くほかのページと同じく、そのアドレスが記録されます。
@@ -67,7 +67,7 @@ MCP サーバーは、オンにするまで動きません。オンにしても�
 
 > MIT（`LICENSE` を参照）。サードパーティコンポーネントと NVIDIA の表記は `THIRD_PARTY_NOTICES.md` に記載しています。本プロジェクトは VRChat Inc. および NVIDIA Corporation とは無関係です。
 
-全文は [LICENSE](https://github.com/AlanBacker/VRChat-DLSS5-Cam/blob/main/LICENSE) と [THIRD_PARTY_NOTICES.md](https://github.com/AlanBacker/VRChat-DLSS5-Cam/blob/main/THIRD_PARTY_NOTICES.md) にあります。どちらもアプリのフォルダーにも入っていて、**情報** → **サードパーティ表記** で開けます。
+全文は [LICENSE](https://github.com/AlanBacker/VRChat-DLSS5-Cam/blob/main/LICENSE) と [THIRD_PARTY_NOTICES.md](https://github.com/AlanBacker/VRChat-DLSS5-Cam/blob/main/THIRD_PARTY_NOTICES.md) にあります。どちらもアプリのフォルダーにも入っています。サードパーティ表記は 4 つの言語で用意しています。英語のファイルの隣に中国語、日本語、韓国語の翻訳（`THIRD_PARTY_NOTICES.zh-CN.md`、`.ja.md`、`.ko.md`）があり、正となるのは英語のファイルです。**情報** → **サードパーティ表記** で、インターフェースの言語のものが開きます。
 
 ## アプリが使っている部品 {#components}
 

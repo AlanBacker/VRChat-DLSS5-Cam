@@ -35,7 +35,7 @@ icon: "shield-check"
 顶栏中的**问 AI** 会在画面旁边的面板中打开 AI 问答。它根据本文档回答问题。提供它的是 [Mintlify](https://mintlify.com)，而不是本程序。[AI 问答](/zh/ai-qa)
 
 - **打开之前什么都不会启动。** 负责绘制面板的 Microsoft Edge WebView2，程序要等你第一次点击**问 AI** 时才会启动。在此之前，不会发送任何内容。
-- **发送给 Mintlify 的内容。** 你输入的内容会发送给 Mintlify，由它写出回答，所以请不要写入任何私人信息。Mintlify 还会收到面板的使用事件，例如面板何时打开。为了拦住机器人，Mintlify 会用 hCaptcha 检查提问，面板会从 hCaptcha 的服务器加载这项检查。
+- **发送给 Mintlify 的内容。** 你输入的内容会发送给 Mintlify，由它写出回答，所以请不要写入任何私人信息。面板顶部的那行说明也提到了这一点。Mintlify 还会收到面板的使用事件，例如面板何时打开。为了拦住机器人，Mintlify 会用 hCaptcha 检查提问，面板会从 hCaptcha 的服务器加载这项检查。
 - **留在本机的内容。** 程序绝不会发送你的图片、视频、设置或素材库。如果面板提供附加文件的功能，你在那里附加或粘贴的任何内容也会发送给 Mintlify。
 - **面板保存的内容。** 它的 Cookie 和存储数据，保存在 `%LOCALAPPDATA%\VRChatDLSS5Cam\webview2`，或用 [`--data-dir`](/zh/command-line#data-dir) 指定的文件夹中的 `webview2` 里。你的对话会保留到你关闭程序为止。关闭程序后，你可以删除这个文件夹；下次打开时，程序会新建一个。
 - **日志记下的内容。** 面板何时打开和关闭、它遇到的错误，以及每个回答的 HTTP 状态和长度。绝不记录你的问题或回答的文字。你从回答中打开的链接会连同地址一起记入日志，和程序打开的每个网页一样。
@@ -62,7 +62,7 @@ icon: "shield-check"
 
 > MIT（见 `LICENSE`）。第三方组件和 NVIDIA 声明列在 `THIRD_PARTY_NOTICES.md`。本项目与 VRChat Inc. 或 NVIDIA Corporation 无关。
 
-全文见 [LICENSE](https://github.com/AlanBacker/VRChat-DLSS5-Cam/blob/main/LICENSE) 和 [THIRD_PARTY_NOTICES.md](https://github.com/AlanBacker/VRChat-DLSS5-Cam/blob/main/THIRD_PARTY_NOTICES.md)。这两个文件也在程序的文件夹中，**关于** → **第三方声明**会打开它们。
+全文见 [LICENSE](https://github.com/AlanBacker/VRChat-DLSS5-Cam/blob/main/LICENSE) 和 [THIRD_PARTY_NOTICES.md](https://github.com/AlanBacker/VRChat-DLSS5-Cam/blob/main/THIRD_PARTY_NOTICES.md)。这两个文件也在程序的文件夹中。第三方声明有四种语言：英文文件旁边还有中文、日文和韩文译本（`THIRD_PARTY_NOTICES.zh-CN.md`、`.ja.md` 和 `.ko.md`），以英文文件为准。**关于** → **第三方声明**会打开界面语言的版本。
 
 ## 程序使用的组件
 

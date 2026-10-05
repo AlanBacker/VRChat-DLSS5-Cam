@@ -32,7 +32,7 @@ description: 앱이 네트워크로 무엇을 언제 보내는지와, 앱과 구
 상단 바의 **AI에게 묻기**를 누르면 이미지 옆 패널에 AI Q&A가 열립니다. AI Q&A는 이 문서를 바탕으로 질문에 답하며, 앱이 아니라 [Mintlify](https://mintlify.com)가 제공합니다. [AI Q&A](ai-qa.html)
 
 - **열기 전에는 아무것도 시작되지 않습니다.** 앱은 패널을 그리는 Microsoft Edge WebView2를 **AI에게 묻기**를 처음 클릭할 때에만 시작합니다. 그 전에는 아무것도 전송되지 않습니다.
-- **Mintlify로 가는 것.** 입력한 내용은 Mintlify로 전송되고 Mintlify가 답변을 작성하므로, 개인적인 내용은 넣지 마세요. Mintlify는 패널이 열렸을 때 같은 패널의 사용 이벤트도 받습니다. 봇을 막기 위해 Mintlify는 hCaptcha로 질문을 확인하며, 패널은 이 확인 기능을 hCaptcha 서버에서 불러옵니다.
+- **Mintlify로 가는 것.** 입력한 내용은 Mintlify로 전송되고 Mintlify가 답변을 작성하므로, 개인적인 내용은 넣지 마세요. 패널 맨 위의 안내 문구에도 그렇게 적혀 있습니다. Mintlify는 패널이 열렸을 때 같은 패널의 사용 이벤트도 받습니다. 봇을 막기 위해 Mintlify는 hCaptcha로 질문을 확인하며, 패널은 이 확인 기능을 hCaptcha 서버에서 불러옵니다.
 - **여기에 남는 것.** 앱은 이미지, 동영상, 설정, 라이브러리를 절대 보내지 않습니다. 패널에 파일 첨부 기능이 있다면, 거기에 첨부하거나 붙여 넣은 것은 Mintlify로도 전송됩니다.
 - **패널이 보관하는 것.** 쿠키와 저장 데이터이며, `%LOCALAPPDATA%\VRChatDLSS5Cam\webview2`, 또는 [`--data-dir`](command-line.html#data-dir)로 지정한 폴더 안의 `webview2`에 보관됩니다. 대화는 앱을 닫을 때까지 남습니다. 앱을 닫은 상태에서는 그 폴더를 지워도 됩니다. 다음에 열 때 앱이 새로 만듭니다.
 - **로그에 기록되는 것.** 패널을 열고 닫은 때, 패널에서 생긴 오류, 답변마다의 HTTP 상태와 길이입니다. 질문이나 답변 본문은 절대 기록되지 않습니다. 답변에서 연 링크는 앱이 여는 다른 모든 페이지처럼 주소와 함께 기록됩니다.
@@ -67,7 +67,7 @@ README에 적힌 앱의 라이선스 문구입니다.
 
 > MIT(`LICENSE` 참고). 서드파티 구성 요소와 NVIDIA 고지는 `THIRD_PARTY_NOTICES.md`에 있습니다. 이 프로젝트는 VRChat Inc. 또는 NVIDIA Corporation과 무관합니다.
 
-전문은 [LICENSE](https://github.com/AlanBacker/VRChat-DLSS5-Cam/blob/main/LICENSE)와 [THIRD_PARTY_NOTICES.md](https://github.com/AlanBacker/VRChat-DLSS5-Cam/blob/main/THIRD_PARTY_NOTICES.md)에 있습니다. 두 파일 모두 앱 폴더에도 들어 있으며, **정보** → **서드파티 고지**로 열 수 있습니다.
+전문은 [LICENSE](https://github.com/AlanBacker/VRChat-DLSS5-Cam/blob/main/LICENSE)와 [THIRD_PARTY_NOTICES.md](https://github.com/AlanBacker/VRChat-DLSS5-Cam/blob/main/THIRD_PARTY_NOTICES.md)에 있습니다. 두 파일 모두 앱 폴더에도 들어 있습니다. 서드파티 고지는 네 가지 언어로 제공됩니다. 영어 파일 옆에 중국어, 일본어, 한국어 번역(`THIRD_PARTY_NOTICES.zh-CN.md`, `.ja.md`, `.ko.md`)이 있으며, 기준이 되는 것은 영어 파일입니다. **정보** → **서드파티 고지**를 누르면 인터페이스 언어의 파일이 열립니다.
 
 ## 앱이 쓰는 구성 요소 {#components}
 
