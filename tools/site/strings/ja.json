@@ -76,6 +76,7 @@
     "notAffiliated": "VRChat Inc. および NVIDIA Corporation とは無関係です。",
     "source": "GitHub のソースコード",
     "releases": "リリース",
+    "booth": "BOOTH ページ",
     "report": "問題を報告",
     "privacy": "プライバシーとライセンス",
     "icons": "アイコン：Lucide（ISC ライセンス）"
@@ -89,7 +90,8 @@
     "eyebrow": "ドキュメント",
     "download": "ダウンロード",
     "start": "ガイドを始める",
-    "allReleases": "すべてのリリースとリリースノート"
+    "allReleases": "すべてのリリースとリリースノート",
+    "booth": "BOOTH ページ"
   },
   "downloads": {
     "geforceTitle": "GeForce 版",

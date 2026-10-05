@@ -76,6 +76,7 @@
     "notAffiliated": "Not affiliated with VRChat Inc. or NVIDIA Corporation.",
     "source": "Source code on GitHub",
     "releases": "Releases",
+    "booth": "BOOTH page",
     "report": "Report a problem",
     "privacy": "Privacy and licences",
     "icons": "Icons: Lucide (ISC licence)"
@@ -89,7 +90,8 @@
     "eyebrow": "Documentation",
     "download": "Download",
     "start": "Start the guide",
-    "allReleases": "All releases and release notes"
+    "allReleases": "All releases and release notes",
+    "booth": "BOOTH page"
   },
   "downloads": {
     "geforceTitle": "GeForce edition",

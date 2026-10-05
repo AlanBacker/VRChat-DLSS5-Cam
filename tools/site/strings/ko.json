@@ -76,6 +76,7 @@
     "notAffiliated": "VRChat Inc. 또는 NVIDIA Corporation과 무관합니다.",
     "source": "GitHub의 소스 코드",
     "releases": "릴리스",
+    "booth": "BOOTH 페이지",
     "report": "문제 신고",
     "privacy": "개인정보와 라이선스",
     "icons": "아이콘: Lucide(ISC 라이선스)"
@@ -89,7 +90,8 @@
     "eyebrow": "문서",
     "download": "다운로드",
     "start": "가이드 시작하기",
-    "allReleases": "모든 릴리스와 릴리스 노트"
+    "allReleases": "모든 릴리스와 릴리스 노트",
+    "booth": "BOOTH 페이지"
   },
   "downloads": {
     "geforceTitle": "GeForce 에디션",

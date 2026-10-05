@@ -62,6 +62,7 @@ PAGES = [dict(p, section=s['id']) for s in CONFIG['sections'] for p in s['pages'
 SLUGS = [p['slug'] for p in PAGES]
 STEP_PAGES = [p['slug'] for p in PAGES if p.get('step')]
 REPO = CONFIG['repo']
+BOOTH = CONFIG['booth']   # the program's BOOTH page
 # AI Q&A: the public ID of a Mintlify widget. Empty: the pages carry no trace of the feature (see README).
 ASK_ID = CONFIG.get('askWidget', '').strip()
 
@@ -334,7 +335,8 @@ def downloads(lang):
                esc(S(lang, 'downloads.%sNote' % key)), esc(d[key]),
                'btn-accent' if key == 'geforce' else 'btn-ghost', esc(url), icon('download'), esc(S(lang, 'downloads.button')),
                more, esc(S(lang, 'downloads.more')), icon('arrow-right')))
-    out.append('</div><p class="dl-all"><a class="ext" href="%s/releases" rel="noopener">%s</a></p>' % (REPO, esc(S(lang, 'home.allReleases'))))
+    out.append('</div><p class="dl-all"><a class="ext" href="%s/releases" rel="noopener">%s</a>'
+               '<a class="ext" href="%s" rel="noopener">%s</a></p>' % (REPO, esc(S(lang, 'home.allReleases')), BOOTH, esc(S(lang, 'home.booth'))))
     return ''.join(out)
 
 
@@ -608,11 +610,11 @@ def footer_html(lang, slug):
             '<div class="footer-brand"><img src="{root}assets/mark.svg" alt="" width="24" height="24"><div>'
             '<p>%s</p><p>%s</p></div></div>'
             '<ul class="footer-links"><li><a class="ext" href="%s" rel="noopener">%s</a></li><li><a class="ext" href="%s/releases" rel="noopener">%s</a></li>'
-            '<li><a class="ext" href="%s/issues/new/choose" rel="noopener">%s</a></li><li><a href="privacy.html">%s</a></li>'
+            '<li><a class="ext" href="%s" rel="noopener">%s</a></li><li><a class="ext" href="%s/issues/new/choose" rel="noopener">%s</a></li><li><a href="privacy.html">%s</a></li>'
             '<li><a href="{root}assets/licenses/lucide-LICENSE.txt">%s</a></li></ul>'
             '<p class="footer-langs">%s %s</p></div></footer>'
             % (esc(S(lang, 'footer.license')), esc(S(lang, 'footer.notAffiliated')), REPO, esc(S(lang, 'footer.source')),
-               REPO, esc(S(lang, 'footer.releases')), REPO, esc(S(lang, 'footer.report')), esc(S(lang, 'footer.privacy')),
+               REPO, esc(S(lang, 'footer.releases')), BOOTH, esc(S(lang, 'footer.booth')), REPO, esc(S(lang, 'footer.report')), esc(S(lang, 'footer.privacy')),
                esc(S(lang, 'footer.icons')), icon('languages'), langs))
 
 

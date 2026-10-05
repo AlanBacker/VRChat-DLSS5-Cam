@@ -76,6 +76,7 @@
     "notAffiliated": "本项目与 VRChat Inc. 或 NVIDIA Corporation 无关。",
     "source": "GitHub 上的源代码",
     "releases": "发布版本",
+    "booth": "BOOTH 发布页",
     "report": "反馈问题",
     "privacy": "隐私与许可",
     "icons": "图标：Lucide（ISC 许可）"
@@ -89,7 +90,8 @@
     "eyebrow": "文档",
     "download": "下载",
     "start": "开始阅读指南",
-    "allReleases": "所有版本与发布说明"
+    "allReleases": "所有版本与发布说明",
+    "booth": "BOOTH 发布页"
   },
   "downloads": {
     "geforceTitle": "GeForce 版",

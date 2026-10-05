@@ -609,7 +609,7 @@ a.card:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)
 .dl-file { margin: 0 0 14px; }
 .dl-file code { display: inline-block; max-width: 100%; font-size: 12.5px; line-height: 1.55; overflow-wrap: anywhere; }
 .dl-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-.dl-all { margin: 8px 0 0; font-size: 15px; }
+.dl-all { display: flex; flex-wrap: wrap; gap: 4px 20px; margin: 8px 0 0; font-size: 15px; }   /* spaced as the footer's links */
 .path { list-style: none; padding: 0; margin: 20px 0; display: grid; gap: 10px; counter-reset: none; }
 .path li { margin: 0; }
 .path-card { display: flex; align-items: center; gap: 16px; padding: 14px 18px; }
