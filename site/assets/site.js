@@ -896,11 +896,32 @@
     if (!attach) return noop;
     proto.attachShadow = function (init) {
       var r = attach.apply(this, arguments);
-      if (this.localName === 'mintlify-assistant') { shadow = r; r.addEventListener('click', onLink, true); }
+      if (this.localName === 'mintlify-assistant') { shadow = r; r.addEventListener('click', onLink, true); noSwipe(r); }
       return r;
     };
     return function () { proto.attachShadow = attach; };
   }
+  // The widget's panel is a drawer that a held pointer pulls along and a fling to the side closes, as on a phone. Here
+  // it closes with its button, Esc or its ×, as the program's panel does, and stays where it is: the drawer is told not
+  // to start that gesture, with its own switch, on the panel each time it is made, and a press that lands in the panel
+  // keeps its moves from the widget until it ends, so nothing follows it whatever the widget becomes. Selecting text,
+  // the scrollbar and touch scrolling are the browser's own and keep working.
+  function noSwipe(r) {
+    function mark() {
+      var p = r.querySelector('[data-mintlify-assistant-panel]');
+      if (p && !p.hasAttribute('data-base-ui-swipe-ignore')) p.setAttribute('data-base-ui-swipe-ignore', '');
+    }
+    new MutationObserver(mark).observe(r, { childList: true, subtree: true });
+    mark();
+  }
+  var held = {};
+  function inPanel(e) { return !!e.target && e.target.localName === 'mintlify-assistant'; }
+  function unhold(e) { delete held[e.pointerId]; }
+  window.addEventListener('pointerdown', function (e) { if (inPanel(e)) held[e.pointerId] = 1; else unhold(e); }, true);
+  window.addEventListener('pointerup', unhold, true);
+  window.addEventListener('pointercancel', unhold, true);
+  window.addEventListener('pointermove', function (e) { if (e.buttons && held[e.pointerId]) e.stopPropagation(); }, true);
+  window.addEventListener('touchmove', function (e) { if (inPanel(e)) e.stopPropagation(); }, true);
   function onLink(e) {
     if (e.defaultPrevented || e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;   // a new tab asked for
     var a = e.target.closest ? e.target.closest('a[href]') : null;
