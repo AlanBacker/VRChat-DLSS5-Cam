@@ -526,26 +526,26 @@ enum class Lang { English = 0, Chinese = 1, Japanese = 2, Korean = 3, Count = 4 
     X(PresetReplaced,     "Preset \"%s\" overwritten", "已覆盖预设“%s”", "プリセット「%s」を上書きしました", "프리셋 \"%s\" 덮어씀") \
     X(TipPresets,         "Your presets: the DLSS 5 effect values under a name. Click one to apply it; + saves the current values as a new one (a name already in use is overwritten). Each row has overwrite, rename and delete.", "你的预设：以名称保存的一组 DLSS 5 效果参数。点击即可应用；+ 把当前参数存为新预设（同名会覆盖）。每一行都有覆盖、重命名和删除。", "プリセット: DLSS 5 の効果の値に名前を付けて保存したものです。クリックで適用、+ で現在の値を新しく保存（同じ名前は上書き）。各行に上書き・名前の変更・削除があります。", "프리셋: DLSS 5 효과 값을 이름으로 저장한 것입니다. 클릭하면 적용되고, +로 현재 값을 새로 저장합니다(같은 이름은 덮어씀). 각 행에 덮어쓰기·이름 바꾸기·삭제가 있습니다.") \
     X(Save,               "Save", "保存", "保存", "저장") \
-    X(TipDocs,            "Documentation: the guide opens in your browser", "文档：在浏览器中打开使用指南", "ドキュメント: ガイドをブラウザで開きます", "문서: 안내를 브라우저에서 엽니다") \
+    X(TipDocs,            "Documentation: the guide opens in your browser", "文档：在浏览器中打开使用指南", "ドキュメント: ガイドをブラウザーで開きます", "문서: 안내를 브라우저에서 엽니다") \
     X(Documentation,      "Documentation", "文档", "ドキュメント", "문서") \
-    X(TipAskAi,          "Ask AI: questions about the app, answered from the documentation by an online service (Mintlify)", "问 AI：关于本程序的问题，由在线服务（Mintlify）的 AI 根据文档回答", "AI に質問: アプリについての質問に、オンラインサービス（Mintlify）の AI がドキュメントをもとに答えます", "AI에게 묻기: 앱에 대한 질문에 온라인 서비스(Mintlify)의 AI가 문서를 바탕으로 답합니다") \
+    X(TipAskAi,          "Ask AI: questions about the app, answered from the documentation by an online service (Mintlify)", "问 AI：由在线服务（Mintlify）根据文档解答关于本程序的问题", "AI に質問: アプリについての質問に、オンラインサービス（Mintlify）がドキュメントをもとに答えます", "AI에게 묻기: 온라인 서비스(Mintlify)가 문서를 바탕으로 앱에 대한 질문에 답합니다") \
     X(AskTitle,          "AI Q&A", "AI 问答", "AI Q&A", "AI Q&A") \
     X(AskTrigger,        "Ask AI", "问 AI", "AI に質問", "AI에게 묻기") \
-    X(AskPlaceholder,    "Ask a question about the app", "问一个关于本程序的问题", "アプリについて質問を入力", "앱에 대해 질문해 보세요") \
-    X(AskDisclaimer,     "Your questions go to Mintlify, an online service, and AI answers them from the documentation. Answers can be wrong, so check the page an answer links to.", "你的问题会发送到在线服务 Mintlify，由 AI 根据文档回答。回答可能有误，请打开回答所链接的页面核对。", "質問はオンラインサービス Mintlify に送られ、AI がドキュメントをもとに答えます。回答は間違っていることもあるので、回答のリンク先のページで確かめてください。", "질문은 온라인 서비스 Mintlify로 전송되며, AI가 문서를 바탕으로 답합니다. 답변이 틀릴 수 있으니 답변에 연결된 페이지에서 확인하세요.") \
+    X(AskPlaceholder,    "Ask a question about the app", "输入关于本程序的问题", "アプリについて質問を入力", "앱에 대해 질문해 보세요") \
+    X(AskDisclaimer,     "Your questions go to Mintlify, an online service, and AI answers them from the documentation. Answers can be wrong, so check the page an answer links to.", "你的问题会发送给在线服务 Mintlify，由 AI 根据文档作答。回答可能有误，请打开回答所链接的页面核对。", "質問はオンラインサービスの Mintlify に送られ、AI がドキュメントをもとに答えます。回答は間違っていることもあるので、リンク先のページで確かめてください。", "질문은 온라인 서비스인 Mintlify로 전송되며, AI가 문서를 바탕으로 답합니다. 답변은 틀릴 수 있으니 연결된 페이지에서 확인하세요.") \
     X(AskSuggestions,    "Try asking", "试试这样问", "質問の例", "이렇게 물어보세요") \
     X(AskQuestion1,      "Which download is right for my graphics card?", "我的显卡该下载哪一版？", "自分のグラフィックカードには、どれをダウンロードすればいいですか？", "내 그래픽 카드에는 어떤 파일을 내려받아야 하나요?") \
     X(AskQuestion2,      "How do I send the VRChat camera to the app?", "怎样把 VRChat 的相机画面发送给这个程序？", "VRChat のカメラ映像をアプリに送るにはどうすればいいですか？", "VRChat 카메라 화면을 앱으로 보내려면 어떻게 하나요?") \
     X(AskQuestion3,      "Why is the live picture slow?", "实时画面为什么很慢？", "ライブ映像が重いのはなぜですか？", "실시간 화면이 왜 느린가요?") \
     X(AskLoading,        "Loading AI Q&A…", "正在加载 AI 问答…", "AI Q&A を読み込んでいます…", "AI Q&A 불러오는 중…") \
-    X(AskFailed,         "AI Q&A could not be loaded. Check your connection, then try again.", "无法加载 AI 问答。请检查网络连接，然后再试一次。", "AI Q&A を読み込めませんでした。インターネット接続を確認して、もう一度試してください。", "AI Q&A를 불러오지 못했습니다. 인터넷 연결을 확인한 뒤 다시 시도하세요.") \
+    X(AskFailed,         "AI Q&A could not be loaded. Check your connection, then try again.", "无法加载 AI 问答。请检查网络连接后重试。", "AI Q&A を読み込めませんでした。インターネット接続を確認して、もう一度試してください。", "AI Q&A를 불러오지 못했습니다. 인터넷 연결을 확인한 뒤 다시 시도하세요.") \
     X(AskRetry,          "Try again", "重试", "再試行", "다시 시도") \
-    X(AskOpenedInBrowser, "AI Q&A opened in your browser", "已在浏览器中打开 AI 问答", "AI Q&A をブラウザで開きました", "AI Q&A를 브라우저에서 열었습니다") \
+    X(AskOpenedInBrowser, "AI Q&A opened in your browser", "已在浏览器中打开 AI 问答", "AI Q&A をブラウザーで開きました", "AI Q&A를 브라우저에서 열었습니다") \
     X(AskOpenDocs,       "Open documentation", "打开文档", "ドキュメントを開く", "문서 열기") \
     X(AskNewChat,        "New conversation", "新对话", "新しい会話", "새 대화") \
-    X(AskNoticeOff,      "AI Q&A can't answer right now. This month's allowance may be used up, or the service is down. The documentation has the answers.", "AI 问答暂时无法回答：可能是本月额度已用完，或服务暂时不可用。请以文档为准。", "AI Q&A は今は回答できません。今月の利用枠を使い切ったか、サービスが止まっている可能性があります。ドキュメントをご覧ください。", "AI Q&A가 지금은 답할 수 없습니다. 이번 달 사용량을 모두 썼거나 서비스가 중단되었을 수 있습니다. 문서를 참고하세요.") \
-    X(AskNoticeBusy,     "Too many questions in a short time. Wait a moment, then try again.", "短时间内提问太多。请稍等片刻，然后重试。", "短時間に質問が集中しています。少し待ってから、もう一度試してください。", "짧은 시간에 질문이 너무 많습니다. 잠시 기다린 뒤 다시 시도하세요.") \
-    X(AskNoticeNet,      "Your question could not be sent. Check your connection and try again, or look it up in the documentation.", "问题没能发送出去。请检查网络连接后重试，或在文档中查找。", "質問を送信できませんでした。インターネット接続を確認してもう一度試すか、ドキュメントで調べてください。", "질문을 보내지 못했습니다. 인터넷 연결을 확인하고 다시 시도하거나 문서에서 찾아보세요.") \
+    X(AskNoticeOff,      "AI Q&A is unavailable right now. This month's allowance may be used up, or the service is down. The documentation has the answers.", "AI 问答暂时不可用：可能是本月额度已用完，或服务出现故障。请以文档为准。", "AI Q&A は現在利用できません。今月の利用枠を使い切ったか、サービスが止まっている可能性があります。ドキュメントをご覧ください。", "지금은 AI Q&A를 사용할 수 없습니다. 이번 달 사용량을 모두 썼거나 서비스가 중단되었을 수 있습니다. 문서를 참고하세요.") \
+    X(AskNoticeBusy,     "Too many questions in a short time. Wait a moment, then try again.", "短时间内提问过多。请稍等片刻再试。", "短時間に質問が集中しています。少し待ってから、もう一度試してください。", "짧은 시간에 질문이 몰렸습니다. 잠시 후 다시 시도하세요.") \
+    X(AskNoticeNet,      "Your question could not be sent. Check your connection and try again, or look it up in the documentation.", "问题未能发送。请检查网络连接后重试，或在文档中查找答案。", "質問を送信できませんでした。インターネット接続を確認してもう一度試すか、ドキュメントで調べてください。", "질문을 보내지 못했습니다. 인터넷 연결을 확인하고 다시 시도하거나 문서에서 찾아보세요.") \
     X(AskNoticeFull,     "This conversation has reached its length limit. Start a new conversation to ask more.", "本次对话已达长度上限。开始新对话即可继续提问。", "この会話は長さの上限に達しました。続けて質問するには、新しい会話を始めてください。", "이 대화가 길이 한도에 도달했습니다. 새 대화를 시작하면 계속 질문할 수 있습니다.") \
     X(Prerelease,         "Pre-release", "预发布", "プレリリース", "프리릴리스") \
     X(ReopenLast,         "Reopen the last file at start", "启动时重新打开上次的文件", "起動時に前回のファイルを開く", "시작할 때 마지막 파일 다시 열기") \
@@ -653,10 +653,10 @@ enum class Lang { English = 0, Chinese = 1, Japanese = 2, Korean = 3, Count = 4 
     X(GuideWhereGuideT,    "This guide", "本向导", "このガイド", "이 가이드") \
     X(GuideWhereGuide,     "Scroll the sidebar to its bottom, open the About section and press Setup guide.", "把右侧侧边栏滚动到底部，展开“关于”分节，点击“设置向导”。", "サイドバーを一番下までスクロールし、情報セクションを開いてセットアップガイドを押します。", "사이드바를 맨 아래로 내려 정보 섹션을 열고 설정 가이드를 누르세요.") \
     X(GuideWhereDocsT,     "The documentation", "文档", "ドキュメント", "문서") \
-    X(GuideWhereDocs,      "The book button at the top right, or Documentation in the About section: it describes every control.", "右上角的书本按钮，或“关于”分节里的“文档”：其中说明了每一个控件。", "右上の本のボタン、または情報セクションのドキュメント。すべてのコントロールを説明しています。", "오른쪽 위 책 모양 버튼 또는 정보 섹션의 문서: 모든 컨트롤을 설명합니다.") \
+    X(GuideWhereDocs,      "The book button at the top right, or Documentation in the About section: it describes every control.", "右上角的书本按钮，或“关于”分节里的“文档”：其中说明了每一个控件。", "右上の本のアイコン、または情報セクションのドキュメント。すべてのコントロールを説明しています。", "오른쪽 위 책 모양 버튼 또는 정보 섹션의 문서: 모든 컨트롤을 설명합니다.") \
     X(GuideWhereAskT,      "AI Q&A", "AI 问答", "AI Q&A", "AI Q&A") \
     X(GuideWhereAsk,       "The AI button at the top right opens the AI Q&A: ask about the app in your own words, and AI answers from the documentation, with links to its pages.", "右上角的 AI 按钮打开 AI 问答：用自己的话提问，AI 会根据文档回答，并附上相关页面的链接。", "右上の AI ボタンで AI Q&A を開きます。アプリについて自分の言葉で質問すると、AI がドキュメントをもとに、関連ページへのリンク付きで答えます。", "오른쪽 위 AI 버튼을 누르면 AI Q&A가 열립니다. 앱에 대해 편하게 질문하면 AI가 문서를 바탕으로 관련 페이지 링크와 함께 답합니다.") \
-    X(GuideWhereAskNote,   "It is an online service (Mintlify), not part of this computer, and only the questions you type are sent to it. Please use it with care: it can be unavailable at times, through a poor connection or when this month's allowance is used up, and then the documentation has the answers.", "这是在线服务（Mintlify），并非在本机运行，只会发送你输入的问题。请善加利用：它有时可能无法使用（网络不佳，或本月额度已用完），届时请以文档为准。", "オンラインサービス（Mintlify）で動いていて、送信されるのは入力した質問だけです。大切に使ってください。接続が不安定なときや今月の利用枠を使い切ったときは使えないことがあり、その場合はドキュメントをご覧ください。", "이 컴퓨터가 아닌 온라인 서비스(Mintlify)에서 동작하며, 입력한 질문만 전송됩니다. 아껴서 사용해 주세요. 연결이 좋지 않거나 이번 달 사용량을 모두 쓰면 이용할 수 없을 때가 있으며, 그럴 때는 문서를 참고하세요.") \
+    X(GuideWhereAskNote,   "It is an online service (Mintlify), not part of this computer, and only the questions you type are sent to it. Please use it with care: it can be unavailable at times, through a poor connection or when this month's allowance is used up, and then the documentation has the answers.", "它是在线服务（Mintlify），并不在本机运行，只会发送你输入的问题。请合理使用：网络不佳或本月额度用完时，它可能暂时无法使用，这时文档里同样有答案。", "この PC ではなくオンラインサービス（Mintlify）で動き、送られるのは入力した質問だけです。大切に使ってください。接続が悪いときや今月の利用枠を使い切ったときは使えないことがあり、そのときはドキュメントをご覧ください。", "이 컴퓨터가 아닌 온라인 서비스(Mintlify)에서 동작하며, 입력한 질문만 전송됩니다. 아껴서 사용해 주세요. 연결이 좋지 않거나 이번 달 사용량을 모두 쓰면 이용할 수 없을 때가 있으며, 그럴 때는 문서를 참고하세요.") \
     X(GuideWhereSearchT,   "A setting by name", "按名称查找设置", "設定を名前で探す", "이름으로 설정 찾기") \
     X(GuideWhereSearch,    "The search box above the sidebar shows only the controls whose name matches.", "侧边栏上方的搜索框只显示名称匹配的控件。", "サイドバー上部の検索ボックスは、名前が一致するコントロールだけを表示します。", "사이드바 위 검색 상자는 이름이 일치하는 컨트롤만 보여 줍니다.") \
     X(GuideWhereLight,     "When this guide closes, these places light up for a moment.", "关闭向导后，这些位置会短暂高亮提示。", "このガイドを閉じると、これらの場所がしばらく光ります。", "이 가이드를 닫으면 해당 위치가 잠시 강조됩니다.") \
@@ -687,7 +687,7 @@ enum class Lang { English = 0, Chinese = 1, Japanese = 2, Korean = 3, Count = 4 
     X(McpCopied,          "Client configuration copied", "已复制客户端配置", "クライアント設定をコピーしました", "클라이언트 설정을 복사했습니다") \
     X(McpCopyUrl,         "Copy URL", "复制地址", "URL をコピー", "URL 복사") \
     X(McpUrlCopied,       "URL copied", "已复制地址", "URL をコピーしました", "URL을 복사했습니다") \
-    X(McpOpenPage,        "Open in the browser", "在浏览器中打开", "ブラウザで開く", "브라우저에서 열기") \
+    X(McpOpenPage,        "Open in the browser", "在浏览器中打开", "ブラウザーで開く", "브라우저에서 열기") \
     X(McpReach,           "Reach", "可访问范围", "到達範囲", "접근 범위") \
     X(McpReachLocal,      "This computer only", "仅本机", "この PC のみ", "이 PC만") \
     X(McpReachNetwork,    "Local network", "局域网", "ローカルネットワーク", "로컬 네트워크") \

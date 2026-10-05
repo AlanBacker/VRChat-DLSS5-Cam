@@ -99,7 +99,8 @@ Hugging Face에서 onnx-community 조직이 공개한 ONNX FP16 내보내기:
 ## Lucide 아이콘
 
 Lucide(<https://lucide.dev>)는 ISC 라이선스이며, Feather에서 파생된 아이콘에는 MIT 라이선스도 적용됩니다.
-인터페이스의 라인 아이콘은 앱에 컴파일되어 들어간 Lucide 아이콘 글꼴의 서브셋(`src/ui/IconFont.inc`, `tools/make_icon_font.py`로 생성)에서 그립니다. 라이선스는 다음과 같습니다.
+인터페이스의 라인 아이콘은 앱에 컴파일되어 들어간 Lucide 아이콘 글꼴의 서브셋(`src/ui/IconFont.inc`, `tools/make_icon_font.py`로 생성)에서 그립니다.
+이 중 두 글리프는 이 프로젝트가 Lucide 아이콘을 조합해 만든 것으로, 같은 라이선스가 그대로 적용됩니다. 물음표가 있는 책(book 아이콘에 circle-question-mark의 물음표를 더한 것으로, circle-question-mark는 아래 Feather 목록에서 help-circle이라는 이름입니다)과 "AI"라는 글자가 들어간 말풍선(message-square 아이콘에 두 글자를 Lucide와 같은 선으로 그려 넣은 것)입니다. 라이선스는 다음과 같습니다.
 
 ```
 ISC License

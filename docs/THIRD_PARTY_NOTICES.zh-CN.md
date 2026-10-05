@@ -99,7 +99,8 @@ ONNX FP16 导出版本由 onnx-community 组织发布在 Hugging Face 上：
 ## Lucide 图标
 
 Lucide（<https://lucide.dev>），ISC 许可证；其中源自 Feather 的图标同时适用 MIT 许可证。
-界面的线条图标取自 Lucide 图标字体的一个子集，该子集编译进程序（`src/ui/IconFont.inc`，由 `tools/make_icon_font.py` 生成）。许可证如下：
+界面的线条图标取自 Lucide 图标字体的一个子集，该子集编译进程序（`src/ui/IconFont.inc`，由 `tools/make_icon_font.py` 生成）。
+其中有两个图标由本项目用 Lucide 图标组合而成，仍适用相同的许可证：带问号的书本（book 图标加上 circle-question-mark 中的问号，circle-question-mark 在下方的 Feather 列表中名为 help-circle），以及带“AI”字样的对话气泡（message-square 图标，两个字母按 Lucide 的线条样式绘制）。许可证如下：
 
 ```
 ISC License
