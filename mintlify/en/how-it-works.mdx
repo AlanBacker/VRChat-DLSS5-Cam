@@ -46,7 +46,8 @@ Three parts of the app do use a depth map: the **DLAA pre-pass**, **DLSS super r
 That network loads only while one of the three is on. With DLSS 5 alone, it never loads, and the card has less to do.
 
 <Frame caption="The depth view: near parts are bright, far parts are dark.">
-  <img src="https://alanbacker.github.io/VRChat-DLSS5-Cam/assets/img/gen/picture-depth-view.webp" alt="The same photo in the depth view: near parts are bright, far parts are dark" />
+  <img className="block dark:hidden" src="https://alanbacker.github.io/VRChat-DLSS5-Cam/assets/img/gen/picture-depth-view-light.webp" alt="The same photo in the depth view: near parts are bright, far parts are dark" />
+  <img className="hidden dark:block" src="https://alanbacker.github.io/VRChat-DLSS5-Cam/assets/img/gen/picture-depth-view.webp" alt="The same photo in the depth view: near parts are bright, far parts are dark" />
 </Frame>
 
 ## The extra passes

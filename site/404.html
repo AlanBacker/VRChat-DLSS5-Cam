@@ -460,6 +460,15 @@ td code, th code { font-size: .86em; }
 }
 .shot-link img { cursor: zoom-in; transition: box-shadow var(--t-hover) var(--ease-app); }
 .shot-link:hover img { box-shadow: var(--shadow-pop); }
+/* A picture taken in both of the program's themes shows the one of the site's theme; the hidden one is not loaded
+   (loading="lazy"), and site.js loads it before a change of theme blends the page over. */
+.shot img.for-dark { display: none; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .shot img.for-dark { display: block; }
+  :root:not([data-theme="light"]) .shot img.for-light { display: none; }
+}
+:root[data-theme="dark"] .shot img.for-dark { display: block; }
+:root[data-theme="dark"] .shot img.for-light { display: none; }
 .shot figcaption { margin-top: 10px; color: var(--dim); font-size: 14px; line-height: 1.5; text-align: center; }
 
 .pending {

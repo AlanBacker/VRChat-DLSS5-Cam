@@ -154,6 +154,7 @@ def load_page(lang, slug):
 
 # ------------------------------------------------------------------------------------------------ pictures
 SHOT_LANGS = ['en'] + [L['code'] for L in LANGS if L['code'] != 'en']
+LIGHT = '-light'   # <name>-light: the same picture in the program's light theme
 
 
 def image_options(name, lang):
@@ -171,7 +172,9 @@ def build_images():
     the English one. The sources are read from tools/site/shots/ when a picture is there, otherwise (English only)
     from site/assets/img/; only the latter are published as they are, so sources with private pixels belong in
     tools/site/shots/, which is not committed (.gitignore). The copies in gen/ are committed; without a source they
-    are kept as they are. Returns {lang: {name: info}}."""
+    are kept as they are. A picture can have a twin taken in the program's light theme, <name>-light.png beside it,
+    made with the same crop and covers; the pages show it while the site is light. Returns {lang: {name: info}}, the
+    twins under <name>-light."""
     shots_dir = os.path.join(HERE, 'shots')
     src_dir = os.path.join(OUT, 'assets', 'img')
     gen_root = os.path.join(src_dir, 'gen')
@@ -192,13 +195,13 @@ def build_images():
         os.makedirs(gen_dir, exist_ok=True)
         found[lang] = {}
         keep = set()
-        for name in IMAGES:
-            opt = image_options(name, lang)
+        for base_name, name in [(n, n + v) for n in IMAGES for v in ('', LIGHT)]:
+            opt = image_options(base_name, lang)
             full = os.path.join(gen_dir, name + '.webp')
             small = os.path.join(gen_dir, name + '-800.webp')
             meta_path = os.path.join(gen_dir, name + '.json')
             src = os.path.join(shots_dir if en else os.path.join(shots_dir, lang), name + '.png')
-            if en and not os.path.exists(src):
+            if en and not os.path.exists(src) and name == base_name:
                 src = os.path.join(src_dir, name + '.png')
             if not os.path.exists(src):
                 # No source on this computer (the sources are not in the repository): a copy made by an earlier
@@ -468,17 +471,27 @@ class Ctx:
         opt = image_options(name, self.lang if sub else 'en')
         alt = alt or S(self.lang, 'img.' + name)
         base = '%sassets/img/gen/%s%s' % (self.root, sub, name)
-        srcset = ''
-        if info.get('small'):
-            srcset = ' srcset="%s-800.webp 800w, %s.webp %dw" sizes="(min-width: 900px) 800px, 100vw"' % (base, base, info['w'])
+        light = self.images.get(self.lang if sub else 'en', {}).get(name + LIGHT)
+        if light and (light['w'], light['h']) != (info['w'], info['h']):
+            warn('%s%s%s is %dx%d, its dark picture %dx%d: left out' % (sub, name, LIGHT, light['w'], light['h'], info['w'], info['h']))
+            light = None
+
+        def img(src, inf, cls):
+            srcset = ''
+            if inf.get('small'):
+                srcset = ' srcset="%s-800.webp 800w, %s.webp %dw" sizes="(min-width: 900px) 800px, 100vw"' % (src, src, inf['w'])
+            return ('<img%s src="%s.webp"%s width="%d" height="%d" alt="%s" loading="lazy" decoding="async">'
+                    % (cls, src, srcset, inf['w'], inf['h'], esc(alt)))
+        if light:   # the program's dark theme while the site is dark, its light theme while the site is light
+            pics = img(base, info, ' class="for-dark"') + img(base + LIGHT, light, ' class="for-light"')
+        else:
+            pics = img(base, info, '')
         style = ''
         if opt.get('look') == 'panel':
             style = ' style="--show:%dpx"' % min(opt.get('show', info['w']), info['w'])
         cap = '<figcaption>%s</figcaption>' % caption if caption else ''
-        return ('<figure class="shot shot-%s"%s><a class="shot-link" href="%s.webp" data-zoom aria-label="%s">'
-                '<img src="%s.webp"%s width="%d" height="%d" alt="%s" loading="lazy" decoding="async"></a>%s</figure>'
-                % (opt.get('look', 'window'), style, base, esc(S(self.lang, 'figure.open')), base, srcset,
-                   info['w'], info['h'], esc(alt), cap))
+        return ('<figure class="shot shot-%s"%s><a class="shot-link" href="%s.webp" data-zoom aria-label="%s">%s</a>%s</figure>'
+                % (opt.get('look', 'window'), style, base, esc(S(self.lang, 'figure.open')), pics, cap))
 
     def shortcode(self, name, arg):
         if name == 'diagram':
@@ -884,8 +897,10 @@ def main():
     images, missing = build()
     n = sum(1 for L in LANGS for _ in PAGES)
     print('built %d pages in %d languages into %s' % (n, len(LANGS), os.path.relpath(OUT, ROOT)))
-    print('screenshots: %d of %d present (English); own pictures: %s' % (len(images['en']), len(IMAGES),
-          ', '.join('%s %d' % (l, len(images[l])) for l in SHOT_LANGS if l != 'en')))
+    count = lambda l, twins: sum(1 for k in images[l] if k.endswith(LIGHT) == twins)  # noqa: E731
+    print('screenshots: %d of %d present (English); own pictures: %s; light-theme twins: %s'
+          % (count('en', False), len(IMAGES), ', '.join('%s %d' % (l, count(l, False)) for l in SHOT_LANGS if l != 'en'),
+             ', '.join('%s %d' % (l, count(l, True)) for l in SHOT_LANGS)))
     for m in missing:
         print('  missing: %s.png (tools/site/shots/ or site/assets/img/)' % m)
     other = [w for w in WARNINGS if not w.startswith('screenshot missing')]

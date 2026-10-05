@@ -190,9 +190,14 @@ class Page:
         width = ''
         if opt.get('look') == 'panel':
             width = ' width="%d"' % min(opt.get('show', info['w']), info['w'])
-        img = '<img src="%sassets/img/gen/%s%s.webp" alt="%s"%s />' % (SITE, sub, name, attr(alt), width)
+        src = '%sassets/img/gen/%s%s' % (SITE, sub, name)
         cap = ' caption="%s"' % attr(plain_inline(caption)) if caption else ''
-        return ['', ind + '<Frame%s>' % cap, ind + '  ' + img, ind + '</Frame>', '']
+        if os.path.exists(os.path.join(gen, sub, name + B.LIGHT + '.json')):   # a twin in the light theme: Mintlify's own switch
+            imgs = ['<img className="block dark:hidden" src="%s%s.webp" alt="%s"%s />' % (src, B.LIGHT, attr(alt), width),
+                    '<img className="hidden dark:block" src="%s.webp" alt="%s"%s />' % (src, attr(alt), width)]
+        else:
+            imgs = ['<img src="%s.webp" alt="%s"%s />' % (src, attr(alt), width)]
+        return ['', ind + '<Frame%s>' % cap] + [ind + '  ' + i for i in imgs] + [ind + '</Frame>', '']
 
     # ------------------------------------------------------------------------------------------------ shortcodes
     def shortcode(self, name, arg):

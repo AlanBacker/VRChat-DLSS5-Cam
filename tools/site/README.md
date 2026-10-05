@@ -96,6 +96,14 @@ is published as it is. The build never changes the PNG files; it writes WebP cop
 into `site/assets/img/gen/` and `gen/<lang>/`, which the pages use and which are committed. A clone without the
 sources keeps those copies as they are, so it builds the same pages; a new or changed screenshot needs its source in
 `shots/`. A language without its own copy of a picture shows the English one.
+
+Each picture can have a twin taken in the program's light theme (`--set theme=2`), `<name>-light.png` beside it, in
+the same window, state and size; the build makes it with the picture's own `crop` and `cover`. The pages show the
+dark picture while the site is dark and the light one while it is light (the reader's system setting or the site's
+theme menu); the hidden one is not downloaded, and a change of theme loads the pictures on screen before the page
+blends over. Zoomed in, a picture shows the one of the site's theme too. The Mintlify copy gets both, with Mintlify's
+`block dark:hidden` / `hidden dark:block` classes. `light-theme` has no twin: it shows the light theme itself.
+
 In `images.json`:
 
 - `cover`: rectangles `[left, top, right, bottom]` in source pixels, painted with the colour just right of each

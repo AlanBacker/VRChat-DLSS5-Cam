@@ -53,13 +53,29 @@
     else { doc.setAttribute('data-theme', t); store('vdc-theme', t); }
     showTheme();
   }
+  // The pictures taken in the theme t that are on screen, loaded and decoded first (at most 400 ms), so the page
+  // blends over to them rather than to empty frames. The others load as they come into view.
+  function themePictures(t) {
+    if (t === 'system') t = window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    var waits = [];
+    $$('.shot img.for-' + t).forEach(function (im) {
+      var r = im.parentNode.getBoundingClientRect();
+      if (r.bottom < -200 || r.top > window.innerHeight + 200) return;
+      im.loading = 'eager';
+      if (im.decode) waits.push(im.decode().catch(function () {}));
+    });
+    if (!waits.length) return Promise.resolve();
+    return Promise.race([Promise.all(waits), new Promise(function (r) { setTimeout(r, 400); })]);
+  }
   $$('[data-theme-set]').forEach(function (b) {
     b.addEventListener('click', function () {
       var t = b.getAttribute('data-theme-set');
       closeMenus();   // the menu closes at once, as the program's popups do; the page then blends to the new palette
       if (t === currentTheme()) return;
-      if (calm || !document.startViewTransition) { setTheme(t); return; }
-      document.startViewTransition(function () { setTheme(t); });
+      themePictures(t).then(function () {
+        if (calm || !document.startViewTransition) { setTheme(t); return; }
+        document.startViewTransition(function () { setTheme(t); });
+      });
     });
   });
   showTheme();
@@ -409,8 +425,8 @@
       a.addEventListener('click', function (e) {
         if (e.metaKey || e.ctrlKey || e.shiftKey || e.button) return;
         e.preventDefault();
-        var src = $('img', a);
-        img.src = a.getAttribute('href');
+        var src = $$('img', a).filter(function (i) { return i.offsetWidth; })[0] || $('img', a);   // the theme's picture
+        img.src = src ? src.getAttribute('src') : a.getAttribute('href');
         img.alt = src ? src.alt : '';
         opener = a;
         dlg.showModal();
