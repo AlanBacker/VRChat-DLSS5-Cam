@@ -11,7 +11,7 @@
   --tint: rgba(70, 88, 230, .10); --tint-strong: rgba(70, 88, 230, .16); --code-bg: #F7F8FA;
   --shadow-card: 0 1px 2px rgba(22, 28, 50, .06), 0 2px 8px rgba(22, 28, 50, .06);
   --shadow-pop: 0 4px 10px rgba(22, 28, 50, .10), 0 12px 32px rgba(22, 28, 50, .14);
-  --tile: #121526; --corners: #7F8BFF;
+  --tile: #121526;
   --r-card: 10px; --r-control: 6px; --r-code: 8px;
   --ease-out: cubic-bezier(.33, 1, .68, 1); --ease-in: cubic-bezier(.32, 0, .67, 0);
   /* the program's three motions: Animate() closes the gap exponentially (speed 16 for hover, 18 for a moving
@@ -566,7 +566,6 @@ a.card:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)
 .wipe-layer { position: absolute; inset: 16.6%; width: 66.8%; height: 66.8%; }
 .wipe-before { clip-path: inset(0 calc(100% - var(--split)) 0 0); }
 .wipe-after { clip-path: inset(0 0 0 var(--split)); }
-.wipe-corners { position: absolute; inset: 0; width: 100%; height: 100%; fill: none; stroke: var(--corners); stroke-width: 8.6; stroke-linecap: round; stroke-linejoin: round; }
 .wipe-line { position: absolute; top: 0; bottom: 0; left: var(--split); width: 2px; margin-left: -1px; background: rgba(255, 255, 255, .86); }
 .wipe-handle {
   position: absolute; left: 50%; top: 50%; width: 18px; height: 18px; margin: -9px 0 0 -9px; border-radius: 50%;
@@ -580,7 +579,6 @@ a.card:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)
 }
 .wipe-label-l { left: 24%; }
 .wipe-label-r { right: 24%; }
-.wipe-hero .wipe-label { bottom: 4.5%; }   /* under the viewfinder corners */
 @container (max-width: 239px) { .wipe-label { display: none; } }
 .wipe-demo { max-width: 320px; margin: 0 auto; cursor: ew-resize; border-radius: 23%; }
 .wipe-demo:focus-visible { outline-offset: 4px; }
@@ -597,7 +595,10 @@ a.card:hover { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)
 .hero .lead { font-size: 19px; max-width: 560px; }
 .eyebrow-plain { color: var(--icon-accent); }
 .hero-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 28px; }
-.hero-art .wipe-hero { width: 100%; max-width: 300px; margin-left: auto; }
+.hero-logo {
+  display: block; width: 100%; max-width: 300px; height: auto; margin-left: auto;
+  filter: drop-shadow(0 1px 2px rgba(10, 12, 30, .3)) drop-shadow(0 14px 20px rgba(18, 21, 38, .32));
+}
 .dl-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin: 20px 0 8px; }
 .dl-card { display: flex; flex-direction: column; padding: 18px; }
 .dl-geforce { border-color: color-mix(in srgb, var(--accent) 60%, var(--border)); box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent), var(--shadow-card); }
@@ -744,7 +745,7 @@ a.ext::after {
   .ref-grid { grid-template-columns: 1fr; }
   .hero { grid-template-columns: 1fr; gap: 28px; margin-bottom: 40px; }
   .hero-art { order: -1; }
-  .hero-art .wipe-hero { max-width: 180px; margin: 0; }
+  .hero-logo { max-width: 180px; margin: 0; }
   .hero h1 { font-size: 32px; }
   .flow-row { flex-direction: column; }
   .flow-node { flex-direction: row; align-items: flex-start; gap: 14px; }

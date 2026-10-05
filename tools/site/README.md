@@ -29,7 +29,7 @@ published unpainted, and with `--check` any link or picture that does not resolv
 | `templates/layout.html` | The page frame |
 | `assets/` | `site.css`, `site.js`, the logo files; copied into `site/assets/`. `ask.css` and `ask.js` are added to `site.css` and `site.js` only when AI Q&A is on |
 | `icons/` | Lucide icons (ISC licence in `icons/LICENSE`), inlined into the pages as SVG |
-| `partials/` | The two sphere drawings used by the hero picture and the comparison illustration |
+| `partials/` | The two sphere drawings used by the comparison illustration (the home page shows `assets/logo.svg`) |
 | `mintlify.py` | Writes `mintlify/`, the copy of the pages that Mintlify's AI Q&A answers from (see The Mintlify copy) |
 | `logo.py` | Redraws `assets/logo.svg`, `assets/mark.svg`, the PNG icons and `partials/` from `tools/make_app_icon.py`; its output is committed, run it only when the program icon changes (needs pycairo) |
 

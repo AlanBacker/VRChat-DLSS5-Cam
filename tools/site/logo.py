@@ -7,7 +7,7 @@ Writes, into tools/site/:
   assets/icon-32.png, assets/icon-180.png   bitmap icons for browsers that take no SVG icon
   partials/sphere-facets.svg, partials/sphere-bands.svg
                             the whole sphere in both looks (facets: the picture before, bands: after DLSS 5), in a
-                            200 x 200 box, for the hero picture and the wipe illustration, which split them themselves
+                            200 x 200 box, for the wipe illustration, which splits them itself
 
 The outputs are committed, so building the site does not need pycairo; run this again only when the icon changes.
 Needs pycairo (make_app_icon.py imports it) and Pillow.  Run: python3 tools/site/logo.py

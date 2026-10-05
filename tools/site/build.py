@@ -298,24 +298,20 @@ def sphere_layers():
             read(os.path.join(HERE, 'partials', 'sphere-bands.svg')).strip())
 
 
-def wipe(lang, hero=False):
+# The home page's large picture is the program's icon itself (tools/make_app_icon.py, drawn by logo.py), as Windows and the
+# app show it: no split line, handle or labels, which belong to the wipe illustration.
+HERO_LOGO = '<img class="hero-logo" src="{root}assets/logo.svg" alt="" width="300" height="300">'
+
+
+def wipe(lang):
     facets, bands = sphere_layers()
-    corners = ''
-    if hero:
-        # the viewfinder corners of the program icon (tools/make_app_icon.py: 0.16 s in, 0.12 s arms, 0.04 s wide), measured
-        # from its tile (0.035 s to 0.965 s) into the 200 x 200 box of the stage, so they keep the icon's room inside its round corners
-        d = 'M26.9 52.7V26.9H52.7M147.3 26.9H173.1V52.7M26.9 147.3V173.1H52.7M173.1 147.3V173.1H147.3'
-        corners = '<svg class="wipe-corners" viewBox="0 0 200 200" aria-hidden="true"><path d="%s"/></svg>' % d
     box = '<svg class="wipe-layer" viewBox="0 0 200 200" aria-hidden="true">%s</svg>'
-    attrs = 'class="wipe%s" data-anim="wipe"' % (' wipe-hero' if hero else ' wipe-demo')
-    if not hero:
-        attrs += ' data-drag role="slider" tabindex="0" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50" aria-label="%s"' % esc(S(lang, 'wipe.label'))
-    else:
-        attrs += ' aria-hidden="true"'
-    return ('<div %s><div class="wipe-stage">%s<div class="wipe-before">%s</div><div class="wipe-after">%s</div>'
+    attrs = ('class="wipe wipe-demo" data-anim="wipe" data-drag role="slider" tabindex="0" aria-valuemin="0" aria-valuemax="100"'
+             ' aria-valuenow="50" aria-label="%s"' % esc(S(lang, 'wipe.label')))
+    return ('<div %s><div class="wipe-stage"><div class="wipe-before">%s</div><div class="wipe-after">%s</div>'
             '<div class="wipe-line"><span class="wipe-handle"></span></div>'
             '<span class="wipe-label wipe-label-l">%s</span><span class="wipe-label wipe-label-r">%s</span></div></div>'
-            % (attrs, corners, box % facets, box % bands, esc(S(lang, 'wipe.original')), esc(S(lang, 'wipe.output'))))
+            % (attrs, box % facets, box % bands, esc(S(lang, 'wipe.original')), esc(S(lang, 'wipe.output'))))
 
 
 def downloads(lang):
@@ -678,7 +674,7 @@ def render_page(L, page, metas, images, search):
                   '<a class="btn btn-ghost btn-lg" href="install.html"><span>%s</span>%s</a></div></div>'
                   '<div class="hero-art">%s</div></header>'
                   % (esc(S(lang, 'home.eyebrow')), esc(title), md.inline(meta.get('description', '')), icon('download'),
-                     esc(S(lang, 'home.download')), esc(S(lang, 'home.start')), icon('arrow-right'), wipe(lang, hero=True)))
+                     esc(S(lang, 'home.download')), esc(S(lang, 'home.start')), icon('arrow-right'), HERO_LOGO))
     else:
         header = '<header class="doc-head">%s<h1>%s</h1>%s</header>' % (
             eyebrow, esc(title), '<p class="lead">%s</p>' % md.inline(meta['description']) if meta.get('description') else '')
