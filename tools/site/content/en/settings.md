@@ -71,6 +71,7 @@ Where results go, and how they are named.
 | Capture photo · Process & save PNG · Process & save video {#save-button} | Saves. The label follows the mode. |
 | Estimated time {#estimated-time} | Pictures and videos: roughly how long the save takes on this card. It gets more exact with every run. |
 | Folder {#folder} | Where everything is saved. Empty: `Pictures\VRChat DLSS5 Cam`. **Browse…** picks a folder, **Open** shows it. |
+| Save next to the source file {#output-to-source} | Processed pictures and videos go into the folder of the file they came from, handy with Photoshop or Darktable; the folder above then only takes photos from the live camera. Shown for pictures and videos. |
 | File name · Output file name {#file-name} | The name template, for live photos and for pictures and videos. [Words you can use](saving.html#names) |
 | Also save the original frame {#save-original} | Also saves the picture as it came in, before DLSS 5. |
 | Keep transparency (alpha) {#keep-alpha} | {adv} Keeps a transparent background. On at first. |

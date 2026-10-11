@@ -120,6 +120,7 @@ struct Settings {
     std::string captureFolder;         // UTF-8, empty = Pictures\VRChat DLSS5 Cam
     std::string captureName;           // UTF-8 name template of live captures, empty = Capture::kDefaultCaptureName
     std::string outputName;            // UTF-8 name template of processed pictures and videos, empty = Capture::kDefaultOutputName
+    bool        outputToSource = false;  // processed pictures and videos go next to their source file (live captures keep captureFolder)
     bool        keepAlpha = true;
     bool        saveOriginal = false;
     bool        hotkeyEnabled = true;

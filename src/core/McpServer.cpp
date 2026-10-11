@@ -236,6 +236,7 @@ const std::vector<McpSettingInfo> kSettings = {
     { "processRateLimit", "display", "int", "0..240", "Live source: at most this many processed frames per second; 0 = every source frame." },
     { "showOverlay", "display", "bool", "", "The status overlay on the preview." },
     { "captureFolder", "capture", "string", "", "Where captures and processed files go; empty = Pictures\\VRChat DLSS5 Cam." },
+    { "outputToSource", "capture", "bool", "", "Processed pictures and videos go into the folder of their source file instead of captureFolder (live captures keep captureFolder)." },
     { "captureName", "capture", "string", "", "File-name template of live captures: tokens {name} {date} {time} {size} {width} {height} {insize} {inwidth} {inheight}; empty = VRChat_DLSS5_{date}_{time}_{size}." },
     { "outputName", "capture", "string", "", "File-name template of processed pictures and videos; empty = {name}_DLSS5_{size}." },
     { "keepAlpha", "capture", "bool", "", "Store the alpha channel of the camera picture." },

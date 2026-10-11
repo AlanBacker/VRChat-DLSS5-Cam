@@ -221,7 +221,7 @@ bool LoadPictureScaled(const std::wstring& path, int maxEdge, std::vector<uint8_
 bool OverrideAllowed(const std::string& key) {
     const McpSettingInfo* info = McpServer::FindSetting(key);
     if (!info) return false;
-    if (key == "nrDllPath" || key == "nrRuntimeBuild" || key == "depthModelPath" || key == "captureFolder") return false;
+    if (key == "nrDllPath" || key == "nrRuntimeBuild" || key == "depthModelPath" || key == "captureFolder" || key == "outputToSource") return false;
     const std::string g = info->group;
     if (g == "video" || g == "resolution" || g == "hdr" || g == "neural" || g == "blend" || g == "guidance" || g == "dlaa") return true;
     return key == "videoMatchSource" || key == "captureName" || key == "outputName" || key == "keepAlpha";

@@ -242,6 +242,8 @@ enum class Lang { English = 0, Chinese = 1, Japanese = 2, Korean = 3, Count = 4 
     X(OpenFolder,         "Open", "打开", "開く", "열기") \
     X(KeepAlpha,          "Keep transparency (alpha)", "保留透明度（Alpha）", "透明度（アルファ）を保持", "투명도(알파) 유지") \
     X(SaveOriginal,       "Also save the original frame", "同时保存原始画面", "元のフレームも保存", "원본 프레임도 저장") \
+    X(OutputToSource,     "Save next to the source file", "保存到源文件所在的文件夹", "元のファイルと同じフォルダーに保存", "원본 파일과 같은 폴더에 저장") \
+    X(TipOutputToSource,  "Processed pictures and videos go into the folder of the file they came from, handy with Photoshop or Darktable. Photos from the live camera still go to the folder above.", "处理后的图片和视频保存到它们来源文件所在的文件夹，方便配合 Photoshop、Darktable 等使用。实时相机的照片仍保存到上面的文件夹。", "処理した画像と動画を、元のファイルがあるフォルダーに保存します。Photoshop や Darktable と組み合わせるときに便利です。ライブカメラの写真は引き続き上のフォルダーに保存されます。", "처리한 이미지와 동영상을 원본 파일이 있는 폴더에 저장합니다. Photoshop이나 Darktable과 함께 쓸 때 편리합니다. 실시간 카메라의 사진은 계속 위의 폴더에 저장됩니다.") \
     X(Hotkey,             "Global hotkey", "全局热键", "グローバルホットキー", "전역 단축키") \
     X(Timelapse,          "Auto capture every (seconds)", "自动拍照间隔（秒）", "自動撮影の間隔（秒）", "자동 촬영 간격(초)") \
     X(TimelapseOff,       "0 = off", "0 = 关闭", "0 = オフ", "0 = 끔") \

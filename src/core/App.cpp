@@ -353,7 +353,7 @@ void App::ApplyCommandLineSettings() {
         else Log::Warn("Command line: unknown setting %s", kv.first.c_str());
     }
     if (m_cli.language >= 0) m_settings.language = m_cli.language;
-    if (!m_cli.processDir.empty()) m_settings.captureFolder = WideToUtf8(m_cli.processDir);
+    if (!m_cli.processDir.empty()) { m_settings.captureFolder = WideToUtf8(m_cli.processDir); m_settings.outputToSource = false; }
     if (m_headless) { m_settings.vsync = false; m_settings.windowMaximized = false; }
     m_settings.Clamp();
     // Whatever the command line changed is remembered together with the file's value: these values hold for this
@@ -1333,6 +1333,7 @@ void App::WorkerMain() {
                 batch.folder = c.path;
                 batch.keepAlpha = c.keepAlpha;
                 batch.saveOriginal = c.saveOriginal;
+                batch.toSource = c.toSource;
                 batch.restoreImage = m_image.Path();
                 batch.restoreVideo = m_video.Path();
                 batch.restoreImageXform = imageXform;
@@ -1342,7 +1343,7 @@ void App::WorkerMain() {
                 if (m_preview.running) m_video.StopSequence();
                 m_preview.running = false;
                 m_preview.playing = false;
-                Log::Info("Batch: %zu files -> %s", batch.items.size(), WideToUtf8(batch.folder).c_str());
+                Log::Info("Batch: %zu files -> %s", batch.items.size(), batch.toSource ? "next to their sources" : WideToUtf8(batch.folder).c_str());
                 break;
             case Command::BatchCancel:
                 if (!batch.active) break;
@@ -1428,7 +1429,7 @@ void App::WorkerMain() {
                 videoXform = item.transform;
                 std::string err;
                 if (!m_video.Loaded() || !SamePath(m_video.Path(), item.path) ||
-                    !WorkerStartVideo(settings, videoRun, batch.folder, item.inSec, item.outSec, err)) {
+                    !WorkerStartVideo(settings, videoRun, batch.toSource ? FolderOfFile(item.path, batch.folder) : batch.folder, item.inSec, item.outSec, err)) {
                     if (!err.empty()) { Log::Error("Video: cannot start: %s", err.c_str()); PostNotice(StrPrintf("%s: %s", TR(VideoFailed), err.c_str()), true); }
                     PostBatchEvent(item.id, LibraryItem::Failed, "", err.empty() ? m_workerLastError : err);
                     ++batch.failed; ++batch.index;
@@ -1449,7 +1450,7 @@ void App::WorkerMain() {
                 imageCapturePending = true;
                 imageCapture = Command{};
                 imageCapture.type = Command::CaptureImage;
-                imageCapture.path = batch.folder;
+                imageCapture.path = batch.toSource ? FolderOfFile(item.path, batch.folder) : batch.folder;
                 imageCapture.keepAlpha = batch.keepAlpha;
                 imageCapture.saveOriginal = batch.saveOriginal;
             }
@@ -2473,7 +2474,7 @@ void App::HandleEvents(ui::UiEvents& ev) {
     if (ev.reloadDepth) { m_pipeline.RestartDepthEstimator(); WakeWorker(); }
     if (ev.browseFolder) m_pendingBrowseFolder = true;
     if (ev.openCaptureFolder) {
-        const std::wstring folder = EffectiveCaptureFolder();
+        const std::wstring folder = OutputFolderFor(CurrentSourcePath());
         CreateDirectories(folder);
         OpenPath(folder);
     }
@@ -2614,7 +2615,7 @@ void App::CaptureNow() {
         if (!m_source.videoLoaded) { m_ui.Toast(TR(CaptureNoVideo), true); return; }
         Command c;
         c.type = Command::ProcessVideo;
-        c.path = EffectiveCaptureFolder();
+        c.path = OutputFolderFor(m_source.videoPath);
         PostCommand(std::move(c));
         m_ui.Toast(TR(VideoProcessing));
         return;
@@ -2626,7 +2627,7 @@ void App::CaptureNow() {
         }
         Command c;
         c.type = Command::CaptureImage;
-        c.path = EffectiveCaptureFolder();
+        c.path = OutputFolderFor(m_source.imagePath);
         c.keepAlpha = m_settings.keepAlpha;
         c.saveOriginal = m_settings.saveOriginal;
         PostCommand(std::move(c));
@@ -3229,6 +3230,7 @@ void App::StartLibraryProcessing(bool selectedOnly) {
     c.type = Command::BatchStart;
     c.items = std::move(items);
     c.path = EffectiveCaptureFolder();
+    c.toSource = m_settings.outputToSource;
     c.keepAlpha = m_settings.keepAlpha;
     c.saveOriginal = m_settings.saveOriginal;
     PostCommand(std::move(c));
@@ -3614,6 +3616,25 @@ void App::CheckRuntimeFallback() {
 std::wstring App::EffectiveCaptureFolder(const Settings& s) {
     if (!s.captureFolder.empty()) return Utf8ToWide(s.captureFolder);
     return JoinPath(GetPicturesDir(), L"VRChat DLSS5 Cam");
+}
+
+std::wstring App::FolderOfFile(const std::wstring& path, const std::wstring& fallback) {
+    const size_t slash = path.find_last_of(L"\\/");
+    if (slash == std::wstring::npos || slash == 0) return fallback;
+    return path.substr(0, slash + 1);   // the separator stays, so a drive root ("C:\") is itself
+}
+
+// Processed pictures and videos go next to the file they came from when the option is on (issue #4: Photoshop and
+// Darktable keep their files together); live captures have no source file and always use the capture folder.
+std::wstring App::OutputFolderFor(const std::wstring& source) const {
+    if (m_settings.outputToSource && !source.empty()) return FolderOfFile(source, EffectiveCaptureFolder());
+    return EffectiveCaptureFolder();
+}
+
+std::wstring App::CurrentSourcePath() const {
+    if (m_settings.sourceMode == SourceVideo) return m_source.videoLoaded ? m_source.videoPath : std::wstring();
+    if (m_settings.sourceMode == SourceImage) return m_source.imageLoaded ? m_source.imagePath : std::wstring();
+    return std::wstring();
 }
 
 namespace {

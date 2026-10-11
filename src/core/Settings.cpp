@@ -153,6 +153,7 @@ bool Settings::ApplyText(const std::string& data, bool wholeFile) {
     r.Get("captureFolder", captureFolder);
     r.Get("captureName", captureName);
     r.Get("outputName", outputName);
+    r.Get("outputToSource", outputToSource);
     r.Get("keepAlpha", keepAlpha);
     r.Get("saveOriginal", saveOriginal);
     r.Get("hotkeyEnabled", hotkeyEnabled);
@@ -420,6 +421,7 @@ std::string Settings::Text() const {
     w.Put("captureFolder", captureFolder);
     w.Put("captureName", captureName);
     w.Put("outputName", outputName);
+    w.Put("outputToSource", outputToSource);
     w.Put("keepAlpha", keepAlpha);
     w.Put("saveOriginal", saveOriginal);
     w.Put("hotkeyEnabled", hotkeyEnabled);

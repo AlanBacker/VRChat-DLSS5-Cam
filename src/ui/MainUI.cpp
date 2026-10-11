@@ -2745,7 +2745,9 @@ void MainUI::BlockSave(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
     if (SearchMatch(TR(CaptureFolder), TR(OpenFolder))) {
         SyncBuffer(m_folderBuf, sizeof(m_folderBuf), s.captureFolder, m_folderEditing);
         const float btnW = ImGui::GetFrameHeight();
+        const bool toSource = s.outputToSource && s.sourceMode != SourceSpout;   // the files go next to their sources: the box is only the fallback
         LabelRowBegin(TR(CaptureFolder));
+        ImGui::BeginDisabled(toSource);
         ImGui::SetNextItemWidth(ImGui::CalcItemWidth() - btnW * 2.0f - ImGui::GetStyle().ItemInnerSpacing.x * 2.0f);
         const std::string hint = WideToUtf8(info.captureFolder);
         ImGui::InputTextWithHint("##folder", hint.c_str(), m_folderBuf, sizeof(m_folderBuf));
@@ -2754,12 +2756,20 @@ void MainUI::BlockSave(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
         if (ImGui::IsItemDeactivatedAfterEdit()) { s.captureFolder = m_folderBuf; ev.settingsChanged = true; }
         ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
         if (IconButton("##browsefolder", Icon::Folder, ImVec2(btnW, 0), TR(Browse))) ev.browseFolder = true;
+        ImGui::EndDisabled();
         ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
         if (IconButton("##openfolder", Icon::OpenExternal, ImVec2(btnW, 0), TR(OpenFolder))) ev.openCaptureFolder = true;
         ImGui::SameLine(0.0f, ImGui::GetStyle().ItemInnerSpacing.x);
         TrailingLabel(TR(CaptureFolder));
     }
     JumpEnd();
+    if (s.sourceMode != SourceSpout) {
+        // Processed files next to their sources (issue #4); live captures have no source file.
+        JumpBegin("output-to-source");
+        if (Toggle(TR(OutputToSource), &s.outputToSource)) ev.settingsChanged = true;
+        Help(TR(TipOutputToSource));
+        JumpEnd();
+    }
     JumpBegin("file-name");
     {
         // The saved files' names, from a template; an empty box means the default it shows. Live captures and

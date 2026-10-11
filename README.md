@@ -174,8 +174,8 @@ A file can be dropped onto the window or opened with *Open image…* / *Open vid
 picture appears in the preview and every slider takes effect on it immediately. The ✕ button beside *Open…* closes
 the file again: processing stops, the preview empties and the file stays in the library. **Process & save PNG**
 (images), **Process & save video** (videos) or the hotkey writes the result into the save folder of the *Capture*
-section (`Pictures\VRChat DLSS5 Cam` unless changed) as `<name>_DLSS5_<w>x<h>.png`, `.mp4`, `.gif` / `.png` (APNG) /
-`.webp` for an animation, or a folder of PNG frames.
+section (`Pictures\VRChat DLSS5 Cam` unless changed; the source file's own folder with *Save next to the source file* on) as
+`<name>_DLSS5_<w>x<h>.png`, `.mp4`, `.gif` / `.png` (APNG) / `.webp` for an animation, or a folder of PNG frames.
 
 <p align="center">
   <img src="docs/images/video.png" width="900" alt="A video open in the preview with the wipe compare and the play, step and range controls under the picture">
@@ -424,7 +424,7 @@ and a minimal bot are described in [docs/MCP.md](docs/MCP.md).
 | DLSS 5 | Input exposure (paper-white scale) / Tone transfer strength / Colour strength | Output blend. Input exposure (0.25–4×) scales the picture the network sees and is undone afterwards. Tone transfer and colour strength (0–2) set how much of the neural pass's brightness and colour changes reach the output; 1 / 1 reproduces the neural result exactly, 0 keeps the original. |
 | DLSS 5 | Shadow strength / Highlight & glow strength | Output blend, 0–2: how much of the neural pass's darkening and of its brightening reaches the output. 1 / 1 = as rendered. |
 | DLSS 5 | Neural pass resolution | Sizes the neural pass: the full picture, a cap on its long edge (a large source, for example 8K, is processed at a fixed, smaller size) or a percentage of the picture. A reduced pass has its change upsampled onto the full-resolution picture; lower values cut the GPU load at the cost of the finest detail. |
-| Capture | Folder / File name (Output file name with a file open) / Keep transparency (alpha) / Also save the original frame / Global hotkey / Auto capture every (seconds) | Where and how photos and videos are saved. The file name comes from a template: `{name}` (the source file's name, *VRChat* for a live capture), `{date}`, `{time}`, `{size}`, `{width}`, `{height}`, `{insize}`, `{inwidth}`, `{inheight}`; anything else is kept as typed, and a name already taken gets `_2`, `_3`, … Live captures default to `VRChat_DLSS5_{date}_{time}_{size}`, processed pictures and videos to `{name}_DLSS5_{size}`. |
+| Capture | Folder / Save next to the source file / File name (Output file name with a file open) / Keep transparency (alpha) / Also save the original frame / Global hotkey / Auto capture every (seconds) | Where and how photos and videos are saved. With *Save next to the source file* on, a processed picture or video goes into its source's folder instead of the capture folder. The file name comes from a template: `{name}` (the source file's name, *VRChat* for a live capture), `{date}`, `{time}`, `{size}`, `{width}`, `{height}`, `{insize}`, `{inwidth}`, `{inheight}`; anything else is kept as typed, and a name already taken gets `_2`, `_3`, … Live captures default to `VRChat_DLSS5_{date}_{time}_{size}`, processed pictures and videos to `{name}_DLSS5_{size}`. |
 | Capture | Estimated time | Rough processing time of the open image or video with the current settings, refined by every run. |
 | Frame guidance | Motion vectors | NVIDIA Optical Flow (with a forward/backward consistency check), the FSR optical flow (this program's own pyramid of compute passes, on any card, with its own search radius and consistency check), GPU block matching, or none. |
 | Frame guidance | Depth | AI estimated (Depth Anything V2 Small on DirectML; update interval and network resolution adjustable), flat, gradient, or zero. DLSS 5 itself does not read the depth; the network is loaded only while DLAA, super resolution or the depth view needs it. |
@@ -514,8 +514,9 @@ The guidance scheme is built for video input: same-resolution SDR input, hardwar
 lowered where forward and backward vectors disagree, monocular depth from Depth Anything V2 normalized (2nd/98th
 percentile) to inverted relative depth and carried along the motion vectors between inferences, and no per-frame
 history resets. Everything is an independent MIT implementation (`src/gfx/Pipeline.cpp`, `src/gfx/DepthEstimator.cpp`,
-`src/gfx/Shaders.cpp`). The optical flow engine runs on a private native D3D11 device; frames and vectors cross to
-D3D12 through NT-handle shared textures ordered by a shared fence (`src/gfx/NvOpticalFlow.cpp`).
+`src/gfx/Shaders.cpp`). The optical flow engine is driven through its D3D12 interface on the program's own device; each
+pass is ordered against the graphics queue with fence points, so a frame always reads the vectors computed for it
+(`src/gfx/NvOpticalFlow.cpp`).
 
 The FSR optical flow is this program's own and needs no engine: the coarsest level of a luma pyramid searches for the
 large motion, every level below tries the vectors it inherits together with those of its neighbours and refines around

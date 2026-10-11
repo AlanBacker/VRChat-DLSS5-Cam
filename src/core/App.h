@@ -157,6 +157,7 @@ private:
         bool         announce = false;           // LoadRuntime: toast on success and on a missing file
         bool         keepAlpha = true;           // CaptureImage, BatchStart
         bool         saveOriginal = false;       // CaptureImage, BatchStart
+        bool         toSource = false;           // BatchStart: every file is written next to its source instead of into path
         double       seconds = 0.0;              // VideoSeek, VideoSetRange (in)
         double       seconds2 = 0.0;             // VideoSetRange (out), ProcessVideo (unused)
         int          step = 0;                   // VideoStep: frames forward (+) or back (-)
@@ -216,6 +217,7 @@ private:
         bool         cancel = false;
         std::wstring folder;
         bool         keepAlpha = true, saveOriginal = false;
+        bool         toSource = false;         // the files go next to their sources, folder is only the fallback
         std::wstring restoreImage, restoreVideo; // the user's own files, reopened afterwards
         SourceTransform restoreImageXform, restoreVideoXform;
     };
@@ -285,6 +287,9 @@ private:
     int  RunAgainAndWait(const std::string& note);   // start the executable again with the same command line, wait, return its code
     static std::wstring EffectiveCaptureFolder(const Settings& s);
     std::wstring EffectiveCaptureFolder() const { return EffectiveCaptureFolder(m_settings); }
+    static std::wstring FolderOfFile(const std::wstring& path, const std::wstring& fallback);   // the folder a file is in
+    std::wstring OutputFolderFor(const std::wstring& source) const;   // where a processed file goes (outputToSource)
+    std::wstring CurrentSourcePath() const;                           // the loaded picture or video of the current mode
     void BrowseRuntime();
     void BrowseDepthModel();
     void BrowseFolder();

@@ -303,7 +303,7 @@ Json App::McpStatusJson() const {
                   .Set("done", m_source.batchDone).Set("failed", m_source.batchFailed).Set("item", m_source.batchItemName))
              .Set("videoProcessing", m_source.videoProcessing || m_source.videoFinishing)
              .Set("capturesPending", (long long)(m_capture.Pending() + st.capturesInFlight)))
-        .Set("capture", Json::Obj().Set("folder", WideToUtf8(EffectiveCaptureFolder())).Set("last", m_lastCapture).Set("lastOk", m_lastCaptureOk))
+        .Set("capture", Json::Obj().Set("folder", WideToUtf8(OutputFolderFor(CurrentSourcePath()))).Set("outputToSource", m_settings.outputToSource).Set("last", m_lastCapture).Set("lastOk", m_lastCaptureOk))
         .Set("library", Json::Obj().Set("count", (long long)m_library.size())
              .Set("selected", (long long)std::count_if(m_library.begin(), m_library.end(), [](const LibraryItem& i) { return i.selected; })))
         .Set("history", Json::Obj().Set("entries", (long long)labels.size()).Set("current", current)
@@ -382,7 +382,7 @@ void App::McpCheckWaiters() {
             break;
         case WaitCapture:
             if (m_captureResultsSeen > w.captureBase) {
-                if (m_lastCaptureOk) Reply(w.call, Json::Obj().Set("saved", true).Set("file", m_lastCapture).Set("folder", WideToUtf8(EffectiveCaptureFolder())).Set("seconds", elapsed));
+                if (m_lastCaptureOk) Reply(w.call, Json::Obj().Set("saved", true).Set("file", m_lastCapture).Set("folder", WideToUtf8(OutputFolderFor(CurrentSourcePath()))).Set("seconds", elapsed));
                 else w.call->Fail("the capture failed: " + m_lastCapture);
                 done = true;
             }
@@ -391,7 +391,7 @@ void App::McpCheckWaiters() {
             if (m_source.videoProcessing || m_source.videoFinishing) w.started = true;
             if (m_source.videoRuns > w.runBase) {   // the run ended: the processing thread published how
                 if (m_source.videoLastOk)
-                    Reply(w.call, Json::Obj().Set("finished", true).Set("output", m_source.videoLastOut).Set("folder", WideToUtf8(EffectiveCaptureFolder()))
+                    Reply(w.call, Json::Obj().Set("finished", true).Set("output", m_source.videoLastOut).Set("folder", WideToUtf8(OutputFolderFor(CurrentSourcePath())))
                           .Set("frames", m_source.videoLastFrames).Set("processingSeconds", m_source.videoLastSeconds).Set("seconds", elapsed));
                 else w.call->Fail("the video run failed: " + m_source.videoLastError);
                 done = true;
@@ -409,7 +409,7 @@ void App::McpCheckWaiters() {
                     if (it.state == LibraryItem::Done || it.state == LibraryItem::Failed)
                         results.Push(Json::Obj().Set("id", it.id).Set("name", it.name).Set("state", ItemStateName(it.state)).Set("output", it.outName).Set("error", it.error));
                 }
-                Reply(w.call, Json::Obj().Set("finished", true).Set("done", doneN).Set("failed", failedN).Set("folder", WideToUtf8(EffectiveCaptureFolder()))
+                Reply(w.call, Json::Obj().Set("finished", true).Set("done", doneN).Set("failed", failedN).Set("folder", WideToUtf8(EffectiveCaptureFolder())).Set("nextToSource", m_settings.outputToSource)
                       .Set("items", results).Set("seconds", elapsed));
                 done = true;
             } else if (!w.started && elapsed > 5.0) { w.call->Fail("the run did not start (vdc_get_log tells why)"); done = true; }
@@ -696,7 +696,7 @@ void App::McpExecute(const std::shared_ptr<McpCall>& call, const ui::UiFrameInfo
         if (count == 0) { call->Fail(selectedOnly ? "nothing selected" : "nothing to process"); return; }
         if (selectedOnly) ev.libraryProcessSelected = true; else ev.libraryProcessAll = true;
         if (a.Flag("wait", false)) McpAddWaiter(call, WaitBatch, a.Num("timeout", 600.0), std::wstring(), false);
-        else Reply(call, Json::Obj().Set("started", count).Set("folder", WideToUtf8(EffectiveCaptureFolder())).Set("note", "wait for=idle or get_status follow the run"));
+        else Reply(call, Json::Obj().Set("started", count).Set("folder", WideToUtf8(EffectiveCaptureFolder())).Set("nextToSource", m_settings.outputToSource).Set("note", "wait for=idle or get_status follow the run"));
         return;
     }
 
@@ -712,7 +712,7 @@ void App::McpExecute(const std::shared_ptr<McpCall>& call, const ui::UiFrameInfo
         } else if (!m_source.connected) { call->Fail("no live stream is received (list_senders)"); return; }
         ev.captureNow = true;
         if (a.Flag("wait", true)) McpAddWaiter(call, kind, a.Num("timeout", 180.0), std::wstring(), false);
-        else Reply(call, Json::Obj().Set("started", true).Set("folder", WideToUtf8(EffectiveCaptureFolder())));
+        else Reply(call, Json::Obj().Set("started", true).Set("folder", WideToUtf8(OutputFolderFor(CurrentSourcePath()))));
         return;
     }
 

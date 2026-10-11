@@ -87,6 +87,7 @@ inline constexpr JumpTarget kJumpTargets[] = {
     { "save-button",       "settings.html#save-button",       "save",      "", 0, JumpAnyMode, { Str::Capture, Str::ProcessAndSave, Str::ProcessVideo }, "" },
     { "estimated-time",    "settings.html#estimated-time",    "save",      "", 0, JumpFiles, { Str::Estimate }, "" },
     { "folder",            "settings.html#folder",            "save",      "", 0, JumpAnyMode, { Str::CaptureFolder }, "" },
+    { "output-to-source",  "settings.html#output-to-source",  "save",      "", 0, JumpFiles,   { Str::OutputToSource }, "" },
     { "file-name",         "settings.html#file-name",         "save",      "", 0, JumpAnyMode, { Str::CaptureName, Str::OutputName }, "" },
     { "save-original",     "settings.html#save-original",     "save",      "", 0, JumpAnyMode, { Str::SaveOriginal }, "" },
     { "keep-alpha",        "settings.html#keep-alpha",        "save",      "", JumpAdv, JumpAnyMode, { Str::KeepAlpha }, "" },
