@@ -43,13 +43,13 @@ DLSS-NR-on-AMD（<https://github.com/danielblnc/DLSS-NR-on-AMD>）通过挂接�
 
 ## NVIDIA Optical Flow SDK（接口头文件）
 
-`third_party/nvof/nvOpticalFlowCommon.h` 和 `third_party/nvof/nvOpticalFlowD3D11.h` 是 NVIDIA Optical Flow SDK 5.0 的接口头文件，
+`third_party/nvof/nvOpticalFlowCommon.h`、`third_party/nvof/nvOpticalFlowD3D11.h` 和 `third_party/nvof/nvOpticalFlowD3D12.h` 是 NVIDIA Optical Flow SDK 5.0 的接口头文件，
 Copyright (c) 2018-2024 NVIDIA CORPORATION & AFFILIATES，MIT 许可证（许可证文本位于每个文件的开头）。
 本项目只包含这些头文件；其运行库 `nvofapi64.dll` 属于 NVIDIA 驱动，不随本程序分发。
 
 ## dlss5-bridge
 
-`src/gfx/NvOpticalFlow.cpp` 所依据的 D3D11/D3D12 互操作经验（哪些资源格式可以在两种 API 之间共享、能朝哪个方向共享，以及光流接口需要原生 D3D11 设备）学自 dlss5-bridge（<https://github.com/jpneagle/dlss5-webcam-demo> 一脉，MIT 许可证）。
+在 2.1.0 及更早的版本里，`src/gfx/NvOpticalFlow.cpp` 通过光流引擎的 D3D11 接口在一个私有设备上驱动它，再把结果经共享纹理传到 D3D12；那套设计所依据的 D3D11/D3D12 互操作经验（哪些资源格式可以在两种 API 之间共享、能朝哪个方向共享）学自 dlss5-bridge（<https://github.com/jpneagle/dlss5-webcam-demo> 一脉，MIT 许可证）。
 没有复制任何代码。
 
 ## ONNX Runtime

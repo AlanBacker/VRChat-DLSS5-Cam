@@ -55,17 +55,18 @@ installs its DLL.
 
 ## NVIDIA Optical Flow SDK (interface headers)
 
-`third_party/nvof/nvOpticalFlowCommon.h` and `third_party/nvof/nvOpticalFlowD3D11.h`
-are the NVIDIA Optical Flow SDK 5.0 interface headers,
+`third_party/nvof/nvOpticalFlowCommon.h`, `third_party/nvof/nvOpticalFlowD3D11.h` and
+`third_party/nvof/nvOpticalFlowD3D12.h` are the NVIDIA Optical Flow SDK 5.0 interface headers,
 Copyright (c) 2018-2024 NVIDIA CORPORATION & AFFILIATES, MIT License
 (the license text is at the top of each file). Only the headers are included;
 the runtime `nvofapi64.dll` is part of the NVIDIA driver and is not redistributed.
 
 ## dlss5-bridge
 
-The D3D11/D3D12 interop findings behind `src/gfx/NvOpticalFlow.cpp` (which resource
-formats can be shared between the two APIs and in which direction, and that the
-optical flow interface needs a native D3D11 device) were learned from
+Until 2.1.0, `src/gfx/NvOpticalFlow.cpp` drove the optical flow engine through its
+D3D11 interface on a private device and crossed the results over to D3D12 through
+shared textures. The D3D11/D3D12 interop findings behind that design (which resource
+formats can be shared between the two APIs and in which direction) were learned from
 dlss5-bridge (https://github.com/jpneagle/dlss5-webcam-demo lineage), MIT License.
 No code is copied.
 

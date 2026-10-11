@@ -43,13 +43,13 @@ DLSS-NR-on-AMD（<https://github.com/danielblnc/DLSS-NR-on-AMD>）は、FSR を�
 
 ## NVIDIA Optical Flow SDK（インターフェースヘッダー）
 
-`third_party/nvof/nvOpticalFlowCommon.h` と `third_party/nvof/nvOpticalFlowD3D11.h` は NVIDIA Optical Flow SDK 5.0 のインターフェースヘッダーで、
+`third_party/nvof/nvOpticalFlowCommon.h`、`third_party/nvof/nvOpticalFlowD3D11.h`、`third_party/nvof/nvOpticalFlowD3D12.h` は NVIDIA Optical Flow SDK 5.0 のインターフェースヘッダーで、
 Copyright (c) 2018-2024 NVIDIA CORPORATION & AFFILIATES、MIT ライセンスです（ライセンス本文は各ファイルの先頭にあります）。
 含まれているのはヘッダーだけです。ランタイムの `nvofapi64.dll` は NVIDIA ドライバーの一部であり、再配布していません。
 
 ## dlss5-bridge
 
-`src/gfx/NvOpticalFlow.cpp` の土台になっている D3D11/D3D12 の相互運用についての知見（どのリソース形式を 2 つの API の間でどちら向きに共有できるか、そしてオプティカルフローのインターフェースにはネイティブ D3D11 デバイスが必要であること）は、dlss5-bridge（<https://github.com/jpneagle/dlss5-webcam-demo> の系譜、MIT ライセンス）から学んだものです。
+2.1.0 までの `src/gfx/NvOpticalFlow.cpp` は、オプティカルフローエンジンを D3D11 インターフェースで専用デバイス上から駆動し、結果を共有テクスチャで D3D12 に渡していました。その設計の土台になっていた D3D11/D3D12 の相互運用についての知見（どのリソース形式を 2 つの API の間でどちら向きに共有できるか）は、dlss5-bridge（<https://github.com/jpneagle/dlss5-webcam-demo> の系譜、MIT ライセンス）から学んだものです。
 コードはコピーしていません。
 
 ## ONNX Runtime

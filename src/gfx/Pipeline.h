@@ -274,7 +274,7 @@ private:
     Tex m_bmFilt[kMaxLevels];   // filtered motion of a coarse level, the predictor field for the level below
     Tex m_bmMed[2];             // median-filtered level-0 motion, ping-pong
     Tex m_bmBack, m_bcBack;     // level-0 motion and cost of the reverse direction (previous -> current) for the consistency check
-    Tex m_flow, m_cost;         // NVOF results (D3D12 views of the shared textures)
+    Tex m_flow, m_cost;         // NVOF results (the engine's output textures)
     Tex m_flowBack, m_costBack; // NVOF backward pass (previous -> current)
     Tex m_mv, m_conf, m_depth;  // dense guidance
     Tex m_depthHist[2];         // temporally filtered depth, ping-pong by frame parity
@@ -320,7 +320,7 @@ private:
     DisplayShared      m_disp;
     std::atomic<bool>  m_displayRetryReq{false};    // UI freed a buffer after a skipped display write: composite again
 
-    Tex                     m_nvofShared;       // shared input texture owned by the optical flow device (D3D12 view)
+    Tex                     m_nvofInput[2];     // the optical flow engine's two input textures (current / previous frame)
     DXGI_FORMAT             m_nvofFmt = DXGI_FORMAT_UNKNOWN;
     bool                    m_nvofReady = false;
     std::string             m_nvofError;

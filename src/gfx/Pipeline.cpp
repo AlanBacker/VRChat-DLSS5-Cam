@@ -122,7 +122,7 @@ void Pipeline::ReleaseFeatures(GpuContext& gpu) {
 void Pipeline::ReleaseResources(GpuContext& gpu, bool shutdown) {
     gpu.WaitIdle();
     ReleaseFeatures(gpu);
-    ReleaseTex(gpu, m_nvofShared);
+    for (auto& t : m_nvofInput) ReleaseTex(gpu, t);
     ReleaseTex(gpu, m_flow); ReleaseTex(gpu, m_cost);
     ReleaseTex(gpu, m_flowBack); ReleaseTex(gpu, m_costBack);
     m_nvof.Shutdown();
@@ -356,8 +356,8 @@ bool Pipeline::Rebuild(GpuContext& gpu, const Config& cfg) {
         }
     }
 
-    // Optical flow session on its own native D3D11 device. BGRA8 input written by the convert pass is preferred (the
-    // engine's native colour format); the 8-bit luma pyramid level is the fallback. Results arrive through shared textures.
+    // Optical flow session on the program's D3D12 device, ordered against the queue with fence points. BGRA8 input written
+    // by the convert pass is preferred (the engine's native colour format); the 8-bit luma pyramid level is the fallback.
     m_nvofReady = false;
     m_nvofError.clear();
     m_nvofFmt = DXGI_FORMAT_UNKNOWN;
@@ -379,7 +379,7 @@ bool Pipeline::Rebuild(GpuContext& gpu, const Config& cfg) {
             if (m_nvofFmt == DXGI_FORMAT_B8G8R8A8_UNORM)
                 nvofOk &= CreateTex(gpu, m_nvofIn, m_inW, m_inH, DXGI_FORMAT_B8G8R8A8_UNORM, true, L"nvofIn");
             const UINT fw = m_nvof.FlowWidth(), fh = m_nvof.FlowHeight();
-            nvofOk &= WrapShared(gpu, m_nvofShared, m_nvof.Input12(), m_inW, m_inH, m_nvofFmt, L"nvofSharedInput");
+            for (int i = 0; i < 2; ++i) nvofOk &= WrapShared(gpu, m_nvofInput[i], m_nvof.Input12(i), m_inW, m_inH, m_nvofFmt, i ? L"nvofInput1" : L"nvofInput0");
             nvofOk &= WrapShared(gpu, m_flow, m_nvof.Flow12(), fw, fh, DXGI_FORMAT_R16G16_SINT, L"nvofFlow");
             if (m_nvof.HasCost()) nvofOk &= WrapShared(gpu, m_cost, m_nvof.Cost12(), fw, fh, DXGI_FORMAT_R8_UINT, L"nvofCost");
             if (m_nvof.Bidirectional()) {
@@ -389,8 +389,8 @@ bool Pipeline::Rebuild(GpuContext& gpu, const Config& cfg) {
             if (nvofOk) {
                 m_nvofReady = true;
             } else {
-                m_nvofError = "failed to create optical flow interop views";
-                ReleaseTex(gpu, m_nvofShared);
+                m_nvofError = "failed to create optical flow texture views";
+                for (auto& t : m_nvofInput) ReleaseTex(gpu, t);
                 ReleaseTex(gpu, m_flow); ReleaseTex(gpu, m_cost);
                 ReleaseTex(gpu, m_flowBack); ReleaseTex(gpu, m_costBack);
                 m_nvof.Shutdown();
@@ -780,13 +780,15 @@ void Pipeline::RunGuidance(GpuContext& gpu, ID3D12GraphicsCommandList* cmd, cons
 
 bool Pipeline::RunOpticalFlow(GpuContext& gpu, ID3D12GraphicsCommandList*& cmd, bool resetHints) {
     if (!m_nvofReady) return false;
-    // Hand the current frame to the optical flow device. The shared textures rest in COMMON whenever the D3D11 side owns them,
-    // so every D3D12 access is bracketed by explicit transitions inside one command list.
+    // Hand the current frame to the optical flow engine: its input for this pass (the other input still holds the previous
+    // frame). The engine's textures rest in COMMON whenever it owns them, so every D3D12 access is bracketed by explicit
+    // transitions inside one command list.
     Tex& src = (m_nvofFmt == DXGI_FORMAT_R8_UNORM) ? m_luma[m_cur][0] : m_nvofIn;
+    Tex& dst = m_nvofInput[m_nvof.InputIndex()];
     Transition(cmd, src, D3D12_RESOURCE_STATE_COPY_SOURCE);
-    Transition(cmd, m_nvofShared, D3D12_RESOURCE_STATE_COPY_DEST);
-    cmd->CopyResource(m_nvofShared.res.Get(), src.res.Get());
-    Transition(cmd, m_nvofShared, D3D12_RESOURCE_STATE_COMMON);
+    Transition(cmd, dst, D3D12_RESOURCE_STATE_COPY_DEST);
+    cmd->CopyResource(dst.res.Get(), src.res.Get());
+    Transition(cmd, dst, D3D12_RESOURCE_STATE_COMMON);
     Transition(cmd, m_flow, D3D12_RESOURCE_STATE_COMMON);
     Transition(cmd, m_cost, D3D12_RESOURCE_STATE_COMMON);
     Transition(cmd, m_flowBack, D3D12_RESOURCE_STATE_COMMON);
@@ -794,7 +796,8 @@ bool Pipeline::RunOpticalFlow(GpuContext& gpu, ID3D12GraphicsCommandList*& cmd, 
     gpu.TimerBegin(cmd, GpuTimer::OpticalFlow);
     cmd = gpu.SubmitAndContinue();
 
-    // Runs on the private D3D11 device, ordered behind the submission above and ahead of the next one by the shared fence.
+    // The engine runs behind the submission above and the next submission waits for it (fence points), so this frame's
+    // densify pass reads this frame's vectors.
     std::string err;
     const bool ok = m_nvof.Execute(gpu, resetHints, err);
     if (!ok && !err.empty()) {

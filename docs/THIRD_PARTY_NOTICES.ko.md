@@ -43,13 +43,13 @@ DLSS-NR-on-AMD는 자체 약관을 따르는 별도의 프로그램으로, 그 �
 
 ## NVIDIA Optical Flow SDK(인터페이스 헤더)
 
-`third_party/nvof/nvOpticalFlowCommon.h`와 `third_party/nvof/nvOpticalFlowD3D11.h`는 NVIDIA Optical Flow SDK 5.0의 인터페이스 헤더로,
+`third_party/nvof/nvOpticalFlowCommon.h`, `third_party/nvof/nvOpticalFlowD3D11.h`, `third_party/nvof/nvOpticalFlowD3D12.h`는 NVIDIA Optical Flow SDK 5.0의 인터페이스 헤더로,
 Copyright (c) 2018-2024 NVIDIA CORPORATION & AFFILIATES, MIT 라이선스입니다(라이선스 본문은 각 파일 맨 위에 있습니다).
 헤더만 포함되어 있으며, 런타임인 `nvofapi64.dll`은 NVIDIA 드라이버의 일부로 재배포하지 않습니다.
 
 ## dlss5-bridge
 
-`src/gfx/NvOpticalFlow.cpp`의 바탕이 된 D3D11/D3D12 상호 운용 지식(어떤 리소스 형식을 두 API 사이에서 어느 방향으로 공유할 수 있는지, 그리고 옵티컬 플로우 인터페이스에는 네이티브 D3D11 장치가 필요하다는 점)은 dlss5-bridge(<https://github.com/jpneagle/dlss5-webcam-demo> 계열, MIT 라이선스)에서 배운 것입니다.
+2.1.0까지의 `src/gfx/NvOpticalFlow.cpp`는 옵티컬 플로우 엔진을 D3D11 인터페이스로 전용 장치에서 구동하고 결과를 공유 텍스처로 D3D12에 넘겼습니다. 그 설계의 바탕이 된 D3D11/D3D12 상호 운용 지식(어떤 리소스 형식을 두 API 사이에서 어느 방향으로 공유할 수 있는지)은 dlss5-bridge(<https://github.com/jpneagle/dlss5-webcam-demo> 계열, MIT 라이선스)에서 배운 것입니다.
 코드는 복사하지 않았습니다.
 
 ## ONNX Runtime
