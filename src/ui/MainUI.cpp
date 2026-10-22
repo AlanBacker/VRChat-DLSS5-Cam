@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cctype>
 #include <cstring>
 #include <memory>
 
@@ -109,6 +110,25 @@ bool ComboIds(const char* label, int* value, const char* const* items, int count
 }
 
 void Tip(const char* text) { if (!SearchSkipped()) Tooltip(text); }
+
+// The port's release tags ("v0.2.17") compared as numbers: < 0 when a is the older release, 0 when the same.
+int ComparePortTag(const std::string& a, const std::string& b) {
+    int va[3] = {}, vb[3] = {};
+    auto parse = [](const std::string& s, int* v) {
+        size_t i = 0;
+        while (i < s.size() && (s[i] == 'v' || s[i] == 'V' || s[i] == ' ')) ++i;
+        for (int k = 0; k < 3; ++k) {
+            int n = 0;
+            while (i < s.size() && isdigit((unsigned char)s[i])) n = n * 10 + (s[i++] - '0');
+            v[k] = n;
+            if (i < s.size() && s[i] == '.') ++i; else break;
+        }
+    };
+    parse(a, va);
+    parse(b, vb);
+    for (int k = 0; k < 3; ++k) if (va[k] != vb[k]) return va[k] < vb[k] ? -1 : 1;
+    return 0;
+}
 
 // A button with an icon before its label while both fit the width it is given, the label alone when they do not
 // (a narrow sidebar, a long translation): the words matter more than the picture.
@@ -2202,6 +2222,7 @@ void MainUI::DrawSidebar(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
     const Palette& p = Colors();
     const bool locked = SettingsLocked(info);   // the banner over the column says so (DrawLockBanner)
     ImGui::Dummy(ImVec2(0.0f, Px(2.0f)));   // under the search row (DrawSidebarSearch)
+    if (!m_searchBuf[0]) DrawNotices(info, ev, fonts, 0.0f);   // the repository's notices, over everything else
     SearchBegin(m_searchBuf);
     m_adv = Searching() ? 1.0f : m_advShown;   // a search looks through the expert controls too
     ImGui::BeginDisabled(locked);
@@ -3387,21 +3408,28 @@ void MainUI::BlockFsrHost(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
     // The port: loaded, with its release when that is known and whether a newer one is out; or not loaded, with
     // what that means here.
     const PortSetup::Status* ps = info.portSetup;
-    const bool latestKnown = ps && !ps->tag.empty();
-    const bool newer = latestKnown && !info.portInstalledTag.empty() && ps->tag != info.portInstalledTag;
+    const bool releaseKnown = ps && !ps->tag.empty();   // the release this version works with, once looked up
+    const int cmp = releaseKnown && !info.portInstalledTag.empty() ? ComparePortTag(info.portInstalledTag, ps->tag) : 0;
+    const bool newer = cmp < 0;   // the installation is older than that release
     if (portLoaded) {
         if (info.portInstalledTag.empty()) {
             StatusDot(p.good, StrPrintf(TR(AmdPortDetected), st->nrAmdPort.c_str()).c_str());
-            if (latestKnown) {
+            if (releaseKnown) {
                 ImGui::PushStyleColor(ImGuiCol_Text, p.muted);
                 ImGui::TextWrapped("%s", StrPrintf(TR(AmdPortVersionUnknown), ps->tag.c_str(), ps->date.c_str()).c_str());
                 ImGui::PopStyleColor();
             }
         } else {
-            StatusDot(p.good, StrPrintf(latestKnown && !newer ? TR(AmdPortLoadedCurrent) : TR(AmdPortLoadedVersion),
+            StatusDot(p.good, StrPrintf(releaseKnown && cmp == 0 ? TR(AmdPortLoadedCurrent) : TR(AmdPortLoadedVersion),
                                         info.portInstalledTag.c_str(), st->nrAmdPort.c_str()).c_str());
         }
         if (newer) StatusDot(p.accent, StrPrintf(TR(AmdPortNewer), ps->tag.c_str(), ps->date.c_str()).c_str());
+        else if (cmp > 0) {
+            // A later release than this version was made for: installed by hand, or by an earlier version of this program.
+            ImGui::PushStyleColor(ImGuiCol_Text, p.muted);
+            ImGui::TextWrapped("%s", StrPrintf(TR(AmdPortAhead), info.portInstalledTag.c_str(), ps->tag.c_str(), ps->tag.c_str()).c_str());
+            ImGui::PopStyleColor();
+        }
     } else {
         StatusDot(p.warn, TR(AmdPortNotFound));
         if (info.portWeightsExist && !info.portRestartHint) {
@@ -3452,8 +3480,9 @@ void MainUI::PortActions(const UiFrameInfo& info, UiEvents& ev, bool portLoaded,
     const PortSetup::Status* ps = info.portSetup;
     const bool busy = ps && (ps->state == PortSetup::State::Checking || ps->state == PortSetup::State::Downloading || ps->state == PortSetup::State::Installing ||
                             ps->state == PortSetup::State::Launched);
-    const bool latestKnown = ps && !ps->tag.empty();
-    const bool newer = latestKnown && !info.portInstalledTag.empty() && ps->tag != info.portInstalledTag;
+    const bool releaseKnown = ps && !ps->tag.empty();   // the release this version works with, once looked up
+    const int cmp = releaseKnown && !info.portInstalledTag.empty() ? ComparePortTag(info.portInstalledTag, ps->tag) : 0;
+    const bool newer = cmp < 0;   // the installation is older than that release
     if (ps) {
         switch (ps->state) {
             case PortSetup::State::Checking: StatusDot(p.muted, TR(AmdPortChecking)); break;
@@ -3498,6 +3527,41 @@ void MainUI::PortActions(const UiFrameInfo& info, UiEvents& ev, bool portLoaded,
     if (FlatButton(TR(AmdPortLicense))) ev.portOpenLicense = true;
     SameLineIfFits(TR(AmdPortPage));
     if (FlatButton(TR(AmdPortPage))) ev.portOpenPage = true;
+    // The release this version works with, and that its later ones wait for a version that drives them.
+    if (releaseKnown) Hint(StrPrintf(TR(AmdPortPinned), ps->tag.c_str()).c_str());
+}
+
+// The repository's notices (notice.json) that apply here and were not put away: a card each, with a warning stripe
+// for a warning, the way to its page and the way to put it away. At the top of the sidebar and on the start page.
+void MainUI::DrawNotices(const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts, float width) {
+    if (!info.notices || info.notices->empty()) return;
+    const Palette& p = Colors();
+    const ImGuiStyle& style = ImGui::GetStyle();
+    for (const UiNotice& n : *info.notices) {
+        ImGui::PushID(n.id.c_str());
+        PanelBegin(width, ImVec2(Px(16.0f), Px(14.0f)), n.warn ? p.warn : p.accent);
+        ImGui::PushTextWrapPos(0.0f);
+        if (!n.title.empty()) {
+            ImGui::PushFont(fonts.Bold(), style.FontSizeBase * 1.08f);
+            ImGui::TextUnformatted(n.title.c_str());
+            ImGui::PopFont();
+        }
+        if (!n.text.empty()) {
+            ImGui::PushStyleColor(ImGuiCol_Text, p.textDim);
+            ImGui::TextUnformatted(n.text.c_str());
+            ImGui::PopStyleColor();
+        }
+        ImGui::Spacing();
+        if (!n.url.empty()) {
+            if (ActionButton(TR(NoticeDetails), Icon::OpenExternal, ImVec2(0.0f, 0.0f))) ev.noticeOpen = n.url;
+            SameLineIfFits(TR(NoticeDismiss));
+        }
+        if (FlatButton(TR(NoticeDismiss))) ev.noticeDismiss = n.id;
+        ImGui::PopTextWrapPos();
+        PanelEnd();
+        ImGui::Dummy(ImVec2(0.0f, Px(6.0f)));
+        ImGui::PopID();
+    }
 }
 
 void MainUI::BlockDlaa(Settings& s, const UiFrameInfo& info, UiEvents& ev) {
@@ -4152,6 +4216,9 @@ void MainUI::DrawWelcome(Settings& s, const UiFrameInfo& info, UiEvents& ev, con
             ImGui::SetCursorScreenPos(start);
             ImGui::Dummy(ImVec2(colW, y + d - start.y));
         }
+
+        // Word from the repository (notice.json) that applies here, over the steps.
+        if (info.notices && !info.notices->empty()) { ImGui::Dummy(ImVec2(0.0f, Px(4.0f))); DrawNotices(info, ev, fonts, colW); }
 
         // On the FSR host route without DLSS-NR-on-AMD: its installation first, in a card with a warning stripe.
         const bool portStep = EditionRoute() == RouteFsrHost && !(info.status && !info.status->nrAmdPort.empty());

@@ -17,6 +17,12 @@ namespace vdc::ui {
 enum class Icon;
 struct JumpTarget;
 
+// A notice from the repository (Notices), in the interface's language, that applies here and was not put away.
+struct UiNotice {
+    std::string id, title, text, url;
+    bool        warn = false;
+};
+
 struct McpKeyView {
     std::string name;
     int         role = 1;        // McpRole
@@ -121,6 +127,7 @@ struct UiFrameInfo {
     bool                  previousAbnormal = false;  // the session before this one ended without an orderly shutdown
     bool                  previousCrashed = false;   // ... and left a record in crash.txt
     std::string           previousDetails;           // that record's first lines
+    const std::vector<UiNotice>* notices = nullptr;   // the repository's notices (notice.json) to show, in file order
     // The MCP server (the clients' way in): its state for the sidebar section.
     bool                  mcpRunning = false;
     bool                  mcpSession = false;         // started for this session by --mcp-port or a bridge (the switch does not stop it)
@@ -193,6 +200,8 @@ struct UiEvents {
     bool updateOpenPage = false;     // the release page in the browser
     bool updateCancel = false;       // stop a running download
     bool mirrorProbe = false;        // measure the built-in mirror sites now
+    std::string noticeDismiss;       // put this notice of the repository away (its id)
+    std::string noticeOpen;          // "Details" of a notice: its page in the browser
     bool openBooth = false;          // the BOOTH page in the browser
     bool guideClosed = false;        // the setup guide was closed (finished or skipped)
     bool browseRuntime = false;
@@ -330,6 +339,7 @@ private:
     void BlockNgxRuntime(Settings& s, const UiFrameInfo& info, UiEvents& ev);   // the NVIDIA runtime rows of the DLSS 5 section
     void BlockFsrHost(Settings& s, const UiFrameInfo& info, UiEvents& ev);      // the FSR host rows (Radeon)
     void PortActions(const UiFrameInfo& info, UiEvents& ev, bool portLoaded, bool card);   // DLSS-NR-on-AMD: installer state, restart, buttons
+    void DrawNotices(const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts, float width);   // the repository's notices, a card each
     void BlockInternals(Settings& s, const UiFrameInfo& info, UiEvents& ev);
     void BlockMcp(Settings& s, const UiFrameInfo& info, UiEvents& ev);         // the MCP section
     void BlockAbout(Settings& s, const UiFrameInfo& info, UiEvents& ev, const Fonts& fonts);

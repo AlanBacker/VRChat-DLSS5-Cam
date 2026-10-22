@@ -280,7 +280,10 @@ private:
     void RestartRuntimeChoice();           // forget the failures and the kept build: the next load starts over
     int  EffectiveRoute() const;           // the neural route: a property of the edition (EditionRoute)
     void PollPortSetup();                  // DLSS-NR-on-AMD installer progress (Radeon edition), told once per state
-    void RecordPortVersion();              // an installation from before the record: taken as the latest when its installer file is the latest one
+    void RecordPortVersion();              // an installation from before the record: taken as the looked-up release when its installer file is that release's
+    void PollNotices();                    // the repository's notices as the interface shows them (language, dismissals)
+    bool NoticeDismissed(const std::string& id) const;
+    void DismissNotice(const std::string& id);
     void LogPortState(bool tail);          // its files next to the executable; tail: the last lines of its own log too
     void RelaunchSelf();                   // start the executable again and close this instance
     void RelaunchAfterDeviceLoss();        // after Shutdown: keep the log, start the executable again with --after-device-loss
@@ -564,6 +567,11 @@ private:
     unsigned      m_portGenSeen = 0;
     bool          m_portRestartHint = false;   // the installer ran: DLSS-NR-on-AMD loads with the next start
     double        m_portRestartAt = -1.0;      // the automatic restart after its installer (NowSeconds), -1 = none
+    Notices       m_notices;               // the repository's notices (notice.json), read with the update check
+    unsigned      m_noticeGenSeen = 0;     // the read last taken over into m_uiNotices
+    int           m_noticeLang = -1;       // the interface language m_uiNotices was built for
+    bool          m_noticesDirty = false;  // one was put away: m_uiNotices is rebuilt
+    std::vector<ui::UiNotice> m_uiNotices; // the notices that apply and were not put away, in the interface's language
     bool          m_portWeightsExist = false;  // its weights file lies next to the executable (looked at now and then)
     double        m_portWeightsTime = -1.0;
     Splash        m_splash;                // the start-up card

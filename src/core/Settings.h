@@ -152,6 +152,7 @@ struct Settings {
     std::string githubMirrorCustom;    // the user's own site, "https://host" (mode 2)
     std::string githubMirrorPick;      // the built-in site that answered fastest last time (mode 1), tried first
     int         setupGuideSeen = 0;    // the setup guide was shown once (first start, also after an update to 1.6.0)
+    std::string noticesDismissed;      // the repository's notices (notice.json) put away, by id, ';'-separated
     // DLSS-NR-on-AMD (Radeon edition): a separate program under its own licence, fetched from its own release page
     // at the user's request (PortSetup).
     bool        portConsent = false;   // the user agreed once to fetching and running its installer

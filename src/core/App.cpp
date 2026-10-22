@@ -531,9 +531,12 @@ bool App::Init(HINSTANCE hInstance, int nCmdShow) {
     const bool otherEdition = m_cli.edition == (APP_EDITION_AMD ? 1 : 2);
     if (m_cli.edition && !otherEdition) Log::Info("--edition: this is the %s edition already", APP_EDITION_AMD ? "Radeon" : "GeForce");
     m_updater.SetAccess(m_settings.githubMirror, m_settings.githubMirrorCustom, m_settings.githubMirrorPick);
+    m_notices.SetAccess(m_settings.githubMirror, m_settings.githubMirrorCustom, m_settings.githubMirrorPick);
     // The automatic check of a first start waits for the setup guide, where the user chooses how GitHub is reached.
     if (!m_headless && otherEdition) m_updater.Check(UpdateVersion(), true, true, true);
     else if (!m_headless && (m_cli.update || (!m_cli.process && m_settings.updateCheck && m_settings.setupGuideSeen))) { m_startCheckDone = true; m_updater.Check(UpdateVersion(), m_settings.updateChannel == 1, false); }
+    // The repository's notices come with the automatic check.
+    if (!m_headless && !m_cli.process && m_settings.updateCheck && m_settings.setupGuideSeen) m_notices.Check(UpdateVersion());
     // The previous session's file comes back only when the user asked for that.
     if (m_cli.open.empty() && m_settings.reopenLast) {
         if (m_settings.sourceMode == SourceImage && !m_settings.imagePath.empty()) {
@@ -2087,6 +2090,8 @@ void App::Frame() {
     info.fsrDllExists = FileExists(JoinPath(m_exeDir, L"amd_fidelityfx_dx12.dll"));
     PollPortSetup();
     info.portSetup = &m_portStatus;
+    PollNotices();
+    info.notices = &m_uiNotices;
     info.portRestartHint = m_portRestartHint;
     // The automatic restart after its installer: not in the middle of a batch or an update (the hint stays then).
     if (m_portRestartAt >= 0.0) {
@@ -2154,7 +2159,7 @@ void App::Frame() {
         info.mirrors.clear();
         for (const Updater::MirrorResult& m : us.mirrors) info.mirrors.push_back({ m.url, m.error, m.seconds, m.ok });
         // The site that answered fastest is remembered, and tried first next time.
-        if (m_settings.githubMirror == 1 && !us.mirrorInUse.empty() && us.mirrorInUse != m_settings.githubMirrorPick) { m_settings.githubMirrorPick = us.mirrorInUse; MarkSettingsDirty(); m_portSetup.SetAccess(m_settings.githubMirror, m_settings.githubMirrorCustom, m_settings.githubMirrorPick); }
+        if (m_settings.githubMirror == 1 && !us.mirrorInUse.empty() && us.mirrorInUse != m_settings.githubMirrorPick) { m_settings.githubMirrorPick = us.mirrorInUse; MarkSettingsDirty(); m_portSetup.SetAccess(m_settings.githubMirror, m_settings.githubMirrorCustom, m_settings.githubMirrorPick); m_notices.SetAccess(m_settings.githubMirror, m_settings.githubMirrorCustom, m_settings.githubMirrorPick); }
         if (us.generation != m_updateGenSeen) {
             m_updateGenSeen = us.generation;
             switch (us.state) {
@@ -2489,7 +2494,9 @@ void App::HandleEvents(ui::UiEvents& ev) {
         m_startCheckDone = true;
         m_updater.SetAccess(m_settings.githubMirror, m_settings.githubMirrorCustom, m_settings.githubMirrorPick);
         m_portSetup.SetAccess(m_settings.githubMirror, m_settings.githubMirrorCustom, m_settings.githubMirrorPick);
+        m_notices.SetAccess(m_settings.githubMirror, m_settings.githubMirrorCustom, m_settings.githubMirrorPick);
         m_updater.Check(UpdateVersion(), m_settings.updateChannel == 1, false);
+        m_notices.Check(UpdateVersion());
 #if APP_EDITION_AMD
         m_portSetup.Check();
 #endif
@@ -2528,7 +2535,7 @@ void App::HandleEvents(ui::UiEvents& ev) {
         m_presets.erase(m_presets.begin() + ev.presetDelete);
         SavePresets();
     }
-    if (ev.updateCheckNow) m_updater.Check(UpdateVersion(), m_settings.updateChannel == 1, true);
+    if (ev.updateCheckNow) { m_updater.Check(UpdateVersion(), m_settings.updateChannel == 1, true); m_notices.Check(UpdateVersion()); }
     if (ev.updateStart) m_updater.Download(m_exeDir, JoinPath(m_appDataDir, L"update"));
     if (ev.updateCancel) m_updater.Cancel();
     if (ev.updateOpenPage) {
@@ -2576,6 +2583,7 @@ void App::HandleEvents(ui::UiEvents& ev) {
         MarkSettingsDirty();
         m_updater.SetAccess(m_settings.githubMirror, m_settings.githubMirrorCustom, m_settings.githubMirrorPick);
         m_portSetup.SetAccess(m_settings.githubMirror, m_settings.githubMirrorCustom, m_settings.githubMirrorPick);
+        m_notices.SetAccess(m_settings.githubMirror, m_settings.githubMirrorCustom, m_settings.githubMirrorPick);
     }
     if (ev.hotkeyChanged && !m_headless) RegisterHotkey();
     if (ev.nrChanged) {
@@ -2599,6 +2607,13 @@ void App::HandleEvents(ui::UiEvents& ev) {
         m_portSetup.Install(m_exeDir);
     }
     if (ev.portOpenLicense) ShellExecuteW(nullptr, L"open", Utf8ToWide(PortSetup::kLicenseUrl).c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+    if (!ev.noticeDismiss.empty()) DismissNotice(ev.noticeDismiss);
+    if (!ev.noticeOpen.empty()) {
+        // Only this project's pages are opened from a notice: the file comes through sites this program does not run.
+        const std::string& u = ev.noticeOpen;
+        if (u.rfind("https://github.com/AlanBacker/VRChat-DLSS5-Cam", 0) == 0 || u.rfind("https://alanbacker.github.io/VRChat-DLSS5-Cam", 0) == 0) OpenPath(Utf8ToWide(u));
+        else Log::Warn("Notice: %s is not a page of this project; not opened", u.c_str());
+    }
     if (ev.portRestartCancel) m_portRestartAt = -1.0;
     if (ev.editionSwitch) m_updater.Check(UpdateVersion(), true, true, true);
     if (ev.portOpenPage) {
@@ -3449,7 +3464,7 @@ void App::PollPortSetup() {
 }
 
 // An installation made before the record existed (or by hand): when the installer file next to the executable is
-// the latest release's one (same size), the installation counts as that release.
+// the looked-up release's one (same size), the installation counts as that release.
 void App::RecordPortVersion() {
     if (!m_settings.portInstalledTag.empty() || m_portStatus.tag.empty() || m_portStatus.assetSize == 0) return;
     if (!FileExists(JoinPath(m_exeDir, PortSetup::kWeightsFile))) return;
@@ -3457,6 +3472,38 @@ void App::RecordPortVersion() {
     m_settings.portInstalledTag = m_portStatus.tag;
     MarkSettingsDirty();
     Log::Info("DLSS-NR-on-AMD: the installer next to the executable is the %s one; the installation is taken as %s", m_portStatus.tag.c_str(), m_portStatus.tag.c_str());
+}
+
+// The repository's notices as the interface shows them: rebuilt when a read finished, the language changed or one was
+// put away. A dismissed notice is remembered by its id, so it stays away across starts and reads.
+void App::PollNotices() {
+    const Notices::Status ns = m_notices.Get();
+    const int lang = (int)I18n::Current();
+    if (ns.generation == m_noticeGenSeen && lang == m_noticeLang && !m_noticesDirty) return;
+    m_noticeGenSeen = ns.generation;
+    m_noticeLang = lang;
+    m_noticesDirty = false;
+    m_uiNotices.clear();
+    for (const Notices::Notice& n : ns.notices) {
+        if (NoticeDismissed(n.id)) continue;
+        ui::UiNotice u;
+        u.id = n.id; u.title = n.TitleFor(lang); u.text = n.TextFor(lang); u.url = n.url; u.warn = n.warn;
+        m_uiNotices.push_back(std::move(u));
+    }
+}
+
+bool App::NoticeDismissed(const std::string& id) const {
+    const std::string all = ";" + m_settings.noticesDismissed + ";";
+    return all.find(";" + id + ";") != std::string::npos;
+}
+
+void App::DismissNotice(const std::string& id) {
+    if (id.empty() || NoticeDismissed(id)) return;
+    if (!m_settings.noticesDismissed.empty()) m_settings.noticesDismissed += ';';
+    m_settings.noticesDismissed += id;
+    MarkSettingsDirty();
+    m_noticesDirty = true;
+    Log::Info("Notice %s put away", id.c_str());
 }
 
 // What of DLSS-NR-on-AMD lies next to the executable and, at the end, the last lines of its own log: one log.txt

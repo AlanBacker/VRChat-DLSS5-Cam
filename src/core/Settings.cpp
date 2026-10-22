@@ -180,6 +180,7 @@ bool Settings::ApplyText(const std::string& data, bool wholeFile) {
     r.Get("githubMirrorCustom", githubMirrorCustom);
     r.Get("githubMirrorPick", githubMirrorPick);
     r.Get("setupGuideSeen", setupGuideSeen);
+    r.Get("noticesDismissed", noticesDismissed);
     r.Get("portConsent", portConsent);
     r.Get("portInstalledTag", portInstalledTag);
     r.Get("advancedControls", showAdvanced);
@@ -448,6 +449,7 @@ std::string Settings::Text() const {
     w.Put("githubMirrorCustom", githubMirrorCustom);
     w.Put("githubMirrorPick", githubMirrorPick);
     w.Put("setupGuideSeen", setupGuideSeen);
+    w.Put("noticesDismissed", noticesDismissed);
     w.Put("portConsent", portConsent);
     w.Put("portInstalledTag", portInstalledTag);
     w.Put("advancedControls", showAdvanced);

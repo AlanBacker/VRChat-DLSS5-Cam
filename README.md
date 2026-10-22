@@ -116,13 +116,16 @@ or modification, which is why its installer is never part of this archive.
 2. Start `VRChatDLSS5Cam.exe`. The *Get started* page and the DLSS 5 section offer **Install DLSS-NR-on-AMD…**, with the licence linked next to it.
    One press downloads `dlssnr_on_amd_setup.exe` into the program folder and runs it in the background, taking the folder and the DLL name it
    proposes for the executable; no window and no key press are needed. When it has finished, the application restarts by itself, and the DLSS 5
-   section reads *Runtime: Loaded FSR … · FSR host* and *DLSS-NR-on-AMD v…: loaded (version.dll) · up to date*, with the badge next to
+   section reads *Runtime: Loaded FSR … · FSR host* and *DLSS-NR-on-AMD v…: loaded (version.dll) · supported release*, with the badge next to
    *Enable DLSS 5* reading *Active*. If the folder needs administrator rights, or the card is one the port does not support, the installer opens
    its own window instead so its message is visible.
 
-The DLSS 5 section shows the installed release next to the latest one. When a newer DLSS-NR-on-AMD is out, the section says so and the button
-reads **Update to …**; it and **Run the installer again…** fetch the installer and open its window, where **U** updates (keeping the settings and
-weights) and **R** removes it. An installation made before this version is recognised by the installer file next to the executable.
+The DLSS 5 section shows the installed release next to the one this version works with, DLSS-NR-on-AMD **v0.2.17**. Its later releases ship as
+NeuralHub, a different installer with a different layout on disk, which this version does not drive yet; the Install button fetches v0.2.17, and an
+installation made with it keeps working. Support for NeuralHub will come in a later version. When the installation is older than v0.2.17, the
+section says so and the button reads **Update to …**; it and **Run the installer again…** fetch the installer and open its window, where **U**
+updates (keeping the settings and weights) and **R** removes it. An installation made before this version is recognised by the installer file next
+to the executable.
 
 On this route the strengths of the neural pass up to 1 belong to DLSS-NR-on-AMD and are set in its own overlay (**End** key; its *Mode* there
 stays at inline, which a saved frame needs, see below); this application's *Style* and strength values
@@ -312,8 +315,11 @@ and the download to a mirror site: **Mirror sites, the fastest one** measures ei
 fastest (the *Measure the sites* button shows the result of each), **A mirror site of my own** takes a site of your own, and
 **GitHub directly** talks to GitHub itself. When no site answers, a window offers the other choices. Through a mirror the
 program reads the release list `updates.json` that this repository keeps in step with the releases. In the Radeon edition the
-look-up of DLSS-NR-on-AMD's latest release and the download of its installer go through the chosen site as well (the entry
-comes from `port.json`, which this repository refreshes daily).
+look-up of the DLSS-NR-on-AMD release and the download of its installer go through the chosen site as well; the entry comes
+from `port.json` in this repository, which names the release the program works with, so a change there reaches every
+installed copy without a new version. The program reads `notice.json` from the repository the same way: the project's
+notices, shown as a card at the top of the sidebar until dismissed, for word that cannot wait for a release (such as a
+change at DLSS-NR-on-AMD).
 
 When a newer version exists, a window shows its version, its date and its release notes with three buttons. The notes come in the interface's language (English, Chinese, Japanese or Korean; in English when a release has no translation).
 **Update now** downloads the release zip into `%LOCALAPPDATA%\VRChatDLSS5Cam\update`, unpacks it, closes the

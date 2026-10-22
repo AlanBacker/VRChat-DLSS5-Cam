@@ -39,9 +39,12 @@ constexpr int kProbeTimeoutMs = 6000;
 // Each edition updates itself with its own archive.
 constexpr const char*    kAssetName   = APP_EDITION_AMD ? "VRChatDLSS5Cam-win64-amd.zip" : "VRChatDLSS5Cam-win64.zip";
 constexpr const char*    kOtherAssetName = APP_EDITION_AMD ? "VRChatDLSS5Cam-win64.zip" : "VRChatDLSS5Cam-win64-amd.zip";   // an edition switch
-constexpr const wchar_t* kPortReleaseUrl = L"https://api.github.com/repos/danielblnc/DLSS-NR-on-AMD/releases/latest";
-// The same entry as the repository keeps it (port.json, rewritten by the manifest workflow daily and at every
-// release of this program): what the mirror sites can relay, since they do not relay the API.
+// The port's release this version works with (PortSetup::kPinnedTag), asked of GitHub itself when the repository's
+// copy of the entry cannot be read.
+constexpr const char*    kPortReleaseUrlFmt = "https://api.github.com/repos/danielblnc/DLSS-NR-on-AMD/releases/tags/%s";
+// The same entry as the repository keeps it (port.json, written by the manifest workflow from the release the
+// repository names). Read first by every access: through a mirror site, since the sites do not relay the API, and
+// from GitHub itself otherwise, so a move of the release in the repository reaches the program without a new version.
 constexpr const char*    kPortManifestUrl = "https://raw.githubusercontent.com/AlanBacker/VRChat-DLSS5-Cam/main/port.json";
 constexpr const char*    kPortSetupName  = "dlssnr_on_amd_setup.exe";
 constexpr const wchar_t* kExeName     = L"VRChatDLSS5Cam.exe";
@@ -257,7 +260,7 @@ bool ParsePortRelease(const std::string& body, PortSetup::Status& st, std::strin
             }
         }
     }
-    if (st.tag.empty() || st.assetUrl.empty()) { error = StrPrintf("the latest release carries no %s", kPortSetupName); return false; }
+    if (st.tag.empty() || st.assetUrl.empty()) { error = StrPrintf("the release carries no %s", kPortSetupName); return false; }
     return true;
 }
 
@@ -706,7 +709,8 @@ void PortSetup::SetAccess(int mode, const std::string& customSite, const std::st
 bool PortSetup::FetchManifest(const std::string& site, int timeoutMs, std::string& body, std::string& error) {
     body.clear();
     // A changing query keeps a site's cache from answering with an old entry.
-    const std::string url = MirrorUrl(site, StrPrintf("%s?v=%llu", kPortManifestUrl, (unsigned long long)time(nullptr)));
+    const std::string raw = StrPrintf("%s?v=%llu", kPortManifestUrl, (unsigned long long)time(nullptr));
+    const std::string url = site.empty() ? raw : MirrorUrl(site, raw);   // no site: GitHub itself
     const bool ok = HttpGet(Utf8ToWide(url), false, m_cancel, [&](const char* data, DWORD n, unsigned long long) {
         if (body.size() + n > 1u * 1024u * 1024u) return false;
         body.append(data, n);
@@ -763,21 +767,20 @@ bool PortSetup::RunCheck(std::string& error) {
     std::string body, err;
     std::string site = ChooseSite(body);
     bool got = false;
-    if (!site.empty()) {
-        // Through a site the entry comes from the copy the repository keeps (the sites do not relay the API);
-        // GitHub itself answers when the site does not deliver it.
-        if (body.empty() && !FetchManifest(site, 15000, body, err))
-            Log::Warn("DLSS-NR-on-AMD: mirror site %s did not deliver the release entry (%s); asking GitHub itself", site.c_str(), err.c_str());
-        if (!body.empty()) {
-            if (ParsePortRelease(body, st, err)) got = true;
-            else Log::Warn("DLSS-NR-on-AMD: the release entry through %s: %s; asking GitHub itself", site.c_str(), err.c_str());
-        }
+    // The entry comes from the copy the repository keeps: through the site (the sites do not relay the API) or from
+    // GitHub itself. The release's own entry on GitHub answers when that copy cannot be read.
+    const std::string via = site.empty() ? std::string() : " through " + site;
+    if (body.empty() && !FetchManifest(site, 15000, body, err))
+        Log::Warn("DLSS-NR-on-AMD: the repository's release entry%s could not be read (%s); asking GitHub for release %s", via.c_str(), err.c_str(), PortSetup::kPinnedTag);
+    if (!body.empty()) {
+        if (ParsePortRelease(body, st, err)) got = true;
+        else Log::Warn("DLSS-NR-on-AMD: the repository's release entry%s: %s; asking GitHub for release %s", via.c_str(), err.c_str(), PortSetup::kPinnedTag);
     }
     if (!got) {
         if (m_cancel) { error = "cancelled"; return false; }
         site.clear();
         body.clear();
-        if (!HttpGet(kPortReleaseUrl, true, m_cancel, [&](const char* data, DWORD n, unsigned long long) {
+        if (!HttpGet(Utf8ToWide(StrPrintf(kPortReleaseUrlFmt, PortSetup::kPinnedTag)), true, m_cancel, [&](const char* data, DWORD n, unsigned long long) {
                 if (body.size() + n > 4u * 1024u * 1024u) return false;
                 body.append(data, n);
                 return true;
@@ -797,7 +800,7 @@ bool PortSetup::RunCheck(std::string& error) {
         m_status.mirrorInUse = site;
         m_site = site;
     }
-    Log::Info("DLSS-NR-on-AMD: latest release %s (%s), %s %.1f MB%s%s", st.tag.c_str(), st.date.c_str(), kPortSetupName,
+    Log::Info("DLSS-NR-on-AMD: release %s (%s), %s %.1f MB%s%s", st.tag.c_str(), st.date.c_str(), kPortSetupName,
               st.assetSize / (1024.0 * 1024.0), site.empty() ? "" : " through ", site.c_str());
     return true;
 }
@@ -1073,6 +1076,107 @@ bool PortSetup::RunSetupHidden(const std::wstring& path, const std::wstring& exe
     captured = buf;
     exitCode = code;
     return error.empty();
+}
+
+// ---- Notices --------------------------------------------------------------------------------------------------------
+
+Notices::~Notices() { Cancel(); Join(); }
+void Notices::Join() { if (m_thread.joinable()) m_thread.join(); }
+void Notices::Cancel() { m_cancel = true; }
+Notices::Status Notices::Get() const { std::lock_guard<std::mutex> lock(m_mutex); return m_status; }
+
+void Notices::SetAccess(int mode, const std::string& customSite, const std::string& pick) {
+    std::lock_guard<std::mutex> lock(m_mutex);
+    m_access = mode;
+    m_custom = customSite;
+    if (!pick.empty()) m_pick = pick;
+}
+
+bool Notices::Fetch(const std::string& site, int timeoutMs, std::string& body, std::string& error) {
+    body.clear();
+    const std::string raw = StrPrintf("%s?v=%llu", kUrl, (unsigned long long)time(nullptr));   // past a site's cache
+    const bool ok = HttpGet(Utf8ToWide(site.empty() ? raw : MirrorUrl(site, raw)), false, m_cancel, [&](const char* data, DWORD n, unsigned long long) {
+        if (body.size() + n > 256u * 1024u) return false;
+        body.append(data, n);
+        return true;
+    }, error, timeoutMs);
+    if (ok && body.find("\"notices\"") == std::string::npos) { error = "unexpected answer"; return false; }
+    return ok;
+}
+
+// The file: { "notices": [ { "id", "edition": "all" | "amd" | "nvidia", "level": "info" | "warn", "from", "until" (days,
+// YYYY-MM-DD), "minVersion", "maxVersion" (this program's versions, inclusive), "title": { "en", "zh", "ja", "ko" },
+// "text": { ... }, "url" } ] }; everything but id, title and text is optional. Only the notices that apply here are kept.
+bool Notices::Parse(const std::string& body, const std::string& currentVersion, std::vector<Notice>& out, std::string& error) {
+    Json root;
+    if (!JsonReader(body).Parse(root) || root.type != Json::Object) { error = "unexpected answer"; return false; }
+    const Json* list = root.Find("notices");
+    if (!list || list->type != Json::Array) { error = "no notice list"; return false; }
+    char today[16] = {};
+    { const time_t now = time(nullptr); tm t{}; localtime_s(&t, &now); strftime(today, sizeof(today), "%Y-%m-%d", &t); }
+    int cur[3] = {};
+    ParseVersion(currentVersion, cur);
+    static const char* const kLangs[4] = { "en", "zh", "ja", "ko" };
+    for (const Json& n : list->arr) {
+        if (n.type != Json::Object) continue;
+        Notice item;
+        item.id = n.Str("id");
+        if (item.id.empty() || item.id.find(';') != std::string::npos) continue;   // the id is kept in a ';'-separated list
+        const std::string edition = n.Str("edition");
+        if (!edition.empty() && edition != "all" && edition != (APP_EDITION_AMD ? "amd" : "nvidia")) continue;
+        const std::string from = n.Str("from"), until = n.Str("until");
+        if (!from.empty() && std::string(today) < from) continue;
+        if (!until.empty() && std::string(today) > until) continue;
+        int v[3] = {};
+        if (ParseVersion(n.Str("minVersion"), v) && CompareVersion(cur, v) < 0) continue;
+        if (ParseVersion(n.Str("maxVersion"), v) && CompareVersion(cur, v) > 0) continue;
+        item.warn = n.Str("level") == "warn";
+        item.url = n.Str("url");
+        if (const Json* t = n.Find("title")) { if (t->type == Json::Object) for (int l = 0; l < 4; ++l) item.title[l] = t->Str(kLangs[l]); }
+        if (const Json* t = n.Find("text")) { if (t->type == Json::Object) for (int l = 0; l < 4; ++l) item.text[l] = t->Str(kLangs[l]); }
+        if (item.title[0].empty() && item.text[0].empty()) continue;   // English stands in for the others: without it there is nothing to show
+        out.push_back(std::move(item));
+    }
+    return true;
+}
+
+void Notices::Check(const std::string& currentVersion) {
+    if (m_busy) return;
+    Join();
+    m_cancel = false;
+    m_busy = true;
+    m_thread = std::thread([this, currentVersion]() {
+        int mode = 0;
+        std::string custom, pick;
+        { std::lock_guard<std::mutex> lock(m_mutex); mode = m_access; custom = m_custom; pick = m_pick; }
+        // Where to read from, in order: GitHub itself (the direct choice), the user's own site, or the site that
+        // answered the update check and then every built-in site.
+        std::vector<std::string> sites;
+        if (mode == (int)Updater::Access::Direct) sites.push_back(std::string());
+        else if (mode == (int)Updater::Access::Custom) sites.push_back(TrimSite(custom));
+        else {
+            if (!pick.empty()) sites.push_back(pick);
+            for (const std::string& s : kMirrors) if (s != pick) sites.push_back(s);
+        }
+        std::string body, err;
+        bool got = false;
+        for (const std::string& s : sites) {
+            if (m_cancel) break;
+            if (Fetch(s, s.empty() ? 15000 : kProbeTimeoutMs, body, err)) { got = true; break; }
+        }
+        std::vector<Notice> notices;
+        if (got && !Parse(body, currentVersion, notices, err)) got = false;
+        if (!got) Log::Info("Notices: the repository's notice.json could not be read (%s)", err.empty() ? "no answer" : err.c_str());
+        else if (notices.empty()) Log::Info("Notices: none applies to this edition and version");
+        for (const Notice& n : notices) Log::Info("Notice %s: %s", n.id.c_str(), n.title[0].c_str());
+        {
+            std::lock_guard<std::mutex> lock(m_mutex);
+            m_status.notices = std::move(notices);
+            m_status.fetched = got;
+            ++m_status.generation;
+        }
+        m_busy = false;
+    });
 }
 
 } // namespace vdc

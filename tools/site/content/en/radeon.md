@@ -39,7 +39,7 @@ If the folder needs administrator rights, or the card is not supported, the inst
 
 ## Updates and removal {#updates}
 
-The **DLSS 5 Neural Rendering** section shows the installed DLSS-NR-on-AMD next to the newest one. When a newer one is out, the button reads **Update to …** with its version. The button **Run the installer again…** opens the installer's window: there **U** updates and **R** removes it.
+The **DLSS 5 Neural Rendering** section shows the installed DLSS-NR-on-AMD next to the release this version works with, **v0.2.17**. DLSS-NR-on-AMD's later releases ship as NeuralHub, a different installer, which this version does not drive yet; the Install button fetches v0.2.17, and an installation made with it keeps working. Support for NeuralHub will come in a later version. When the installation is older than v0.2.17, the button reads **Update to …** with that version. The button **Run the installer again…** opens the installer's window: there **U** updates and **R** removes it.
 
 The app itself updates as usual. [Updates](updates.html)
 

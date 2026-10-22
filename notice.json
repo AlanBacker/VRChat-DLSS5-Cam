@@ -1,0 +1,23 @@
+{
+  "notices": [
+    {
+      "id": "2026-10-neuralhub",
+      "edition": "amd",
+      "level": "warn",
+      "from": "2026-10-21",
+      "title": {
+        "en": "DLSS-NR-on-AMD has changed its installer",
+        "zh": "DLSS-NR-on-AMD 更换了安装器",
+        "ja": "DLSS-NR-on-AMD のインストーラーが変わりました",
+        "ko": "DLSS-NR-on-AMD의 설치 프로그램이 바뀌었습니다"
+      },
+      "text": {
+        "en": "Since 17 October its releases ship as NeuralHub, which this program does not drive yet. The Install button fetches v0.2.17, the release this program works with; an installation made with it keeps working. Support for NeuralHub will come in a later version.",
+        "zh": "自 10 月 17 日起它的发布改为 NeuralHub，本程序暂时还不能驱动它。安装按钮获取的是本程序适配的 v0.2.17；用它完成的安装照常可用。对 NeuralHub 的支持会在后续版本中跟进。",
+        "ja": "10 月 17 日以降のリリースは NeuralHub として配布されており、このプログラムはまだそれを扱えません。インストールボタンはこのプログラムが対応する v0.2.17 を取得します。それで行ったインストールはそのまま動きます。NeuralHub への対応は今後の版で行います。",
+        "ko": "10월 17일부터 그 릴리스는 NeuralHub로 배포되며, 이 프로그램은 아직 그것을 다룰 수 없습니다. 설치 버튼은 이 프로그램이 지원하는 v0.2.17을 받아 옵니다. 그것으로 한 설치는 그대로 동작합니다. NeuralHub 지원은 다음 버전에서 이어집니다."
+      },
+      "url": "https://github.com/AlanBacker/VRChat-DLSS5-Cam/issues/7"
+    }
+  ]
+}

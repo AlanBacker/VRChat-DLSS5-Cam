@@ -99,7 +99,7 @@ public:
     enum class State { Idle, Checking, Ready, Downloading, Installing, Launched, Finished, Failed };
     struct Status {
         State       state = State::Idle;
-        std::string tag, date, pageUrl, assetUrl;   // the latest release, once looked up
+        std::string tag, date, pageUrl, assetUrl;   // the release this version works with (kPinnedTag), once looked up
         unsigned long long assetSize = 0;
         std::string error;                          // Failed: what went wrong
         double      downloadedMb = 0.0, totalMb = 0.0;
@@ -108,7 +108,12 @@ public:
         unsigned long exitCode = 0;                 // Finished
         unsigned    generation = 0;                 // counts state changes, so the interface announces each once
     };
-    static constexpr const char* kPageUrl = "https://github.com/danielblnc/DLSS-NR-on-AMD/releases/latest";
+    // The release this version works with. The look-up asks for this one, not the latest: DLSS-NR-on-AMD v0.7 and later
+    // ship as NeuralHub, a different installer with a different layout on disk, which this program does not drive yet.
+    // The repository's copy of the entry (port.json) is read first and names the release, so it can be moved there
+    // without a new version of this program.
+    static constexpr const char* kPinnedTag = "v0.2.17";
+    static constexpr const char* kPageUrl = "https://github.com/danielblnc/DLSS-NR-on-AMD/releases/tag/v0.2.17";
     static constexpr const char* kLicenseUrl = "https://github.com/danielblnc/DLSS-NR-on-AMD/blob/master/LICENSE";
     // Its files next to the executable: the weights its installer makes from nvngx_dlssnr.dll, the installer, its log.
     static constexpr const wchar_t* kWeightsFile = L"dlssnr_on_amd_weights.bin";
@@ -124,7 +129,7 @@ public:
     // How GitHub is reached (Updater::Access): the look-up and the download go through the chosen mirror site
     // too, with GitHub itself as the fallback. pick = the built-in site to try first.
     void   SetAccess(int mode, const std::string& customSite, const std::string& pick);
-    void   Check();                                 // look up the latest release (tag, date, installer)
+    void   Check();                                 // look up the release (tag, date, installer)
     void   Install(const std::wstring& exeDir);     // download the installer next to the executable and start it
     Status Get() const;
     bool   Busy() const;
@@ -135,8 +140,8 @@ private:
     void Join();
     bool RunCheck(std::string& error);
     bool RunInstall(const std::wstring& exeDir, std::string& error);
-    // The release entry the repository keeps (port.json) through one mirror site; false when the site does not
-    // answer or answers with something else.
+    // The release entry the repository keeps (port.json), through one mirror site or from GitHub itself (site
+    // empty); false when the site does not answer or answers with something else.
     bool FetchManifest(const std::string& site, int timeoutMs, std::string& body, std::string& error);
     // The site to go through: the user's own, the one that answered last, or the fastest built-in site for
     // port.json (measured); empty = GitHub directly. `body` receives port.json when a site delivered it on the way.
@@ -154,6 +159,47 @@ private:
     int                m_access = 0;               // Updater::Access
     std::string        m_custom, m_pick;           // the user's own site; the built-in site to try first
     std::string        m_site;                     // the site that answered last (this choice), tried first next time
+};
+
+// Announcements the repository keeps (notice.json): word that cannot wait for a new version, such as a change at
+// DLSS-NR-on-AMD that breaks its installation. Read at start with the update check, by the same access (GitHub itself
+// or a mirror site). Each notice names the edition, the versions and the days it applies to; the interface shows the
+// ones that apply and remembers the ones that were put away (Settings::noticesDismissed).
+class Notices {
+public:
+    struct Notice {
+        std::string id;                 // stable name; a dismissed notice is remembered by it
+        std::string title[4], text[4];  // in the four languages (Lang order); English stands in for a missing one
+        std::string url;                // "Details" opens it; only pages of this project are opened
+        bool        warn = false;       // a warning (a stripe in the warning colour) rather than information
+        const std::string& TitleFor(int lang) const { return lang > 0 && lang < 4 && !title[lang].empty() ? title[lang] : title[0]; }
+        const std::string& TextFor(int lang) const { return lang > 0 && lang < 4 && !text[lang].empty() ? text[lang] : text[0]; }
+    };
+    struct Status {
+        std::vector<Notice> notices;    // the notices that apply to this edition, version and day, in file order
+        bool        fetched = false;    // the file was read (an empty list then means: nothing to say)
+        unsigned    generation = 0;     // counts finished reads
+    };
+    static constexpr const char* kUrl = "https://raw.githubusercontent.com/AlanBacker/VRChat-DLSS5-Cam/main/notice.json";
+
+    ~Notices();
+    void   SetAccess(int mode, const std::string& customSite, const std::string& pick);   // Updater::Access
+    void   Check(const std::string& currentVersion);
+    Status Get() const;
+    void   Cancel();
+
+private:
+    void Join();
+    bool Fetch(const std::string& site, int timeoutMs, std::string& body, std::string& error);
+    bool Parse(const std::string& body, const std::string& currentVersion, std::vector<Notice>& out, std::string& error);
+
+    mutable std::mutex m_mutex;
+    Status             m_status;
+    std::thread        m_thread;
+    std::atomic<bool>  m_cancel{false};
+    std::atomic<bool>  m_busy{false};
+    int                m_access = 0;               // Updater::Access
+    std::string        m_custom, m_pick;           // the user's own site; the built-in site to try first
 };
 
 } // namespace vdc

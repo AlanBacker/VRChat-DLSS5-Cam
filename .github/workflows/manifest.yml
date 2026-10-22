@@ -1,5 +1,6 @@
 # Keeps updates.json (the release list the program reads through a GitHub mirror site) in step with the releases,
-# and port.json (the latest release of DLSS-NR-on-AMD, which the Radeon edition reads the same way) current daily.
+# and port.json (the release of DLSS-NR-on-AMD the Radeon edition installs, read the same way) current daily.
+# notice.json, the program's notices, is written by hand and not touched here.
 name: Release manifest
 
 on:
@@ -33,9 +34,12 @@ jobs:
       - name: Write port.json
         env:
           GH_TOKEN: ${{ github.token }}
+          # The DLSS-NR-on-AMD release the program works with (PortSetup::kPinnedTag in src/core/Updater.h). The
+          # program reads port.json before anything else, so a release moved here reaches every installed copy.
+          PORT_TAG: v0.2.17
         run: |
-          # The port's latest release; a failed look-up keeps the entry from last time.
-          if gh api "repos/danielblnc/DLSS-NR-on-AMD/releases/latest" --jq '{tag_name, published_at, html_url, assets: [.assets[] | {name, size, browser_download_url}]}' > port.json.new; then
+          # That release's entry; a failed look-up keeps the entry from last time.
+          if gh api "repos/danielblnc/DLSS-NR-on-AMD/releases/tags/${PORT_TAG}" --jq '{tag_name, published_at, html_url, assets: [.assets[] | {name, size, browser_download_url}]}' > port.json.new; then
             mv port.json.new port.json
           else
             rm -f port.json.new
